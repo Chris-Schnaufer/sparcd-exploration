@@ -27,9 +27,15 @@ def rotated_orders(clients, runs):
 
 
 def redact(text, access_key, secret_key):
-    return text.replace(access_key, "<REDACTED_ACCESS_KEY>").replace(
-        secret_key, "<REDACTED_SECRET_KEY>"
-    )
+    for value, replacement in (
+        (urllib.parse.quote(access_key, safe=""), "<REDACTED_ACCESS_KEY>"),
+        (urllib.parse.quote(secret_key, safe=""), "<REDACTED_SECRET_KEY>"),
+        (access_key, "<REDACTED_ACCESS_KEY>"),
+        (secret_key, "<REDACTED_SECRET_KEY>"),
+    ):
+        if value:
+            text = text.replace(value, replacement)
+    return text
 
 
 def stats(values):

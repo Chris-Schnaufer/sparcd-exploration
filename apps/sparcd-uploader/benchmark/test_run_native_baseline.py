@@ -38,11 +38,12 @@ class NativeBaselineTest(unittest.TestCase):
                     "SECRET",
                 )
 
-    def test_redacts_exact_credentials(self):
-        text = "access=ACCESS123 secret=SECRET456"
+    def test_redacts_exact_and_url_encoded_credentials(self):
+        text = "access=ACCESS123 secret=SECRET/456 encoded=SECRET%2F456"
         self.assertEqual(
-            redact(text, "ACCESS123", "SECRET456"),
-            "access=<REDACTED_ACCESS_KEY> secret=<REDACTED_SECRET_KEY>",
+            redact(text, "ACCESS123", "SECRET/456"),
+            "access=<REDACTED_ACCESS_KEY> secret=<REDACTED_SECRET_KEY> "
+            "encoded=<REDACTED_SECRET_KEY>",
         )
 
 
