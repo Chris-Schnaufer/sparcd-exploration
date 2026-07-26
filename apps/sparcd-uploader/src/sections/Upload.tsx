@@ -73,19 +73,25 @@ export function Upload() {
   };
 
   const retryPending = useRef(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
   const retryFailed = async () => {
     // The async gap before resumeUpload's first emit leaves the Retry button
     // mounted — guard so a double-click can't start two concurrent runs.
     if (!snap || !s3Config || retryPending.current) return;
     retryPending.current = true;
+    setRetryError(null);
     try {
       // Partial wet runs persist before uploading, so the ledger should be
       // present — but the load can still fail (cleared site data, IDB error),
       // and the guard must unlatch or Retry is dead until a reload.
       const session = await loadSession(snap.sessionId);
-      if (!session) throw new Error(`resume session ${snap.sessionId} missing from local storage`);
+      if (!session) throw new Error('no saved record for this session');
       const attached = new Map(files.map((f) => [f.relPath, f.file]));
       runRef.current = resumeUpload({ config: s3Config, session, attached, concurrency }, setSnap);
+    } catch (e) {
+      setRetryError(
+        `Couldn't load the saved upload record for this batch (${e instanceof Error ? e.message : String(e)}). Retry again; if it keeps failing, go Back and start the upload over.`,
+      );
     } finally {
       retryPending.current = false;
     }
@@ -173,6 +179,8 @@ export function Upload() {
 
       {/* Live run */}
       {snap && <RunMonitor snap={snap} />}
+
+      {retryError && <Note tone="warn" message={retryError} />}
 
       {/* Actions */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-t border-ruleSoft pt-5">
