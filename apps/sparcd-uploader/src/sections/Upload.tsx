@@ -78,11 +78,17 @@ export function Upload() {
     // mounted — guard so a double-click can't start two concurrent runs.
     if (!snap || !s3Config || retryPending.current) return;
     retryPending.current = true;
-    const session = await loadSession(snap.sessionId);
-    const attached = new Map(files.map((f) => [f.relPath, f.file]));
-    // Partial wet runs persist before uploading, so the ledger is present here.
-    runRef.current = resumeUpload({ config: s3Config, session: session!, attached, concurrency }, setSnap);
-    retryPending.current = false;
+    try {
+      // Partial wet runs persist before uploading, so the ledger should be
+      // present — but the load can still fail (cleared site data, IDB error),
+      // and the guard must unlatch or Retry is dead until a reload.
+      const session = await loadSession(snap.sessionId);
+      if (!session) throw new Error(`resume session ${snap.sessionId} missing from local storage`);
+      const attached = new Map(files.map((f) => [f.relPath, f.file]));
+      runRef.current = resumeUpload({ config: s3Config, session, attached, concurrency }, setSnap);
+    } finally {
+      retryPending.current = false;
+    }
   };
 
   if (!location || !collection || !slug) {
