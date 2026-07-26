@@ -314,7 +314,9 @@ export function Tag() {
       setSelected(rangeSet(anchor, i));
       setFocus(i);
     } else if (mods.meta) {
-      setSelected(toggleIndex(selected, i));
+      // Seed from the focused image so the first Cmd-click yields a two-image
+      // selection (Finder-style) instead of restarting from the clicked one.
+      setSelected(toggleIndex(selected.size ? selected : new Set([focus]), i));
       setFocus(i);
       setAnchor(i);
     } else {
