@@ -184,6 +184,12 @@ function modsOf(e: React.MouseEvent): PickMods {
   return { shift: e.shiftKey, meta: e.metaKey || e.ctrlKey };
 }
 
+// Two quick Cmd/Shift-clicks are selection gestures, not a request to drill —
+// drilling would wipe the selection and yank the view to focus.
+function plainDrill(e: React.MouseEvent, onDrill: (i: number) => void, index: number): void {
+  if (!e.shiftKey && !e.metaKey && !e.ctrlKey) onDrill(index);
+}
+
 function BurstBand({
   burst,
   fullySelected,
@@ -235,10 +241,14 @@ function ListCell({
   return (
     <button
       onClick={(e) => onPick(index, modsOf(e))}
-      onDoubleClick={onDrill ? () => onDrill(index) : undefined}
+      onDoubleClick={onDrill ? (e) => plainDrill(e, onDrill, index) : undefined}
       aria-current={active ? 'true' : undefined}
-      className={`w-full h-full flex items-center gap-2.5 px-2.5 text-left border-b border-ruleSoft ${
-        selected ? 'bg-mark/70' : active ? 'bg-mark' : 'hover:bg-panelHover'
+      className={`w-full h-full flex items-center gap-2.5 px-2.5 text-left border-b border-ruleSoft border-l-2 ${
+        selected
+          ? 'border-l-accent bg-mark'
+          : active
+            ? 'border-l-transparent bg-mark'
+            : 'border-l-transparent hover:bg-panelHover'
       }`}
     >
       <span className="w-12 shrink-0">
@@ -315,12 +325,12 @@ function GridCell({
   return (
     <button
       onClick={(e) => onPick(index, modsOf(e))}
-      onDoubleClick={onDrill ? () => onDrill(index) : undefined}
+      onDoubleClick={onDrill ? (e) => plainDrill(e, onDrill, index) : undefined}
       aria-current={active ? 'true' : undefined}
       title={img.fileName}
       className={`group relative flex flex-col text-left border p-1 ${
         selected
-          ? 'border-accent bg-mark/70'
+          ? 'border-accent ring-2 ring-inset ring-accent bg-mark'
           : active
             ? 'border-ink bg-mark'
             : 'border-rule hover:bg-panelHover'
