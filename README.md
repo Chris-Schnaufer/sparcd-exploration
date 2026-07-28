@@ -29,8 +29,8 @@ and move between them.
 - **`apps/sparcd-home`** — the shared landing page and app switcher served at
   the deploy root.
 
-Each app's `README.md` and `plan.md` carry its full design and phase
-breakdown.
+Each app's `README.md` (and `plan.md` where present) carries its full
+design and phase breakdown.
 
 ## Approach
 
@@ -122,8 +122,6 @@ fetches and uploads to succeed.
 
 - Each app's `README.md` (and `plan.md` where present) — that tool's design,
   data contracts, and status
-- [`docs/user-stories.md`](./docs/user-stories.md) — personas, user stories,
-  and acceptance criteria
 - [`docs/design-system-field-notebook.md`](./docs/design-system-field-notebook.md)
   — the shared visual design system
 - [`docs/archive/`](./docs/archive/) — superseded proposals and point-in-time
