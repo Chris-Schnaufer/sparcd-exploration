@@ -1,5 +1,8 @@
 # Merge-Readiness Report — `feat/mobile-responsive`
 
+> **Status: snapshot** (June 2026). Merge review of the `feat/mobile-responsive`
+> branch as of that date; the branch has since merged (PR #6).
+
 ## Merge verdict: **Ready after must-fixes**
 
 Build and typecheck pass, and the mobile work is well-executed: nearly every touch-target bump correctly restores desktop density behind a breakpoint, and the two highest-profile known risks (A, D) are confirmed but bounded and cosmetic. The branch is **not** byte-identical at desktop, however: one confirmed **must-fix** desktop-density regression (`MetadataPreview` tab strip, ungated `min-h-[44px]`) plus two confirmed desktop-rendering regressions on dialog close buttons violate the project's explicit byte-identical-at-lg rule, and all three are one-line breakpoint-gating fixes. Land those, and the branch is mergeable; the remaining items are mobile-efficacy gaps and nitpicks safe to follow up.

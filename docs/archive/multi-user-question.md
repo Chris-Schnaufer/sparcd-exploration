@@ -1,5 +1,9 @@
 # SPARC'd PWA — Multi-Volunteer Sync Problem
 
+> **Status: exploration, not built** (May 2026). Sync analysis for the PWA
+> proposal. No CRDT sync layer was built; the shipped tools read and write
+> S3 directly.
+
 ## The setup
 
 The PWA plan (`architecture-pwa.md`) puts everything in the browser:

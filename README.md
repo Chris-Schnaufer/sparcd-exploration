@@ -118,9 +118,14 @@ credentials are entered in the connection gate; there is no server-side
 secret. The S3/MinIO endpoint must permit CORS from the Pages origin for data
 fetches and uploads to succeed.
 
-## Background notes
+## Docs
 
-`architecture.md`, `architecture-pwa.md`, `codex-brief.md`,
-`multi-user-question.md`, and `plan-p2p-no-s3.md` are early exploration
-notes kept for reference. The current direction is the "Approach" section
-above.
+- Each app's `README.md` (and `plan.md` where present) — that tool's design,
+  data contracts, and status
+- [`docs/user-stories.md`](./docs/user-stories.md) — personas, user stories,
+  and acceptance criteria
+- [`docs/design-system-field-notebook.md`](./docs/design-system-field-notebook.md)
+  — the shared visual design system
+- [`docs/archive/`](./docs/archive/) — superseded proposals and point-in-time
+  reports, kept as decision history; nothing there describes the current
+  system
