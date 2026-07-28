@@ -4,9 +4,9 @@ A workspace for building small, focused, mostly-static tools that work
 alongside [SPARC'd](https://github.com/CulverLab/sparcd-web) — each one
 tuned end-to-end for a single feature.
 
-A shared landing page ties them together at the deploy root, and the tools
-share a connection gate and a saved-login session so you authenticate once
-and move between them.
+A shared landing page ties them together at the deploy root. The uploader
+and tagger share a connection gate and a saved-login session, so you
+authenticate once and move between them; the explorer has its own sign-in.
 
 ## The tools
 
@@ -18,10 +18,10 @@ and move between them.
   live. Exports to a static Pyodide bundle that runs entirely in the browser
   (see [Static deploy](#static-deploy)).
 - **`apps/sparcd-uploader`** — a static, browser-based tool for preparing and
-  uploading camera-trap image batches. Drop a folder; it scans JPEGs and runs
-  EXIF, SHA-256, thumbnails, and validation in Web Workers, then writes the
-  canonical Camtrap-DP layout through an append-only S3 boundary. Dry-run by
-  default.
+  uploading camera-trap image batches. Drop a folder; it scans JPEGs and MP4
+  videos, runs EXIF, SHA-256, and thumbnails in Web Workers, validates the
+  batch, then writes the canonical Camtrap-DP layout through the `s3-safe`
+  boundary. Dry-run by default.
 - **`apps/sparcd-tagger`** — a static, browser-based tagging interface for
   camera-trap images. It reads the same buckets, renders an upload's images
   from presigned URLs, and writes back the canonical Camtrap-DP metadata the
@@ -45,8 +45,9 @@ design and phase breakdown.
 - **Bring your own S3.** The browser tools have no backend and no server-side
   secret. Users supply an S3-compatible endpoint and credentials; IAM/provider
   policy and bucket CORS are the real access gates. Writes go through
-  `@sparcd/s3-safe`, an append-only boundary with no delete, copy, or
-  overwrite API.
+  `@sparcd/s3-safe`, an append-only boundary with no delete or copy API and
+  a single reviewed, ETag-gated conditional-replace path
+  (`replaceIfUnchanged`).
 - **Optimize per feature.** With a narrow scope per app, we pick the best
   primitives for that job — data model, layout, interactions — without
   compromise for anything else.
@@ -62,7 +63,7 @@ apps/
 packages/
   auth-ui/           # shared connection gate + saved-login session
   camtrap/           # Camtrap-DP data contract (readers, merge, time-shift)
-  s3-safe/           # append-only S3 client boundary
+  s3-safe/           # S3 client boundary (append-only + reviewed replace)
   types/             # shared TypeScript types
 ```
 
@@ -106,7 +107,8 @@ prefilled — they are entered at runtime.
 ## Static deploy
 
 `.github/workflows/pages.yml` builds the landing page and each web tool and
-publishes them via GitHub Pages on every push that touches `apps/**`. The
+publishes them via GitHub Pages on every push that touches an app, a shared
+package, or the workflow itself. The
 landing page sits at the root, with each tool under its own path
 (`/explorer`, `/uploader`, `/tagger`). Live at:
 

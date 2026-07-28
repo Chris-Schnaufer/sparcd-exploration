@@ -13,14 +13,19 @@ Runtime-discovered BYO-S3 uploader.
 - Tool chrome with section tabs (New upload · History · Settings), upload-state
   pill, and a light/walnut-dark theme toggle.
 - Four-step flow: Drop, Inspect, Assign, Upload.
-- Drag-and-drop a folder (or "Choose folder"); recursive JPEG scan via the
-  File System Access entries API / `webkitdirectory`.
-- EXIF, SHA-256, thumbnails, and validation run in Web Workers.
+- Drag-and-drop a folder (or "Choose folder"); recursive JPEG + MP4 scan via
+  the File System Access entries API / `webkitdirectory`.
+- EXIF, SHA-256, and thumbnails run in Web Workers; validation runs on the
+  results in the main thread.
 - The app discovers readable settings buckets by probing for
   `Settings/locations.json`, and discovers target collections from
   `Collections/<uuid>/collection.json`.
 - Dry-run is on by default. Wet uploads use the connected credentials directly;
   IAM and bucket CORS are the real access gates.
+- History lists prior runs and resumes interrupted uploads from the ledger.
+- Published uploads can be edited after the fact (description, deployment
+  reassignment) through the single reviewed conditional-replace path, with
+  immutable pre-change snapshots.
 
 ## Static BYO-S3 Contract
 
@@ -38,8 +43,9 @@ Security controls:
 - Bucket CORS controls whether this hosted web origin can call S3 from the
   browser.
 - `@sparcd/s3-safe` is the only S3 client boundary in the app. It exposes read
-  methods and immutable append-only writers. It exposes no delete, copy, or
-  overwrite API.
+  methods, immutable append-only writers, and one reviewed ETag-gated
+  conditional-replace method (`replaceIfUnchanged`). It exposes no delete or
+  copy API.
 - Conditional writes, `HEAD` verification, dry-run-by-default, and completion
   sentinels reduce accidental publish risk.
 

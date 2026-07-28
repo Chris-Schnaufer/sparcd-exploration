@@ -127,5 +127,7 @@ direction: same Newsreader / Inter Tight / JetBrains Mono, same structure,
 re-tuned surfaces and semantic colors to hold WCAG AA on dark. The
 ink-blue accent stays recognizable (lightened for AA as needed); `warn`,
 `ok`, and the `mark` active-row highlight get dark-tuned equivalents. The
-two themes are a token swap, not a redraw. Dark token values land here once
-the Claude Design pass produces them.
+two themes are a token swap, not a redraw. The dark token set ships in both
+apps and is identical across them — see the dark block in
+`apps/sparcd-uploader/src/index.css` / `apps/sparcd-tagger/src/index.css`
+(`--paper: #211c15` … `--mark: #5a4d2e`).
