@@ -118,5 +118,3 @@ either. In practice, access is scoped to the Educational Test collection.
 explorer runs Python via Pyodide in the visitor's browser and talks to S3
 directly — no server, no `.env`, no server-side secret. The S3/MinIO endpoint
 must permit CORS from the Pages origin.
-</content>
-</invoke>

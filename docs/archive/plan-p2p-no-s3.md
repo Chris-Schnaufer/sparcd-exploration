@@ -1,5 +1,8 @@
 # SPARC'd — Pure P2P Sync Plan (no S3, Trystero + Nostr)
 
+> **Status: not pursued** (May 2026). No P2P transport was ever built. Kept
+> as decision history alongside `multi-user-question.md`.
+
 **This is attempt #1: zero infrastructure.** No server, no bucket, no account — two browsers find each other and sync directly. If this fails its go/no-go criteria (§8), the documented fallback is the **S3-mandatory design** in `multi-user-question.md`, where an S3-compatible bucket acts as a dumb, always-online, trusted peer.
 
 The two plans share one data model on purpose: **signed CRDT changesets**. Only the transport differs. Falling back changes the pipe, not the schema — nothing migrates.
