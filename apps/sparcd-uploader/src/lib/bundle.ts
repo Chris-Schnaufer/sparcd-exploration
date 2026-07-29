@@ -8,7 +8,7 @@
 // `Collections/<uuid>/Uploads/<stamp>_<slug>/<relpath>` — not a separate
 // UploadBlobs key. See plan "Persistence — S3 sync".
 
-import type { Media } from '@sparcd/camtrap';
+import type { Media, Observation } from '@sparcd/camtrap';
 import {
   serializeDeployments,
   serializeMedia,
@@ -139,6 +139,19 @@ export async function buildBundle(input: BuildInput): Promise<BundlePreview> {
     mimeType: r.mimeType,
   }));
 
+  // One placeholder observation row per file, so every uploaded image is
+  // present in observations.csv from the start. Species-related columns
+  // (scientific_name, count) are left blank — nothing has been identified yet;
+  // the tagger fills them in later via `mergeObservations`.
+  const observations: Observation[] = resolved.map((r) => ({
+    observationId: r.f.fileName,
+    mediaId: r.mediaPath,
+    deploymentId: deployment.deploymentId,
+    timestamp: r.capture,
+    scientificName: '',
+    tags: '',
+  }));
+
   const uploadItems: UploadItem[] = resolved.map((r) => ({
     id: r.f.id,
     localPath: r.f.relPath,
@@ -155,7 +168,7 @@ export async function buildBundle(input: BuildInput): Promise<BundlePreview> {
 
   const deploymentsCsv = serializeDeployments([deployment]);
   const mediaCsv = serializeMedia(media);
-  const observationsCsv = serializeObservations([]); // always empty on initial upload
+  const observationsCsv = serializeObservations(observations);
 
   const uploadMetaJson = serializeUploadMeta(
     buildUploadMeta({

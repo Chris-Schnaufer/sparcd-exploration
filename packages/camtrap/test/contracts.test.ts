@@ -26,9 +26,15 @@ import {
 import { fixture } from './fixtures';
 
 describe('uploader contract', () => {
-  it('uploader writes an empty observations.csv base', () => {
-    expect(fixture('uploader-empty-v016', 'observations.csv')).toBe('');
-    expect(parseObservations(fixture('uploader-empty-v016', 'observations.csv'))).toEqual([]);
+  it('uploader writes one observations.csv row per file, species columns blank', () => {
+    const obs = parseObservations(fixture('uploader-empty-v016', 'observations.csv'));
+    expect(obs).toHaveLength(5);
+    for (const o of obs) {
+      expect(o.scientificName).toBe('');
+      expect(o.tags).toBe('');
+    }
+    // count reads back as 0 (blank column), same as parseObservations always does.
+    for (const o of obs) expect(o.count).toBe(0);
   });
 
   it('uploader media carries the DST-corrected naive capture time in col 4', () => {

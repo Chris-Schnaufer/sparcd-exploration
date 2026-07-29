@@ -28,14 +28,19 @@ export type Media = {
   mimeType: string; // "image/jpeg"
 };
 
-/** One row of `observations.csv` — species + count. Empty on initial upload. */
+/**
+ * One row of `observations.csv` — species + count. The uploader writes one row
+ * per media file at upload time with the species fields blank (`scientificName:
+ * ''`, `count: undefined`) since nothing has been identified yet; the tagger
+ * later fills them in via `mergeObservations`.
+ */
 export type Observation = {
   observationId: string;
   mediaId: string;
   deploymentId: string;
   timestamp: string; // ISO; v016 observation timestamp column
   scientificName: string;
-  count: number;
+  count?: number; // undefined → column written blank (no species identified)
   tags: string; // concatenated [PREFIX:value] markers
 };
 
@@ -52,7 +57,8 @@ export type CamtrapBundle = {
 // Verified live (Educational Test bucket) and against upstream `camtrap/v016`:
 //   deployments.csv  23 columns
 //   media.csv        11 columns
-//   observations.csv 20 columns (written empty on initial upload)
+//   observations.csv 20 columns (one row per file on initial upload, species
+//                     columns blank until the tagger identifies something)
 // Every field is quoted; rows are LF-terminated including a trailing newline.
 // Readers index by position, so column count and order are the contract.
 // ---------------------------------------------------------------------------
@@ -132,9 +138,10 @@ export function serializeMedia(media: Media[]): string {
 }
 
 /**
- * Serialize `observations.csv`, v016 20-column shape. Initial uploads always
- * write this as an empty file (`''`) so the tagger has a stable canonical base
- * to hash; the row serializer exists so the tagger's append path shares it.
+ * Serialize `observations.csv`, v016 20-column shape. `count` (and its
+ * `count_new` companion) is written blank when `o.count` is `undefined` — the
+ * shape an upload-time placeholder row carries before any species is
+ * identified. An empty `observations` array still serializes to `''`.
  */
 export function serializeObservations(observations: Observation[]): string {
   if (observations.length === 0) return '';
@@ -150,8 +157,8 @@ export function serializeObservations(observations: Observation[]): string {
         'false', // 6  camera_setup
         '', // 7  taxon_id
         o.scientificName, // 8  scientific_name
-        String(o.count), // 9  count
-        '0', // 10 count_new
+        o.count !== undefined ? String(o.count) : '', // 9  count
+        o.count !== undefined ? '0' : '', // 10 count_new
         '', // 11 life_stage
         '', // 12 sex
         '', // 13 behaviour
@@ -612,9 +619,11 @@ export function mergeObservations(
 
 // --- UploadMeta.json delta -------------------------------------------------
 
-/** True when an image counts as "species present" (≥1 positive-count row). */
-function hasSpeciesPresent(observations: { count: number }[]): boolean {
-  return observations.some((o) => o.count > 0);
+/** True when an image counts as "species present" (≥1 positive-count row). An
+ *  upload-time placeholder row (`count: undefined`, no species identified) never
+ *  counts. */
+function hasSpeciesPresent(observations: { count?: number }[]): boolean {
+  return observations.some((o) => (o.count ?? 0) > 0);
 }
 
 export type SpeciesDelta = { detagged: number; retagged: number };
