@@ -21,7 +21,7 @@ import {
 } from '@sparcd/camtrap';
 import { locationToDeployment, type Location } from './locations';
 import { sanitizeRelPath, resolveCollisions } from './normalize';
-import { naiveInZoneToUtcNaive } from './exifTime';
+import { naiveInZoneToUtcIso } from './exifTime';
 import type { MediaKind } from './scanFiles';
 import type { FileEntry } from '../store';
 
@@ -35,7 +35,7 @@ export type UploadItem = {
   file: File;
   size: number;
   sha256: string;
-  captureTimestamp?: string; // resolved naive-UTC capture time (post-tz), media.csv col 4
+  captureTimestamp?: string; // resolved ISO 8601 UTC capture time (post-tz), media.csv col 4
   mediaKind: MediaKind;
   mimeType: string;
 };
@@ -106,7 +106,7 @@ export async function buildBundle(input: BuildInput): Promise<BundlePreview> {
   const deployment = locationToDeployment(location, collectionUuid);
 
   // Resolve each file's capture time in the chosen zone: naive components →
-  // DST-correct UTC naive wall-clock, the exact media.csv col-4 byte shape. EXIF
+  // DST-correct full ISO 8601 UTC timestamp, the media.csv col-4 shape. EXIF
   // (or video container) metadata wins; a manual Assign entry fills the gap for a
   // file that has none, so a real camera time is never clobbered. Publish is
   // gated on every file having one, so col 4 is never empty for a published batch.
@@ -114,7 +114,7 @@ export async function buildBundle(input: BuildInput): Promise<BundlePreview> {
     f.mimeType ?? (f.mediaKind === 'video' ? 'video/mp4' : 'image/jpeg');
   const captureFor = (f: FileEntry): string => {
     const src = f.exifNaive ?? f.manualNaive;
-    return src ? naiveInZoneToUtcNaive(src, timeZone) : '';
+    return src ? naiveInZoneToUtcIso(src, timeZone) : '';
   };
 
   // Resolve each file's derived values once (capture-time tz conversion is not

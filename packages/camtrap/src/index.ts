@@ -104,11 +104,12 @@ export function serializeDeployments(deployments: Deployment[]): string {
  * matching SPARC'd's own writer.
  *
  * Col 4 carries `m.timestamp` verbatim — the uploader is the writer-of-record
- * for capture time and stamps the DST-corrected naive wall-clock
- * (`YYYY-MM-DDTHH:mm:ss`) here, the exact byte shape the Java app, sparcd-web,
- * the explorer, and the tagger all read. It is empty only when capture time is
- * genuinely absent (e.g. a video without container metadata, routed to manual
- * entry). The tagger still merges later per-image corrections via `mergeMedia`.
+ * for capture time and stamps a DST-corrected full ISO 8601 UTC timestamp
+ * (`YYYY-MM-DDTHH:mm:ss.sssZ`) here, matching how sparcd-web itself stamps
+ * timestamps (`datetime.now(UTC).isoformat()` in `camtrap_utils.py`). It is
+ * empty only when capture time is genuinely absent (e.g. a video without
+ * container metadata, routed to manual entry). The tagger still merges later
+ * per-image corrections via `mergeMedia`.
  */
 export function serializeMedia(media: Media[]): string {
   return media
@@ -118,7 +119,7 @@ export function serializeMedia(media: Media[]): string {
         m.deploymentId, // 1  deployment_id
         m.mediaPath, // 2  sequence_id (= full key)
         '', // 3  capture_method
-        m.timestamp, // 4  timestamp (naive wall-clock, DST-corrected by the uploader)
+        m.timestamp, // 4  timestamp (full ISO 8601 UTC, DST-corrected by the uploader)
         m.mediaPath, // 5  file_path (= full key)
         m.fileName, // 6  file_name
         m.mimeType, // 7  file_media_type
@@ -698,28 +699,28 @@ export const ZERO_OFFSET: TimeOffset = {
   seconds: 0,
 };
 
-// Parse the naive `YYYY-MM-DDTHH:mm:ss` form into UTC components so month/year
-// arithmetic and DST never shift the wall-clock value.
+// Parse the leading `YYYY-MM-DDTHH:mm:ss` fields out of either a naive string
+// (legacy data) or a full ISO 8601 UTC string (current writer output) — the
+// trailing `.sssZ`, if present, is ignored by the arithmetic below and dropped
+// from the output, which is always re-emitted as full ISO.
 const TS_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/;
 
-/** Last valid day of `month0` (0-11) in `year` — for Java-style day clamping. */
+/** Last valid day of `month0` (0-11) in `year` — for calendar-style day clamping. */
 function daysInMonth(year: number, month0: number): number {
   return new Date(Date.UTC(year, month0 + 1, 0)).getUTCDate();
 }
 
 /**
- * Shift a naive ISO timestamp by a signed offset, returning the same
- * `YYYY-MM-DDTHH:mm:ss` shape. Non-matching input is returned unchanged.
+ * Shift a timestamp (naive or full ISO) by a signed offset, returning a full
+ * ISO 8601 UTC string. Non-matching input is returned unchanged.
  *
- * Mirrors the Java desktop app's `TimeShiftController`, which applies the offset
- * as `LocalDateTime.plusYears(y).plusMonths(mo).plusDays(d).plusHours(h)...`.
- * The year and month steps **clamp** the day-of-month to the last valid day
- * (Jan 31 + 1mo → Feb 28/29) rather than overflowing into the next month, and
- * the two clamps are **sequential** (plusYears clamps before plusMonths). The
- * day/hour/minute/second steps are exact durations — a naive `LocalDateTime`
- * has no DST, so a calendar day is always 24h. The corrected value is written to
- * `media.csv` col 4 and read by Java / sparcd-web, so this must match Java
- * exactly. See the `contracts.test.ts` "clamps month/year overflow" case.
+ * Mirrors `LocalDateTime.plusYears(y).plusMonths(mo).plusDays(d).plusHours(h)...`
+ * semantics carried over from the original desktop tooling: the year and month
+ * steps **clamp** the day-of-month to the last valid day (Jan 31 + 1mo → Feb
+ * 28/29) rather than overflowing into the next month, and the two clamps are
+ * **sequential** (plusYears clamps before plusMonths). The day/hour/minute/second
+ * steps are exact durations. See the `contracts.test.ts` "clamps month/year
+ * overflow" case.
  */
 export function shiftTimestamp(iso: string, off: TimeOffset): string {
   const m = TS_RE.exec(iso);
@@ -748,10 +749,7 @@ export function shiftTimestamp(iso: string, off: TimeOffset): string {
       off.minutes * 60_000 +
       off.seconds * 1_000,
   );
-  return (
-    `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}T` +
-    `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}:${pad2(d.getUTCSeconds())}`
-  );
+  return d.toISOString();
 }
 
 /** Resolve the corrected timestamp for one image: per-image override wins over the upload offset. */
