@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../store';
 import { useLocations } from '../lib/useLocations';
 import { useCollections, useCollectionDeployments } from '../lib/useCollections';
@@ -8,7 +8,12 @@ import { MetadataPreview } from '../components/MetadataPreview';
 import { CaptureTimeEditor } from '../components/CaptureTimeEditor';
 import { sanitizeUploaderUser } from '../lib/normalize';
 import { supportedTimeZones } from '../lib/exifTime';
-import { captureTimeComplete } from '../lib/validation';
+import { captureTimeComplete, processingComplete } from '../lib/validation';
+
+// How long to wait after the last keystroke before pushing a fresh value into
+// an already-open preview — keeps it feeling live without rebuilding the whole
+// bundle on every keystroke.
+const PREVIEW_DEBOUNCE_MS = 300;
 
 const sectionLabel =
   'font-[600] text-[11px] tracking-[0.16em] uppercase text-inkSoft mb-2';
@@ -82,7 +87,57 @@ export function Assign() {
     (f) => f.processState === 'ready' && !f.exifNaive,
   );
   const captureComplete = captureTimeComplete(files);
-  const canContinue = !!selectedLocationKey && !!slug && !!collection && captureComplete;
+  // Everything EXCEPT background processing being done — this is what actually
+  // disables the button. Processing-incomplete is handled on click instead (see
+  // handleContinue), so the button stays pressable and can explain why it
+  // hasn't moved on yet, rather than just sitting inertly disabled.
+  const baseReady = !!selectedLocationKey && !!slug && !!collection && captureComplete;
+  const processingOk = processingComplete(files);
+  const pendingCount = files.filter(
+    (f) => f.processState === 'queued' || f.processState === 'processing',
+  ).length;
+
+  const [showProcessingWait, setShowProcessingWait] = useState(false);
+  useEffect(() => {
+    if (processingOk) setShowProcessingWait(false);
+  }, [processingOk]);
+
+  function handleContinue() {
+    if (!baseReady) return;
+    if (!processingOk) {
+      setShowProcessingWait(true);
+      return;
+    }
+    setStep('upload');
+  }
+
+  // Preview is opt-in (building it rebuilds the whole bundle) and, once open,
+  // only takes the live name/description on a short pause or on blur — not on
+  // every keystroke.
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewSlug, setPreviewSlug] = useState(slug);
+  const [previewDescription, setPreviewDescription] = useState(description);
+
+  useEffect(() => {
+    if (!previewOpen) return;
+    const t = window.setTimeout(() => {
+      setPreviewSlug(slug);
+      setPreviewDescription(description);
+    }, PREVIEW_DEBOUNCE_MS);
+    return () => window.clearTimeout(t);
+  }, [slug, description, previewOpen]);
+
+  function openPreview() {
+    setPreviewSlug(slug);
+    setPreviewDescription(description);
+    setPreviewOpen(true);
+  }
+
+  function flushPreview() {
+    if (!previewOpen) return;
+    setPreviewSlug(slug);
+    setPreviewDescription(description);
+  }
 
   // The chosen zone is always offered even if it isn't in the platform's list.
   const timeZones = useMemo(() => {
@@ -203,6 +258,7 @@ export function Assign() {
         <input
           value={uploaderUser}
           onChange={(e) => setUploaderUser(e.target.value)}
+          onBlur={flushPreview}
           placeholder="e.g. John Doe"
           className="w-full border border-rule bg-paper px-3 py-2 font-body text-[14px] text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1"
         />
@@ -249,6 +305,7 @@ export function Assign() {
         <textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
+          onBlur={flushPreview}
           rows={3}
           placeholder="What this batch is — site, date range, notes."
           className="w-full border border-rule bg-paper px-3 py-2 font-body text-[14px] text-ink resize-y focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1"
@@ -261,15 +318,25 @@ export function Assign() {
       <section>
         <h2 className={sectionLabel}>Preview</h2>
         {location && collection && slug ? (
-          <MetadataPreview
-            location={location}
-            collectionUuid={collection.uuid}
-            bucket={collection.bucket}
-            uploaderSlug={slug}
-            description={description}
-            timeZone={uploadTimeZone}
-            files={files}
-          />
+          previewOpen ? (
+            <MetadataPreview
+              location={location}
+              collectionUuid={collection.uuid}
+              bucket={collection.bucket}
+              uploaderSlug={previewSlug}
+              description={previewDescription}
+              timeZone={uploadTimeZone}
+              files={files}
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={openPreview}
+              className="w-full border border-rule bg-paper px-3 py-2.5 text-left font-body text-[13px] text-inkSoft hover:text-ink hover:border-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1"
+            >
+              Click to preview the generated bundle files (UploadMeta.json, deployments/media/observations CSVs)…
+            </button>
+          )
         ) : (
           <LocationsState
             tone="mute"
@@ -277,6 +344,13 @@ export function Assign() {
           />
         )}
       </section>
+
+      {showProcessingWait && (
+        <LocationsState
+          tone="warn"
+          message={`Still processing ${pendingCount} file${pendingCount === 1 ? '' : 's'} in the background — Continue will unlock automatically once that finishes.`}
+        />
+      )}
 
       <div className="flex items-center justify-between gap-4 border-t border-ruleSoft pt-5">
         <button
@@ -286,21 +360,23 @@ export function Assign() {
           Back
         </button>
         <button
-          disabled={!canContinue}
-          onClick={() => setStep('upload')}
+          disabled={!baseReady}
+          onClick={handleContinue}
           title={
-            canContinue
-              ? 'Continue to upload'
-              : !selectedLocationKey
+            !baseReady
+              ? !selectedLocationKey
                 ? 'Select a deployment location first'
                 : !collection
                   ? 'Select a target collection first'
                   : !slug
                     ? 'Set an uploader identity first'
                     : 'Set a capture time for every file missing one'
+              : processingOk
+                ? 'Continue to upload'
+                : 'Still processing — click for status'
           }
           className={`bg-ink text-paper border border-ink px-3.5 py-1.5 text-[14px] font-body font-[600] focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 ${
-            canContinue ? 'hover:opacity-90' : 'opacity-40 cursor-not-allowed'
+            baseReady ? 'hover:opacity-90' : 'opacity-40 cursor-not-allowed'
           }`}
         >
           Continue
