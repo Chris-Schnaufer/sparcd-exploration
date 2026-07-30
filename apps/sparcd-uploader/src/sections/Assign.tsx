@@ -186,17 +186,12 @@ export function Assign() {
                   value={selectedBucket}
                   onChange={(key) => setSelectedBucket(key)}
                 />
-                <p className="font-body text-[12px] text-inkMute">
-                  {collection?.name ? (
-                    <>
-                      <span className="text-inkSoft">{collection.name}</span> ·{' '}
-                    </>
-                  ) : null}
-                  Discovered from{' '}
-                  <span className="font-mono">Collections/{collection?.uuid ?? '<uuid>'}/collection.json</span>
-                  . Uploads land in this bucket under{' '}
-                  <span className="font-mono">Collections/{collection?.uuid ?? '<uuid>'}/Uploads/</span>.
-                </p>
+                {collection && (
+                  <p className="font-body text-[12px] text-inkMute">
+                    <span className="text-inkSoft">{collection.name ?? 'Unnamed collection'}</span> ·{' '}
+                    <span className="font-mono">{collection.uuid}</span>
+                  </p>
+                )}
               </>
             )}
           </div>
@@ -238,10 +233,8 @@ export function Assign() {
             <p className="font-body text-[12px] text-inkMute">
               <span className="font-mono text-inkSoft">{usedLocationCount}</span> of{' '}
               <span className="font-mono text-inkSoft">{collectionLocations.length}</span> locations
-              already deployed by <span className="font-mono">{collection.uuid}</span> — listed first,
-              but any location can be assigned. Each becomes{' '}
-              <span className="font-mono">deployment_id</span> ={' '}
-              <span className="font-mono">&lt;collection-uuid&gt;:&lt;location-id&gt;</span>.
+              already deployed by <span className="text-inkSoft">{collection.name ?? 'this collection'}</span> —
+              listed first, but any location can be assigned.
             </p>
           </div>
         )}
@@ -313,15 +306,24 @@ export function Assign() {
         <h2 className={sectionLabel}>Preview</h2>
         {location && collection && slug ? (
           previewOpen ? (
-            <MetadataPreview
-              location={location}
-              collectionUuid={collection.uuid}
-              bucket={collection.bucket}
-              uploaderSlug={previewSlug}
-              description={previewDescription}
-              timeZone={uploadTimeZone}
-              files={files}
-            />
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => setPreviewOpen(false)}
+                className="font-body text-[12px] text-inkSoft hover:text-ink underline underline-offset-4 decoration-rule focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              >
+                Hide preview
+              </button>
+              <MetadataPreview
+                location={location}
+                collectionUuid={collection.uuid}
+                bucket={collection.bucket}
+                uploaderSlug={previewSlug}
+                description={previewDescription}
+                timeZone={uploadTimeZone}
+                files={files}
+              />
+            </div>
           ) : (
             <button
               type="button"
