@@ -5,7 +5,9 @@ import { BrandSwitcher } from './BrandSwitcher';
 export type ConnectionProps = {
   /** Shown in the chrome, e.g. "Uploader" → "SPARC'd · Uploader". */
   toolName: string;
-  /** Pre-fill (dev-only, non-secret values in practice). */
+  /** Pre-fill — a prior connection's remembered non-secret fields, a
+   *  dev-only endpoint override, or both. Callers never pass a secretKey
+   *  here; the field always starts blank regardless. */
   initialConfig?: Partial<S3Config>;
   onConnect: (config: S3Config) => void;
 };
@@ -76,11 +78,12 @@ export function Connection({ toolName, initialConfig, onConnect }: ConnectionPro
             </label>
             <input
               id="endpoint"
+              name="endpoint"
               className={textInput}
               placeholder="host[:port] or https://host"
               value={endpoint}
               onChange={(e) => setEndpoint(e.target.value)}
-              autoComplete="off"
+              autoComplete="url"
               spellCheck={false}
             />
           </div>
@@ -90,10 +93,11 @@ export function Connection({ toolName, initialConfig, onConnect }: ConnectionPro
             </label>
             <input
               id="accessKey"
+              name="accessKey"
               className={textInput}
               value={accessKey}
               onChange={(e) => setAccessKey(e.target.value)}
-              autoComplete="off"
+              autoComplete="username"
               spellCheck={false}
             />
           </div>
@@ -103,11 +107,12 @@ export function Connection({ toolName, initialConfig, onConnect }: ConnectionPro
             </label>
             <input
               id="secretKey"
+              name="secretKey"
               type="password"
               className={textInput}
               value={secretKey}
               onChange={(e) => setSecretKey(e.target.value)}
-              autoComplete="off"
+              autoComplete="current-password"
             />
           </div>
         </div>

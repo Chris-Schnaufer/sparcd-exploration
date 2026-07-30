@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { S3Config } from '@sparcd/types';
 import {
-  loadSharedConnection,
+  loadPersistedConnection,
   saveSharedConnection,
   clearSharedConnection,
   subscribeSharedConnection,
@@ -108,23 +108,23 @@ function getFileIndex(files: FileEntry[]): Map<string, number> {
   return fileIndexById;
 }
 
-// Read once at module init — reused for both the initial s3Config and the
-// initial uploaderUser default below.
-const initialConnection = loadSharedConnection();
+// Read once at module init for the initial uploaderUser default below (the
+// access key is non-secret, so it's safe to have persisted).
+const initialPersisted = loadPersistedConnection();
 
 export const useStore = create<UploaderState>()(
-  // The S3 connection (secret included) lives in one shared localStorage key,
-  // owned by @sparcd/auth-ui's session module — see `loadSharedConnection`. This
-  // is a deliberate full-persistence posture: log in once in any SPARC'd tool and
-  // every tool (across tabs and tab-close) is logged in; disconnect anywhere
-  // clears it everywhere. This store hydrates s3Config from that shared key on
-  // start and mirrors connect/disconnect back into it. Zustand's own persist here
-  // covers only cheap UI prefs (theme, elevationUnit); s3Config is intentionally
-  // NOT in `partialize` because the shared module owns it. The in-flight batch
-  // (files, handles, validations) is excluded too.
+  // The secret key is NEVER persisted to disk — only the non-secret fields
+  // (endpoint/access key/region/etc.) live in localStorage, purely to pre-fill
+  // the Connect form on reload. s3Config itself always starts null here; the
+  // user re-enters the secret every time, UNLESS another tab in this browser
+  // session is already connected, in which case `subscribeSharedConnection`'s
+  // live (never-persisted) cross-tab relay picks it up within a message
+  // round-trip of mount. Zustand's own persist here covers only cheap UI
+  // prefs (theme, elevationUnit); the in-flight batch (files, handles,
+  // validations) is excluded too.
   persist(
     (set) => ({
-      s3Config: initialConnection,
+      s3Config: null,
       connectionId: 0,
       section: 'new',
       theme: 'light',
@@ -140,7 +140,7 @@ export const useStore = create<UploaderState>()(
       // Defaults to the connected access key (the closest thing to a "login
       // name" this app has) — but only ever as a fill-in for blank; a value the
       // user typed or already had is never overwritten.
-      uploaderUser: initialConnection?.accessKey ?? '',
+      uploaderUser: initialPersisted?.accessKey ?? '',
       selectedLocationKey: null,
       selectedBucket: null,
       uploadDescription: '',
@@ -322,9 +322,10 @@ export const useStore = create<UploaderState>()(
   ),
 );
 
-// React to login/logout in OTHER tabs: the shared session module fires this on
-// cross-tab `storage` events. Mirror the new connection into this store and bump
+// React to login/logout in OTHER tabs open right now, live (never persisted —
+// see session.ts). Mirror the new connection into this store and bump
 // connectionId so client-side caches scoped to a connection are invalidated.
+// Also answers a sibling tab's own request with our current s3Config, if any.
 subscribeSharedConnection((cfg) => {
   clearClientCache();
   if (!cfg) invalidateFileIndex();
@@ -345,4 +346,4 @@ subscribeSharedConnection((cfg) => {
           uploaderUser: '',
         }),
   }));
-});
+}, () => useStore.getState().s3Config);
