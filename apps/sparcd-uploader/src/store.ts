@@ -108,6 +108,10 @@ function getFileIndex(files: FileEntry[]): Map<string, number> {
   return fileIndexById;
 }
 
+// Read once at module init — reused for both the initial s3Config and the
+// initial uploaderUser default below.
+const initialConnection = loadSharedConnection();
+
 export const useStore = create<UploaderState>()(
   // The S3 connection (secret included) lives in one shared localStorage key,
   // owned by @sparcd/auth-ui's session module — see `loadSharedConnection`. This
@@ -120,7 +124,7 @@ export const useStore = create<UploaderState>()(
   // (files, handles, validations) is excluded too.
   persist(
     (set) => ({
-      s3Config: loadSharedConnection(),
+      s3Config: initialConnection,
       connectionId: 0,
       section: 'new',
       theme: 'light',
@@ -133,7 +137,10 @@ export const useStore = create<UploaderState>()(
       batchToken: 0,
       dirHandle: null,
       fileAccessMode: 'reselect-required',
-      uploaderUser: '',
+      // Defaults to the connected access key (the closest thing to a "login
+      // name" this app has) — but only ever as a fill-in for blank; a value the
+      // user typed or already had is never overwritten.
+      uploaderUser: initialConnection?.accessKey ?? '',
       selectedLocationKey: null,
       selectedBucket: null,
       uploadDescription: '',
@@ -149,6 +156,7 @@ export const useStore = create<UploaderState>()(
           connectionId: s.connectionId + 1,
           selectedLocationKey: null,
           selectedBucket: null,
+          uploaderUser: s.uploaderUser || config.accessKey,
         }));
       },
       disconnect: () => {
@@ -324,7 +332,7 @@ subscribeSharedConnection((cfg) => {
     s3Config: cfg,
     connectionId: s.connectionId + 1,
     ...(cfg
-      ? {}
+      ? { uploaderUser: s.uploaderUser || cfg.accessKey }
       : {
           section: 'new' as const,
           step: 'drop' as const,

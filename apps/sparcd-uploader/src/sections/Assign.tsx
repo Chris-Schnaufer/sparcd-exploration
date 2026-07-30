@@ -45,7 +45,6 @@ export function Assign() {
   const selectedBucket = useStore((s) => s.selectedBucket);
   const setSelectedBucket = useStore((s) => s.setSelectedBucket);
   const elevationUnit = useStore((s) => s.elevationUnit);
-  const setElevationUnit = useStore((s) => s.setElevationUnit);
   const files = useStore((s) => s.files);
 
   const { data, isLoading, isError, error } = useLocations(s3Config, connectionId);
@@ -64,23 +63,21 @@ export function Assign() {
   const collection =
     collections.data?.find((c) => c.key === selectedBucket || c.bucket === selectedBucket) ?? null;
 
-  // Strict filter: the deployment picker only shows locations this collection
-  // has already deployed (derived from its uploads' deployments.csv).
+  // Every location is assignable, not just ones this collection has already
+  // deployed — but the ones it has already deployed (derived from its uploads'
+  // deployments.csv) are listed first, since they're the likely picks.
   const deployments = useCollectionDeployments(s3Config, connectionId, collection);
+  const usedLocationCount = useMemo(
+    () => new Set(deployments.data ?? []).size,
+    [deployments.data],
+  );
   const collectionLocations = useMemo(() => {
     if (!data?.locations || !deployments.data) return [];
     const used = new Set(deployments.data);
-    return data.locations.filter((l) => used.has(l.id));
+    const already = data.locations.filter((l) => used.has(l.id));
+    const rest = data.locations.filter((l) => !used.has(l.id));
+    return [...already, ...rest];
   }, [data?.locations, deployments.data]);
-
-  // Drop a stale location selection when it isn't among the chosen collection's
-  // deployments (e.g. after switching collections).
-  useEffect(() => {
-    if (!deployments.data) return;
-    if (selectedLocationKey && !collectionLocations.some((l) => l.key === selectedLocationKey)) {
-      setSelectedLocationKey(null);
-    }
-  }, [collectionLocations, deployments.data, selectedLocationKey, setSelectedLocationKey]);
 
   const location = collectionLocations.find((l) => l.key === selectedLocationKey) ?? null;
   const needsCaptureTime = files.some(
@@ -97,15 +94,22 @@ export function Assign() {
     (f) => f.processState === 'queued' || f.processState === 'processing',
   ).length;
 
-  const [showProcessingWait, setShowProcessingWait] = useState(false);
+  // Pressing Continue while processing is still running doesn't just show a
+  // message and stop — like the Drop step auto-advancing once scanning
+  // finishes, it queues the move and fires it the moment processing catches
+  // up, so the user never has to click twice.
+  const [waitingToContinue, setWaitingToContinue] = useState(false);
   useEffect(() => {
-    if (processingOk) setShowProcessingWait(false);
-  }, [processingOk]);
+    if (waitingToContinue && baseReady && processingOk) {
+      setWaitingToContinue(false);
+      setStep('upload');
+    }
+  }, [waitingToContinue, baseReady, processingOk, setStep]);
 
   function handleContinue() {
     if (!baseReady) return;
     if (!processingOk) {
-      setShowProcessingWait(true);
+      setWaitingToContinue(true);
       return;
     }
     setStep('upload');
@@ -210,10 +214,7 @@ export function Assign() {
         {data && collection && deployments.data && (
           <div className="space-y-2">
             {collectionLocations.length === 0 ? (
-              <LocationsState
-                tone="warn"
-                message="This collection has no deployments yet. Only locations it has already uploaded to can be selected here."
-              />
+              <LocationsState tone="warn" message="No locations found in this connection's registry." />
             ) : (
               <DeploymentPicker
                 locations={collectionLocations}
@@ -222,33 +223,14 @@ export function Assign() {
                 elevationUnit={elevationUnit}
               />
             )}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:flex-wrap">
-              <p className="font-body text-[12px] text-inkMute">
-                <span className="font-mono text-inkSoft">{collectionLocations.length}</span> of{' '}
-                <span className="font-mono text-inkSoft">{data.locations.length}</span> locations —
-                filtered to those <span className="font-mono">{collection.uuid}</span> has already
-                deployed. Each becomes <span className="font-mono">deployment_id</span> ={' '}
-                <span className="font-mono">&lt;collection-uuid&gt;:&lt;location-id&gt;</span>.
-              </p>
-              <label className="flex items-center gap-1.5 shrink-0 font-body text-[12px] text-inkSoft">
-                Elevation
-                <span className="inline-flex border border-rule">
-                  {(['meters', 'feet'] as const).map((u) => (
-                    <button
-                      key={u}
-                      type="button"
-                      onClick={() => setElevationUnit(u)}
-                      aria-pressed={elevationUnit === u}
-                      className={`px-3 py-2 min-h-[44px] sm:min-h-0 sm:px-2 sm:py-0.5 text-[12px] font-mono focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent ${
-                        elevationUnit === u ? 'bg-ink text-paper' : 'text-inkSoft hover:bg-panelHover'
-                      }`}
-                    >
-                      {u === 'meters' ? 'm' : 'ft'}
-                    </button>
-                  ))}
-                </span>
-              </label>
-            </div>
+            <p className="font-body text-[12px] text-inkMute">
+              <span className="font-mono text-inkSoft">{usedLocationCount}</span> of{' '}
+              <span className="font-mono text-inkSoft">{collectionLocations.length}</span> locations
+              already deployed by <span className="font-mono">{collection.uuid}</span> — listed first,
+              but any location can be assigned. Each becomes{' '}
+              <span className="font-mono">deployment_id</span> ={' '}
+              <span className="font-mono">&lt;collection-uuid&gt;:&lt;location-id&gt;</span>.
+            </p>
           </div>
         )}
       </section>
@@ -345,11 +327,11 @@ export function Assign() {
         )}
       </section>
 
-      {showProcessingWait && (
-        <LocationsState
-          tone="warn"
-          message={`Still processing ${pendingCount} file${pendingCount === 1 ? '' : 's'} in the background — Continue will unlock automatically once that finishes.`}
-        />
+      {waitingToContinue && (
+        <p className="font-body text-[15px] text-inkSoft">
+          Still processing {pendingCount} file{pendingCount === 1 ? '' : 's'} in the background —
+          continuing automatically once that finishes.
+        </p>
       )}
 
       <div className="flex items-center justify-between gap-4 border-t border-ruleSoft pt-5">
@@ -373,7 +355,7 @@ export function Assign() {
                     : 'Set a capture time for every file missing one'
               : processingOk
                 ? 'Continue to upload'
-                : 'Still processing — click for status'
+                : 'Continue once processing finishes (or wait — it happens automatically)'
           }
           className={`bg-ink text-paper border border-ink px-3.5 py-1.5 text-[14px] font-body font-[600] focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 ${
             baseReady ? 'hover:opacity-90' : 'opacity-40 cursor-not-allowed'
