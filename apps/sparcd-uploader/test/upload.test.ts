@@ -9,6 +9,7 @@ type FakeClient = {
   statObject: ReturnType<typeof vi.fn>;
   writeImmutableStream: ReturnType<typeof vi.fn>;
   writeImmutable: ReturnType<typeof vi.fn>;
+  listObjects: ReturnType<typeof vi.fn>;
 };
 
 const mocks = vi.hoisted(() => ({
@@ -160,6 +161,9 @@ function makeClient(records: FileRecord[], failingKeys = new Set<string>()): Fak
       return { etag: `etag-${key}` };
     }),
     writeImmutable: vi.fn(async () => undefined),
+    listObjects: vi.fn(async function* () {
+      for (const r of records) yield { key: r.remoteKey, size: r.size };
+    }),
   };
 }
 
@@ -181,6 +185,9 @@ function makeStreamingClient(failingRelPaths = new Set<string>()): FakeClient {
       return { etag: `etag-${key}` };
     }),
     writeImmutable: vi.fn(async () => undefined),
+    listObjects: vi.fn(async function* () {
+      for (const [key, w] of written) yield { key, size: w.size };
+    }),
   };
 }
 
@@ -318,6 +325,37 @@ describe('upload runs continue past per-file blob failures', () => {
     expect(snap.phase).toBe('done');
     expect(mocks.client.writeImmutableStream).toHaveBeenCalledTimes(3);
     expect(mocks.client.statObject).not.toHaveBeenCalled();
+    expect(mocks.client.listObjects).toHaveBeenCalledTimes(1);
+  });
+
+  it('final review fails files the listing contradicts when verifyAfterPut is off', async () => {
+    const session = makeSession(Array.from({ length: 3 }, () => 'pending'));
+    mocks.client = makeClient(session.files);
+    // Listing reports file 1 truncated and file 2 missing entirely.
+    mocks.client.listObjects.mockImplementation(async function* () {
+      yield { key: session.files[0].remoteKey, size: session.files[0].size };
+      yield { key: session.files[1].remoteKey, size: session.files[1].size - 1 };
+    });
+    let last: UploadSnapshot | null = null;
+
+    const run = resumeUpload(
+      {
+        config: CONFIG,
+        session,
+        attached: attachedFor(session.files),
+        concurrency: 3,
+        verifyAfterPut: false,
+      },
+      (snap) => {
+        last = snap;
+      },
+    );
+    const snap = await collect(run, () => last);
+
+    expect(snap.phase).toBe('partial');
+    expect(snap.files.filter((f) => f.state === 'failed')).toHaveLength(2);
+    expect(snap.files.filter((f) => f.state === 'done')).toHaveLength(1);
+    expect(mocks.client.writeImmutable).not.toHaveBeenCalled();
   });
 
   it('retries only failed or pending files and then completes', async () => {

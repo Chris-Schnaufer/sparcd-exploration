@@ -538,6 +538,40 @@ function makeRunner(
 
     if (cancelled) throw new Error('cancelled');
 
+    // Batched final review when the per-file HEAD was skipped: one listing pass
+    // (1 request per 1000 objects) confirms every blob landed at its exact
+    // size, instead of one HEAD round-trip per file during the run.
+    if (!dryRun && !verifyAfterPut) {
+      log('info', 'final review: listing uploaded objects…');
+      const sizes = new Map<string, number>();
+      for await (const o of client.listObjects(snap.bucket, `${plan.uploadPath}/`)) {
+        sizes.set(o.key, o.size);
+      }
+      let mismatched = 0;
+      for (const it of plan.items) {
+        const fp = byId.get(it.id)!;
+        if (fp.state !== 'done' && fp.state !== 'skipped') continue;
+        const size = sizes.get(it.key);
+        if (size !== it.size) {
+          mismatched++;
+          fp.state = 'failed';
+          fp.error =
+            size === undefined
+              ? 'final review: object missing'
+              : `final review: size mismatch (${size} ≠ ${it.size})`;
+          persistFile(plan.sessionId, it.localPath, { state: 'failed', lastError: fp.error });
+          log('error', `${fp.error}: ${it.key}`);
+        }
+      }
+      log(
+        'info',
+        mismatched === 0
+          ? `final review: all ${plan.items.length} objects confirmed by listing`
+          : `final review: ${mismatched} objects failed the listing check`,
+      );
+      emit(true);
+    }
+
     const failed = snap.files.filter((f) => f.state === 'failed').length;
     if (failed > 0) {
       log(

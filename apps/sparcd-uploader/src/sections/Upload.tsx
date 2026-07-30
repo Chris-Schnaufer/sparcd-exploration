@@ -309,6 +309,24 @@ export function Upload() {
             >
               Retry failed files
             </button>
+          ) : snap?.phase === 'error' && !snap.dryRun && snap.sessionId ? (
+            // An interrupted wet run has a persisted ledger — resuming skips the
+            // blobs that already landed. Starting over uses a fresh prefix and
+            // re-uploads everything.
+            <>
+              <button
+                onClick={() => setSnap(null)}
+                className="border border-ink text-ink px-3.5 py-2.5 sm:py-1.5 min-h-[44px] sm:min-h-0 text-[14px] font-body hover:bg-paperHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+              >
+                Start over
+              </button>
+              <button
+                onClick={retryFailed}
+                className="bg-ink text-paper border border-ink px-3.5 py-2.5 sm:py-1.5 min-h-[44px] sm:min-h-0 text-[14px] font-body font-[600] hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+              >
+                Resume upload
+              </button>
+            </>
           ) : (
             <button
               onClick={start}
