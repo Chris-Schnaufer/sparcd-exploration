@@ -86,6 +86,9 @@ export type UploadSnapshot = {
   dryRun: boolean;
   files: FileProgress[];
   uploadedBytes: number;
+  // Bytes credited by a verified skip rather than transferred over the wire.
+  // `uploadedBytes - skippedBytes` is the only honest input to a rate.
+  skippedBytes: number;
   totalBytes: number;
   log: LogLine[];
   uploadPath?: string;
@@ -378,6 +381,7 @@ function makeRunner(
     dryRun,
     files: [],
     uploadedBytes: 0,
+    skippedBytes: 0,
     totalBytes: 0,
     log: [],
     bucket: '',
@@ -411,6 +415,7 @@ function makeRunner(
         if (stat.size === it.size && stat.metadata.sha256 === it.sha256) {
           fp.state = 'skipped';
           snap.uploadedBytes += it.size - fp.loaded;
+          snap.skippedBytes += it.size;
           fp.loaded = it.size;
           log('info', `verified, skip: ${it.key}`);
           emit(true);
@@ -590,20 +595,23 @@ function makeRunner(
     });
 
     const supervisor = setInterval(() => pump(), SUPERVISOR_MS);
-    // Feed the hill climber one throughput sample per window. Bytes can dip
-    // when a retry rewinds a file's contribution; clamp so a rewind reads as
-    // a slow window rather than a negative rate.
-    let windowBytes = snap.uploadedBytes;
+    // Feed the hill climber one throughput sample per window, counting only
+    // bytes that crossed the wire — a verified skip credits a whole file
+    // instantly and would read as a throughput spike the lane count didn't
+    // earn. Bytes can also dip when a retry rewinds a file's contribution;
+    // clamp so a rewind reads as a slow window rather than a negative rate.
+    const transferred = () => snap.uploadedBytes - snap.skippedBytes;
+    let windowBytes = transferred();
     let windowAt = Date.now();
     const onWindow = control.onWindow;
     const windows = onWindow
       ? setInterval(() => {
           const now = Date.now();
           onWindow({
-            bytes: Math.max(0, snap.uploadedBytes - windowBytes),
+            bytes: Math.max(0, transferred() - windowBytes),
             ms: now - windowAt,
           });
-          windowBytes = snap.uploadedBytes;
+          windowBytes = transferred();
           windowAt = now;
           pump();
         }, WINDOW_MS)
@@ -629,6 +637,7 @@ function makeRunner(
     snap.metadataBundleSha256 = plan.metadataBundleSha256;
     snap.totalBytes = plan.totalBytes;
     snap.uploadedBytes = 0;
+    snap.skippedBytes = 0;
     snap.files = plan.items.map((it) => ({
       id: it.id,
       key: it.key,

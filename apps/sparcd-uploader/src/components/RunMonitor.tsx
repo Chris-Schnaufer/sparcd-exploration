@@ -130,9 +130,13 @@ const RATE_WINDOW_MS = 20_000;
 
 /**
  * Live speed / elapsed / ETA for a wet run. Rate comes from a rolling window of
- * (time, uploadedBytes) samples taken on every snapshot emit; a 1 s ticker keeps
- * elapsed and ETA counting between emits, so the estimate is always current —
- * a stall shows up as a sinking rate and a growing ETA, not a frozen number.
+ * (time, transferred bytes) samples taken on every snapshot emit; a 1 s ticker
+ * keeps elapsed and ETA counting between emits, so the estimate is always
+ * current — a stall shows up as a sinking rate and a growing ETA, not a frozen
+ * number. Skipped bytes are excluded from the rate: a resume credits them
+ * instantly, which would read as a burst of speed nobody transferred. ETA still
+ * measures the whole remainder — skipped files are already complete, so
+ * remaining-to-transfer over transfer-rate is the honest estimate.
  */
 function Telemetry({ snap }: { snap: UploadSnapshot }) {
   const samples = useRef<{ t: number; b: number }[]>([]);
@@ -142,6 +146,7 @@ function Telemetry({ snap }: { snap: UploadSnapshot }) {
 
   const running = snap.phase === 'blobs' || snap.phase === 'metadata';
   const settled = snap.phase === 'done' || snap.phase === 'partial' || snap.phase === 'error';
+  const transferred = snap.uploadedBytes - snap.skippedBytes;
 
   // New session → fresh clock and window.
   useEffect(() => {
@@ -165,10 +170,10 @@ function Telemetry({ snap }: { snap: UploadSnapshot }) {
   useEffect(() => {
     if (!running) return;
     const now = Date.now();
-    samples.current.push({ t: now, b: snap.uploadedBytes });
+    samples.current.push({ t: now, b: transferred });
     const cutoff = now - RATE_WINDOW_MS;
     while (samples.current.length > 2 && samples.current[1].t < cutoff) samples.current.shift();
-  }, [snap.version, running, snap.uploadedBytes]);
+  }, [snap.version, running, transferred]);
 
   useEffect(() => {
     if (!running) return;
@@ -180,12 +185,12 @@ function Telemetry({ snap }: { snap: UploadSnapshot }) {
 
   const now = finishedAt.current ?? Date.now();
   const elapsedMs = now - startedAt.current;
-  const avgRate = elapsedMs > 500 ? snap.uploadedBytes / (elapsedMs / 1000) : 0;
+  const avgRate = elapsedMs > 500 ? transferred / (elapsedMs / 1000) : 0;
 
   if (settled) {
     return (
       <p className="font-mono text-[12px] text-inkSoft">
-        {formatBytes(snap.uploadedBytes)} in {fmtDuration(elapsedMs)}
+        {formatBytes(transferred)} in {fmtDuration(elapsedMs)}
         {avgRate > 0 && <> · avg {fmtRate(avgRate)}</>}
       </p>
     );
@@ -193,7 +198,7 @@ function Telemetry({ snap }: { snap: UploadSnapshot }) {
 
   const oldest = samples.current.find((s) => s.t >= now - RATE_WINDOW_MS) ?? samples.current[0];
   const windowSec = oldest ? (now - oldest.t) / 1000 : 0;
-  const rate = oldest && windowSec > 0.5 ? (snap.uploadedBytes - oldest.b) / windowSec : 0;
+  const rate = oldest && windowSec > 0.5 ? (transferred - oldest.b) / windowSec : 0;
   const remaining = Math.max(0, snap.totalBytes - snap.uploadedBytes);
   const etaMs = rate > 0 ? (remaining / rate) * 1000 : null;
 

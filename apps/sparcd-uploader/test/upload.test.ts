@@ -437,6 +437,38 @@ describe('upload runs continue past per-file blob failures', () => {
     expect(mocks.markBatchComplete).not.toHaveBeenCalled();
   });
 
+  it('accounts verified skips as skipped rather than transferred bytes', async () => {
+    const session = makeSession(['done', 'done', 'pending', 'pending']);
+    mocks.client = makeClient(session.files);
+    // Only a real transfer reports progress; the two 'done' files take the
+    // verified-skip path and never reach the stream.
+    mocks.client.writeImmutableStream.mockImplementation(
+      async (
+        _bucket: string,
+        key: string,
+        file: File,
+        opts: { onProgress?: (loaded: number) => void },
+      ) => {
+        opts.onProgress?.(file.size);
+        return { etag: `etag-${key}` };
+      },
+    );
+    let last: UploadSnapshot | null = null;
+
+    const run = resumeUpload(
+      { config: CONFIG, session, attached: attachedFor(session.files), concurrency: manual(2) },
+      (snap) => {
+        last = snap;
+      },
+    );
+    const snap = await collect(run, () => last);
+
+    expect(snap.phase).toBe('done');
+    expect(snap.files.filter((f) => f.state === 'skipped')).toHaveLength(2);
+    expect(snap.skippedBytes).toBe(session.files[0].size + session.files[1].size);
+    expect(snap.uploadedBytes).toBe(session.files.reduce((n, f) => n + f.size, 0));
+  });
+
   it('respawns lanes when a manual target rises mid-run', async () => {
     const session = makeSession(Array.from({ length: 6 }, () => 'pending'));
     mocks.client = makeClient(session.files);

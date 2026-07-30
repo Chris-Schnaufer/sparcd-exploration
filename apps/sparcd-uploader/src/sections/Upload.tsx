@@ -28,6 +28,44 @@ const concurrencyControl = (): ConcurrencyControl =>
     ? { mode: 'manual', get: () => useStore.getState().uploadConcurrency }
     : { mode: 'adaptive' };
 
+// What "adaptive" means, on demand — the explanation only matters the first time
+// someone wonders, so it stays behind the 'i' rather than sitting in the layout.
+function AdaptiveInfo() {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLSpanElement>(null);
+
+  // Close on outside click.
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: PointerEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('pointerdown', onDoc);
+    return () => document.removeEventListener('pointerdown', onDoc);
+  }, [open]);
+
+  return (
+    <span ref={rootRef} className="relative inline-flex">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-label="About adaptive concurrency"
+        className="shrink-0 min-w-11 min-h-11 sm:min-w-5 sm:min-h-5 grid place-items-center border border-rule text-inkSoft hover:text-ink hover:border-ink [@media(hover:none)]:text-ink [@media(hover:none)]:border-ink text-[11px] font-mono focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+      >
+        i
+      </button>
+      {open && (
+        <span className="absolute left-0 top-full z-10 mt-1 block w-[min(22rem,calc(100vw-2.5rem))] border border-rule bg-panel px-3 py-2 font-body text-[12px] leading-[1.5] text-inkSoft">
+          Adaptive probes different lane counts against measured throughput and keeps whichever is
+          fastest. The lane count it has settled on shows here while a run is in flight. To pin a
+          fixed number instead, switch to manual in Settings.
+        </span>
+      )}
+    </span>
+  );
+}
+
 export function Upload() {
   const s3Config = useStore((s) => s.s3Config);
   const connectionId = useStore((s) => s.connectionId);
@@ -323,10 +361,14 @@ export function Upload() {
         {(collection || snap || pendingResume) && (
           <div className="space-y-1.5">
             {concurrencyMode === 'adaptive' ? (
-              <p className="font-mono text-[13px] text-inkSoft">
-                concurrency: <span className="text-ink">adaptive</span>
-                {running && snap?.lanes ? <span className="text-ink"> · {snap.lanes} lanes</span> : null}
-              </p>
+              <div className="flex items-center gap-3">
+                <span className="font-body text-[13px] text-inkSoft w-28">Concurrency</span>
+                <span className="flex items-center gap-2 font-mono text-[13px] text-ink">
+                  adaptive
+                  <AdaptiveInfo />
+                  {running && snap?.lanes ? <span>· {snap.lanes} lanes</span> : null}
+                </span>
+              </div>
             ) : (
               <div className="flex items-center gap-3">
                 <label className="font-body text-[13px] text-inkSoft w-28">Concurrency</label>
@@ -341,11 +383,11 @@ export function Upload() {
                 <span className="font-mono text-[13px] text-ink w-8 text-right">{concurrency}</span>
               </div>
             )}
-            <p className="font-body text-[12px] text-inkMute">
-              {concurrencyMode === 'adaptive'
-                ? 'Lanes are tuned automatically from measured throughput. Switch to manual in Settings.'
-                : 'Changes apply immediately, mid-run. Switch to adaptive tuning in Settings.'}
-            </p>
+            {concurrencyMode === 'manual' && (
+              <p className="font-body text-[12px] text-inkMute">
+                Changes apply immediately, mid-run. Switch to adaptive tuning in Settings.
+              </p>
+            )}
           </div>
         )}
       </section>
