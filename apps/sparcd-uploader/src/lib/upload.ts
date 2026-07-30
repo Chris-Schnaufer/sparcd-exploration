@@ -32,11 +32,14 @@
 //
 // Bounded concurrency is a small inline lane pool rather than p-limit: lanes
 // lazily pull the next blob, so memory stays flat across thousands of files and
-// a hard failure aborts the in-flight set at once.
+// a hard failure aborts the in-flight set at once. The pool size follows a live
+// target — either the manual setting (readable mid-run) or the adaptive
+// controller, which hill-climbs on measured throughput.
 
 import type { S3Config } from '@sparcd/types';
 import { PreconditionFailedError } from '@sparcd/s3-safe';
 import { getClient } from './s3';
+import { createAdaptiveController } from './adaptiveConcurrency';
 import {
   buildBundle,
   resolveBatchNaming,
@@ -88,14 +91,22 @@ export type UploadSnapshot = {
   uploadPath?: string;
   bucket: string;
   metadataBundleSha256?: string;
+  lanes?: number; // live blob-lane target, so the UI can show what adaptive settled on
   error?: string;
 };
+
+/**
+ * How the blob lane count is decided. `manual` reads `get()` live on every
+ * pull, so a mid-run slider change applies without restarting the run;
+ * `adaptive` hands the target to the throughput hill climber.
+ */
+export type ConcurrencyControl = { mode: 'manual'; get: () => number } | { mode: 'adaptive' };
 
 export type UploadParams = {
   config: S3Config;
   build: Omit<BuildInput, 'now'>;
   dryRun: boolean;
-  concurrency: number; // parallel blob lanes
+  concurrency: ConcurrencyControl; // parallel blob lanes
   verifyAfterPut?: boolean; // default true; false trusts the PUT response, saving a HEAD per file
   // Resume metadata persisted in the batch row; absent for dry runs.
   uploaderUser?: string; // raw identity (the slug lives in build.uploaderSlug)
@@ -107,7 +118,7 @@ export type ResumeParams = {
   config: S3Config;
   session: LoadedSession;
   attached: Map<string, File>; // localPath → reattached source file
-  concurrency: number;
+  concurrency: ConcurrencyControl;
   verifyAfterPut?: boolean;
 };
 
@@ -117,6 +128,13 @@ const MAX_ATTEMPTS = 5;
 const BASE_BACKOFF_MS = 500;
 // Ten independent blob failures usually means credentials, CORS, or endpoint policy, not bad files.
 const MAX_FILE_FAILURES = 10;
+// Adaptive measurement window. Long enough that a handful of multi-MB files
+// land inside it, so one slow file doesn't read as a throughput collapse.
+const WINDOW_MS = 12_000;
+// How often the supervisor refills the pool. Lanes also pump on every landed
+// item; the interval is what notices a raised target while every lane is busy
+// with a long file.
+const SUPERVISOR_MS = 1_000;
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -263,6 +281,14 @@ function makeAsyncQueue<T>() {
       items.push(item);
       wake();
     },
+    /** Hand an item back, at the head so batch order survives — used when a
+     *  lane wakes to find the pool has shrunk past it and must retire without
+     *  doing the work it was just given. */
+    unshift(item: T): void {
+      if (aborted) return; // the run is unwinding; nothing may be requeued
+      items.unshift(item);
+      wake();
+    },
     close(): void {
       closed = true;
       wake();
@@ -276,6 +302,13 @@ function makeAsyncQueue<T>() {
       aborted = true;
       items.length = 0;
       wake();
+    },
+    /** Closed and drained: no lane can ever get another item. Derived rather
+     *  than latched by whichever lane first saw `next()` return null — a lane
+     *  retiring over target hands its item back, and the pool has to notice
+     *  that the queue is live again. */
+    get spent(): boolean {
+      return aborted || (closed && items.length === 0);
     },
     async next(): Promise<T | null> {
       for (;;) {
@@ -298,7 +331,7 @@ function makeAsyncQueue<T>() {
  */
 function makeRunner(
   config: S3Config,
-  concurrency: number,
+  concurrency: ConcurrencyControl,
   onUpdate: (snap: UploadSnapshot) => void,
   opts: { persist: boolean; isResume: boolean; dryRun: boolean; verifyAfterPut: boolean },
 ) {
@@ -328,6 +361,15 @@ function makeRunner(
     ledgerReady = ledgerReady.then(write, write);
     return ledgerReady;
   };
+
+  // Manual reads the caller's getter on every pull, so a slider change lands
+  // mid-run; adaptive hands the target to the hill climber, which the blob
+  // phase feeds one throughput window at a time.
+  const control =
+    concurrency.mode === 'manual'
+      ? { target: concurrency.get, onWindow: undefined }
+      : createAdaptiveController();
+  const currentTarget = () => Math.max(1, Math.round(control.target()));
 
   const snap: UploadSnapshot = {
     version: 0,
@@ -458,6 +500,124 @@ function makeRunner(
     }
   };
 
+  /**
+   * Batched final review, for when the per-file HEAD after each PUT was
+   * skipped: one listing pass (1 request per 1000 objects) confirms every
+   * blob landed at its exact size, instead of a HEAD round-trip per file
+   * during the run.
+   */
+  const finalReview = async (
+    sessionId: string,
+    uploadPath: string,
+    items: PlanItem[],
+  ): Promise<void> => {
+    log('info', 'final review: listing uploaded objects…');
+    const sizes = new Map<string, number>();
+    for await (const o of client.listObjects(snap.bucket, `${uploadPath}/`)) {
+      sizes.set(o.key, o.size);
+    }
+    const byId = new Map(snap.files.map((f) => [f.id, f]));
+    let mismatched = 0;
+    for (const it of items) {
+      const fp = byId.get(it.id);
+      if (!fp || (fp.state !== 'done' && fp.state !== 'skipped')) continue;
+      const size = sizes.get(it.key);
+      if (size !== it.size) {
+        mismatched++;
+        fp.state = 'failed';
+        fp.error =
+          size === undefined
+            ? 'final review: object missing'
+            : `final review: size mismatch (${size} ≠ ${it.size})`;
+        persistFile(sessionId, it.localPath, { state: 'failed', lastError: fp.error });
+        log('error', `${fp.error}: ${it.key}`);
+      }
+    }
+    log(
+      'info',
+      mismatched === 0
+        ? `final review: all ${items.length} objects confirmed by listing`
+        : `final review: ${mismatched} objects failed the listing check`,
+    );
+    emit(true);
+  };
+
+  /**
+   * Drive a dynamically-sized pool of blob lanes. Lanes spawn up to the live
+   * target and retire from the top when it drops, so indices stay packed at
+   * 0..size-1. The supervisor refills the pool when the target rises even
+   * while every lane is busy with a long file, and feeds the adaptive
+   * controller one throughput sample per window. Resolves once every lane has
+   * exited (a retiring lane may still be finishing its last file).
+   *
+   * `spawnable` is what stops the pool respawning into a run with no work
+   * left: a fixed plan knows when its items are all handed out, a streamed
+   * queue only knows once a lane has seen the queue close and drain.
+   */
+  const drivePool = async (
+    laneTarget: () => number,
+    spawnable: () => boolean,
+    stopped: () => boolean,
+    body: (index: number, pump: () => void) => Promise<void>,
+    onLaneError: (err: unknown) => void,
+  ): Promise<void> => {
+    const live = new Set<number>();
+    const syncLanes = () => {
+      const t = laneTarget();
+      if (snap.lanes !== t) {
+        snap.lanes = t;
+        emit(true);
+      }
+    };
+
+    let pump = () => {};
+    const drained = new Promise<void>((resolve) => {
+      pump = () => {
+        syncLanes();
+        while (!stopped() && spawnable() && live.size < laneTarget()) {
+          let index = 0;
+          while (live.has(index)) index++;
+          live.add(index);
+          void body(index, () => pump())
+            .catch(onLaneError)
+            .finally(() => {
+              live.delete(index);
+              pump();
+            });
+        }
+        if (live.size === 0) resolve();
+      };
+    });
+
+    const supervisor = setInterval(() => pump(), SUPERVISOR_MS);
+    // Feed the hill climber one throughput sample per window. Bytes can dip
+    // when a retry rewinds a file's contribution; clamp so a rewind reads as
+    // a slow window rather than a negative rate.
+    let windowBytes = snap.uploadedBytes;
+    let windowAt = Date.now();
+    const onWindow = control.onWindow;
+    const windows = onWindow
+      ? setInterval(() => {
+          const now = Date.now();
+          onWindow({
+            bytes: Math.max(0, snap.uploadedBytes - windowBytes),
+            ms: now - windowAt,
+          });
+          windowBytes = snap.uploadedBytes;
+          windowAt = now;
+          pump();
+        }, WINDOW_MS)
+      : undefined;
+
+    try {
+      pump();
+      await drained;
+    } finally {
+      clearInterval(supervisor);
+      if (windows) clearInterval(windows);
+    }
+  };
+
   // One attempt at the whole sequence for a given plan. Throws
   // PreconditionFailedError on a final-prefix metadata collision (fresh runs
   // re-stamp; resumes skip).
@@ -501,9 +661,12 @@ function makeRunner(
       let next = 0;
       let fatal: unknown = null;
       let fileFailures = 0;
-      const lane = async (): Promise<void> => {
+      const laneTarget = () => Math.min(currentTarget(), plan.items.length);
+
+      const lane = async (index: number, pump: () => void): Promise<void> => {
         for (;;) {
           if (cancelled || fatal) return;
+          if (index >= laneTarget()) return; // pool shrank past this lane
           const i = next++;
           if (i >= plan.items.length) return;
           const it = plan.items[i];
@@ -529,48 +692,25 @@ function makeRunner(
             if (fatal) return;
             continue;
           }
+          pump(); // a landed item is a chance to grow into a raised target
         }
       };
-      const lanes = Math.max(1, Math.min(concurrency, plan.items.length));
-      await Promise.all(Array.from({ length: lanes }, lane));
+
+      await drivePool(
+        laneTarget,
+        () => next < plan.items.length,
+        () => cancelled || fatal !== null,
+        lane,
+        (err) => {
+          if (!fatal) fatal = err;
+        },
+      );
       if (fatal) throw fatal;
     }
 
     if (cancelled) throw new Error('cancelled');
 
-    // Batched final review when the per-file HEAD was skipped: one listing pass
-    // (1 request per 1000 objects) confirms every blob landed at its exact
-    // size, instead of one HEAD round-trip per file during the run.
-    if (!dryRun && !verifyAfterPut) {
-      log('info', 'final review: listing uploaded objects…');
-      const sizes = new Map<string, number>();
-      for await (const o of client.listObjects(snap.bucket, `${plan.uploadPath}/`)) {
-        sizes.set(o.key, o.size);
-      }
-      let mismatched = 0;
-      for (const it of plan.items) {
-        const fp = byId.get(it.id)!;
-        if (fp.state !== 'done' && fp.state !== 'skipped') continue;
-        const size = sizes.get(it.key);
-        if (size !== it.size) {
-          mismatched++;
-          fp.state = 'failed';
-          fp.error =
-            size === undefined
-              ? 'final review: object missing'
-              : `final review: size mismatch (${size} ≠ ${it.size})`;
-          persistFile(plan.sessionId, it.localPath, { state: 'failed', lastError: fp.error });
-          log('error', `${fp.error}: ${it.key}`);
-        }
-      }
-      log(
-        'info',
-        mismatched === 0
-          ? `final review: all ${plan.items.length} objects confirmed by listing`
-          : `final review: ${mismatched} objects failed the listing check`,
-      );
-      emit(true);
-    }
+    if (!dryRun && !verifyAfterPut) await finalReview(plan.sessionId, plan.uploadPath, plan.items);
 
     const failed = snap.files.filter((f) => f.state === 'failed').length;
     if (failed > 0) {
@@ -652,6 +792,8 @@ function makeRunner(
 
     let fatal: unknown = null;
     let fileFailures = 0;
+    // Every item the pool actually pulled, for the batched final review.
+    const pulled: PlanItem[] = [];
     // A failure that kills the run has to stop both kinds of waiting: sibling
     // lanes with a request in flight, and sibling lanes parked on the queue
     // waiting for Inspect to hand them a file. Aborting only the first leaves
@@ -662,14 +804,29 @@ function makeRunner(
       abort.abort();
       queue.abort();
     };
-    const lane = async (): Promise<void> => {
+    const lane = async (index: number, pump: () => void): Promise<void> => {
       for (;;) {
         if (cancelled || fatal) return;
+        if (index >= currentTarget()) return; // pool shrank past this lane
         const it = await queue.next();
         if (it === null) return;
         // Woken by a cancel or a sibling's fatal failure rather than by real
-        // work: drop the item and let the run unwind.
-        if (cancelled || fatal) return;
+        // work: hand the item back and let the run unwind.
+        if (cancelled || fatal) {
+          queue.unshift(it);
+          return;
+        }
+        // Recheck the target after the park, not just before it: a lane can
+        // sit in `next()` for minutes while Inspect works, and the adaptive
+        // target may have dropped far below this index in the meantime.
+        // Without this a burst of newly-inspected files wakes every parked
+        // lane at once and they all upload, ignoring the lowered target. The
+        // item goes back to the head of the queue for a surviving lane.
+        if (index >= currentTarget()) {
+          queue.unshift(it);
+          return;
+        }
+        pulled.push(it);
         const fp: FileProgress = { id: it.id, key: it.key, size: it.size, loaded: 0, state: 'pending', attempt: 0 };
         const idx = snap.files.findIndex((f) => f.id === it.id);
         if (idx >= 0) snap.files[idx] = fp;
@@ -681,6 +838,7 @@ function makeRunner(
           snap.uploadedBytes += it.size;
           log('put', `PUT ${snap.bucket}/${it.key} (${it.size} B, sha256 ${it.sha256.slice(0, 12)}…)`);
           emit(true);
+          pump();
           continue;
         }
         try {
@@ -703,13 +861,25 @@ function makeRunner(
           if (fatal) return;
           continue;
         }
+        pump(); // a landed item is a chance to grow into a raised target
       }
     };
 
-    const lanes = Math.max(1, concurrency);
-    await Promise.all(Array.from({ length: lanes }, lane));
+    await drivePool(
+      currentTarget,
+      // Not "no lane has seen the end yet": a lane retiring over target hands
+      // its item back, and the pool must respawn a surviving lane for it.
+      () => !queue.spent,
+      () => cancelled || fatal !== null,
+      lane,
+      (err) => {
+        if (!fatal) fatal = err;
+      },
+    );
     if (fatal) throw fatal;
     if (cancelled) throw new Error('cancelled');
+
+    if (!dryRun && !verifyAfterPut) await finalReview(seed.sessionId, seed.uploadPath, pulled);
 
     // The blob loop only exits normally (no fatal/cancel) once the queue is
     // closed and drained — the caller only closes it once every file in the

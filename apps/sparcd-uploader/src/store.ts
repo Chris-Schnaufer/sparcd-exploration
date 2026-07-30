@@ -20,6 +20,7 @@ export type { ElevationUnit };
 export type Section = 'new' | 'history' | 'settings';
 export type WizardStep = 'drop' | 'inspect' | 'assign' | 'upload';
 export type Theme = 'light' | 'dark';
+export type ConcurrencyMode = 'adaptive' | 'manual';
 export type ProcessState = 'queued' | 'processing' | 'ready' | 'error';
 
 /** A resume prepared in History, handed off to the wizard's Upload step to run. */
@@ -66,7 +67,8 @@ type UploaderState = {
   uploadDescription: string; // free-text description for UploadMeta
   uploadTimeZone: string; // IANA zone EXIF naive times are interpreted in; default = browser zone
   dryRun: boolean; // on by default; logs PUTs and writes nothing
-  uploadConcurrency: number; // parallel blob lanes, 4–32
+  concurrencyMode: ConcurrencyMode; // adaptive tunes lanes during the run; manual pins them
+  uploadConcurrency: number; // manual lane count, 4–32
   verifyAfterPut: boolean; // HEAD-check each blob after PUT; off saves a round-trip per file
   pendingResume: PendingResume | null; // prepared in History, consumed by the Upload step
   activeRunSessionId: string | null; // session id of a wet run in flight in the Upload step
@@ -92,6 +94,7 @@ type UploaderState = {
   setUploadDescription: (value: string) => void;
   setUploadTimeZone: (value: string) => void;
   setDryRun: (value: boolean) => void;
+  setConcurrencyMode: (value: ConcurrencyMode) => void;
   setUploadConcurrency: (value: number) => void;
   setVerifyAfterPut: (value: boolean) => void;
   setPendingResume: (value: PendingResume | null) => void;
@@ -163,6 +166,7 @@ export const useStore = create<UploaderState>()(
       uploadDescription: '',
       uploadTimeZone: localTimeZone(),
       dryRun: true,
+      concurrencyMode: 'adaptive',
       uploadConcurrency: 8,
       verifyAfterPut: true,
       pendingResume: null,
@@ -317,6 +321,7 @@ export const useStore = create<UploaderState>()(
       setUploadDescription: (value) => set({ uploadDescription: value }),
       setUploadTimeZone: (value) => set({ uploadTimeZone: value }),
       setDryRun: (value) => set({ dryRun: value }),
+      setConcurrencyMode: (value) => set({ concurrencyMode: value }),
       setUploadConcurrency: (value) => set({ uploadConcurrency: value }),
       setVerifyAfterPut: (value) => set({ verifyAfterPut: value }),
       setPendingResume: (value) => set({ pendingResume: value }),
@@ -349,6 +354,7 @@ export const useStore = create<UploaderState>()(
         selectedLocationKey: s.selectedLocationKey,
         uploadTimeZone: s.uploadTimeZone,
         dryRun: s.dryRun,
+        concurrencyMode: s.concurrencyMode,
         uploadConcurrency: s.uploadConcurrency,
         verifyAfterPut: s.verifyAfterPut,
       }),

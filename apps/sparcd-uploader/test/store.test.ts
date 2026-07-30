@@ -70,6 +70,7 @@ describe('store persistence', () => {
     useStore.getState().setSelectedLocationKey('loc-7');
     useStore.getState().setUploadTimeZone('America/Phoenix');
     useStore.getState().setDryRun(false);
+    useStore.getState().setConcurrencyMode('manual');
     useStore.getState().setUploadConcurrency(16);
     useStore.getState().setVerifyAfterPut(false);
     useStore.getState().setFiles([scanned('a.jpg')]);
@@ -86,6 +87,7 @@ describe('store persistence', () => {
       selectedLocationKey: 'loc-7',
       uploadTimeZone: 'America/Phoenix',
       dryRun: false,
+      concurrencyMode: 'manual',
       uploadConcurrency: 16,
       verifyAfterPut: false,
     });

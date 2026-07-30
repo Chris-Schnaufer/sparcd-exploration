@@ -9,6 +9,7 @@ import type { ReconcileProblem } from '../lib/resume';
 import {
   resumeUpload,
   runStreamingUpload,
+  type ConcurrencyControl,
   type StreamingUploadRun,
   type UploadRun,
   type UploadSnapshot,
@@ -19,6 +20,13 @@ import { Note, RunMonitor } from '../components/RunMonitor';
 import { UploadCompleteDialog } from '../components/UploadCompleteDialog';
 
 const sectionLabel = 'font-[600] text-[11px] tracking-[0.16em] uppercase text-inkSoft mb-2';
+
+// Read the mode and the manual value at call time, not at render time: the
+// getter is what lets a mid-run slider change reach the lane pool.
+const concurrencyControl = (): ConcurrencyControl =>
+  useStore.getState().concurrencyMode === 'manual'
+    ? { mode: 'manual', get: () => useStore.getState().uploadConcurrency }
+    : { mode: 'adaptive' };
 
 export function Upload() {
   const s3Config = useStore((s) => s.s3Config);
@@ -32,6 +40,7 @@ export function Upload() {
   const selectedBucket = useStore((s) => s.selectedBucket);
   const dryRun = useStore((s) => s.dryRun);
   const setDryRun = useStore((s) => s.setDryRun);
+  const concurrencyMode = useStore((s) => s.concurrencyMode);
   const concurrency = useStore((s) => s.uploadConcurrency);
   const setConcurrency = useStore((s) => s.setUploadConcurrency);
   const verifyAfterPut = useStore((s) => s.verifyAfterPut);
@@ -99,12 +108,12 @@ export function Upload() {
         config: s3Config,
         session: pending.session,
         attached: pending.attached,
-        concurrency,
+        concurrency: concurrencyControl(),
         verifyAfterPut,
       },
       setSnap,
     );
-  }, [pendingResume, s3Config, concurrency, verifyAfterPut]);
+  }, [pendingResume, s3Config, verifyAfterPut]);
 
   // Let History know which session is running so it can't be discarded mid-run.
   useEffect(() => {
@@ -140,7 +149,7 @@ export function Upload() {
       {
         config: s3Config,
         dryRun: effectiveDryRun,
-        concurrency,
+        concurrency: concurrencyControl(),
         verifyAfterPut,
         uploaderUser,
         fileAccessMode,
@@ -206,7 +215,7 @@ export function Upload() {
       // now-finished streaming run's methods from being called again.
       streamingRef.current = null;
       runRef.current = resumeUpload(
-        { config: s3Config, session, attached, concurrency, verifyAfterPut },
+        { config: s3Config, session, attached, concurrency: concurrencyControl(), verifyAfterPut },
         setSnap,
       );
     } catch (e) {
@@ -279,20 +288,6 @@ export function Upload() {
               />
             )}
 
-            <div className="flex items-center gap-3">
-              <label className="font-body text-[13px] text-inkSoft w-28">Concurrency</label>
-              <input
-                type="range"
-                min={4}
-                max={32}
-                value={concurrency}
-                disabled={running}
-                onChange={(e) => setConcurrency(Number(e.target.value))}
-                className="flex-1 accent-accent"
-              />
-              <span className="font-mono text-[13px] text-ink w-8 text-right">{concurrency}</span>
-            </div>
-
             <label className="flex items-center gap-2.5 font-body text-[14px] text-ink">
               <input
                 type="checkbox"
@@ -321,6 +316,37 @@ export function Upload() {
             tone="warn"
             message="One or more files still have no capture time — publishing will wait until every ready file has one. Go back to Assign to set it."
           />
+        )}
+
+        {/* Concurrency sits outside the config gate: a resume handed off from
+            History has no Assign state behind it but still runs lanes. */}
+        {(collection || snap || pendingResume) && (
+          <div className="space-y-1.5">
+            {concurrencyMode === 'adaptive' ? (
+              <p className="font-mono text-[13px] text-inkSoft">
+                concurrency: <span className="text-ink">adaptive</span>
+                {running && snap?.lanes ? <span className="text-ink"> · {snap.lanes} lanes</span> : null}
+              </p>
+            ) : (
+              <div className="flex items-center gap-3">
+                <label className="font-body text-[13px] text-inkSoft w-28">Concurrency</label>
+                <input
+                  type="range"
+                  min={4}
+                  max={32}
+                  value={concurrency}
+                  onChange={(e) => setConcurrency(Number(e.target.value))}
+                  className="flex-1 accent-accent"
+                />
+                <span className="font-mono text-[13px] text-ink w-8 text-right">{concurrency}</span>
+              </div>
+            )}
+            <p className="font-body text-[12px] text-inkMute">
+              {concurrencyMode === 'adaptive'
+                ? 'Lanes are tuned automatically from measured throughput. Switch to manual in Settings.'
+                : 'Changes apply immediately, mid-run. Switch to adaptive tuning in Settings.'}
+            </p>
+          </div>
         )}
       </section>
 

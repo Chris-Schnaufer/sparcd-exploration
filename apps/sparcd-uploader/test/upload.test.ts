@@ -3,7 +3,14 @@ import { PreconditionFailedError } from '@sparcd/s3-safe';
 import type { S3Config } from '@sparcd/types';
 import type { BatchRecord, BundleRecord, FileRecord, LoadedSession } from '../src/lib/db';
 import type { FileEntry } from '../src/store';
-import { resumeUpload, runStreamingUpload, type UploadSnapshot } from '../src/lib/upload';
+import {
+  resumeUpload,
+  runStreamingUpload,
+  type ConcurrencyControl,
+  type UploadSnapshot,
+} from '../src/lib/upload';
+
+const manual = (lanes: number): ConcurrencyControl => ({ mode: 'manual', get: () => lanes });
 
 type FakeClient = {
   statObject: ReturnType<typeof vi.fn>;
@@ -171,7 +178,10 @@ function makeClient(records: FileRecord[], failingKeys = new Set<string>()): Fak
 // run's keys depend on a real timestamp stamp, not a fixture. Matches a
 // failing file by whether the key ends with its relPath, and derives the
 // post-write stat from what was actually written (opts.sha256, file.size).
-function makeStreamingClient(failingRelPaths = new Set<string>()): FakeClient {
+function makeStreamingClient(
+  failingRelPaths = new Set<string>(),
+  hooks: { onPut?: () => Promise<void> } = {},
+): FakeClient {
   const written = new Map<string, { size: number; sha256: string }>();
   return {
     statObject: vi.fn(async (_bucket: string, key: string) => {
@@ -181,6 +191,7 @@ function makeStreamingClient(failingRelPaths = new Set<string>()): FakeClient {
     }),
     writeImmutableStream: vi.fn(async (_bucket: string, key: string, file: File, opts: { sha256: string }) => {
       if ([...failingRelPaths].some((p) => key.endsWith(p))) throw badRequest();
+      if (hooks.onPut) await hooks.onPut();
       written.set(key, { size: file.size, sha256: opts.sha256 });
       return { etag: `etag-${key}` };
     }),
@@ -211,7 +222,7 @@ describe('upload runs continue past per-file blob failures', () => {
     let last: UploadSnapshot | null = null;
 
     const run = resumeUpload(
-      { config: CONFIG, session, attached: attachedFor(session.files), concurrency: 3 },
+      { config: CONFIG, session, attached: attachedFor(session.files), concurrency: manual(3) },
       (snap) => {
         last = snap;
       },
@@ -231,7 +242,7 @@ describe('upload runs continue past per-file blob failures', () => {
     let last: UploadSnapshot | null = null;
 
     const run = resumeUpload(
-      { config: CONFIG, session, attached: attachedFor(session.files), concurrency: 4 },
+      { config: CONFIG, session, attached: attachedFor(session.files), concurrency: manual(4) },
       (snap) => {
         last = snap;
       },
@@ -250,7 +261,7 @@ describe('upload runs continue past per-file blob failures', () => {
     let last: UploadSnapshot | null = null;
 
     const run = resumeUpload(
-      { config: CONFIG, session, attached: attachedFor(session.files), concurrency: 1 },
+      { config: CONFIG, session, attached: attachedFor(session.files), concurrency: manual(1) },
       (snap) => {
         last = snap;
       },
@@ -268,7 +279,7 @@ describe('upload runs continue past per-file blob failures', () => {
     let last: UploadSnapshot | null = null;
 
     const run = resumeUpload(
-      { config: CONFIG, session, attached: attachedFor(session.files), concurrency: 1 },
+      { config: CONFIG, session, attached: attachedFor(session.files), concurrency: manual(1) },
       (snap) => {
         last = snap;
       },
@@ -285,7 +296,7 @@ describe('upload runs continue past per-file blob failures', () => {
     let last: UploadSnapshot | null = null;
 
     const run = resumeUpload(
-      { config: CONFIG, session, attached: attachedFor(session.files), concurrency: 2 },
+      { config: CONFIG, session, attached: attachedFor(session.files), concurrency: manual(2) },
       (snap) => {
         last = snap;
       },
@@ -313,7 +324,7 @@ describe('upload runs continue past per-file blob failures', () => {
         config: CONFIG,
         session,
         attached: attachedFor(session.files),
-        concurrency: 2,
+        concurrency: manual(2),
         verifyAfterPut: false,
       },
       (snap) => {
@@ -343,7 +354,7 @@ describe('upload runs continue past per-file blob failures', () => {
         config: CONFIG,
         session,
         attached: attachedFor(session.files),
-        concurrency: 3,
+        concurrency: manual(3),
         verifyAfterPut: false,
       },
       (snap) => {
@@ -364,7 +375,7 @@ describe('upload runs continue past per-file blob failures', () => {
     let last: UploadSnapshot | null = null;
 
     const run = resumeUpload(
-      { config: CONFIG, session, attached: attachedFor(session.files), concurrency: 3 },
+      { config: CONFIG, session, attached: attachedFor(session.files), concurrency: manual(3) },
       (snap) => {
         last = snap;
       },
@@ -410,7 +421,7 @@ describe('upload runs continue past per-file blob failures', () => {
     let last: UploadSnapshot | null = null;
 
     const run = resumeUpload(
-      { config: CONFIG, session, attached: attachedFor(ready), concurrency: 2 },
+      { config: CONFIG, session, attached: attachedFor(ready), concurrency: manual(2) },
       (snap) => {
         last = snap;
       },
@@ -425,6 +436,51 @@ describe('upload runs continue past per-file blob failures', () => {
     expect(mocks.client.writeImmutable).not.toHaveBeenCalled();
     expect(mocks.markBatchComplete).not.toHaveBeenCalled();
   });
+
+  it('respawns lanes when a manual target rises mid-run', async () => {
+    const session = makeSession(Array.from({ length: 6 }, () => 'pending'));
+    mocks.client = makeClient(session.files);
+    let landed = 0;
+    let inFlight = 0;
+    let release!: () => void;
+    const threeInFlight = new Promise<void>((r) => (release = r));
+    // After the first file, every PUT parks until three are in flight at once —
+    // so this run only finishes if the pool actually spawned the extra lanes.
+    mocks.client.writeImmutableStream.mockImplementation(async (_bucket: string, key: string) => {
+      if (landed === 0) {
+        landed++;
+        return { etag: `etag-${key}` };
+      }
+      inFlight++;
+      if (inFlight >= 3) release();
+      await threeInFlight;
+      inFlight--;
+      landed++;
+      return { etag: `etag-${key}` };
+    });
+    let last: UploadSnapshot | null = null;
+
+    const run = resumeUpload(
+      {
+        config: CONFIG,
+        session,
+        attached: attachedFor(session.files),
+        // One lane until the first file lands, then three: the pool has to
+        // spawn the two extra lanes to honour the raised target.
+        concurrency: { mode: 'manual', get: () => (landed > 0 ? 3 : 1) },
+      },
+      (snap) => {
+        last = snap;
+      },
+    );
+    const snap = await collect(run, () => last);
+
+    expect(snap.phase).toBe('done');
+    expect(snap.files.every((f) => f.state === 'done')).toBe(true);
+    expect(mocks.client.writeImmutableStream).toHaveBeenCalledTimes(6);
+    expect(snap.lanes).toBe(3);
+  });
+
 });
 
 describe('streamed runs upload as files individually become ready', () => {
@@ -440,7 +496,7 @@ describe('streamed runs upload as files individually become ready', () => {
       {
         config: CONFIG,
         dryRun: false,
-        concurrency: 2,
+        concurrency: manual(2),
         uploaderUser: 'user',
         fileAccessMode: 'reselect-required',
         build: {
@@ -478,7 +534,7 @@ describe('streamed runs upload as files individually become ready', () => {
       {
         config: CONFIG,
         dryRun: false,
-        concurrency: 2,
+        concurrency: manual(2),
         uploaderUser: 'user',
         fileAccessMode: 'reselect-required',
         build: {
@@ -508,6 +564,63 @@ describe('streamed runs upload as files individually become ready', () => {
     expect(mocks.markBatchComplete).not.toHaveBeenCalled();
   });
 
+  it('retires lanes parked on the queue when the concurrency target drops', async () => {
+    // A lane can sit in `queue.next()` for as long as Inspect takes. If it only
+    // checks the target before parking, a burst of newly-ready files wakes
+    // every parked lane at once and they all upload — ignoring a target that
+    // dropped while they waited.
+    const entries = Array.from({ length: 7 }, (_, i) => makeFileEntry(i));
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const client = makeStreamingClient(new Set(), {
+      onPut: async () => {
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((r) => setTimeout(r, 5));
+        inFlight--;
+      },
+    });
+    mocks.client = client;
+    let target = 8;
+    let last: UploadSnapshot | null = null;
+
+    const run = runStreamingUpload(
+      {
+        config: CONFIG,
+        dryRun: false,
+        concurrency: { mode: 'manual', get: () => target },
+        uploaderUser: 'user',
+        fileAccessMode: 'reselect-required',
+        build: {
+          location: LOCATION,
+          collectionUuid: 'collection',
+          bucket: 'bucket',
+          uploaderSlug: 'user',
+          description: 'description',
+          timeZone: 'UTC',
+          files: [
+            entries[0],
+            ...entries.slice(1).map((e) => ({ ...e, processState: 'processing' as const, sha256: undefined })),
+          ],
+        },
+      },
+      (snap) => {
+        last = snap;
+      },
+    );
+
+    // Eight lanes spawn; one takes the single ready file and seven park.
+    await new Promise((r) => setTimeout(r, 20));
+    target = 1;
+    run.notifyReady(entries.slice(1));
+    run.close(entries);
+    const snap = await collect(run, () => last);
+
+    expect(snap.phase).toBe('done');
+    expect(client.writeImmutableStream).toHaveBeenCalledTimes(7);
+    expect(maxInFlight).toBe(1);
+  });
+
   it('cancelling settles a run whose lanes are all parked on the queue', async () => {
     // Lanes wait in the queue between files, holding no request. `cancel()`
     // aborts the request controller, which says nothing to a lane that has no
@@ -522,7 +635,7 @@ describe('streamed runs upload as files individually become ready', () => {
       {
         config: CONFIG,
         dryRun: false,
-        concurrency: 4,
+        concurrency: manual(4),
         uploaderUser: 'user',
         fileAccessMode: 'reselect-required',
         build: {
@@ -566,7 +679,7 @@ describe('streamed runs upload as files individually become ready', () => {
       {
         config: CONFIG,
         dryRun: false,
-        concurrency: 4,
+        concurrency: manual(4),
         uploaderUser: 'user',
         fileAccessMode: 'reselect-required',
         build: {
@@ -606,7 +719,7 @@ describe('streamed runs upload as files individually become ready', () => {
       {
         config: CONFIG,
         dryRun: false,
-        concurrency: 2,
+        concurrency: manual(2),
         uploaderUser: 'user',
         fileAccessMode: 'reselect-required',
         build: {
@@ -649,7 +762,7 @@ describe('streamed runs upload as files individually become ready', () => {
       {
         config: CONFIG,
         dryRun: false,
-        concurrency: 2,
+        concurrency: manual(2),
         uploaderUser: 'user',
         fileAccessMode: 'reselect-required',
         build: {
@@ -697,7 +810,7 @@ describe('streamed runs upload as files individually become ready', () => {
       {
         config: CONFIG,
         dryRun: false,
-        concurrency: 2,
+        concurrency: manual(2),
         uploaderUser: 'user',
         fileAccessMode: 'reselect-required',
         build: {
@@ -753,7 +866,7 @@ describe('streamed runs upload as files individually become ready', () => {
       {
         config: CONFIG,
         dryRun: false,
-        concurrency: 2,
+        concurrency: manual(2),
         uploaderUser: 'user',
         fileAccessMode: 'reselect-required',
         build: {
@@ -796,7 +909,7 @@ describe('streamed runs upload as files individually become ready', () => {
       {
         config: CONFIG,
         dryRun: false,
-        concurrency: 2,
+        concurrency: manual(2),
         uploaderUser: 'user',
         fileAccessMode: 'reselect-required',
         build: {
@@ -842,7 +955,7 @@ describe('streamed runs upload as files individually become ready', () => {
       {
         config: CONFIG,
         dryRun: false,
-        concurrency: 4, // more lanes than the single file enqueued at start()
+        concurrency: manual(4), // more lanes than the single file enqueued at start()
         uploaderUser: 'user',
         fileAccessMode: 'reselect-required',
         build: {
