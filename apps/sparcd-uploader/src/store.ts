@@ -121,9 +121,12 @@ export const useStore = create<UploaderState>()(
   // user re-enters the secret every time, UNLESS another tab in this browser
   // session is already connected, in which case `subscribeSharedConnection`'s
   // live (never-persisted) cross-tab relay picks it up within a message
-  // round-trip of mount. Zustand's own persist here covers only cheap UI
-  // prefs (theme, elevationUnit); the in-flight batch (files, handles,
-  // validations) is excluded too.
+  // round-trip of mount. Zustand's own persist here covers cheap UI prefs
+  // (theme, elevationUnit) plus the wizard's typed inputs (identity,
+  // description, target collection, deployment, zone, run options), so a
+  // reload doesn't make a researcher retype the form; s3Config is
+  // intentionally NOT in `partialize`. The in-flight batch (files, handles,
+  // validations, step) is excluded too — it can't survive a reload anyway.
   persist(
     (set) => ({
       s3Config: null,
@@ -321,7 +324,18 @@ export const useStore = create<UploaderState>()(
     {
       name: 'sparcd-uploader-session',
       storage: createJSONStorage(() => sessionStorage),
-      partialize: (s) => ({ theme: s.theme, elevationUnit: s.elevationUnit }),
+      partialize: (s) => ({
+        theme: s.theme,
+        elevationUnit: s.elevationUnit,
+        uploaderUser: s.uploaderUser,
+        uploadDescription: s.uploadDescription,
+        selectedBucket: s.selectedBucket,
+        selectedLocationKey: s.selectedLocationKey,
+        uploadTimeZone: s.uploadTimeZone,
+        dryRun: s.dryRun,
+        uploadConcurrency: s.uploadConcurrency,
+        verifyAfterPut: s.verifyAfterPut,
+      }),
     },
   ),
 );

@@ -9,6 +9,52 @@ import { Upload } from './Upload';
 import { formatBytes } from '../lib/scanFiles';
 import { summarize } from '../lib/validation';
 import { ensureProcessing } from '../lib/processing';
+import { listResumable, fileStateCounts } from '../lib/db';
+
+type OpenSession = { stamp: string; done: number; total: number; others: number };
+
+// A reload lands on the empty Drop step, which gives no sign that an
+// interrupted wet upload is still resumable in IndexedDB. Point at History,
+// which owns the actual resume flow.
+function ResumeNotice() {
+  const setSection = useStore((s) => s.setSection);
+  const [open, setOpen] = useState<OpenSession | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      const [latest, ...others] = await listResumable();
+      if (!latest) return;
+      const counts = await fileStateCounts(latest.id);
+      setOpen({
+        stamp: latest.uploadPrefix.slice(latest.uploadPrefix.lastIndexOf('/') + 1),
+        done: counts.done,
+        total: latest.totalFiles,
+        others: others.length,
+      });
+    })();
+  }, []);
+
+  if (!open) return null;
+
+  return (
+    <div className="mb-4 flex flex-col gap-2 border border-ruleSoft bg-paper px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+      <p className="font-body text-[13px] text-inkSoft">
+        An interrupted upload is waiting:{' '}
+        <span className="font-mono text-ink">{open.stamp}</span> —{' '}
+        <span className="font-mono text-ink">{open.done}</span> of{' '}
+        <span className="font-mono text-ink">{open.total}</span> files uploaded.
+        {open.others > 0 && ` (+${open.others} more in History)`}
+      </p>
+      <button
+        type="button"
+        onClick={() => setSection('history')}
+        className="shrink-0 min-h-[44px] sm:min-h-0 border border-ink text-ink px-3 py-2.5 sm:py-1 text-[13px] font-body hover:bg-paperHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+      >
+        Open History
+      </button>
+    </div>
+  );
+}
 
 export function NewUpload() {
   const step = useStore((s) => s.step);
@@ -46,7 +92,12 @@ export function NewUpload() {
         <StepIndicator current={step} />
       </div>
 
-      {step === 'drop' && <DropZone />}
+      {step === 'drop' && (
+        <>
+          <ResumeNotice />
+          <DropZone />
+        </>
+      )}
 
       {step === 'inspect' && (
         <div className="space-y-4">
