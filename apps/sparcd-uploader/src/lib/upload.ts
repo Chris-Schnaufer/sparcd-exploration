@@ -96,6 +96,7 @@ export type UploadParams = {
   build: Omit<BuildInput, 'now'>;
   dryRun: boolean;
   concurrency: number; // parallel blob lanes
+  verifyAfterPut?: boolean; // default true; false trusts the PUT response, saving a HEAD per file
   // Resume metadata persisted in the batch row; absent for dry runs.
   uploaderUser?: string; // raw identity (the slug lives in build.uploaderSlug)
   fileAccessMode?: FileAccessMode;
@@ -107,6 +108,7 @@ export type ResumeParams = {
   session: LoadedSession;
   attached: Map<string, File>; // localPath → reattached source file
   concurrency: number;
+  verifyAfterPut?: boolean;
 };
 
 export type UploadRun = { cancel: () => void; done: Promise<void> };
@@ -298,9 +300,9 @@ function makeRunner(
   config: S3Config,
   concurrency: number,
   onUpdate: (snap: UploadSnapshot) => void,
-  opts: { persist: boolean; isResume: boolean; dryRun: boolean },
+  opts: { persist: boolean; isResume: boolean; dryRun: boolean; verifyAfterPut: boolean },
 ) {
-  const { persist, isResume, dryRun } = opts;
+  const { persist, isResume, dryRun, verifyAfterPut } = opts;
   const client = getClient(config);
   let cancelled = false;
   let abort = new AbortController();
@@ -411,11 +413,15 @@ function makeRunner(
           },
         });
         // Portable verification: HEAD and confirm size + recorded digest.
-        fp.state = 'verifying';
-        emit(true);
-        const stat = await client.statObject(snap.bucket, it.key);
-        if (stat.size !== fp.size) throw new Error(`size mismatch (${stat.size} ≠ ${fp.size})`);
-        if (stat.metadata.sha256 !== it.sha256) throw new Error('sha256 metadata mismatch');
+        // Optional: at high RTT the extra round-trip per file dominates small
+        // uploads, and the conditional PUT already succeeded with our body.
+        if (verifyAfterPut) {
+          fp.state = 'verifying';
+          emit(true);
+          const stat = await client.statObject(snap.bucket, it.key);
+          if (stat.size !== fp.size) throw new Error(`size mismatch (${stat.size} ≠ ${fp.size})`);
+          if (stat.metadata.sha256 !== it.sha256) throw new Error('sha256 metadata mismatch');
+        }
         fp.state = 'done';
         persistFile(sessionId, it.localPath, {
           state: 'done',
@@ -760,7 +766,12 @@ export function runStreamingUpload(
 ): StreamingUploadRun {
   const { config, build, dryRun, concurrency } = params;
   const persist = !dryRun;
-  const runner = makeRunner(config, concurrency, onUpdate, { persist, isResume: false, dryRun });
+  const runner = makeRunner(config, concurrency, onUpdate, {
+    persist,
+    isResume: false,
+    dryRun,
+    verifyAfterPut: params.verifyAfterPut ?? true,
+  });
   const sessionId = crypto.randomUUID();
   runner.snap.sessionId = sessionId;
 
@@ -956,6 +967,7 @@ export function resumeUpload(
     persist: true,
     isResume: true,
     dryRun: false,
+    verifyAfterPut: params.verifyAfterPut ?? true,
   });
   runner.snap.sessionId = batch.id;
 

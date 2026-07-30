@@ -58,7 +58,8 @@ type UploaderState = {
   uploadDescription: string; // free-text description for UploadMeta
   uploadTimeZone: string; // IANA zone EXIF naive times are interpreted in; default = browser zone
   dryRun: boolean; // on by default; logs PUTs and writes nothing
-  uploadConcurrency: number; // parallel blob lanes, 4–16
+  uploadConcurrency: number; // parallel blob lanes, 4–32
+  verifyAfterPut: boolean; // HEAD-check each blob after PUT; off saves a round-trip per file
 
   connect: (config: S3Config) => void;
   disconnect: () => void;
@@ -82,6 +83,7 @@ type UploaderState = {
   setUploadTimeZone: (value: string) => void;
   setDryRun: (value: boolean) => void;
   setUploadConcurrency: (value: number) => void;
+  setVerifyAfterPut: (value: boolean) => void;
   nextBatch: () => void;
 };
 
@@ -147,6 +149,7 @@ export const useStore = create<UploaderState>()(
       uploadTimeZone: localTimeZone(),
       dryRun: true,
       uploadConcurrency: 8,
+      verifyAfterPut: true,
 
       connect: (config) => {
         clearClientCache();
@@ -298,6 +301,7 @@ export const useStore = create<UploaderState>()(
       setUploadTimeZone: (value) => set({ uploadTimeZone: value }),
       setDryRun: (value) => set({ dryRun: value }),
       setUploadConcurrency: (value) => set({ uploadConcurrency: value }),
+      setVerifyAfterPut: (value) => set({ verifyAfterPut: value }),
 
       // Start a fresh batch after a completed upload, keeping the deployment,
       // uploader, target collection, and description so a researcher can chain

@@ -296,6 +296,30 @@ describe('upload runs continue past per-file blob failures', () => {
     expect(mocks.markBatchComplete).toHaveBeenCalledTimes(1);
   });
 
+  it('skips the post-PUT HEAD when verifyAfterPut is off', async () => {
+    const session = makeSession(Array.from({ length: 3 }, () => 'pending'));
+    mocks.client = makeClient(session.files);
+    let last: UploadSnapshot | null = null;
+
+    const run = resumeUpload(
+      {
+        config: CONFIG,
+        session,
+        attached: attachedFor(session.files),
+        concurrency: 2,
+        verifyAfterPut: false,
+      },
+      (snap) => {
+        last = snap;
+      },
+    );
+    const snap = await collect(run, () => last);
+
+    expect(snap.phase).toBe('done');
+    expect(mocks.client.writeImmutableStream).toHaveBeenCalledTimes(3);
+    expect(mocks.client.statObject).not.toHaveBeenCalled();
+  });
+
   it('retries only failed or pending files and then completes', async () => {
     const session = makeSession(['done', 'done', 'done', 'done', 'failed', 'pending']);
     mocks.client = makeClient(session.files);

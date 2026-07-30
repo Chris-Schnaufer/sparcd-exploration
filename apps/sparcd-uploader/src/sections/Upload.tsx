@@ -33,6 +33,8 @@ export function Upload() {
   const setDryRun = useStore((s) => s.setDryRun);
   const concurrency = useStore((s) => s.uploadConcurrency);
   const setConcurrency = useStore((s) => s.setUploadConcurrency);
+  const verifyAfterPut = useStore((s) => s.verifyAfterPut);
+  const setVerifyAfterPut = useStore((s) => s.setVerifyAfterPut);
   const nextBatch = useStore((s) => s.nextBatch);
   const fileAccessMode = useStore((s) => s.fileAccessMode);
   const dirHandle = useStore((s) => s.dirHandle);
@@ -88,6 +90,7 @@ export function Upload() {
         config: s3Config,
         dryRun: effectiveDryRun,
         concurrency,
+        verifyAfterPut,
         uploaderUser,
         fileAccessMode,
         dirHandle,
@@ -151,7 +154,10 @@ export function Upload() {
       // A resumed run is a plain UploadRun (no notifyReady/close) — stop the
       // now-finished streaming run's methods from being called again.
       streamingRef.current = null;
-      runRef.current = resumeUpload({ config: s3Config, session, attached, concurrency }, setSnap);
+      runRef.current = resumeUpload(
+        { config: s3Config, session, attached, concurrency, verifyAfterPut },
+        setSnap,
+      );
     } catch (e) {
       setRetryError(
         `Couldn't load the saved upload record for this batch (${e instanceof Error ? e.message : String(e)}). Retry again; if it keeps failing, go Back and start the upload over.`,
@@ -236,7 +242,7 @@ export function Upload() {
           <input
             type="range"
             min={4}
-            max={16}
+            max={32}
             value={concurrency}
             disabled={running}
             onChange={(e) => setConcurrency(Number(e.target.value))}
@@ -244,6 +250,20 @@ export function Upload() {
           />
           <span className="font-mono text-[13px] text-ink w-8 text-right">{concurrency}</span>
         </div>
+
+        <label className="flex items-center gap-2.5 font-body text-[14px] text-ink">
+          <input
+            type="checkbox"
+            checked={verifyAfterPut}
+            disabled={running}
+            onChange={(e) => setVerifyAfterPut(e.target.checked)}
+            className="accent-accent"
+          />
+          HEAD-verify each file after upload
+          <span className="font-body text-[12px] text-inkMute">
+            — off trusts the PUT response, saving a round-trip per file
+          </span>
+        </label>
       </section>
 
       {/* Live run */}
