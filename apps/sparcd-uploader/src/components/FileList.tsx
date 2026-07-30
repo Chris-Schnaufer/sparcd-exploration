@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useStore, type FileEntry } from '../store';
 import { formatBytes } from '../lib/scanFiles';
@@ -127,12 +127,20 @@ function Row({
   );
 }
 
-export function FileList() {
-  const files = useStore((s) => s.files);
+export function FileList({ severityFilter = null }: { severityFilter?: Severity | null }) {
+  const allFiles = useStore((s) => s.files);
   const validations = useStore((s) => s.validations);
   const removeFile = useStore((s) => s.removeFile);
   const parentRef = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState(0);
+
+  const files = useMemo(
+    () =>
+      severityFilter
+        ? allFiles.filter((f) => validations[f.id]?.severity === severityFilter)
+        : allFiles,
+    [allFiles, validations, severityFilter],
+  );
 
   const virtualizer = useVirtualizer({
     count: files.length,
@@ -183,6 +191,11 @@ export function FileList() {
           aria-label="Scanned files. J and K move, D drops the active file."
           className="h-[60dvh] overflow-y-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent -outline-offset-2"
         >
+          {files.length === 0 && severityFilter && (
+            <p className="px-3 py-3 font-body text-[13px] text-inkMute">
+              No files match this filter.
+            </p>
+          )}
           <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
             {virtualizer.getVirtualItems().map((vi) => {
               const f = files[vi.index];

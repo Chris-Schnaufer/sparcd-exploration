@@ -1,5 +1,6 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../store';
+import type { Severity } from '../lib/validation';
 import { StepIndicator } from '../components/StepIndicator';
 import { DropZone } from '../components/DropZone';
 import { FileList } from '../components/FileList';
@@ -26,6 +27,19 @@ export function NewUpload() {
   const totalBytes = useMemo(() => files.reduce((sum, f) => sum + f.size, 0), [files]);
   const summary = useMemo(() => summarize(files, validations), [files, validations]);
 
+  // Clicking a severity counter filters the list to just those files —
+  // scrolling a 5000-row list for the one flagged file is not an option.
+  const [severityFilter, setSeverityFilter] = useState<Severity | null>(null);
+  useEffect(() => {
+    if (severityFilter === 'error' && summary.errors === 0) setSeverityFilter(null);
+    if (severityFilter === 'warning' && summary.warnings === 0) setSeverityFilter(null);
+  }, [severityFilter, summary.errors, summary.warnings]);
+
+  const counterClass = (filter: Severity, tone: string) =>
+    `font-mono ${tone} underline-offset-2 hover:underline ${
+      severityFilter === filter ? 'underline' : ''
+    }`;
+
   return (
     <div className="px-6 py-6">
       <div className="mb-6">
@@ -49,13 +63,41 @@ export function NewUpload() {
               {summary.errors > 0 && (
                 <>
                   {' · '}
-                  <span className="font-mono text-warn">{summary.errors}</span> need attention
+                  <button
+                    type="button"
+                    onClick={() => setSeverityFilter((f) => (f === 'error' ? null : 'error'))}
+                    aria-pressed={severityFilter === 'error'}
+                    title={severityFilter === 'error' ? 'Show all files' : 'Show only files needing attention'}
+                    className={counterClass('error', 'text-warn')}
+                  >
+                    {summary.errors} need attention
+                  </button>
                 </>
               )}
               {summary.warnings > 0 && (
                 <>
                   {' · '}
-                  <span className="font-mono text-warn">{summary.warnings}</span> warnings
+                  <button
+                    type="button"
+                    onClick={() => setSeverityFilter((f) => (f === 'warning' ? null : 'warning'))}
+                    aria-pressed={severityFilter === 'warning'}
+                    title={severityFilter === 'warning' ? 'Show all files' : 'Show only warnings'}
+                    className={counterClass('warning', 'text-warn')}
+                  >
+                    {summary.warnings} warnings
+                  </button>
+                </>
+              )}
+              {severityFilter && (
+                <>
+                  {' · '}
+                  <button
+                    type="button"
+                    onClick={() => setSeverityFilter(null)}
+                    className="font-body text-[12px] text-inkSoft underline underline-offset-2"
+                  >
+                    clear filter
+                  </button>
                 </>
               )}
             </p>
@@ -78,7 +120,7 @@ export function NewUpload() {
               </button>
             </div>
           </div>
-          <FileList />
+          <FileList severityFilter={severityFilter} />
           <p className="font-body text-[13px] text-inkMute">
             Files with no capture time get manual entry in Assign; duplicates are warnings you can
             keep or drop with <span className="font-mono">D</span>.
