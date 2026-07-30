@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useStore } from '../store';
+import { Spinner } from '../components/Spinner';
 import { useLocations } from '../lib/useLocations';
 import { useCollections, useCollectionDeployments } from '../lib/useCollections';
 import { DeploymentPicker } from '../components/DeploymentPicker';
@@ -43,14 +44,7 @@ function RefreshableLabel({
         title="Re-pull from S3"
         className="grid place-items-center min-w-6 min-h-6 border border-rule font-mono text-[12px] text-inkSoft hover:text-ink hover:border-ink focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
       >
-        {refreshing ? (
-          <span
-            aria-hidden
-            className="block w-3 h-3 rounded-full border-2 border-current border-t-transparent animate-spin"
-          />
-        ) : (
-          <span aria-hidden>↻</span>
-        )}
+        {refreshing ? <Spinner /> : <span aria-hidden>↻</span>}
       </button>
     </div>
   );

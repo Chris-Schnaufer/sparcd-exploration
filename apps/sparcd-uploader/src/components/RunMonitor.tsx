@@ -7,13 +7,15 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { formatBytes } from '../lib/scanFiles';
 import type { FileState, UploadSnapshot } from '../lib/upload';
 
+// Skipped is a satisfied state (verified already uploaded), not a warning —
+// only failed earns the warn color.
 const STATE_DOT: Record<FileState, string> = {
   inspecting: 'bg-inkMute',
   pending: 'bg-ruleSoft',
   uploading: 'bg-accent',
   verifying: 'bg-accent',
   done: 'bg-ok',
-  skipped: 'bg-warn',
+  skipped: 'bg-inkMute',
   failed: 'bg-warn',
 };
 
@@ -273,7 +275,7 @@ export function RunMonitor({ snap }: { snap: UploadSnapshot }) {
           {counts.skipped ? (
             <>
               {' · '}
-              <span className="font-mono text-warn">{counts.skipped}</span> skipped
+              <span className="font-mono text-inkSoft">{counts.skipped}</span> skipped
             </>
           ) : null}
           {counts.failed ? (

@@ -26,6 +26,7 @@ import {
 } from '../lib/resume';
 import { scanFileList, supportsDirectoryHandle } from '../lib/scanFiles';
 import { Note } from '../components/RunMonitor';
+import { Spinner } from '../components/Spinner';
 import { PublishedUploads } from '../components/PublishedUploads';
 
 type Row = { batch: BatchRecord; counts: Record<PersistedFileState, number> };
@@ -290,12 +291,7 @@ export function History() {
                         : ''
                     }`}
                   >
-                    {isPreparing && (
-                      <span
-                        aria-hidden
-                        className="block w-3 h-3 rounded-full border-2 border-current border-t-transparent animate-spin"
-                      />
-                    )}
+                    {isPreparing && <Spinner />}
                     {isPreparing ? 'Preparing…' : 'Resume'}
                   </button>
                 )}
