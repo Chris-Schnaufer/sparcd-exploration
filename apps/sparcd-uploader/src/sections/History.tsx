@@ -1,8 +1,9 @@
 // Past and in-flight upload sessions, read from the Dexie resume store (P5).
 // Completed batches are a record; open batches (no completedAt) offer Resume —
 // which restores local file access (durable handle or reselect-and-reconcile)
-// and replays the persisted bundle, skipping done blobs and re-uploading the
-// rest. Discard drops the local session row only; it never touches remote state.
+// and then hands the prepared session to the wizard's Upload step, which owns
+// the run UI. Discard drops the local session row only; it never touches remote
+// state.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useStore } from '../store';
@@ -24,8 +25,7 @@ import {
   type ReconcileProblem,
 } from '../lib/resume';
 import { scanFileList, supportsDirectoryHandle } from '../lib/scanFiles';
-import { resumeUpload, type UploadRun, type UploadSnapshot } from '../lib/upload';
-import { Note, RunMonitor } from '../components/RunMonitor';
+import { Note } from '../components/RunMonitor';
 import { PublishedUploads } from '../components/PublishedUploads';
 
 type Row = { batch: BatchRecord; counts: Record<PersistedFileState, number> };
@@ -47,14 +47,15 @@ function Badge({ batch }: { batch: BatchRecord }) {
 
 export function History() {
   const s3Config = useStore((s) => s.s3Config);
-  const concurrency = useStore((s) => s.uploadConcurrency);
+  const setPendingResume = useStore((s) => s.setPendingResume);
+  const setSection = useStore((s) => s.setSection);
+  const setStep = useStore((s) => s.setStep);
+  const activeRunSessionId = useStore((s) => s.activeRunSessionId);
 
   const [rows, setRows] = useState<Row[] | null>(null);
-  const [active, setActive] = useState<string | null>(null); // sessionId being resumed
-  const [snap, setSnap] = useState<UploadSnapshot | null>(null);
+  const [preparing, setPreparing] = useState<string | null>(null); // batch id being prepared
   const [message, setMessage] = useState<string | null>(null);
   const [problems, setProblems] = useState<ReconcileProblem[]>([]);
-  const runRef = useRef<UploadRun | null>(null);
   const reselectRef = useRef<HTMLInputElement>(null);
   const pendingReselect = useRef<BatchRecord | null>(null);
 
@@ -70,19 +71,8 @@ export function History() {
     void refresh();
   }, [refresh]);
 
-  // Abandon an in-flight resume if the section unmounts.
-  useEffect(() => () => runRef.current?.cancel(), []);
-
-  const running =
-    snap?.phase === 'preparing' || snap?.phase === 'blobs' || snap?.phase === 'metadata';
-
   const launch = useCallback(
-    async (
-      batch: BatchRecord,
-      session: LoadedSession,
-      attached: Map<string, File>,
-      probs: ReconcileProblem[],
-    ) => {
+    (session: LoadedSession, attached: Map<string, File>, probs: ReconcileProblem[]) => {
       const missingRequired = session.files.filter((f) => f.state !== 'done' && !attached.has(f.localPath));
       if (missingRequired.length > 0) {
         setProblems([
@@ -100,61 +90,71 @@ export function History() {
         );
         return;
       }
-      setProblems(probs);
-      setActive(batch.id);
+      setProblems([]);
       setMessage(null);
-      const run = resumeUpload(
-        { config: s3Config!, session, attached, concurrency },
-        (s) => {
-          setSnap(s);
-          if (s.phase === 'done' || s.phase === 'error') void refresh();
-        },
-      );
-      runRef.current = run;
+      // The wizard's Upload step owns the run UI, so hand the prepared session
+      // over and jump there rather than running a second monitor here.
+      setPendingResume({ session, attached, problems: probs });
+      setSection('new');
+      setStep('upload');
     },
-    [s3Config, concurrency, refresh],
+    [setPendingResume, setSection, setStep],
   );
 
+  // Preparing a resume is a long async gesture (load session, revalidate the
+  // handle or prompt a reselect, re-hash). `preparing` is set synchronously so
+  // the button latches before the first await — otherwise a double-click starts
+  // two runs.
   const beginResume = useCallback(
     async (batch: BatchRecord) => {
-      setProblems([]);
-      setSnap(null);
-      if (!s3Config) {
-        setMessage('Connect to a storage endpoint before resuming.');
-        return;
-      }
-      const session = await loadSession(batch.id);
-      if (!session) {
-        setMessage('Session record is missing.');
-        return;
-      }
-      // Durable handle: revalidate permission inside this click gesture, then
-      // re-hash against the recorded files — a same-size in-place edit between
-      // sessions would otherwise slip through, so mismatches surface as problems.
-      if (batch.fileAccessMode === 'persistent-handle' && batch.dirHandle) {
-        const restore = await restoreFromHandle(batch, session.files);
-        if (restore.ok) {
-          await launch(batch, session, restore.attached, restore.problems);
+      setPreparing(batch.id);
+      try {
+        setProblems([]);
+        if (!s3Config) {
+          setMessage('Connect to a storage endpoint before resuming.');
           return;
         }
-        setMessage(restore.reason);
-        // fall through to reselect
-      }
-
-      // Reselect path.
-      if (supportsDirectoryHandle) {
-        const picked = await reselectFolder();
-        if (!picked) return; // user dismissed
-        const { attached, problems: probs } = await reconcileReselect(session.files, picked.scanned);
-        // Opportunistically upgrade the session to a durable handle for next time.
-        if (picked.handle) {
-          await updateBatch(batch.id, { dirHandle: picked.handle, fileAccessMode: 'persistent-handle' });
+        const session = await loadSession(batch.id);
+        if (!session) {
+          setMessage('Session record is missing.');
+          return;
         }
-        await launch(batch, session, attached, probs);
-      } else {
-        // No durable picker — fall back to a transient <input webkitdirectory>.
-        pendingReselect.current = batch;
-        reselectRef.current?.click();
+        // Durable handle: revalidate permission inside this click gesture, then
+        // re-hash against the recorded files — a same-size in-place edit between
+        // sessions would otherwise slip through, so mismatches surface as problems.
+        if (batch.fileAccessMode === 'persistent-handle' && batch.dirHandle) {
+          const restore = await restoreFromHandle(batch, session.files);
+          if (restore.ok) {
+            launch(session, restore.attached, restore.problems);
+            return;
+          }
+          setMessage(restore.reason);
+          // fall through to reselect
+        }
+
+        // Reselect path.
+        if (supportsDirectoryHandle) {
+          const picked = await reselectFolder();
+          if (!picked) return; // user dismissed
+          const { attached, problems: probs } = await reconcileReselect(
+            session.files,
+            picked.scanned,
+          );
+          // Opportunistically upgrade the session to a durable handle for next time.
+          if (picked.handle) {
+            await updateBatch(batch.id, {
+              dirHandle: picked.handle,
+              fileAccessMode: 'persistent-handle',
+            });
+          }
+          launch(session, attached, probs);
+        } else {
+          // No durable picker — fall back to a transient <input webkitdirectory>.
+          pendingReselect.current = batch;
+          reselectRef.current?.click();
+        }
+      } finally {
+        setPreparing(null);
       }
     },
     [s3Config, launch],
@@ -165,28 +165,31 @@ export function History() {
       const batch = pendingReselect.current;
       pendingReselect.current = null;
       if (!batch || !list || list.length === 0) return;
-      const session = await loadSession(batch.id);
-      if (!session) {
-        setMessage('Session record is missing.');
-        return;
+      setPreparing(batch.id);
+      try {
+        const session = await loadSession(batch.id);
+        if (!session) {
+          setMessage('Session record is missing.');
+          return;
+        }
+        const { attached, problems: probs } = await reconcileReselect(
+          session.files,
+          scanFileList(list),
+        );
+        launch(session, attached, probs);
+      } finally {
+        setPreparing(null);
       }
-      const { attached, problems: probs } = await reconcileReselect(session.files, scanFileList(list));
-      await launch(batch, session, attached, probs);
     },
     [launch],
   );
 
   const discard = useCallback(
     async (sessionId: string) => {
-      if (runRef.current && active === sessionId) runRef.current.cancel();
       await discardSession(sessionId);
-      if (active === sessionId) {
-        setActive(null);
-        setSnap(null);
-      }
       await refresh();
     },
-    [active, refresh],
+    [refresh],
   );
 
   if (rows === null) {
@@ -245,38 +248,10 @@ export function History() {
         </div>
       )}
 
-      {active && snap && (
-        <div className="space-y-3 border border-rule bg-panel p-4">
-          <div className="flex items-center justify-between">
-            <p className="font-body text-[13px] text-inkSoft">
-              Resuming <span className="font-mono text-ink">{stampOf(snap.uploadPath ?? '')}</span>
-            </p>
-            {running ? (
-              <button
-                onClick={() => runRef.current?.cancel()}
-                className="border border-warn text-warn px-3 py-1 text-[13px] font-body hover:bg-paperHover"
-              >
-                Cancel
-              </button>
-            ) : (
-              <button
-                onClick={() => {
-                  setActive(null);
-                  setSnap(null);
-                }}
-                className="border border-ink text-ink px-3 py-1 text-[13px] font-body hover:bg-paperHover"
-              >
-                Dismiss
-              </button>
-            )}
-          </div>
-          <RunMonitor snap={snap} />
-        </div>
-      )}
-
       <ul className="space-y-3">
         {rows.map(({ batch, counts }) => {
-          const isActive = active === batch.id;
+          const isPreparing = preparing === batch.id;
+          const isRunning = activeRunSessionId === batch.id;
           const total = batch.totalFiles;
           return (
             <li key={batch.id} className="border border-ruleSoft bg-panel px-4 py-3 space-y-2">
@@ -307,19 +282,30 @@ export function History() {
               <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-1">
                 {!batch.completedAt && (
                   <button
-                    disabled={running}
+                    disabled={preparing !== null || activeRunSessionId !== null}
                     onClick={() => void beginResume(batch)}
-                    className={`bg-ink text-paper border border-ink min-h-[44px] sm:min-h-0 px-4 sm:px-3 py-1 text-[13px] font-body font-[600] hover:opacity-90 ${
-                      running ? 'opacity-40 cursor-not-allowed' : ''
+                    className={`inline-flex items-center justify-center gap-2 bg-ink text-paper border border-ink min-h-[44px] sm:min-h-0 px-4 sm:px-3 py-1 text-[13px] font-body font-[600] hover:opacity-90 ${
+                      preparing !== null || activeRunSessionId !== null
+                        ? 'opacity-40 cursor-not-allowed'
+                        : ''
                     }`}
                   >
-                    {isActive ? 'Resuming…' : 'Resume'}
+                    {isPreparing && (
+                      <span
+                        aria-hidden
+                        className="block w-3 h-3 rounded-full border-2 border-current border-t-transparent animate-spin"
+                      />
+                    )}
+                    {isPreparing ? 'Preparing…' : 'Resume'}
                   </button>
                 )}
                 <button
-                  disabled={running && isActive}
+                  disabled={isRunning}
+                  title={isRunning ? 'This upload is currently running' : undefined}
                   onClick={() => void discard(batch.id)}
-                  className="border border-ink text-ink min-h-[44px] sm:min-h-0 px-4 sm:px-3 py-1 text-[13px] font-body hover:bg-paperHover"
+                  className={`border border-ink text-ink min-h-[44px] sm:min-h-0 px-4 sm:px-3 py-1 text-[13px] font-body hover:bg-paperHover ${
+                    isRunning ? 'opacity-40 cursor-not-allowed' : ''
+                  }`}
                 >
                   Discard
                 </button>

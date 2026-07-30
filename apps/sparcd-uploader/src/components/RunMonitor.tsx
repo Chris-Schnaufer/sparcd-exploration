@@ -1,6 +1,6 @@
-// Live view of an upload run, shared by the New-upload Upload step and the
-// History resume flow. Driven entirely by an `UploadSnapshot`, so both callers
-// render identical progress, byte counts, and the streaming PUT log.
+// Live view of an upload run, rendered by the New-upload Upload step for both
+// fresh runs and resumes handed off from History. Driven entirely by an
+// `UploadSnapshot`: progress, byte counts, and the streaming PUT log.
 
 import { useEffect, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';

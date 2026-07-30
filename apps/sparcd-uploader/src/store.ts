@@ -9,7 +9,8 @@ import {
 } from '@sparcd/auth-ui';
 import type { ScannedFile } from './lib/scanFiles';
 import type { ProcessResponse } from './lib/processPool';
-import type { FileAccessMode } from './lib/db';
+import type { FileAccessMode, LoadedSession } from './lib/db';
+import type { ReconcileProblem } from './lib/resume';
 import { validateBatch, validateFile, type FileValidation } from './lib/validation';
 import { clearClientCache } from './lib/s3';
 import { localTimeZone, type NaiveDateTime } from './lib/exifTime';
@@ -20,6 +21,13 @@ export type Section = 'new' | 'history' | 'settings';
 export type WizardStep = 'drop' | 'inspect' | 'assign' | 'upload';
 export type Theme = 'light' | 'dark';
 export type ProcessState = 'queued' | 'processing' | 'ready' | 'error';
+
+/** A resume prepared in History, handed off to the wizard's Upload step to run. */
+export type PendingResume = {
+  session: LoadedSession;
+  attached: Map<string, File>;
+  problems: ReconcileProblem[];
+};
 
 /** A scanned file plus the results of P1 worker processing. */
 export type FileEntry = ScannedFile & {
@@ -60,6 +68,8 @@ type UploaderState = {
   dryRun: boolean; // on by default; logs PUTs and writes nothing
   uploadConcurrency: number; // parallel blob lanes, 4–32
   verifyAfterPut: boolean; // HEAD-check each blob after PUT; off saves a round-trip per file
+  pendingResume: PendingResume | null; // prepared in History, consumed by the Upload step
+  activeRunSessionId: string | null; // session id of a wet run in flight in the Upload step
 
   connect: (config: S3Config) => void;
   disconnect: () => void;
@@ -84,6 +94,8 @@ type UploaderState = {
   setDryRun: (value: boolean) => void;
   setUploadConcurrency: (value: number) => void;
   setVerifyAfterPut: (value: boolean) => void;
+  setPendingResume: (value: PendingResume | null) => void;
+  setActiveRunSessionId: (value: string | null) => void;
   nextBatch: () => void;
 };
 
@@ -153,6 +165,8 @@ export const useStore = create<UploaderState>()(
       dryRun: true,
       uploadConcurrency: 8,
       verifyAfterPut: true,
+      pendingResume: null,
+      activeRunSessionId: null,
 
       connect: (config) => {
         clearClientCache();
@@ -305,6 +319,8 @@ export const useStore = create<UploaderState>()(
       setDryRun: (value) => set({ dryRun: value }),
       setUploadConcurrency: (value) => set({ uploadConcurrency: value }),
       setVerifyAfterPut: (value) => set({ verifyAfterPut: value }),
+      setPendingResume: (value) => set({ pendingResume: value }),
+      setActiveRunSessionId: (value) => set({ activeRunSessionId: value }),
 
       // Start a fresh batch after a completed upload, keeping the deployment,
       // uploader, target collection, and description so a researcher can chain

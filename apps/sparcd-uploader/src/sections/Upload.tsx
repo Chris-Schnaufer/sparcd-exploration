@@ -5,6 +5,7 @@ import { useCollections } from '../lib/useCollections';
 import { sanitizeUploaderUser } from '../lib/normalize';
 import { formatBytes } from '../lib/scanFiles';
 import { loadSession } from '../lib/db';
+import type { ReconcileProblem } from '../lib/resume';
 import {
   resumeUpload,
   runStreamingUpload,
@@ -38,6 +39,8 @@ export function Upload() {
   const nextBatch = useStore((s) => s.nextBatch);
   const fileAccessMode = useStore((s) => s.fileAccessMode);
   const dirHandle = useStore((s) => s.dirHandle);
+  const pendingResume = useStore((s) => s.pendingResume);
+  const setActiveRunSessionId = useStore((s) => s.setActiveRunSessionId);
 
   const { data: locData } = useLocations(s3Config, connectionId);
   const collections = useCollections(s3Config, connectionId);
@@ -49,20 +52,65 @@ export function Upload() {
   const effectiveDryRun = dryRun;
 
   const [snap, setSnap] = useState<UploadSnapshot | null>(null);
+  const [resumeProblems, setResumeProblems] = useState<ReconcileProblem[]>([]);
   const runRef = useRef<UploadRun | StreamingUploadRun | null>(null);
   // Set only while the current run is a streamed one (started via `start()`,
   // not a resume) — `notifyReady`/`close` don't exist on a plain `UploadRun`.
   const streamingRef = useRef<StreamingUploadRun | null>(null);
   // Guards `close()` firing more than once per run.
   const closedRef = useRef(false);
+  // Files reattached by a History handoff; the store's batch is empty then, so
+  // Retry has to reuse this map instead of rebuilding one from `files`.
+  const attachedRef = useRef<Map<string, File> | null>(null);
   const running =
     snap?.phase === 'preparing' || snap?.phase === 'blobs' || snap?.phase === 'metadata';
   // Dismisses the "upload complete" popup — reset whenever a new run (fresh
   // start or resume) begins, so a later run's completion pops it again.
   const [completeDismissed, setCompleteDismissed] = useState(false);
 
-  // Abandon an in-flight run if the step unmounts.
-  useEffect(() => () => runRef.current?.cancel(), []);
+  // Abandon an in-flight run if the step unmounts. StrictMode's dev remount
+  // fires this cleanup too, and a resume starts during mount — so decide a
+  // microtask later, by which time a remount has already set `mounted` back to
+  // true and the run survives.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      const run = runRef.current;
+      queueMicrotask(() => {
+        if (!mounted.current) run?.cancel();
+      });
+    };
+  }, []);
+
+  // A resume prepared in History lands here. Read the handoff from the live
+  // store and clear it immediately: under StrictMode this effect fires twice,
+  // and the second pass must find nothing or it starts a duplicate run.
+  useEffect(() => {
+    const pending = useStore.getState().pendingResume;
+    if (!pending || !s3Config) return;
+    useStore.getState().setPendingResume(null);
+    setResumeProblems(pending.problems);
+    setCompleteDismissed(false);
+    attachedRef.current = pending.attached;
+    runRef.current = resumeUpload(
+      {
+        config: s3Config,
+        session: pending.session,
+        attached: pending.attached,
+        concurrency,
+        verifyAfterPut,
+      },
+      setSnap,
+    );
+  }, [pendingResume, s3Config, concurrency, verifyAfterPut]);
+
+  // Let History know which session is running so it can't be discarded mid-run.
+  useEffect(() => {
+    setActiveRunSessionId(running && snap ? snap.sessionId : null);
+    return () => setActiveRunSessionId(null);
+  }, [running, snap?.sessionId, setActiveRunSessionId]);
 
   const ready = useMemo(() => files.filter((f) => f.processState === 'ready' && f.sha256), [files]);
   const stillInspecting = files.length - ready.length;
@@ -86,6 +134,8 @@ export function Upload() {
     if (!s3Config || !location || !collection || !slug) return;
     closedRef.current = false;
     setCompleteDismissed(false);
+    attachedRef.current = null; // this batch's files are the store's again
+    setResumeProblems([]);
     const run = runStreamingUpload(
       {
         config: s3Config,
@@ -151,7 +201,7 @@ export function Upload() {
       // and the guard must unlatch or Retry is dead until a reload.
       const session = await loadSession(snap.sessionId);
       if (!session) throw new Error('no saved record for this session');
-      const attached = new Map(files.map((f) => [f.relPath, f.file]));
+      const attached = attachedRef.current ?? new Map(files.map((f) => [f.relPath, f.file]));
       // A resumed run is a plain UploadRun (no notifyReady/close) — stop the
       // now-finished streaming run's methods from being called again.
       streamingRef.current = null;
@@ -168,7 +218,9 @@ export function Upload() {
     }
   };
 
-  if (!location || !collection || !slug) {
+  // A resumed run replays a persisted bundle and needs nothing from Assign, so
+  // these guards stand down once a run is in flight or handed off.
+  if ((!location || !collection || !slug) && !snap && !pendingResume) {
     return (
       <div className="max-w-2xl mx-auto space-y-4">
         <Note
@@ -194,34 +246,67 @@ export function Upload() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-7">
-      {/* Run configuration */}
+      {/* Run configuration. A resume handed off from History replays a persisted
+          bundle with no Assign state behind it, so the options collapse away. */}
       <section className="space-y-3">
         <h2 className={sectionLabel}>Upload</h2>
-        <p className="font-body text-[13px] text-inkSoft">
-          {ready.length} file{ready.length === 1 ? '' : 's'} ready
-          {stillInspecting > 0 && ` (${stillInspecting} still being inspected)`} ·{' '}
-          {formatBytes(ready.reduce((n, f) => n + f.size, 0))} →{' '}
-          <span className="font-mono text-ink break-all">
-            {collection.bucket}/Collections/{collection.uuid}/Uploads/
-          </span>
-        </p>
+        {collection && (
+          <>
+            <p className="font-body text-[13px] text-inkSoft">
+              {ready.length} file{ready.length === 1 ? '' : 's'} ready
+              {stillInspecting > 0 && ` (${stillInspecting} still being inspected)`} ·{' '}
+              {formatBytes(ready.reduce((n, f) => n + f.size, 0))} →{' '}
+              <span className="font-mono text-ink break-all">
+                {collection.bucket}/Collections/{collection.uuid}/Uploads/
+              </span>
+            </p>
 
-        <label className="flex items-center gap-2.5 font-body text-[14px] text-ink">
-          <input
-            type="checkbox"
-            checked={effectiveDryRun}
-            disabled={running}
-            onChange={(e) => setDryRun(e.target.checked)}
-            className="accent-accent"
-          />
-          Dry run — log every PUT, write nothing
-        </label>
+            <label className="flex items-center gap-2.5 font-body text-[14px] text-ink">
+              <input
+                type="checkbox"
+                checked={effectiveDryRun}
+                disabled={running}
+                onChange={(e) => setDryRun(e.target.checked)}
+                className="accent-accent"
+              />
+              Dry run — log every PUT, write nothing
+            </label>
 
-        {!effectiveDryRun && (
-          <Note
-            tone="warn"
-            message={`Wet upload uses the connected credentials directly. The bucket must allow this web origin with CORS, and the credentials must permit append-only PUT/HEAD/LIST for ${collection.bucket}.`}
-          />
+            {!effectiveDryRun && (
+              <Note
+                tone="warn"
+                message={`Wet upload uses the connected credentials directly. The bucket must allow this web origin with CORS, and the credentials must permit append-only PUT/HEAD/LIST for ${collection.bucket}.`}
+              />
+            )}
+
+            <div className="flex items-center gap-3">
+              <label className="font-body text-[13px] text-inkSoft w-28">Concurrency</label>
+              <input
+                type="range"
+                min={4}
+                max={32}
+                value={concurrency}
+                disabled={running}
+                onChange={(e) => setConcurrency(Number(e.target.value))}
+                className="flex-1 accent-accent"
+              />
+              <span className="font-mono text-[13px] text-ink w-8 text-right">{concurrency}</span>
+            </div>
+
+            <label className="flex items-center gap-2.5 font-body text-[14px] text-ink">
+              <input
+                type="checkbox"
+                checked={verifyAfterPut}
+                disabled={running}
+                onChange={(e) => setVerifyAfterPut(e.target.checked)}
+                className="accent-accent"
+              />
+              HEAD-verify each file after upload
+              <span className="font-body text-[12px] text-inkMute">
+                — off trusts the PUT response, saving a round-trip per file
+              </span>
+            </label>
+          </>
         )}
 
         {stillInspecting > 0 && (
@@ -237,35 +322,23 @@ export function Upload() {
             message="One or more files still have no capture time — publishing will wait until every ready file has one. Go back to Assign to set it."
           />
         )}
-
-        <div className="flex items-center gap-3">
-          <label className="font-body text-[13px] text-inkSoft w-28">Concurrency</label>
-          <input
-            type="range"
-            min={4}
-            max={32}
-            value={concurrency}
-            disabled={running}
-            onChange={(e) => setConcurrency(Number(e.target.value))}
-            className="flex-1 accent-accent"
-          />
-          <span className="font-mono text-[13px] text-ink w-8 text-right">{concurrency}</span>
-        </div>
-
-        <label className="flex items-center gap-2.5 font-body text-[14px] text-ink">
-          <input
-            type="checkbox"
-            checked={verifyAfterPut}
-            disabled={running}
-            onChange={(e) => setVerifyAfterPut(e.target.checked)}
-            className="accent-accent"
-          />
-          HEAD-verify each file after upload
-          <span className="font-body text-[12px] text-inkMute">
-            — off trusts the PUT response, saving a round-trip per file
-          </span>
-        </label>
       </section>
+
+      {resumeProblems.length > 0 && (
+        <div className="border border-warn/40 bg-paper px-3 py-2.5 space-y-1">
+          <p className="font-body text-[13px] text-warn">
+            {resumeProblems.length} file{resumeProblems.length === 1 ? '' : 's'} could not be
+            reconciled and will be skipped:
+          </p>
+          <ul className="font-mono text-[11px] text-inkSoft max-h-32 overflow-auto">
+            {resumeProblems.slice(0, 50).map((p) => (
+              <li key={p.localPath} className="truncate" title={`${p.localPath} — ${p.reason}`}>
+                {p.fileName} — {p.reason}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Live run */}
       {snap && <RunMonitor snap={snap} />}

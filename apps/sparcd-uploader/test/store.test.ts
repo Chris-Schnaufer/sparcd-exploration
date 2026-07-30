@@ -73,6 +73,7 @@ describe('store persistence', () => {
     useStore.getState().setUploadConcurrency(16);
     useStore.getState().setVerifyAfterPut(false);
     useStore.getState().setFiles([scanned('a.jpg')]);
+    useStore.getState().setActiveRunSessionId('session-1');
 
     const persisted = JSON.parse(window.sessionStorage.getItem('sparcd-uploader-session')!).state;
 
