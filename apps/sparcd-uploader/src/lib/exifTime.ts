@@ -82,17 +82,30 @@ export function inputValueToNaive(v: string): NaiveDateTime | null {
 
 // Read the wall-clock components a given UTC instant has *in* `timeZone`. Built
 // once per zone; en-US + hourCycle h23 keeps midnight at 00 (not 24).
+// Constructing an Intl.DateTimeFormat costs ~35µs; a 5k-file bundle rebuild
+// calls this 10k+ times, so the per-zone cache is load-bearing for UI latency.
+const zoneFormatters = new Map<string, Intl.DateTimeFormat>();
+
+function formatterFor(timeZone: string): Intl.DateTimeFormat {
+  let fmt = zoneFormatters.get(timeZone);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hourCycle: 'h23',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    zoneFormatters.set(timeZone, fmt);
+  }
+  return fmt;
+}
+
 function partsInZone(utcMs: number, timeZone: string): NaiveDateTime {
-  const fmt = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    hourCycle: 'h23',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
+  const fmt = formatterFor(timeZone);
   const map: Record<string, number> = {};
   for (const p of fmt.formatToParts(new Date(utcMs))) {
     if (p.type !== 'literal') map[p.type] = Number(p.value);

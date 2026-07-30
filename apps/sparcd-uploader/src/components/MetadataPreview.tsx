@@ -53,22 +53,27 @@ export function MetadataPreview({
     [location.key, collectionUuid, bucket, uploaderSlug, description, timeZone, files],
   );
 
+  // Debounced: a rebuild walks every file, so typing in the description/uploader
+  // fields must not trigger one per keystroke — only after the input settles.
   useEffect(() => {
     let stale = false;
-    buildBundle({
-      location,
-      collectionUuid,
-      bucket,
-      uploaderSlug,
-      description,
-      timeZone,
-      files,
-      now: new Date(),
-    }).then((b) => {
-      if (!stale) setBundle(b);
-    });
+    const id = setTimeout(() => {
+      buildBundle({
+        location,
+        collectionUuid,
+        bucket,
+        uploaderSlug,
+        description,
+        timeZone,
+        files,
+        now: new Date(),
+      }).then((b) => {
+        if (!stale) setBundle(b);
+      });
+    }, 300);
     return () => {
       stale = true;
+      clearTimeout(id);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sig]);
