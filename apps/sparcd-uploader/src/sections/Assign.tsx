@@ -8,6 +8,7 @@ import { MetadataPreview } from '../components/MetadataPreview';
 import { CaptureTimeEditor } from '../components/CaptureTimeEditor';
 import { sanitizeUploaderUser } from '../lib/normalize';
 import { supportedTimeZones } from '../lib/exifTime';
+import { timeZoneForCoords } from '../lib/coords';
 import { captureTimeComplete, processingComplete } from '../lib/validation';
 
 // How long to wait after the last keystroke before pushing a fresh value into
@@ -80,6 +81,17 @@ export function Assign() {
   }, [data?.locations, deployments.data]);
 
   const location = collectionLocations.find((l) => l.key === selectedLocationKey) ?? null;
+
+  // Picking a deployment implies a zone — the camera's naive EXIF wall-clock
+  // needs to be interpreted in wherever it physically sits, not the browser's
+  // zone. Fires only when the *selection* changes, so a manual override the
+  // user makes afterward for the same location sticks.
+  useEffect(() => {
+    if (!location) return;
+    setUploadTimeZone(timeZoneForCoords(location.latitude, location.longitude));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location?.key]);
+
   const needsCaptureTime = files.some(
     (f) => f.processState === 'ready' && !f.exifNaive,
   );
