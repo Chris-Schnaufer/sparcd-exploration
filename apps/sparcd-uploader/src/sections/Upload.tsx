@@ -55,7 +55,8 @@ export function Upload() {
   const streamingRef = useRef<StreamingUploadRun | null>(null);
   // Guards `close()` firing more than once per run.
   const closedRef = useRef(false);
-  const running = snap?.phase === 'blobs' || snap?.phase === 'metadata';
+  const running =
+    snap?.phase === 'preparing' || snap?.phase === 'blobs' || snap?.phase === 'metadata';
   // Dismisses the "upload complete" popup — reset whenever a new run (fresh
   // start or resume) begins, so a later run's completion pops it again.
   const [completeDismissed, setCompleteDismissed] = useState(false);

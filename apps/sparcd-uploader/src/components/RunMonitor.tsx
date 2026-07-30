@@ -21,6 +21,7 @@ const ROW = 40;
 
 const PHASE_LABEL: Record<UploadSnapshot['phase'], string> = {
   idle: 'idle',
+  preparing: 'preparing',
   blobs: 'uploading',
   metadata: 'publishing',
   partial: 'partial',
@@ -111,6 +112,15 @@ function fmtDuration(ms: number): string {
 const fmtRate = (bytesPerSec: number): string =>
   `${formatBytes(bytesPerSec)}/s (${(bytesPerSec * 8 / 1e6).toFixed(bytesPerSec * 8 < 10e6 ? 1 : 0)} Mbps)`;
 
+// ETA reads best coarse: second-precision at hours-out just spins digits.
+function fmtEta(ms: number): string {
+  const s = ms / 1000;
+  if (s < 90) return `~${Math.max(5, Math.round(s / 5) * 5)}s left`;
+  const m = s / 60;
+  if (m < 90) return `~${Math.round(m)} min left`;
+  return `~${Math.floor(m / 60)}h ${Math.round((m % 60) / 5) * 5}m left`;
+}
+
 // Files ≤ 8 MiB report bytes only on completion (no streaming progress from
 // fetch), so the byte counter moves in whole-file steps. A ~20 s window keeps
 // the rate honest across those jumps.
@@ -189,7 +199,7 @@ function Telemetry({ snap }: { snap: UploadSnapshot }) {
     <p className="flex flex-wrap gap-x-4 gap-y-0.5 font-mono text-[12px] text-inkSoft">
       <span>{rate > 0 ? fmtRate(rate) : 'measuring…'}</span>
       <span>elapsed {fmtDuration(elapsedMs)}</span>
-      <span className="text-ink">{etaMs !== null ? `~${fmtDuration(etaMs)} left` : 'estimating…'}</span>
+      <span className="text-ink">{etaMs !== null ? fmtEta(etaMs) : 'estimating…'}</span>
     </p>
   );
 }
@@ -249,6 +259,15 @@ export function RunMonitor({ snap }: { snap: UploadSnapshot }) {
             <>
               {' · '}
               <span className="font-mono text-inkMute">{counts.inspecting}</span> inspecting
+            </>
+          ) : null}
+          {counts.uploading || counts.verifying ? (
+            <>
+              {' · '}
+              <span className="font-mono text-accent">
+                {(counts.uploading ?? 0) + (counts.verifying ?? 0)}
+              </span>{' '}
+              in flight
             </>
           ) : null}
           {counts.skipped ? (

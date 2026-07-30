@@ -59,7 +59,7 @@ import {
   type LoadedSession,
 } from './db';
 
-export type UploadPhase = 'idle' | 'blobs' | 'metadata' | 'partial' | 'done' | 'error';
+export type UploadPhase = 'idle' | 'preparing' | 'blobs' | 'metadata' | 'partial' | 'done' | 'error';
 // 'inspecting': part of the batch, not yet processed by Inspect — only
 // reachable via a streamed run; a fixed-plan run never has such a file.
 export type FileState = 'inspecting' | 'pending' | 'uploading' | 'verifying' | 'done' | 'skipped' | 'failed';
@@ -774,6 +774,11 @@ export function runStreamingUpload(
   });
   const sessionId = crypto.randomUUID();
   runner.snap.sessionId = sessionId;
+  // Surface the prep work — freezing every object key and opening the resume
+  // ledger is real work at thousands of files, and a silent gap reads as a
+  // hang. `runStreaming` flips straight to 'blobs' once the lanes start.
+  runner.snap.phase = 'preparing';
+  runner.log('info', 'preparing upload…');
 
   const now = new Date();
   const naming = resolveBatchNaming({
@@ -823,6 +828,7 @@ export function runStreamingUpload(
         ? fileRecordFor(sessionId, planItemFor(f, naming, build.timeZone), 'pending')
         : awaitingFileRecordFor(sessionId, f),
     );
+    runner.log('info', `saving resume ledger (${initialRecords.length} files)…`);
     runner.openLedger(openSession(batch, initialRecords));
   }
 

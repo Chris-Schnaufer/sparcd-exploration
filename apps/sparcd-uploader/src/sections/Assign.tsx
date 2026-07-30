@@ -43,9 +43,14 @@ function RefreshableLabel({
         title="Re-pull from S3"
         className="grid place-items-center min-w-6 min-h-6 border border-rule font-mono text-[12px] text-inkSoft hover:text-ink hover:border-ink focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
       >
-        <span aria-hidden className={refreshing ? 'animate-spin' : ''}>
-          ↻
-        </span>
+        {refreshing ? (
+          <span
+            aria-hidden
+            className="block w-3 h-3 rounded-full border-2 border-current border-t-transparent animate-spin"
+          />
+        ) : (
+          <span aria-hidden>↻</span>
+        )}
       </button>
     </div>
   );

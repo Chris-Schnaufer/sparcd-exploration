@@ -73,7 +73,8 @@ export function History() {
   // Abandon an in-flight resume if the section unmounts.
   useEffect(() => () => runRef.current?.cancel(), []);
 
-  const running = snap?.phase === 'blobs' || snap?.phase === 'metadata';
+  const running =
+    snap?.phase === 'preparing' || snap?.phase === 'blobs' || snap?.phase === 'metadata';
 
   const launch = useCallback(
     async (
