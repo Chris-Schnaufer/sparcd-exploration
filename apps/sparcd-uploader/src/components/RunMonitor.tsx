@@ -100,6 +100,100 @@ function ProgressList({ snap }: { snap: UploadSnapshot }) {
   );
 }
 
+function fmtDuration(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  return `${h > 0 ? `${h}:${String(m).padStart(2, '0')}` : m}:${String(sec).padStart(2, '0')}`;
+}
+
+const fmtRate = (bytesPerSec: number): string =>
+  `${formatBytes(bytesPerSec)}/s (${(bytesPerSec * 8 / 1e6).toFixed(bytesPerSec * 8 < 10e6 ? 1 : 0)} Mbps)`;
+
+// Files ≤ 8 MiB report bytes only on completion (no streaming progress from
+// fetch), so the byte counter moves in whole-file steps. A ~20 s window keeps
+// the rate honest across those jumps.
+const RATE_WINDOW_MS = 20_000;
+
+/**
+ * Live speed / elapsed / ETA for a wet run. Rate comes from a rolling window of
+ * (time, uploadedBytes) samples taken on every snapshot emit; a 1 s ticker keeps
+ * elapsed and ETA counting between emits, so the estimate is always current —
+ * a stall shows up as a sinking rate and a growing ETA, not a frozen number.
+ */
+function Telemetry({ snap }: { snap: UploadSnapshot }) {
+  const samples = useRef<{ t: number; b: number }[]>([]);
+  const startedAt = useRef<number | null>(null);
+  const finishedAt = useRef<number | null>(null);
+  const [, force] = useState(0);
+
+  const running = snap.phase === 'blobs' || snap.phase === 'metadata';
+  const settled = snap.phase === 'done' || snap.phase === 'partial' || snap.phase === 'error';
+
+  // New session → fresh clock and window.
+  useEffect(() => {
+    samples.current = [];
+    startedAt.current = null;
+    finishedAt.current = null;
+  }, [snap.sessionId]);
+
+  useEffect(() => {
+    if (running && startedAt.current === null) {
+      startedAt.current = Date.now();
+      finishedAt.current = null;
+    }
+    if (settled && startedAt.current !== null && finishedAt.current === null) {
+      finishedAt.current = Date.now();
+      force((n) => n + 1);
+    }
+  }, [running, settled]);
+
+  // Sample the byte counter on every snapshot emit.
+  useEffect(() => {
+    if (!running) return;
+    const now = Date.now();
+    samples.current.push({ t: now, b: snap.uploadedBytes });
+    const cutoff = now - RATE_WINDOW_MS;
+    while (samples.current.length > 2 && samples.current[1].t < cutoff) samples.current.shift();
+  }, [snap.version, running, snap.uploadedBytes]);
+
+  useEffect(() => {
+    if (!running) return;
+    const id = setInterval(() => force((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, [running]);
+
+  if (snap.dryRun || startedAt.current === null) return null;
+
+  const now = finishedAt.current ?? Date.now();
+  const elapsedMs = now - startedAt.current;
+  const avgRate = elapsedMs > 500 ? snap.uploadedBytes / (elapsedMs / 1000) : 0;
+
+  if (settled) {
+    return (
+      <p className="font-mono text-[12px] text-inkSoft">
+        {formatBytes(snap.uploadedBytes)} in {fmtDuration(elapsedMs)}
+        {avgRate > 0 && <> · avg {fmtRate(avgRate)}</>}
+      </p>
+    );
+  }
+
+  const oldest = samples.current.find((s) => s.t >= now - RATE_WINDOW_MS) ?? samples.current[0];
+  const windowSec = oldest ? (now - oldest.t) / 1000 : 0;
+  const rate = oldest && windowSec > 0.5 ? (snap.uploadedBytes - oldest.b) / windowSec : 0;
+  const remaining = Math.max(0, snap.totalBytes - snap.uploadedBytes);
+  const etaMs = rate > 0 ? (remaining / rate) * 1000 : null;
+
+  return (
+    <p className="flex flex-wrap gap-x-4 gap-y-0.5 font-mono text-[12px] text-inkSoft">
+      <span>{rate > 0 ? fmtRate(rate) : 'measuring…'}</span>
+      <span>elapsed {fmtDuration(elapsedMs)}</span>
+      <span className="text-ink">{etaMs !== null ? `~${fmtDuration(etaMs)} left` : 'estimating…'}</span>
+    </p>
+  );
+}
+
 const LOG_TONE = {
   put: 'text-inkSoft',
   info: 'text-inkSoft',
@@ -181,6 +275,8 @@ export function RunMonitor({ snap }: { snap: UploadSnapshot }) {
           style={{ width: `${snap.phase === 'done' ? 100 : pct}%` }}
         />
       </div>
+
+      <Telemetry snap={snap} />
 
       {snap.phase === 'done' && (
         <Note
