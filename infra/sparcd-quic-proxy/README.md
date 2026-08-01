@@ -56,6 +56,8 @@ changes rather than iterating one directive per rebuild.
 | JS2 via proxy, HTTP/2, single origin | ~7.5 MB/s |
 | JS2 via proxy, HTTP/3, single origin | 4.8 MB/s settled |
 | JS2 via 2 proxies, HTTP/3, 2 origins | 8.5 MB/s settled |
+| JS2 via proxy-03, HTTP/3, 4 origins | 10 MB/s settled |
+| JS2 via proxy-03, HTTP/2, 4 origins, 32 lanes | 15 MB/s settled |
 | Path capacity per TCP connection | ~2.5 MB/s |
 
 h3 underperforms h2 here (clean route + userspace QUIC on 1 vCPU); its value
