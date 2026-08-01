@@ -8,8 +8,8 @@ throughput: the uploader stripes its lanes across the ports (one browser
 connection per host+port origin), escaping HTTP/2+3 single-connection
 coalescing.
 
-Instance: `sparcd-quic-proxy-02` (m3.tiny) in JS2 project BIO260073.
-DNS: `sparcd-quic-proxy-02.bio260073.projects.jetstream-cloud.org`.
+Instance: `sparcd-quic-proxy-03` (m3.tiny) in JS2 project BIO260073.
+DNS: `sparcd-quic-proxy-03.bio260073.projects.jetstream-cloud.org`.
 A sibling `sparcd-quic-proxy-01` (m3.small, keyed elsewhere) dates from the
 uploader benchmark and also fronts RGW, with CORS pinned to one origin.
 
@@ -23,7 +23,7 @@ this directory's cloud-init:
 openstack --os-cloud BIO260073_IU server rebuild \
   --image Featured-Minimal-Ubuntu24 \
   --user-data infra/sparcd-quic-proxy/cloud-init.yaml \
-  sparcd-quic-proxy-02
+  sparcd-quic-proxy-03
 ```
 
 The instance keeps its IP, DNS name, flavor, and security groups; the disk is
@@ -63,12 +63,11 @@ is lossy/high-RTT field networks, so both stay available. Port sharding exists
 to break the single-connection ceiling; production hardening would swap ports
 for subdomain shards (port 443 everywhere) once DNS records are available.
 
-## Deployment state (2026-07-31)
+## Deployment state (2026-08-01)
 
-The running instance serves the pre-snippet revision: ports answer but
-:8443-:8445 fail SigV4 (the old config forwarded a portless Host on them —
-clients sign `host:port` on non-default ports). Redeploy this directory's
-cloud-init after 2026-08-06 (cert budget) to activate all four shard ports.
-Until then, two working :443 origins exist for sharding: proxy-02 (this box)
-and proxy-01 (the benchmark-era sibling, CORS-pinned to the vite preview
-origin http://127.0.0.1:4173).
+`sparcd-quic-proxy-03` (m3.tiny) serves this directory's cloud-init verbatim:
+all four ports validate SigV4, h3 works, certs persist on the
+`sparcd-quic-proxy-certs` volume (rebuilds no longer consume LE budget), BBR
+enabled. It inherited floating IP 149.165.155.148. `sparcd-quic-proxy-02`
+is dark (no public IP) and can be deleted after the next green end-to-end
+upload; proxy-01 remains as an optional extra :443 origin.

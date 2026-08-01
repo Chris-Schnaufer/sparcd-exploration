@@ -1,27 +1,35 @@
 #cloud-config
-# sparcd-quic-proxy-02: Caddy HTTP/3 front for the JS2 object store (Ceph RGW).
+# sparcd-quic-proxy-03: Caddy HTTP/3 front for the JS2 object store (Ceph RGW).
 #
 # Ports 443/8443/8444/8445 all serve the same handler: browsers key
 # connections on host+port, so the uploader stripes its lanes across the
 # ports to escape HTTP/2+3 single-connection coalescing (one congestion
 # window otherwise caps throughput at a single flow's share of the path).
 #
-# NOT YET DEPLOYED (2026-07-31): the running instance carries the previous
-# revision, whose extra ports strip the port from the forwarded Host and so
-# fail SigV4 on :8443-:8445. This revision forwards the exact authority the
-# client signed ({host} on :443 where clients sign portless, hostport on the
-# extra ports where clients sign host:port). Deploy at the next rebuild —
-# after 2026-08-06, when the Let's Encrypt per-name budget (5/week) resets.
+# TLS certificates live on an attached volume mounted at /var/lib/caddy, so
+# `openstack server rebuild` (the reliable reconfigure path from CGNAT'd
+# networks — see README) reuses them instead of burning Let's Encrypt's
+# 5-per-name-per-week budget. BBR is enabled: it holds per-connection
+# throughput on long lossy paths far better than cubic.
 #
-# Hard-won details (see infra/sparcd-quic-proxy/README.md):
-# - The forwarded Host must byte-match what the client signed (SigV4).
+# Hard-won details (see README.md):
+# - The forwarded Host must byte-match what the client signed (SigV4):
+#   {host} on :443 (clients sign portless), hostport on the extra ports
+#   (clients sign host:port).
 # - Caddy owns CORS: RGW only answers CORS per bucket, so service-level
 #   calls (ListBuckets = collection discovery) die in browsers without this.
 #   header_down strips RGW's per-bucket CORS so headers never double up.
 # - request_buffers 16KiB: h3 requests carry no Content-Length; without
 #   buffering, Caddy forwards bodyless requests to the h1.1 upstream as
 #   Transfer-Encoding: chunked, which RGW rejects with 501 NotImplemented.
+# - The uploader strips the SDK's `?x-id=` query param pre-signing
+#   (packages/s3-safe) — RGW 501s unknown query params.
 write_files:
+  - path: /etc/sysctl.d/90-bbr.conf
+    permissions: '0644'
+    content: |
+      net.core.default_qdisc = fq
+      net.ipv4.tcp_congestion_control = bbr
   - path: /etc/caddy/Caddyfile.sparcd
     permissions: '0644'
     content: |
@@ -53,15 +61,23 @@ write_files:
           }
         }
       }
-      sparcd-quic-proxy-02.bio260073.projects.jetstream-cloud.org:443 {
+      sparcd-quic-proxy-03.bio260073.projects.jetstream-cloud.org:443 {
         import s3rgw {host}
       }
-      sparcd-quic-proxy-02.bio260073.projects.jetstream-cloud.org:8443,
-      sparcd-quic-proxy-02.bio260073.projects.jetstream-cloud.org:8444,
-      sparcd-quic-proxy-02.bio260073.projects.jetstream-cloud.org:8445 {
+      sparcd-quic-proxy-03.bio260073.projects.jetstream-cloud.org:8443,
+      sparcd-quic-proxy-03.bio260073.projects.jetstream-cloud.org:8444,
+      sparcd-quic-proxy-03.bio260073.projects.jetstream-cloud.org:8445 {
         import s3rgw {http.request.hostport}
       }
 runcmd:
+  - sysctl --system
+  # Cert volume before Caddy exists: format only if blank, mount by label.
+  - |
+    DEV=/dev/vdb; [ -b $DEV ] || DEV=/dev/sdb
+    blkid $DEV >/dev/null 2>&1 || mkfs.ext4 -L caddydata $DEV
+    mkdir -p /var/lib/caddy
+    grep -q caddydata /etc/fstab || echo 'LABEL=caddydata /var/lib/caddy ext4 defaults 0 2' >> /etc/fstab
+    mount -a
   - apt-get update
   - DEBIAN_FRONTEND=noninteractive apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl
   - curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
@@ -69,4 +85,5 @@ runcmd:
   - apt-get update
   - DEBIAN_FRONTEND=noninteractive apt-get install -y caddy
   - mv /etc/caddy/Caddyfile.sparcd /etc/caddy/Caddyfile
+  - chown -R caddy:caddy /var/lib/caddy
   - systemctl restart caddy
