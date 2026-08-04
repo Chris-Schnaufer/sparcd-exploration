@@ -112,7 +112,7 @@ package, or the workflow itself. The
 landing page sits at the root, with each tool under its own path
 (`/explorer`, `/uploader`, `/tagger`). Live at:
 
-<https://juli4ng.github.io/sparcd-exploration/>
+<https://culverlab.github.io/sparcd-exploration/>
 
 The deployed pages run entirely in the visitor's browser — the explorer runs
 Python via Pyodide, and the Vite tools talk to S3 directly. SPARC'd
