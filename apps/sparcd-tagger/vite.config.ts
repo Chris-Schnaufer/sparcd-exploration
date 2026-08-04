@@ -8,7 +8,7 @@ const pkg = (name: string, entry: string) =>
   fileURLToPath(new URL(`../../packages/${name}/src/${entry}`, import.meta.url));
 
 export default defineConfig({
-  // Served from a subpath on GitHub Pages: juli4ng.github.io/sparcd-exploration/tagger/
+  // Served from a subpath on GitHub Pages: culverlab.github.io/sparcd-exploration/tagger/
   base: '/sparcd-exploration/tagger/',
   plugins: [react()],
   resolve: {
