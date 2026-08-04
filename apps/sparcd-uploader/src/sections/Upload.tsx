@@ -16,6 +16,7 @@ import { onFilesReady } from '../lib/processing';
 import { captureTimeComplete, processingComplete } from '../lib/validation';
 import { Note, RunMonitor } from '../components/RunMonitor';
 import { UploadCompleteDialog } from '../components/UploadCompleteDialog';
+import { CaptureTimeEditor } from '../components/CaptureTimeEditor';
 
 const sectionLabel = 'font-[600] text-[11px] tracking-[0.16em] uppercase text-inkSoft mb-2';
 
@@ -182,8 +183,9 @@ export function Upload() {
   // active in the background (processing.ts keeps going regardless of the
   // screen), and swapping out the whole step would hide it. A file missing a
   // capture time only blocks the final publish (see the close-triggering
-  // effect above) — the fix (Assign) is one click away, surfaced inline.
-  const captureComplete = captureTimeComplete(files);
+  // effect above) — fixed inline below, the same editor Assign uses, so
+  // there's no need to leave this step for it.
+  const needsCaptureTime = files.some((f) => f.processState === 'ready' && !f.exifNaive);
 
   return (
     <div className="max-w-2xl mx-auto space-y-7">
@@ -224,13 +226,6 @@ export function Upload() {
           />
         )}
 
-        {!captureComplete && (
-          <Note
-            tone="warn"
-            message="One or more files still have no capture time — publishing will wait until every ready file has one. Go back to Assign to set it."
-          />
-        )}
-
         <div className="flex items-center gap-3">
           <label className="font-body text-[13px] text-inkSoft w-28">Concurrency</label>
           <input
@@ -245,6 +240,16 @@ export function Upload() {
           <span className="font-mono text-[13px] text-ink w-8 text-right">{concurrency}</span>
         </div>
       </section>
+
+      {needsCaptureTime && (
+        <section className="space-y-2">
+          <h2 className={sectionLabel}>Capture time</h2>
+          <p className="font-body text-[13px] text-inkSoft">
+            Publishing waits until every file below has a capture time.
+          </p>
+          <CaptureTimeEditor files={files} />
+        </section>
+      )}
 
       {/* Live run */}
       {snap && <RunMonitor snap={snap} />}
