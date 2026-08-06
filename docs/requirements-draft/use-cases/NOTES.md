@@ -1,7 +1,7 @@
 # DRAFT — for review. Generated 2026-08-06.
 
 Open questions raised by the three use-case drafts, as a checklist for the
-review meeting. Each item names where it surfaces and what a decision would
+team's review. Each item names where it surfaces and what a decision would
 unblock.
 
 ---
