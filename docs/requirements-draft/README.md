@@ -14,8 +14,6 @@ source, then human-reviewed); each file's DRAFT header names its source.
 | Directory | Contents | Size |
 | --- | --- | --- |
 | `spec-features/` | BDD transcription of the agreed acceptance criteria for stories F1–F4, A1, A2, AL1, AL2, H1–H3, plus `NOTES.md` on what would not fit into a scenario | 11 `.feature` files, 73 scenarios |
-| `as-built/uploader/` | What `apps/sparcd-uploader` does today, traced to code in `src/` and pinned where possible by a test in `test/`, plus `NOTES.md` | 9 `.feature` files, 106 scenarios |
-| `as-built/tagger/` | What `apps/sparcd-tagger` does today, on the same basis, plus `NOTES.md` | 11 `.feature` files, 122 scenarios |
 | `use-cases/` | Three Cockburn-style use cases (UC1 upload, UC2 resume/retry, UC3 identify) carrying 41 NFRs, plus `NOTES.md` with 29 numbered open questions | 3 use cases |
 | `gap-report.md` | The diff between the two BDD sets: per-story coverage, 10 draft GitHub issues, 18 groups of unmapped as-built behavior, and the residue that BDD cannot express | 1 document |
 
@@ -35,10 +33,11 @@ notation so they can be compared line by line.
   are written in the story's own vocabulary (Frank, Anita, Alice, Harold) and
   say nothing about buttons, steps or storage. They describe behavior nobody
   has committed to building yet.
-- **`as-built/` is the present.** Each file is one coherent flow of a shipped
-  app. Scenarios describe what the code does, including where that deviates
-  from a story — the deviation is written into a trailing `#` comment on the
-  scenario rather than smoothed over.
+- **The as-built set is the present.** Each file is one coherent flow of a
+  shipped app, describing what the code does — deviations from a story are
+  written into a trailing `#` comment rather than smoothed over. These files
+  now live with their apps (`apps/sparcd-uploader/features/`,
+  `apps/sparcd-tagger/features/`) as executable playwright-bdd suites: PR #25.
 - **`gap-report.md` is the subtraction.** For each story it names which
   as-built scenarios satisfy which criteria, what is unmet, and what is met
   only vacuously (A1's "untagged images are accepted" passes because the
@@ -56,8 +55,7 @@ than an interaction. The two sets are told apart by directory, not by tag — no
 
 | Set | Home | Why |
 | --- | --- | --- |
-| `as-built/uploader/*.feature` | `apps/sparcd-uploader/features/` | They describe that app's behavior and should move with it. Move them when playwright-bdd is scaffolded, so they become executable regression cover for current behavior. |
-| `as-built/tagger/*.feature` | `apps/sparcd-tagger/features/` | Same. |
+| as-built features | `apps/<name>/features/` | Done — moved and made executable in PR #25. |
 | `spec-features/*.feature` | Requirements wiki, one DRAFT-prefixed page per story, alongside the story it transcribes | They are requirements, not tests. They become executable only once a story is agreed and scheduled — at which point the relevant file follows the story into the owning app's `features/`. |
 | `use-cases/*.md` | Requirements wiki, DRAFT-prefixed pages | They restructure existing wiki use cases and carry the NFRs, which have no home in a `.feature` file. |
 | `NOTES.md` (all four) | Travel with their set | Each records what its author could not express and what a reviewer must decide. They are the most perishable and most valuable part of this drop. |
