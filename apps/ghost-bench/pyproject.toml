@@ -1,0 +1,18 @@
+[project]
+name = "ghost-bench"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=2.4.6",
+    "pandas>=3.0.3",
+    "pillow>=12.2.0",
+]
+
+[project.optional-dependencies]
+# MegaDetector v6 is a YOLOv9 checkpoint loaded straight through ultralytics;
+# we skip the PytorchWildlife package to avoid its bioacoustics import chain.
+megadetector = [
+    "torch>=2.4",
+    "torchvision>=0.19",
+    "ultralytics>=8.3",
+]
