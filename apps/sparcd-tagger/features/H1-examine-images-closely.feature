@@ -46,7 +46,10 @@ Feature: Examine an image closely enough to catch every species
     When the image is opened fullscreen
     Then it fills the window over a dimmed background
     And it can be enlarged up to ten times its fitted size there
-    And pressing Escape, using the close control, or clicking outside the image returns to the workspace
+    And pressing Escape or using the close control returns to the workspace
+    # Corrected against the app: a click on the dimmed area does NOT dismiss it.
+    # The zoom surface is stretched to the full pane, so a backdrop click never
+    # reaches the element that carries the dismiss handler. See CORRECTIONS.md.
 
   @H1
   Scenario: Moving to another image starts it fitted to the pane
@@ -64,11 +67,17 @@ Feature: Examine an image closely enough to catch every species
     # The responsiveness criterion of H1 is addressed by this virtualization
     # plus per-image subscriptions; it is not itself measured by the app.
 
-  @H1
+  @H1 @manual
   Scenario: A thumbnail that cannot be fetched is reported rather than left blank
     Given an image's download link cannot be produced
     Then its tile shows a failure marker in place of the picture
     And the rest of the strip continues to render
+    # @manual: not drivable headlessly. The "download link" is a presigned URL
+    # computed locally (SigV4 signing over the connected config) — it never
+    # touches the network, so no route mock, offline mode or storage state can
+    # make it fail. The failure branch is only reachable by corrupting the
+    # in-memory config, which no user action does. Verify by code reading or by
+    # temporarily forcing `presignImage` to throw.
 
   @H1
   Scenario: Video media plays instead of zooming

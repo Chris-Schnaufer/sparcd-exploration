@@ -110,10 +110,15 @@ Feature: Assign species to images in an upload
     And Escape, the close control or a click outside dismisses it
 
   @H2
-  Scenario: The species panel is inert when no image is in view
-    Given no image is focused
-    Then the species rows are disabled
-    And they explain that an image must be focused first
+  Scenario: An upload with nothing to tag offers no species panel at all
+    Given an upload whose canonical media list has no images is opened
+    Then the workspace states that the upload has no taggable images
+    And no species panel is offered
+    # Corrected against the app. The file previously claimed "the species rows
+    # are disabled and explain that an image must be focused first". That state
+    # is unreachable: whenever the panel renders, an image is focused (focus
+    # defaults to the first image and every path clamps it into range), and an
+    # upload with no taggable images never renders the panel. See CORRECTIONS.md.
 
   @H2
   Scenario: New identifications are held locally until they are synced

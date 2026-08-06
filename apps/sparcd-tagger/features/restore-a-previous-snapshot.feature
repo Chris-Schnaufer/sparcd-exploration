@@ -53,10 +53,17 @@ Feature: Recover a previous state of an upload
     And only then are the snapshot's versions written back in place
 
   @unmapped
-  Scenario: A restore never overwrites a change it did not see
+  Scenario: A restore writes against the files it re-reads, not the previewed ones
     Given the stored files changed since the restore was previewed
     When the restore is run
-    Then a conflict is reported and nothing is written
+    Then the restore replaces the files it re-read at the moment it ran
+    And every replacement still carries the precondition that catches a change made mid-write
+    # Corrected against the app. The file previously claimed "a conflict is
+    # reported and nothing is written". A restore re-loads the canonical files
+    # when it runs and takes its IfMatch against THAT read, so a change landing
+    # between the preview and the run is overwritten, not refused. Only a change
+    # arriving during the write sequence itself is caught. Unlike a sync, a
+    # restore has no grounded-base check. See CORRECTIONS.md.
 
   @unmapped
   Scenario: A snapshot identical to the current state is not rewritten

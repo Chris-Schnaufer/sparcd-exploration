@@ -112,7 +112,11 @@ Feature: Publish local identifications back to the collection
     Given the connected store does not honour conditional replacement
     When a sync is attempted
     Then the sync is refused with an explanation
-    And nothing is written
+    And the stored files are left untouched
+    # Corrected against the app: the pre-change snapshot is written BEFORE the
+    # first conditional replacement is attempted, so a refused sync does leave
+    # a snapshot behind — only the canonical files are untouched. The earlier
+    # wording ("nothing is written") was wrong. See CORRECTIONS.md.
     # Depends on the S3-compatible backend in use; not reachable against a
     # store that supports conditional writes.
 
