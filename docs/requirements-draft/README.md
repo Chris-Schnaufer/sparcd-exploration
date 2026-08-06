@@ -1,8 +1,9 @@
 # DRAFT — for review, not yet agreed. Generated 2026-08-06.
 
 Requirements drafts for review. Nothing here is agreed; nothing here is wired
-into a test runner yet. The set exists to be read once, argued over in one
-meeting, and then dispersed to its permanent homes.
+into a test runner yet. The set exists to be read, discussed asynchronously on
+the wiki and in the team discussions, and then dispersed to its permanent
+homes.
 
 Drafted with AI assistance (generated from the wiki user stories and the app
 source, then human-reviewed); each file's DRAFT header names its source.
