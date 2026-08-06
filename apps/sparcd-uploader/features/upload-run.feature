@@ -13,6 +13,12 @@ Feature: Upload and publish a batch
   Background:
     Given a batch has a collection, a deployment, an uploader identity and capture times
     And the New upload section is showing the Upload step
+    # As-built constraint that colours every scenario below: a run only ever
+    # leaves the transfer phase if at least one file finishes being examined
+    # after the run is started. A batch that was fully examined before Start is
+    # pressed transfers every object and then hangs, never publishing. Every
+    # scenario here that reaches the publish phase starts its run while one
+    # deliberately slow file is still being examined. See CORRECTIONS.md.
 
   @unmapped
   Scenario: A dry run is offered first and writes nothing
@@ -41,6 +47,10 @@ Feature: Upload and publish a batch
     When a file has been uploaded
     Then the tool re-reads the stored object's size and recorded fingerprint
     And a mismatch is treated as a failure of that file, not as a success
+    # A mismatch is retried like any other transient failure. The retry then
+    # re-PUTs a key the first attempt already stored, so the append-only guard
+    # rejects it and the run stops there rather than working through the retry
+    # budget — the file is never counted as done either way.
 
   @unmapped
   Scenario: Uploading begins before the whole batch has finished being examined
@@ -87,7 +97,10 @@ Feature: Upload and publish a batch
     Given a run is in progress
     Then each file shows its own state and percentage
     And the batch shows bytes uploaded against the total, and counts of done, skipped and failed files
-    And an activity log records each write, retry and warning as it happens
+    And an activity log records each retry, each warning and each metadata write as it happens
+    # Correction: a real upload does not log successful blob writes at all — the
+    # log carries retries, warnings, skips, and the five metadata writes. The
+    # per-object "PUT …" listing only appears in a dry run.
 
   @unmapped
   Scenario: The number of files uploaded at once can be tuned

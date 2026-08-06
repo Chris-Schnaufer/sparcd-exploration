@@ -77,7 +77,11 @@ Feature: Connect the uploader to storage and manage the session
     Given no uploader identity has been entered
     When a connection is made
     Then the uploader identity is pre-filled with the connected access key
-    And an identity the user has already typed is never overwritten by connecting
+    And an identity carried over from a previous connection in this browser is not overwritten by connecting
+    # Correction: as-built the guard is `uploaderUser || accessKey`, and both
+    # disconnect paths blank the identity — so a typed identity never survives to
+    # meet it. What it actually protects is the identity seeded from the previous
+    # connection's remembered access key on a fresh page load.
 
   @unmapped
   Scenario: What the tool may read or write is decided by the credentials, not the page

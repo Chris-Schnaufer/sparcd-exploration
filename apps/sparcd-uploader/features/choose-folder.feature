@@ -57,7 +57,9 @@ Feature: Choose the folder of media to upload
     When a folder is scanned
     Then each distinct path within the folder appears at most once in the batch
 
-  @unmapped
+  @unmapped @manual
+  # Not automatable headlessly: showDirectoryPicker() opens a real OS folder
+  # dialog that no synthetic event can satisfy.
   Scenario: Picking a folder through the dialog allows a later resume without re-picking
     Given the browser can grant lasting access to a chosen folder
     When the folder is chosen through the folder picker

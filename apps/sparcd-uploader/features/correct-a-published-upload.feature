@@ -59,6 +59,9 @@ Feature: Correct a published upload
     When a correction is applied whose values already match what is stored
     Then the tool reports that there is nothing to change
     And no snapshot and no change is written
+    # Only a location correction can reach this: a description save always
+    # appends an edit comment, so its bytes always differ from what is stored
+    # even when the description itself is unchanged.
 
   @unmapped
   Scenario: A dry-run correction lists what it would write and touches nothing

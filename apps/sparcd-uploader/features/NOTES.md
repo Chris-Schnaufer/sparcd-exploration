@@ -85,3 +85,11 @@ Coverage notes for the as-built uploader feature files.
 - **MP4 capture time** is read only from the leading 4 MiB of the file, so a
   non-fast-start video falls through to manual entry exactly like a file with no
   timestamp. Documented as "no camera capture time" rather than as an MP4 detail.
+
+## Making these files executable
+
+They now run: `pnpm test:bdd` in `apps/sparcd-uploader` generates the specs with
+`bddgen` and drives the real app in Chromium, with storage served by an
+in-memory S3 mock (`features/steps/s3mock.ts`). Everything the run changed about
+these files — corrected claims, one `@manual` scenario, and the app bugs found
+along the way — is written up in `features/CORRECTIONS.md`.

@@ -20,10 +20,15 @@ Feature: Assign a batch to a collection and a camera location
     And it states that a deployment location must be selected first
 
   @F2 @A2
-  Scenario: The batch cannot be uploaded until a target collection is chosen
-    Given no target collection has been chosen
-    Then the Continue button is disabled
-    And it states that a target collection must be selected first
+  Scenario: A target collection is always in force, and one is chosen automatically
+    Given the collections readable with the connected credentials have been listed
+    Then the first of them is already selected
+    And the Continue gate never has to ask for a collection
+    # Correction: the file previously claimed the gate blocks until a target
+    # collection is chosen. As-built the first readable collection is
+    # pre-selected and nothing can clear it, and when no collection is readable
+    # the deployment picker never appears at all — so the "select a target
+    # collection first" message in the code is unreachable.
 
   @unmapped
   Scenario: The batch cannot be uploaded until an uploader identity is set
@@ -42,7 +47,10 @@ Feature: Assign a batch to a collection and a camera location
     When the Assign step opens
     Then the tool lists the collections readable with the connected credentials
     And the first of them is pre-selected
-    And each is shown with its name, organization or contact, and its identifier
+    And each is shown with its name and its organization or contact, and the selected one's identifier is shown beneath the list
+    # Correction: the identifier is not on each row — the list shows name,
+    # organization · contact, and description; the chosen collection's uuid is
+    # printed underneath the picker.
 
   @unmapped
   Scenario: A connection that can see no collections explains what is missing
