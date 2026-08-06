@@ -18,7 +18,11 @@ source, then human-reviewed); each file's DRAFT header names its source.
 | `as-built/tagger/` | What `apps/sparcd-tagger` does today, on the same basis, plus `NOTES.md` | 11 `.feature` files, 122 scenarios |
 | `use-cases/` | Three Cockburn-style use cases (UC1 upload, UC2 resume/retry, UC3 identify) carrying 41 NFRs, plus `NOTES.md` with 29 numbered open questions | 3 use cases |
 | `gap-report.md` | The diff between the two BDD sets: per-story coverage, 10 draft GitHub issues, 18 groups of unmapped as-built behavior, and the residue that BDD cannot express | 1 document |
-| `wiki/` | The team-facing digest: Start Here, Where We Stand (per-story status), Questions To Decide (Q1–Q24 plus decided items). Source of the pages published on the sparcd-requirements wiki — edit here, republish there | 3 pages |
+
+The team-facing digest of this set (Start Here, Where We Stand, Questions To
+Decide) lives only on the
+[sparcd-requirements wiki](https://github.com/CulverLab/sparcd-requirements/wiki/Start-Here)
+— edit it there.
 
 Every file carries a DRAFT header on its first lines.
 
