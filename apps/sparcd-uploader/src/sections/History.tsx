@@ -55,8 +55,11 @@ export function History() {
   const [message, setMessage] = useState<string | null>(null);
   const [problems, setProblems] = useState<ReconcileProblem[]>([]);
   // Re-verifying a large batch's content hashes before resume can take real
-  // time with otherwise no visible feedback — surfaced here so it doesn't
-  // look like Resume is just doing nothing.
+  // time with otherwise no visible feedback — surfaced in that batch's own
+  // tile so it doesn't look like Resume is just doing nothing. `active`
+  // isn't set yet during this phase (only once launch() actually starts the
+  // run), so track which batch verification is for separately.
+  const [verifyingBatchId, setVerifyingBatchId] = useState<string | null>(null);
   const [verifyProgress, setVerifyProgress] = useState<{ done: number; total: number } | null>(null);
   const runRef = useRef<UploadRun | null>(null);
   const reselectRef = useRef<HTMLInputElement>(null);
@@ -86,6 +89,7 @@ export function History() {
       attached: Map<string, File>,
       probs: ReconcileProblem[],
     ) => {
+      setVerifyingBatchId(null);
       setVerifyProgress(null);
       const missingRequired = session.files.filter((f) => f.state !== 'done' && !attached.has(f.localPath));
       if (missingRequired.length > 0) {
@@ -123,6 +127,7 @@ export function History() {
     async (batch: BatchRecord) => {
       setProblems([]);
       setSnap(null);
+      setVerifyingBatchId(batch.id);
       setVerifyProgress(null);
       if (!s3Config) {
         setMessage('Connect to a storage endpoint before resuming.');
@@ -256,13 +261,6 @@ export function History() {
         }}
       />
 
-      {verifyProgress && (
-        <Note
-          tone="mute"
-          message={`Verifying ${verifyProgress.done.toLocaleString()} of ${verifyProgress.total.toLocaleString()} files against the original folder…`}
-        />
-      )}
-
       {message && <Note tone="warn" message={message} />}
 
       {problems.length > 0 && (
@@ -312,6 +310,7 @@ export function History() {
       <ul className="space-y-3">
         {rows.map(({ batch, counts }) => {
           const isActive = active === batch.id;
+          const isVerifying = verifyingBatchId === batch.id && !!verifyProgress;
           const total = batch.totalFiles;
           return (
             <li key={batch.id} className="border border-ruleSoft bg-panel px-4 py-3 space-y-2">
@@ -339,6 +338,14 @@ export function History() {
                 )}
               </p>
 
+              {isVerifying && verifyProgress && (
+                <p className="font-body text-[12px] text-inkSoft">
+                  Verifying <span className="font-mono text-ink">{verifyProgress.done.toLocaleString()}</span> of{' '}
+                  <span className="font-mono text-ink">{verifyProgress.total.toLocaleString()}</span> files against
+                  the original folder…
+                </p>
+              )}
+
               <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-1">
                 {!batch.completedAt && (
                   <button
@@ -348,7 +355,7 @@ export function History() {
                       running ? 'opacity-40 cursor-not-allowed' : ''
                     }`}
                   >
-                    {isActive ? 'Resuming…' : 'Resume'}
+                    {isVerifying ? 'Verifying…' : isActive ? 'Resuming…' : 'Resume'}
                   </button>
                 )}
                 <button
