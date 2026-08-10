@@ -22,9 +22,11 @@ import {
   restoreFromHandle,
   reconcileReselect,
   reselectFolder,
+  ensureBundle,
   type ReconcileProblem,
 } from '../lib/resume';
 import { scanFileList, supportsDirectoryHandle } from '../lib/scanFiles';
+import type { ProcessResponse } from '../lib/processPool';
 import { resumeUpload, type UploadRun, type UploadSnapshot } from '../lib/upload';
 import { Note, RunMonitor } from '../components/RunMonitor';
 import { PublishedUploads } from '../components/PublishedUploads';
@@ -125,6 +127,36 @@ export function History() {
     [s3Config, concurrency, refresh],
   );
 
+  // If this session was interrupted before it ever reached publish
+  // (`session.bundle` is null), resolve any still-unprocessed files and
+  // attach the bundle it never got, before proceeding exactly as a normal
+  // resume would. `ensureBundle` is a no-op once a bundle already exists.
+  const launchWithBundle = useCallback(
+    async (
+      batch: BatchRecord,
+      session: LoadedSession,
+      attached: Map<string, File>,
+      probs: ReconcileProblem[],
+      resolved: Map<string, ProcessResponse>,
+    ) => {
+      const result = await ensureBundle(batch, session, resolved);
+      if (!result.ok) {
+        setProblems([...probs, ...result.problems]);
+        setMessage(
+          `${result.problems.length} file${result.problems.length === 1 ? '' : 's'} couldn't be resolved to resume this upload.`,
+        );
+        return;
+      }
+      const finalSession = session.bundle ? session : await loadSession(batch.id);
+      if (!finalSession) {
+        setMessage('Session record is missing.');
+        return;
+      }
+      await launch(batch, finalSession, attached, probs);
+    },
+    [launch],
+  );
+
   const beginResume = useCallback(
     async (batch: BatchRecord) => {
       setProblems([]);
@@ -161,7 +193,7 @@ export function History() {
             return;
           }
           if (restore.ok) {
-            await launch(batch, session, restore.attached, restore.problems);
+            await launchWithBundle(batch, session, restore.attached, restore.problems, restore.resolved);
             return;
           }
           setMessage(restore.reason);
@@ -177,12 +209,12 @@ export function History() {
             setMessage('Session record is missing.');
             return;
           }
-          const { attached, problems: probs } = await reconcileReselect(session.files, picked.scanned, onProgress);
+          const { attached, problems: probs, resolved } = await reconcileReselect(session.files, picked.scanned, onProgress);
           // Opportunistically upgrade the session to a durable handle for next time.
           if (picked.handle) {
             await updateBatch(batch.id, { dirHandle: picked.handle, fileAccessMode: 'persistent-handle' });
           }
-          await launch(batch, session, attached, probs);
+          await launchWithBundle(batch, session, attached, probs, resolved);
         } else {
           // No durable picker — fall back to a transient <input webkitdirectory>.
           // Release the lock before clicking: on Firefox/Safari a cancelled picker
@@ -198,7 +230,7 @@ export function History() {
         setVerifyProgress(null);
       }
     },
-    [s3Config, launch],
+    [s3Config, launchWithBundle],
   );
 
   const onReselectInput = useCallback(
@@ -214,16 +246,16 @@ export function History() {
           setMessage('Session record is missing.');
           return;
         }
-        const { attached, problems: probs } = await reconcileReselect(session.files, scanFileList(list), (done, total) =>
+        const { attached, problems: probs, resolved } = await reconcileReselect(session.files, scanFileList(list), (done, total) =>
           setVerifyProgress({ done, total }),
         );
-        await launch(batch, session, attached, probs);
+        await launchWithBundle(batch, session, attached, probs, resolved);
       } finally {
         setVerifyingBatchId(null);
         setVerifyProgress(null);
       }
     },
-    [launch],
+    [launchWithBundle],
   );
 
   const discard = useCallback(
