@@ -54,6 +54,10 @@ export function History() {
   const [snap, setSnap] = useState<UploadSnapshot | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [problems, setProblems] = useState<ReconcileProblem[]>([]);
+  // Re-verifying a large batch's content hashes before resume can take real
+  // time with otherwise no visible feedback — surfaced here so it doesn't
+  // look like Resume is just doing nothing.
+  const [verifyProgress, setVerifyProgress] = useState<{ done: number; total: number } | null>(null);
   const runRef = useRef<UploadRun | null>(null);
   const reselectRef = useRef<HTMLInputElement>(null);
   const pendingReselect = useRef<BatchRecord | null>(null);
@@ -82,6 +86,7 @@ export function History() {
       attached: Map<string, File>,
       probs: ReconcileProblem[],
     ) => {
+      setVerifyProgress(null);
       const missingRequired = session.files.filter((f) => f.state !== 'done' && !attached.has(f.localPath));
       if (missingRequired.length > 0) {
         setProblems([
@@ -118,6 +123,7 @@ export function History() {
     async (batch: BatchRecord) => {
       setProblems([]);
       setSnap(null);
+      setVerifyProgress(null);
       if (!s3Config) {
         setMessage('Connect to a storage endpoint before resuming.');
         return;
@@ -130,6 +136,7 @@ export function History() {
       // prompt, no error, nothing happens. Kick the load off in parallel
       // instead and only consume it once the gated step has resolved.
       const sessionPromise = loadSession(batch.id);
+      const onProgress = (done: number, total: number) => setVerifyProgress({ done, total });
 
       // Durable handle: revalidate permission inside this click gesture, then
       // re-hash against the recorded files — a same-size in-place edit between
@@ -138,6 +145,7 @@ export function History() {
         const restore = await restoreFromHandle(
           batch,
           sessionPromise.then((s) => s?.files ?? []),
+          onProgress,
         );
         const session = await sessionPromise;
         if (!session) {
@@ -161,7 +169,7 @@ export function History() {
           setMessage('Session record is missing.');
           return;
         }
-        const { attached, problems: probs } = await reconcileReselect(session.files, picked.scanned);
+        const { attached, problems: probs } = await reconcileReselect(session.files, picked.scanned, onProgress);
         // Opportunistically upgrade the session to a durable handle for next time.
         if (picked.handle) {
           await updateBatch(batch.id, { dirHandle: picked.handle, fileAccessMode: 'persistent-handle' });
@@ -188,7 +196,9 @@ export function History() {
         setMessage('Session record is missing.');
         return;
       }
-      const { attached, problems: probs } = await reconcileReselect(session.files, scanFileList(list));
+      const { attached, problems: probs } = await reconcileReselect(session.files, scanFileList(list), (done, total) =>
+        setVerifyProgress({ done, total }),
+      );
       await launch(batch, session, attached, probs);
     },
     [launch],
@@ -245,6 +255,13 @@ export function History() {
           e.target.value = '';
         }}
       />
+
+      {verifyProgress && (
+        <Note
+          tone="mute"
+          message={`Verifying ${verifyProgress.done.toLocaleString()} of ${verifyProgress.total.toLocaleString()} files against the original folder…`}
+        />
+      )}
 
       {message && <Note tone="warn" message={message} />}
 
