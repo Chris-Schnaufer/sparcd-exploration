@@ -340,8 +340,8 @@ export function History() {
 
               {isVerifying && verifyProgress && (
                 <p className="font-body text-[12px] text-inkSoft">
-                  Verifying <span className="font-mono text-ink">{verifyProgress.done.toLocaleString()}</span> of{' '}
-                  <span className="font-mono text-ink">{verifyProgress.total.toLocaleString()}</span> files against
+                  Verifying <span className="font-mono text-ink">{verifyProgress.done}</span> of{' '}
+                  <span className="font-mono text-ink">{verifyProgress.total}</span> files against
                   the original folder…
                 </p>
               )}
