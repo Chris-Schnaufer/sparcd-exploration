@@ -5,6 +5,7 @@
 // rest. Discard drops the local session row only; it never touches remote state.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { OfflineBanner, useOnline } from '@sparcd/auth-ui';
 import { useStore } from '../store';
 import { formatBytes } from '../lib/scanFiles';
 import {
@@ -74,6 +75,7 @@ export function History() {
   useEffect(() => () => runRef.current?.cancel(), []);
 
   const running = snap?.phase === 'blobs' || snap?.phase === 'metadata';
+  const online = useOnline();
 
   const launch = useCallback(
     async (
@@ -213,6 +215,7 @@ export function History() {
 
   return (
     <div className="px-6 py-6 max-w-2xl mx-auto space-y-5">
+      <OfflineBanner message="You're offline — Resume won't work until your connection is back." />
       <input
         ref={reselectRef}
         type="file"
@@ -306,10 +309,11 @@ export function History() {
               <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-1">
                 {!batch.completedAt && (
                   <button
-                    disabled={running}
+                    disabled={running || !online}
+                    title={!online ? "You're offline" : undefined}
                     onClick={() => void beginResume(batch)}
                     className={`bg-ink text-paper border border-ink min-h-[44px] sm:min-h-0 px-4 sm:px-3 py-1 text-[13px] font-body font-[600] hover:opacity-90 ${
-                      running ? 'opacity-40 cursor-not-allowed' : ''
+                      running || !online ? 'opacity-40 cursor-not-allowed' : ''
                     }`}
                   >
                     {isActive ? 'Resuming…' : 'Resume'}

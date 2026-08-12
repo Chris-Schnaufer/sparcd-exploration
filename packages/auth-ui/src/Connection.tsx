@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import { detectBackendDefaults, type S3Config } from '@sparcd/types';
 import { BrandSwitcher } from './BrandSwitcher';
+import { OfflineBanner } from './OfflineBanner';
+import { useOnline } from './useOnline';
 
 export type ConnectionProps = {
   /** Shown in the chrome, e.g. "Uploader" → "SPARC'd · Uploader". */
@@ -42,7 +44,8 @@ export function Connection({ toolName, initialConfig, onConnect }: ConnectionPro
   const forcePathStyle = pathStyleOverride ?? inferred.forcePathStyle;
   const secure = secureOverride ?? inferred.secure;
 
-  const canConnect = endpoint.trim() && accessKey.trim() && secretKey.trim();
+  const online = useOnline();
+  const canConnect = online && endpoint.trim() && accessKey.trim() && secretKey.trim();
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -70,6 +73,10 @@ export function Connection({ toolName, initialConfig, onConnect }: ConnectionPro
         <p className="font-body text-[14px] text-inkSoft mb-6">
           Connect to an S3-compatible endpoint to begin.
         </p>
+
+        <div className="mb-4">
+          <OfflineBanner message="You're offline — connecting needs a network connection." />
+        </div>
 
         <div className="space-y-4">
           <div>
@@ -167,6 +174,7 @@ export function Connection({ toolName, initialConfig, onConnect }: ConnectionPro
         <button
           type="submit"
           disabled={!canConnect}
+          title={!online ? "You're offline" : undefined}
           className="mt-7 w-full bg-ink text-paper border border-ink px-4 py-2 text-[14px] font-body font-[600] disabled:opacity-40 disabled:cursor-not-allowed hover:bg-inkSoft focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
         >
           Connect
