@@ -180,7 +180,7 @@ function makeClient(records: FileRecord[], failingKeys = new Set<string>()): Fak
 // post-write stat from what was actually written (opts.sha256, file.size).
 function makeStreamingClient(
   failingRelPaths = new Set<string>(),
-  hooks: { onPut?: () => Promise<void> } = {},
+  hooks: { onPut?: () => Promise<void>; omitFromListing?: (key: string) => boolean } = {},
 ): FakeClient {
   const written = new Map<string, { size: number; sha256: string }>();
   return {
@@ -197,7 +197,10 @@ function makeStreamingClient(
     }),
     writeImmutable: vi.fn(async () => undefined),
     listObjects: vi.fn(async function* () {
-      for (const [key, w] of written) yield { key, size: w.size };
+      for (const [key, w] of written) {
+        if (hooks.omitFromListing?.(key)) continue;
+        yield { key, size: w.size };
+      }
     }),
   };
 }
@@ -968,6 +971,89 @@ describe('streamed runs upload as files individually become ready', () => {
     const warned = snap.log.find((l) => l.text.includes('could not open the resume ledger'));
     expect(warned).toBeDefined();
     expect(warned!.text).toContain('QuotaExceededError');
+  });
+
+  it('confirms a streamed run by one listing pass when the per-file HEAD is off', async () => {
+    const entries = [makeFileEntry(0), makeFileEntry(1), makeFileEntry(2)];
+    const client = makeStreamingClient();
+    mocks.client = client;
+    let last: UploadSnapshot | null = null;
+
+    const run = runStreamingUpload(
+      {
+        config: CONFIG,
+        dryRun: false,
+        concurrency: manual(2),
+        verifyAfterPut: false,
+        uploaderUser: 'user',
+        fileAccessMode: 'reselect-required',
+        build: {
+          location: LOCATION,
+          collectionUuid: 'collection',
+          bucket: 'bucket',
+          uploaderSlug: 'user',
+          description: 'description',
+          timeZone: 'UTC',
+          files: [entries[0], ...entries.slice(1).map((e) => ({ ...e, processState: 'processing' as const, sha256: undefined }))],
+        },
+      },
+      (snap) => {
+        last = snap;
+      },
+    );
+    run.notifyReady(entries.slice(1));
+    run.close(entries);
+    const snap = await collect(run, () => last);
+
+    expect(snap.phase).toBe('done');
+    expect(client.writeImmutableStream).toHaveBeenCalledTimes(3);
+    // One listing for the whole batch, instead of a HEAD per file.
+    expect(client.statObject).not.toHaveBeenCalled();
+    expect(client.listObjects).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails a streamed run whose final review listing cannot find an object', async () => {
+    const entries = [makeFileEntry(0), makeFileEntry(1)];
+    let missing: string | null = null;
+    const client = makeStreamingClient(new Set(), {
+      omitFromListing: (key) => {
+        if (missing === null) missing = key; // drop whichever landed first
+        return key === missing;
+      },
+    });
+    mocks.client = client;
+    let last: UploadSnapshot | null = null;
+
+    const run = runStreamingUpload(
+      {
+        config: CONFIG,
+        dryRun: false,
+        concurrency: manual(1),
+        verifyAfterPut: false,
+        uploaderUser: 'user',
+        fileAccessMode: 'reselect-required',
+        build: {
+          location: LOCATION,
+          collectionUuid: 'collection',
+          bucket: 'bucket',
+          uploaderSlug: 'user',
+          description: 'description',
+          timeZone: 'UTC',
+          files: entries,
+        },
+      },
+      (snap) => {
+        last = snap;
+      },
+    );
+    run.close(entries);
+    const snap = await collect(run, () => last);
+
+    expect(snap.phase).toBe('partial');
+    const failed = snap.files.filter((f) => f.state === 'failed');
+    expect(failed).toHaveLength(1);
+    expect(failed[0].error).toContain('final review');
+    expect(client.writeImmutable).not.toHaveBeenCalled();
   });
 
   it('publishes after the queue genuinely empties and every lane is parked waiting', async () => {
