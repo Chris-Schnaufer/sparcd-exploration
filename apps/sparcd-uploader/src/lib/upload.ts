@@ -244,6 +244,7 @@ const awaitingFileRecordFor = (sessionId: string, f: { id: string; relPath: stri
 function makeAsyncQueue<T>() {
   const items: T[] = [];
   let closed = false;
+  let aborted = false;
   // Every concurrency lane can be waiting on `next()` at once — a single
   // waiter slot would let a later lane's wait overwrite an earlier one's,
   // permanently orphaning it (its promise never resolves, so `Promise.all`
@@ -256,6 +257,7 @@ function makeAsyncQueue<T>() {
   };
   return {
     push(item: T): void {
+      if (aborted) return;
       items.push(item);
       wake();
     },
@@ -263,8 +265,19 @@ function makeAsyncQueue<T>() {
       closed = true;
       wake();
     },
+    /** Cancel, or a failure that kills the whole run: drop whatever is still
+     *  queued and release every parked lane at once. Aborting the request
+     *  controller is not enough — a lane waiting here holds no request, just a
+     *  promise that only a push or a close would ever resolve, so the lane set
+     *  would never settle. `next()` returns null from here on. */
+    abort(): void {
+      aborted = true;
+      items.length = 0;
+      wake();
+    },
     async next(): Promise<T | null> {
       for (;;) {
+        if (aborted) return null;
         if (items.length > 0) return items.shift()!;
         if (closed) return null;
         await new Promise<void>((resolve) => {
@@ -291,6 +304,9 @@ function makeRunner(
   const client = getClient(config);
   let cancelled = false;
   let abort = new AbortController();
+  // Set for the life of a streamed run so `cancel()` can also release lanes
+  // parked on the queue; a fixed-plan run leaves it null and needs nothing.
+  let activeQueue: { abort: () => void } | null = null;
 
   const snap: UploadSnapshot = {
     version: 0,
@@ -566,6 +582,7 @@ function makeRunner(
     buildMetadata: () => Promise<{ writes: RunPlan['writes']; metadataBundleSha256: string }>,
   ): Promise<void> => {
     abort = new AbortController();
+    activeQueue = queue;
     snap.sessionId = seed.sessionId;
     snap.bucket = seed.bucket;
     snap.uploadPath = seed.uploadPath;
@@ -576,11 +593,24 @@ function makeRunner(
 
     let fatal: unknown = null;
     let fileFailures = 0;
+    // A failure that kills the run has to stop both kinds of waiting: sibling
+    // lanes with a request in flight, and sibling lanes parked on the queue
+    // waiting for Inspect to hand them a file. Aborting only the first leaves
+    // the parked ones waiting forever and the run never settles.
+    const fail = (err: unknown): void => {
+      if (fatal) return;
+      fatal = err;
+      abort.abort();
+      queue.abort();
+    };
     const lane = async (): Promise<void> => {
       for (;;) {
         if (cancelled || fatal) return;
         const it = await queue.next();
         if (it === null) return;
+        // Woken by a cancel or a sibling's fatal failure rather than by real
+        // work: drop the item and let the run unwind.
+        if (cancelled || fatal) return;
         const fp: FileProgress = { id: it.id, key: it.key, size: it.size, loaded: 0, state: 'pending', attempt: 0 };
         const idx = snap.files.findIndex((f) => f.id === it.id);
         if (idx >= 0) snap.files[idx] = fp;
@@ -599,18 +629,16 @@ function makeRunner(
         } catch (err) {
           if (cancelled || abort.signal.aborted) return;
           if (isRunFatalBlobError(err)) {
-            if (!fatal) {
-              fatal = err;
-              abort.abort();
-            }
+            fail(err);
             return;
           }
           fileFailures++;
-          if (fileFailures >= MAX_FILE_FAILURES && !fatal) {
-            fatal = new Error(
-              `aborted after ${MAX_FILE_FAILURES} file failures — the problem looks systemic, not per-file`,
+          if (fileFailures >= MAX_FILE_FAILURES) {
+            fail(
+              new Error(
+                `aborted after ${MAX_FILE_FAILURES} file failures — the problem looks systemic, not per-file`,
+              ),
             );
-            abort.abort();
             return;
           }
           if (fatal) return;
@@ -658,7 +686,8 @@ function makeRunner(
     runStreaming,
     cancel: () => {
       cancelled = true;
-      abort.abort();
+      abort.abort(); // requests in flight
+      activeQueue?.abort(); // lanes parked waiting for the next file
     },
     isCancelled: () => cancelled,
   };
