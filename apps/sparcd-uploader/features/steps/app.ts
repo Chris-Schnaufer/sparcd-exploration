@@ -600,25 +600,6 @@ export class App {
     await this.continueToUpload();
   }
 
-  /**
-   * Start the run while at least one file is still being examined. As-built
-   * that is the only way the run's blob queue ever closes, so it is the only
-   * way a run reaches the publish phase — see features/CORRECTIONS.md.
-   *
-   * On a fast machine the slow file can finish before the wizard gets here; in
-   * that case re-scan the same folder and try again rather than start a run
-   * that could never publish.
-   */
-  async startRunWhileInspecting(): Promise<void> {
-    const note = this.page.getByText(/still being inspected/);
-    for (let attempt = 0; attempt < 3; attempt++) {
-      if (await note.isVisible().catch(() => false)) break;
-      await this.rescanFromUploadStep();
-    }
-    await expect(note).toBeVisible();
-    await this.startRun();
-  }
-
   // --- Assign --------------------------------------------------------------
 
   async waitForCollections(): Promise<void> {
@@ -695,6 +676,19 @@ export class App {
     timeout = 60_000,
   ): Promise<void> {
     await expect(this.runPhase()).toHaveText(phase, { timeout });
+    // A finished real run pops the "Upload complete" dialog (PR #26), a
+    // full-screen overlay that would swallow the next click on Back, History,
+    // Settings or Next batch. Dismiss it so scenarios can carry on; dry runs
+    // never show it, so this is a no-op for them.
+    if (phase === 'done') await this.dismissUploadCompleteDialog();
+  }
+
+  async dismissUploadCompleteDialog(): Promise<void> {
+    const dialog = this.page.getByRole('dialog', { name: 'Upload complete' });
+    if (await dialog.isVisible().catch(() => false)) {
+      await dialog.getByRole('button', { name: 'OK' }).click();
+      await expect(dialog).toBeHidden();
+    }
   }
 
   /** The collection picker on the History screen (a plain <select>). */
