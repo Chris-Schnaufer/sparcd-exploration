@@ -109,7 +109,7 @@ Then('the connection is ended and the in-progress batch is cleared', async ({ ap
   await app.fillConnection();
   await app.page.getByRole('button', { name: 'Connect', exact: true }).click();
   await expect(app.page.getByRole('button', { name: 'Disconnect' })).toBeVisible();
-  await app.expectStep('Drop');
+  await app.expectStep('Files');
   await expect(app.page.getByText('Drop a folder of media')).toBeVisible();
 });
 

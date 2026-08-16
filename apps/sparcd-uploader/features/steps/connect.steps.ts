@@ -126,7 +126,7 @@ Then('the other returns to the connection screen', async ({ app }) => {
 Then('its in-progress batch, chosen collection and chosen deployment are cleared', async ({ app }) => {
   await app.fillConnection();
   await app.page.getByRole('button', { name: 'Connect', exact: true }).click();
-  await app.expectStep('Drop');
+  await app.expectStep('Files');
   await expect(app.page.getByText('Drop a folder of media')).toBeVisible();
 });
 

@@ -164,7 +164,7 @@ export class App {
     return this.page.locator('ol[aria-label="Upload steps"] span.bg-mark');
   }
 
-  async expectStep(label: 'Drop' | 'Inspect' | 'Assign' | 'Upload'): Promise<void> {
+  async expectStep(label: 'Files' | 'Inspect' | 'Assign' | 'Upload'): Promise<void> {
     await expect(this.activeStep()).toContainText(label);
   }
 
@@ -567,7 +567,7 @@ export class App {
     const startOver = this.page.getByRole('button', { name: 'Start over' });
     if (await startOver.isVisible().catch(() => false)) {
       await startOver.click();
-      await this.expectStep('Drop');
+      await this.expectStep('Files');
     }
     if (opts.raw) await this.dropRawEntries(specs);
     else await this.dropFolder(specs);
