@@ -388,6 +388,51 @@ describe('upload runs continue past per-file blob failures', () => {
     expect(mocks.client.writeImmutable).toHaveBeenCalledTimes(5);
   });
 
+
+  it('refuses to publish on Retry after a file failed inspection, instead of resuming a short bundle', async () => {
+    // The fresh run already refused to publish this batch. Retry hands the
+    // persisted session to resumeUpload, whose bundle covers only the files
+    // that were ready — so dropping the hashless row and publishing would make
+    // exactly the short publish the fresh run refused, one click later.
+    const sessionId = 'session-1';
+    const ready = [makeRecord(sessionId, 0, 'pending'), makeRecord(sessionId, 1, 'pending')];
+    // Shaped the way `close` leaves a file that failed Inspect after Start:
+    // opened as awaiting-processing, patched to failed, still no hash or key.
+    const failedInspect: FileRecord = {
+      id: `${sessionId}::file-2.jpg`,
+      sessionId,
+      localPath: 'file-2.jpg',
+      fileName: 'file-2.jpg',
+      relPathInBundle: 'file-2.jpg',
+      size: 12,
+      state: 'failed',
+      lastError: 'unreadable EXIF',
+      attempt: 0,
+    };
+    const session: LoadedSession = {
+      batch: makeBatch(sessionId, 3),
+      bundle: makeBundleRecord(sessionId),
+      files: [...ready, failedInspect],
+    };
+    mocks.client = makeClient(ready);
+    let last: UploadSnapshot | null = null;
+
+    const run = resumeUpload(
+      { config: CONFIG, session, attached: attachedFor(ready), concurrency: 2 },
+      (snap) => {
+        last = snap;
+      },
+    );
+    const snap = await collect(run, () => last);
+
+    expect(snap.phase).toBe('error');
+    expect(snap.error).toContain('failed inspection');
+    expect(snap.files.filter((f) => f.state === 'failed')).toHaveLength(1);
+    // Nothing uploaded, nothing published, batch never marked complete.
+    expect(mocks.client.writeImmutableStream).not.toHaveBeenCalled();
+    expect(mocks.client.writeImmutable).not.toHaveBeenCalled();
+    expect(mocks.markBatchComplete).not.toHaveBeenCalled();
+  });
 });
 
 describe('streamed runs upload as files individually become ready', () => {
@@ -554,6 +599,89 @@ describe('streamed runs upload as files individually become ready', () => {
     expect(snap.phase).toBe('error');
     expect(snap.error).toContain('forbidden');
     expect(client.writeImmutable).not.toHaveBeenCalled();
+  });
+
+  it('fails the run when a file errors in Inspect after start, instead of publishing a short batch', async () => {
+    // The file is still processing at start(), so it is never enqueued, and it
+    // then fails Inspect. `buildBundle` drops it from the CSVs, so a run that
+    // ignored it would publish a smaller batch and call it done.
+    const entries = [makeFileEntry(0), makeFileEntry(1)];
+    const client = makeStreamingClient();
+    mocks.client = client;
+    let last: UploadSnapshot | null = null;
+
+    const run = runStreamingUpload(
+      {
+        config: CONFIG,
+        dryRun: false,
+        concurrency: 2,
+        uploaderUser: 'user',
+        fileAccessMode: 'reselect-required',
+        build: {
+          location: LOCATION,
+          collectionUuid: 'collection',
+          bucket: 'bucket',
+          uploaderSlug: 'user',
+          description: 'description',
+          timeZone: 'UTC',
+          files: [entries[0], { ...entries[1], processState: 'processing', sha256: undefined }],
+        },
+      },
+      (snap) => {
+        last = snap;
+      },
+    );
+
+    run.close([
+      entries[0],
+      { ...entries[1], processState: 'error', sha256: undefined, processError: 'unreadable EXIF' },
+    ]);
+    const snap = await collect(run, () => last);
+
+    expect(snap.phase).toBe('partial');
+    const failed = snap.files.filter((f) => f.state === 'failed');
+    expect(failed).toHaveLength(1);
+    expect(failed[0].error).toContain('unreadable EXIF');
+    expect(client.writeImmutableStream).toHaveBeenCalledTimes(1);
+    expect(client.writeImmutable).not.toHaveBeenCalled();
+    expect(mocks.markBatchComplete).not.toHaveBeenCalled();
+  });
+
+  it('picks up a ready file whose notifyReady never arrived, rather than dropping it', async () => {
+    const entries = [makeFileEntry(0), makeFileEntry(1)];
+    const client = makeStreamingClient();
+    mocks.client = client;
+    let last: UploadSnapshot | null = null;
+
+    const run = runStreamingUpload(
+      {
+        config: CONFIG,
+        dryRun: false,
+        concurrency: 2,
+        uploaderUser: 'user',
+        fileAccessMode: 'reselect-required',
+        build: {
+          location: LOCATION,
+          collectionUuid: 'collection',
+          bucket: 'bucket',
+          uploaderSlug: 'user',
+          description: 'description',
+          timeZone: 'UTC',
+          files: [entries[0], { ...entries[1], processState: 'processing', sha256: undefined }],
+        },
+      },
+      (snap) => {
+        last = snap;
+      },
+    );
+
+    // No notifyReady for the second file — close() carries the only word that
+    // it ever became ready, and both files must still land.
+    run.close(entries);
+    const snap = await collect(run, () => last);
+
+    expect(snap.phase).toBe('done');
+    expect(client.writeImmutableStream).toHaveBeenCalledTimes(2);
   });
 
   it('publishes after the queue genuinely empties and every lane is parked waiting', async () => {

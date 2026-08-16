@@ -928,6 +928,45 @@ export function runStreamingUpload(
     },
     close: (files) => {
       finalFiles = files;
+      // Last sweep for a ready file whose `notifyReady` never arrived — the
+      // bridge from Inspect is an event subscription, and a file it missed
+      // would be left out of the transfer while still appearing in the CSVs.
+      // `enqueue` ignores anything already queued, so this costs nothing when
+      // nothing was missed.
+      for (const f of files) enqueue(f);
+      // Whatever is still not enqueued can never be uploaded: it finished
+      // Inspect as an error after Start, so it has no hash and no object key.
+      // `buildBundle` filters such a file out of the CSVs, so without this the
+      // run published a strictly smaller batch and still reported `done` — the
+      // upload looked complete to anything reading the bucket while a file was
+      // quietly missing from it. Before Start, a file that cannot be examined
+      // blocks the batch at Assign's Continue gate; after Start the equivalent
+      // is a failed item, so the run ends `partial`, publishes nothing, and
+      // sends the user to Retry. Refusing to close the queue instead would
+      // match the gate more literally but hang the run with no way out.
+      for (const f of files) {
+        if (enqueuedIds.has(f.id)) continue;
+        const reason = f.processError ?? 'could not be inspected';
+        const fp = runner.snap.files.find((p) => p.id === f.id);
+        if (fp) {
+          fp.state = 'failed';
+          fp.error = reason;
+        } else {
+          runner.snap.files.push({
+            id: f.id,
+            key: '',
+            size: f.size,
+            loaded: 0,
+            state: 'failed',
+            attempt: 0,
+            error: reason,
+          });
+        }
+        if (persist) {
+          void markFileState(fileRecordId(sessionId, f.id), { state: 'failed', lastError: reason });
+        }
+        runner.log('error', `${f.relPath}: ${reason}`);
+      }
       queue.close();
     },
   };
@@ -971,11 +1010,43 @@ export function resumeUpload(
     return { cancel: runner.cancel, done };
   }
 
-  // A bundle exists, so per the streamed-open invariant every record here has
-  // already finished Inspect (never 'awaiting-processing') — filter defensively
-  // rather than trust that blindly, since a corrupted/foreign row shouldn't
-  // crash a resume.
-  const processedFiles = files.filter((r) => r.state !== 'awaiting-processing' && r.sha256 !== undefined);
+  // A row with no hash can never be uploaded: no content digest, no object
+  // key, nothing for the CSVs to describe. That is a file which failed Inspect
+  // after Start (`close` records it `failed`), or one the session never got to
+  // inspect at all. The persisted bundle was built from the ready files only,
+  // so publishing it here would omit those files silently — exactly the short
+  // publish the fresh run refuses to make, just one Retry click later. Refuse
+  // it too: there is no resume that can complete this batch, and re-inspecting
+  // outside the live wizard is out of scope, so the only way forward is a
+  // fresh upload of a batch the user has fixed.
+  const unresolvable = files.filter((r) => r.sha256 === undefined);
+  if (unresolvable.length > 0) {
+    const done = (async () => {
+      runner.snap.files = unresolvable.map((r) => ({
+        id: r.localPath,
+        key: '',
+        size: r.size,
+        loaded: 0,
+        state: 'failed' as FileState,
+        attempt: 0,
+        error: r.lastError ?? 'failed inspection',
+      }));
+      runner.snap.phase = 'error';
+      runner.snap.error =
+        `${unresolvable.length} file${unresolvable.length === 1 ? '' : 's'} failed inspection and cannot be uploaded, ` +
+        'so this batch can never be published as it stands. Fix or remove them and start the upload over — ' +
+        'files already uploaded will be detected and skipped automatically.';
+      for (const r of unresolvable.slice(0, 10)) {
+        runner.log('error', `${r.fileName}: ${r.lastError ?? 'failed inspection'}`);
+      }
+      if (unresolvable.length > 10) runner.log('error', `…and ${unresolvable.length - 10} more`);
+      runner.log('error', runner.snap.error);
+      runner.emit(true);
+    })();
+    return { cancel: runner.cancel, done };
+  }
+
+  const processedFiles = files.filter((r) => r.state !== 'awaiting-processing');
 
   const plan: RunPlan = {
     sessionId: batch.id,
