@@ -471,6 +471,91 @@ describe('streamed runs upload as files individually become ready', () => {
     expect(mocks.markBatchComplete).not.toHaveBeenCalled();
   });
 
+  it('cancelling settles a run whose lanes are all parked on the queue', async () => {
+    // Lanes wait in the queue between files, holding no request. `cancel()`
+    // aborts the request controller, which says nothing to a lane that has no
+    // request — so nothing woke them, the lane set never settled, and `done`
+    // never resolved. The Cancel button left the run spinning forever.
+    const entries = [makeFileEntry(0), makeFileEntry(1)];
+    const client = makeStreamingClient();
+    mocks.client = client;
+    let last: UploadSnapshot | null = null;
+
+    const run = runStreamingUpload(
+      {
+        config: CONFIG,
+        dryRun: false,
+        concurrency: 4,
+        uploaderUser: 'user',
+        fileAccessMode: 'reselect-required',
+        build: {
+          location: LOCATION,
+          collectionUuid: 'collection',
+          bucket: 'bucket',
+          uploaderSlug: 'user',
+          description: 'description',
+          timeZone: 'UTC',
+          files: [entries[0], { ...entries[1], processState: 'processing', sha256: undefined }],
+        },
+      },
+      (snap) => {
+        last = snap;
+      },
+    );
+
+    // Let the one ready file land. Every lane is now parked and the queue is
+    // still open — exactly the state a user cancels from mid-batch.
+    await new Promise((r) => setTimeout(r, 20));
+    run.cancel();
+    const snap = await collect(run, () => last);
+
+    expect(snap.phase).toBe('error');
+    expect(snap.error).toBe('cancelled');
+    expect(client.writeImmutable).not.toHaveBeenCalled();
+  });
+
+  it('a run-fatal blob error settles a run whose remaining lanes are parked', async () => {
+    // The same hang reached from the other side: one lane hits a 403 while its
+    // siblings wait on the queue for files Inspect will never deliver.
+    const entries = [makeFileEntry(0), makeFileEntry(1)];
+    const client = makeStreamingClient();
+    mocks.client = client;
+    client.writeImmutableStream.mockImplementation(async () => {
+      throw forbidden();
+    });
+    let last: UploadSnapshot | null = null;
+
+    const run = runStreamingUpload(
+      {
+        config: CONFIG,
+        dryRun: false,
+        concurrency: 4,
+        uploaderUser: 'user',
+        fileAccessMode: 'reselect-required',
+        build: {
+          location: LOCATION,
+          collectionUuid: 'collection',
+          bucket: 'bucket',
+          uploaderSlug: 'user',
+          description: 'description',
+          timeZone: 'UTC',
+          files: [entries[0], { ...entries[1], processState: 'processing', sha256: undefined }],
+        },
+      },
+      (snap) => {
+        last = snap;
+      },
+    );
+
+    // The queue is never closed, so the surviving lanes are parked on it when
+    // the fatal error lands.
+    const snap = await collect(run, () => last);
+
+    expect(snap.phase).toBe('error');
+    expect(snap.error).toContain('forbidden');
+    expect(client.writeImmutable).not.toHaveBeenCalled();
+  });
+
   it('publishes after the queue genuinely empties and every lane is parked waiting', async () => {
     // Regression test: with concurrency > the number of items enqueued so
     // far, every lane blocks on the same underlying queue at once. A queue
