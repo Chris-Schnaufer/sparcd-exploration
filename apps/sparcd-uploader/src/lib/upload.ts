@@ -353,6 +353,25 @@ function makeRunner(
   // parked on the queue; a fixed-plan run leaves it null and needs nothing.
   let activeQueue: { abort: () => void } | null = null;
 
+  // Per-file ledger writes must never overtake the session row they belong to.
+  // `openSession` replaces every row for its session, so an update that lands
+  // first is dropped outright (Dexie's `update` is a no-op on a row that does
+  // not exist yet) and then overwritten by the bulk put. A streamed run points
+  // this at its `openSession` promise; every other path leaves it resolved.
+  // Chained, not fanned out from one promise: two updates to the same file
+  // (pending, then done) would otherwise both hang off the same resolved
+  // promise and race each other into IndexedDB, so the row could settle on
+  // whichever landed last rather than whichever was written last. Appending
+  // each write to the tail makes the ledger a serial queue, and puts the
+  // batch-completion stamp behind every per-file write by construction.
+  // `.then(write, write)` on both arms on purpose: one rejected write — or a
+  // ledger that never opened — must not poison the rest of the queue.
+  let ledgerReady: Promise<unknown> = Promise.resolve();
+  const afterLedger = (write: () => Promise<unknown>): Promise<unknown> => {
+    ledgerReady = ledgerReady.then(write, write);
+    return ledgerReady;
+  };
+
   const snap: UploadSnapshot = {
     version: 0,
     sessionId: '',
@@ -379,7 +398,7 @@ function makeRunner(
   };
 
   const persistFile = (sessionId: string, localPath: string, patch: Partial<FileRecord>) => {
-    if (persist) void markFileState(fileRecordId(sessionId, localPath), patch);
+    if (persist) void afterLedger(() => markFileState(fileRecordId(sessionId, localPath), patch));
   };
 
   // Upload (or skip) one blob. Returns once the object is present and verified,
@@ -746,6 +765,21 @@ function makeRunner(
     emit,
     runOnce,
     runStreaming,
+    /** Sequence every ledger write behind the session row being written. */
+    openLedger: (p: Promise<unknown>) => {
+      // A ledger that never opened does not invalidate the upload — the blobs
+      // and the publish are still correct — but it does mean this batch will
+      // not appear in History and cannot be resumed, which the user should be
+      // told rather than left to discover. Log it once and carry on.
+      ledgerReady = Promise.resolve(p).catch((err: unknown) => {
+        log(
+          'warn',
+          `could not open the resume ledger (${err instanceof Error ? err.message : String(err)}) — ` +
+            'the upload will still complete, but it will not appear in History and cannot be resumed',
+        );
+      });
+    },
+    afterLedger,
     cancel: () => {
       cancelled = true;
       abort.abort(); // requests in flight
@@ -825,7 +859,11 @@ export function runStreamingUpload(
       flipped = true;
       if (!opts.silent) runner.emit(true);
     }
-    if (persist) void markFileState(fileRecordId(sessionId, item.localPath), fileRecordFor(sessionId, item, 'pending'));
+    if (persist) {
+      void runner.afterLedger(() =>
+        markFileState(fileRecordId(sessionId, item.localPath), fileRecordFor(sessionId, item, 'pending')),
+      );
+    }
     return flipped;
   };
 
@@ -853,7 +891,7 @@ export function runStreamingUpload(
         ? fileRecordFor(sessionId, planItemFor(f, naming, build.timeZone), 'pending')
         : awaitingFileRecordFor(sessionId, f),
     );
-    void openSession(batch, initialRecords);
+    runner.openLedger(openSession(batch, initialRecords));
   }
 
   const initialFiles: FileProgress[] = build.files.map((f) => ({
@@ -898,7 +936,9 @@ export function runStreamingUpload(
       );
       if (runner.snap.phase !== 'partial') {
         runner.snap.phase = 'done';
-        if (persist) await markBatchComplete(sessionId, new Date().toISOString());
+        // Behind the ledger too: `openSession` re-puts the batch row, so a
+        // completion stamp that lands first is wiped by it.
+        if (persist) await runner.afterLedger(() => markBatchComplete(sessionId, new Date().toISOString()));
         runner.log('info', dryRun ? 'dry-run complete — nothing written' : `published ${naming.uploadPath}/`);
         runner.emit(true);
       }
@@ -963,7 +1003,9 @@ export function runStreamingUpload(
           });
         }
         if (persist) {
-          void markFileState(fileRecordId(sessionId, f.id), { state: 'failed', lastError: reason });
+          void runner.afterLedger(() =>
+            markFileState(fileRecordId(sessionId, f.id), { state: 'failed', lastError: reason }),
+          );
         }
         runner.log('error', `${f.relPath}: ${reason}`);
       }
