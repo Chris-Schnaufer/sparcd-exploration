@@ -614,6 +614,155 @@ describe('streamed runs upload as files individually become ready', () => {
     expect(client.writeImmutableStream).toHaveBeenCalledTimes(2);
   });
 
+  it('never writes a file row before the session row it belongs to', async () => {
+    // `openSession` deletes and re-writes every row for the session, so a
+    // `markFileState` that lands first is dropped (Dexie ignores an update to
+    // a row that is not there yet) and then overwritten by the bulk put: the
+    // blob really uploaded, but History would show it pending forever.
+    const entries = [makeFileEntry(0), makeFileEntry(1)];
+    const client = makeStreamingClient();
+    mocks.client = client;
+    let openSessionDone!: () => void;
+    mocks.openSession.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          openSessionDone = () => resolve();
+        }),
+    );
+    let last: UploadSnapshot | null = null;
+
+    const run = runStreamingUpload(
+      {
+        config: CONFIG,
+        dryRun: false,
+        concurrency: 2,
+        uploaderUser: 'user',
+        fileAccessMode: 'reselect-required',
+        build: {
+          location: LOCATION,
+          collectionUuid: 'collection',
+          bucket: 'bucket',
+          uploaderSlug: 'user',
+          description: 'description',
+          timeZone: 'UTC',
+          files: entries,
+        },
+      },
+      (snap) => {
+        last = snap;
+      },
+    );
+    run.close(entries);
+
+    // Transfers do not wait on the ledger — only the ledger writes do.
+    await new Promise((r) => setTimeout(r, 20));
+    expect(mocks.openSession).toHaveBeenCalledTimes(1);
+    expect(client.writeImmutableStream).toHaveBeenCalledTimes(2);
+    expect(mocks.markFileState).not.toHaveBeenCalled();
+    expect(mocks.markBatchComplete).not.toHaveBeenCalled();
+
+    openSessionDone();
+    const snap = await collect(run, () => last);
+
+    expect(snap.phase).toBe('done');
+    expect(mocks.markFileState).toHaveBeenCalled();
+    expect(mocks.markBatchComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it('serializes ledger writes so two updates to one file cannot reorder', async () => {
+    // Both updates for a file (pending, then done) used to hang off the same
+    // resolved promise, so they raced into IndexedDB and the row could settle
+    // on whichever landed last rather than whichever was written last.
+    const entries = [makeFileEntry(0), makeFileEntry(1)];
+    const client = makeStreamingClient();
+    mocks.client = client;
+    const events: string[] = [];
+    let seq = 0;
+    mocks.markFileState.mockImplementation(async () => {
+      const n = seq++;
+      events.push(`start:${n}`);
+      // Alternating delays: fanned-out writes would finish out of order.
+      await new Promise((r) => setTimeout(r, n % 2 === 0 ? 6 : 1));
+      events.push(`end:${n}`);
+    });
+    let last: UploadSnapshot | null = null;
+
+    const run = runStreamingUpload(
+      {
+        config: CONFIG,
+        dryRun: false,
+        concurrency: 2,
+        uploaderUser: 'user',
+        fileAccessMode: 'reselect-required',
+        build: {
+          location: LOCATION,
+          collectionUuid: 'collection',
+          bucket: 'bucket',
+          uploaderSlug: 'user',
+          description: 'description',
+          timeZone: 'UTC',
+          files: entries,
+        },
+      },
+      (snap) => {
+        last = snap;
+      },
+    );
+    run.close(entries);
+    const snap = await collect(run, () => last);
+    mocks.markFileState.mockReset();
+
+    expect(snap.phase).toBe('done');
+    expect(events.length).toBeGreaterThanOrEqual(4);
+    // Never two starts without the intervening end: a strict serial queue.
+    const expected = events
+      .filter((e) => e.startsWith('start:'))
+      .flatMap((e) => [e, `end:${e.slice('start:'.length)}`]);
+    expect(events).toEqual(expected);
+    // And the completion stamp lands after every per-file write.
+    expect(mocks.markBatchComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a resume ledger that could not be opened, without failing the upload', async () => {
+    const entries = [makeFileEntry(0)];
+    const client = makeStreamingClient();
+    mocks.client = client;
+    mocks.openSession.mockImplementationOnce(() => Promise.reject(new Error('QuotaExceededError')));
+    let last: UploadSnapshot | null = null;
+
+    const run = runStreamingUpload(
+      {
+        config: CONFIG,
+        dryRun: false,
+        concurrency: 2,
+        uploaderUser: 'user',
+        fileAccessMode: 'reselect-required',
+        build: {
+          location: LOCATION,
+          collectionUuid: 'collection',
+          bucket: 'bucket',
+          uploaderSlug: 'user',
+          description: 'description',
+          timeZone: 'UTC',
+          files: entries,
+        },
+      },
+      (snap) => {
+        last = snap;
+      },
+    );
+    run.close(entries);
+    const snap = await collect(run, () => last);
+
+    // The remote upload is still valid, so the run completes...
+    expect(snap.phase).toBe('done');
+    expect(client.writeImmutable).toHaveBeenCalledTimes(5);
+    // ...but the run log says the batch will not be in History or resumable.
+    const warned = snap.log.find((l) => l.text.includes('could not open the resume ledger'));
+    expect(warned).toBeDefined();
+    expect(warned!.text).toContain('QuotaExceededError');
+  });
+
   it('publishes after the queue genuinely empties and every lane is parked waiting', async () => {
     // Regression test: with concurrency > the number of items enqueued so
     // far, every lane blocks on the same underlying queue at once. A queue
