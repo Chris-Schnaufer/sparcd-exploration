@@ -142,11 +142,11 @@ export class App {
     await expect(this.connectForm()).toBeVisible();
     await this.fillConnection(fields);
     await this.page.getByRole('button', { name: 'Connect', exact: true }).click();
-    await expect(this.page.getByRole('button', { name: 'Disconnect' })).toBeVisible();
+    await expect(this.page.getByRole('button', { name: 'Logout' })).toBeVisible();
   }
 
   async disconnectFromHeader(): Promise<void> {
-    await this.page.getByRole('button', { name: 'Disconnect' }).click();
+    await this.page.getByRole('button', { name: 'Logout' }).click();
   }
 
   // --- navigation ----------------------------------------------------------
@@ -320,7 +320,7 @@ export class App {
     if (await this.connectForm().isVisible()) {
       await this.fillConnection();
       await this.page.getByRole('button', { name: 'Connect', exact: true }).click();
-      await expect(this.page.getByRole('button', { name: 'Disconnect' })).toBeVisible();
+      await expect(this.page.getByRole('button', { name: 'Logout' })).toBeVisible();
     }
   }
 
