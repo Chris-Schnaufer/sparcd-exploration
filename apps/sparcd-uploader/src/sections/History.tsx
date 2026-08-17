@@ -349,13 +349,13 @@ export function History() {
               <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-1">
                 {!batch.completedAt && (
                   <button
-                    disabled={running}
+                    disabled={running || verifyingBatchId !== null}
                     onClick={() => void beginResume(batch)}
                     className={`bg-ink text-paper border border-ink min-h-[44px] sm:min-h-0 px-4 sm:px-3 py-1 text-[13px] font-body font-[600] hover:opacity-90 ${
-                      running ? 'opacity-40 cursor-not-allowed' : ''
+                      running || verifyingBatchId !== null ? 'opacity-40 cursor-not-allowed' : ''
                     }`}
                   >
-                    {isVerifying ? 'Verifying…' : isActive ? 'Resuming…' : 'Resume'}
+                    {verifyingBatchId === batch.id ? 'Verifying…' : isActive ? 'Resuming…' : 'Resume'}
                   </button>
                 )}
                 <button
