@@ -1,5 +1,9 @@
 # SPARC'd — Backend-less Architecture Brief
 
+> **Status: superseded** (proposal, May 2026). Proposed a TypeScript desktop
+> app; the project shipped separate static browser tools instead. Kept as
+> decision history — the current direction is the root `README.md`.
+
 A from-scratch redesign that drops the Python/Docker server, treats Camtrap-DP as the native data model, and ships as a TypeScript desktop app that works offline.
 
 This doc locks the runtime, data, and storage decisions. A separate visual design brief (the "Notebook" direction — locked tokens, sharp corners, hairline rules) is assumed but lives outside this document.

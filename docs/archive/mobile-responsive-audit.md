@@ -1,5 +1,9 @@
 # Mobile-Responsive Audit — sparcd-tagger & sparcd-uploader
 
+> **Status: snapshot** (June 2026). Point-in-time audit that scoped the
+> mobile-responsive work; findings describe the code as of that date, and
+> many have since been fixed.
+
 ## Executive summary
 
 **sparcd-tagger — not phone-usable today.** The core tag workspace and Browse shell are built on hard-coded pixel grids (`280px_1fr_340px`, `1fr_340px`, `320px_1fr`) that never collapse, so at 390px the image being tagged and the upload pane are crushed to slivers or pushed off-screen. On top of that, the most important actions (save, mark-questionable, next/prev, burst select, open the species loupe, open the cheatsheet) are keyboard- or hover-only with no touch affordance, and two write-path dialogs (Sync, Snapshots) are fixed-width and overflow every phone. This app needs both a responsive-layout pass and a touch-controls pass before it works on a phone.

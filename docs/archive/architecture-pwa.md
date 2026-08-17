@@ -1,5 +1,11 @@
 # SPARC'd — PWA-First Architecture Brief
 
+> **Status: superseded** (proposal, May 2026). The browser-first, no-server
+> direction proposed here was adopted, but the specifics were not: instead of
+> one PWA on SQLite-wasm/OPFS, the project shipped separate static apps using
+> IndexedDB and direct S3. For the current system, read the root `README.md`
+> and each app's `README.md`.
+
 A parallel proposal to `architecture.md`. Same goal — drop the Python/Docker server, model Camtrap-DP natively, work offline — but achieved as a **pure progressive web app** with no install, served as a static site, persistent on the user's device via OPFS.
 
 This is the option if "zero install, share a URL" is more valuable than maximum native fidelity.

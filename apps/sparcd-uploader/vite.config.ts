@@ -1,4 +1,5 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type UserConfig } from 'vite';
+import type { InlineConfig } from 'vitest/node';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath, URL } from 'node:url';
 
@@ -8,7 +9,7 @@ const pkg = (name: string, entry: string) =>
   fileURLToPath(new URL(`../../packages/${name}/src/${entry}`, import.meta.url));
 
 export default defineConfig({
-  // Served from a subpath on GitHub Pages: juli4ng.github.io/sparcd-exploration/uploader/
+  // Served from a subpath on GitHub Pages: culverlab.github.io/sparcd-exploration/uploader/
   // Vite dev still serves from '/', so this only affects the production build.
   base: '/sparcd-exploration/uploader/',
   plugins: [react()],
@@ -21,4 +22,10 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
-});
+  // Vitest reads this file too. `bddgen` emits Playwright specs under
+  // features/.features-gen/, which match Vitest's default `*.spec.js` glob —
+  // keep the unit suite out of them.
+  test: {
+    exclude: ['**/node_modules/**', '**/dist/**', 'features/.features-gen/**'],
+  },
+} as UserConfig & { test: InlineConfig });

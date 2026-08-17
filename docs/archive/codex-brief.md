@@ -1,5 +1,9 @@
 # SPARC'd — Problem Brief
 
+> **Status: background** (May 2026). The original problem statement that
+> framed this workspace. The problem description still holds; anything it
+> says about solutions predates what was built.
+
 ## Background
 
 SPARC'd is an open-source camera-trap wildlife tagging tool used by researchers (originally at the University of Arizona's Jaguar and Ocelot Monitoring Project) to tag images with species, location, and timestamp metadata, then query the dataset for population/behavior analysis.

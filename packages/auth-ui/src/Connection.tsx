@@ -1,11 +1,14 @@
 import { useMemo, useState } from 'react';
 import { detectBackendDefaults, type S3Config } from '@sparcd/types';
 import { BrandSwitcher } from './BrandSwitcher';
+import backgroundImage from './assets/sanimalBackground.jpg';
 
 export type ConnectionProps = {
   /** Shown in the chrome, e.g. "Uploader" → "SPARC'd · Uploader". */
   toolName: string;
-  /** Pre-fill (dev-only, non-secret values in practice). */
+  /** Pre-fill — a prior connection's remembered non-secret fields, a
+   *  dev-only endpoint override, or both. Callers never pass a secretKey
+   *  here; the field always starts blank regardless. */
   initialConfig?: Partial<S3Config>;
   onConnect: (config: S3Config) => void;
 };
@@ -56,7 +59,10 @@ export function Connection({ toolName, initialConfig, onConnect }: ConnectionPro
   }
 
   return (
-    <div className="min-h-screen bg-paper flex items-center justify-center p-6">
+    <div
+      className="min-h-screen bg-paper bg-cover bg-center flex items-center justify-center p-6"
+      style={{ backgroundImage: `url(${backgroundImage})` }}
+    >
       <form
         onSubmit={submit}
         className="w-full max-w-[440px] bg-panel border border-rule p-8"
@@ -76,11 +82,12 @@ export function Connection({ toolName, initialConfig, onConnect }: ConnectionPro
             </label>
             <input
               id="endpoint"
+              name="endpoint"
               className={textInput}
               placeholder="host[:port] or https://host"
               value={endpoint}
               onChange={(e) => setEndpoint(e.target.value)}
-              autoComplete="off"
+              autoComplete="url"
               spellCheck={false}
             />
           </div>
@@ -90,10 +97,11 @@ export function Connection({ toolName, initialConfig, onConnect }: ConnectionPro
             </label>
             <input
               id="accessKey"
+              name="accessKey"
               className={textInput}
               value={accessKey}
               onChange={(e) => setAccessKey(e.target.value)}
-              autoComplete="off"
+              autoComplete="username"
               spellCheck={false}
             />
           </div>
@@ -103,11 +111,12 @@ export function Connection({ toolName, initialConfig, onConnect }: ConnectionPro
             </label>
             <input
               id="secretKey"
+              name="secretKey"
               type="password"
               className={textInput}
               value={secretKey}
               onChange={(e) => setSecretKey(e.target.value)}
-              autoComplete="off"
+              autoComplete="current-password"
             />
           </div>
         </div>

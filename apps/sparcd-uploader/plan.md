@@ -1,5 +1,15 @@
 # sparcd-uploader — implementation plan
 
+> **Note:** this is the plan as written, with per-phase implementation
+> reports appended; where they disagree, the reports and the code win.
+> Known divergences from the plan text: MP4 video support shipped (the plan
+> scopes it out); published uploads can be edited in place via `s3-safe`'s
+> ETag-gated `replaceIfUnchanged` (the plan says "never modifies existing
+> uploads"); the tagger replaces `observations.csv` canonically rather than
+> writing per-user sidecars; and shadcn/ui, `@aws-sdk/lib-storage`, and
+> `p-limit` were dropped during implementation. The
+> [README](./README.md) describes what actually ships.
+
 A static, browser-based upload tool for SPARC'd camera-trap image batches.
 Takes a local folder of JPEGs, extracts EXIF, lets the user assign a
 deployment (camera location), generates the Camtrap-DP CSV trio plus
