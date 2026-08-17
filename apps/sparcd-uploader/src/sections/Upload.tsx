@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { OfflineBanner, useOnline } from '@sparcd/auth-ui';
-import { useStore } from '../store';
+import { useStore, type FileEntry } from '../store';
 import { useLocations } from '../lib/useLocations';
 import { useCollections } from '../lib/useCollections';
 import { sanitizeUploaderUser } from '../lib/normalize';
@@ -16,6 +16,7 @@ import {
 import { onFilesReady } from '../lib/processing';
 import { captureTimeComplete, processingComplete } from '../lib/validation';
 import { Note, RunMonitor } from '../components/RunMonitor';
+import { UploadCompleteDialog } from '../components/UploadCompleteDialog';
 
 const sectionLabel = 'font-[600] text-[11px] tracking-[0.16em] uppercase text-inkSoft mb-2';
 
@@ -57,6 +58,9 @@ export function Upload() {
   // Guards `close()` firing more than once per run.
   const closedRef = useRef(false);
   const running = snap?.phase === 'blobs' || snap?.phase === 'metadata';
+  // Dismisses the "upload complete" popup — reset whenever a new run (fresh
+  // start or resume) begins, so a later run's completion pops it again.
+  const [completeDismissed, setCompleteDismissed] = useState(false);
 
   // Abandon an in-flight run if the step unmounts.
   useEffect(() => () => runRef.current?.cancel(), []);
@@ -64,9 +68,25 @@ export function Upload() {
   const ready = useMemo(() => files.filter((f) => f.processState === 'ready' && f.sha256), [files]);
   const stillInspecting = files.length - ready.length;
 
+  // Shared by the reactive effect below and by `start()` itself — a batch
+  // that finishes Inspect before Start is even clicked (easy for a small or
+  // fast batch) would otherwise never trigger this: `streamingRef.current`
+  // is set via a plain ref mutation, which doesn't cause the `[files]`
+  // effect to re-run, and `files` never changes again once nothing's left
+  // to process. Checking again right after the run is created closes that
+  // gap without waiting on a store change that may never come.
+  const maybeCloseQueue = (currentFiles: FileEntry[]) => {
+    if (!streamingRef.current || closedRef.current) return;
+    if (processingComplete(currentFiles) && captureTimeComplete(currentFiles)) {
+      closedRef.current = true;
+      streamingRef.current.close(currentFiles);
+    }
+  };
+
   const start = () => {
     if (!s3Config || !location || !collection || !slug) return;
     closedRef.current = false;
+    setCompleteDismissed(false);
     const run = runStreamingUpload(
       {
         config: s3Config,
@@ -89,6 +109,7 @@ export function Upload() {
     );
     runRef.current = run;
     streamingRef.current = run;
+    maybeCloseQueue(files);
   };
 
   // Feed newly-inspected files into the live streaming run as Inspect finds
@@ -112,11 +133,7 @@ export function Upload() {
   // below already redirects the user back to Assign to fix it, and this
   // effect re-fires (closedRef is per-run, not per-render) once they do.
   useEffect(() => {
-    if (!streamingRef.current || closedRef.current) return;
-    if (processingComplete(files) && captureTimeComplete(files)) {
-      closedRef.current = true;
-      streamingRef.current.close(files);
-    }
+    maybeCloseQueue(files);
   }, [files]);
 
   const retryPending = useRef(false);
@@ -127,6 +144,7 @@ export function Upload() {
     if (!snap || !s3Config || retryPending.current) return;
     retryPending.current = true;
     setRetryError(null);
+    setCompleteDismissed(false);
     try {
       // Partial wet runs persist before uploading, so the ledger should be
       // present — but the load can still fail (cleared site data, IDB error),
@@ -287,6 +305,13 @@ export function Upload() {
           )}
         </div>
       </div>
+
+      {snap?.phase === 'done' && !snap.dryRun && !completeDismissed && (
+        <UploadCompleteDialog
+          count={snap.files.length}
+          onClose={() => setCompleteDismissed(true)}
+        />
+      )}
     </div>
   );
 }
