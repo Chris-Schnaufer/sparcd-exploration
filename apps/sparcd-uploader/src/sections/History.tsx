@@ -179,7 +179,7 @@ export function History() {
   );
 
   const onReselectInput = useCallback(
-    async (list: FileList | null) => {
+    async (list: File[] | null) => {
       const batch = pendingReselect.current;
       pendingReselect.current = null;
       if (!batch || !list || list.length === 0) return;
@@ -241,7 +241,12 @@ export function History() {
         multiple
         hidden
         onChange={(e) => {
-          void onReselectInput(e.target.files);
+          // Snapshot before clearing: FileList is live, and `onReselectInput`
+          // is async — its first `await` (loadSession) yields back here
+          // before it touches the list, so clearing `.value` synchronously
+          // right after would empty the same FileList out from under it,
+          // making every file look missing. Array.from freezes it first.
+          void onReselectInput(e.target.files ? Array.from(e.target.files) : null);
           e.target.value = '';
         }}
       />
