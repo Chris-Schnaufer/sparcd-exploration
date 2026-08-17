@@ -309,11 +309,11 @@ export function History() {
               <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-1">
                 {!batch.completedAt && (
                   <button
-                    disabled={running || !online}
+                    disabled={running}
                     title={!online ? "You're offline" : undefined}
                     onClick={() => void beginResume(batch)}
                     className={`bg-ink text-paper border border-ink min-h-[44px] sm:min-h-0 px-4 sm:px-3 py-1 text-[13px] font-body font-[600] hover:opacity-90 ${
-                      running || !online ? 'opacity-40 cursor-not-allowed' : ''
+                      running ? 'opacity-40 cursor-not-allowed' : ''
                     }`}
                   >
                     {isActive ? 'Resuming…' : 'Resume'}

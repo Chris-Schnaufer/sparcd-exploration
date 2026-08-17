@@ -44,8 +44,12 @@ export function Connection({ toolName, initialConfig, onConnect }: ConnectionPro
   const forcePathStyle = pathStyleOverride ?? inferred.forcePathStyle;
   const secure = secureOverride ?? inferred.secure;
 
+  // navigator.onLine has real false-offline cases (VPNs, unusual adapters,
+  // captive portals) — hard-disabling on it would lock out a user with a
+  // perfectly working connection, no override. Only used for the advisory
+  // banner/tooltip below; a real attempt failing is a better failure mode.
   const online = useOnline();
-  const canConnect = online && endpoint.trim() && accessKey.trim() && secretKey.trim();
+  const canConnect = endpoint.trim() && accessKey.trim() && secretKey.trim();
 
   function submit(e: React.FormEvent) {
     e.preventDefault();

@@ -271,22 +271,16 @@ export function Upload() {
           ) : snap?.phase === 'partial' && !snap.dryRun ? (
             <button
               onClick={retryFailed}
-              disabled={!online}
               title={!online ? "You're offline" : undefined}
-              className={`bg-ink text-paper border border-ink px-3.5 py-2.5 sm:py-1.5 min-h-[44px] sm:min-h-0 text-[14px] font-body font-[600] focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 ${
-                online ? 'hover:opacity-90' : 'opacity-40 cursor-not-allowed'
-              }`}
+              className="bg-ink text-paper border border-ink px-3.5 py-2.5 sm:py-1.5 min-h-[44px] sm:min-h-0 text-[14px] font-body font-[600] hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
             >
               Retry failed files
             </button>
           ) : (
             <button
               onClick={start}
-              disabled={!effectiveDryRun && !online}
               title={!effectiveDryRun && !online ? "You're offline" : undefined}
-              className={`bg-ink text-paper border border-ink px-3.5 py-2.5 sm:py-1.5 min-h-[44px] sm:min-h-0 text-[14px] font-body font-[600] focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 ${
-                effectiveDryRun || online ? 'hover:opacity-90' : 'opacity-40 cursor-not-allowed'
-              }`}
+              className="bg-ink text-paper border border-ink px-3.5 py-2.5 sm:py-1.5 min-h-[44px] sm:min-h-0 text-[14px] font-body font-[600] hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
             >
               {effectiveDryRun ? 'Start dry run' : 'Start upload'}
             </button>
