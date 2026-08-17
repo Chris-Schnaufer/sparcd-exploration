@@ -141,6 +141,8 @@ export function History() {
     ) => {
       const result = await ensureBundle(batch, session, resolved);
       if (!result.ok) {
+        setVerifyingBatchId(null);
+        setVerifyProgress(null);
         setProblems([...probs, ...result.problems]);
         setMessage(
           `${result.problems.length} file${result.problems.length === 1 ? '' : 's'} couldn't be resolved to resume this upload.`,
@@ -149,6 +151,8 @@ export function History() {
       }
       const finalSession = session.bundle ? session : await loadSession(batch.id);
       if (!finalSession) {
+        setVerifyingBatchId(null);
+        setVerifyProgress(null);
         setMessage('Session record is missing.');
         return;
       }
