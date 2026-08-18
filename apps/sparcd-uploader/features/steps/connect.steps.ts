@@ -133,7 +133,7 @@ Then('its in-progress batch, chosen collection and chosen deployment are cleared
 Then('the header shows the endpoint host and a masked form of the access key', async ({ app }) => {
   const header = app.page.locator('header');
   await expect(header).toContainText('localhost');
-  await expect(header).toContainText('AKIA…01');
+  await expect(header).toContainText('AK…01');
 });
 
 Then('it shows the uploader identity when one has been set', async ({ app }) => {

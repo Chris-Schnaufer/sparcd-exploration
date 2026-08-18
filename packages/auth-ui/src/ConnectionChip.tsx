@@ -5,6 +5,7 @@ import {
   subscribeSharedConnection,
   type PersistedConnection,
 } from './session';
+import { useOnline } from './useOnline';
 
 export type ConnectionChipProps = {
   /** Optional human identity, e.g. the SPARC'd username stamped on writes. */
@@ -46,11 +47,18 @@ export function ConnectionChip({ identity, onDisconnect }: ConnectionChipProps) 
   // This chip is purely a passive display, not a source of truth for "is
   // anyone connected" — it never answers a sibling tab's request.
   useEffect(() => subscribeSharedConnection(setCfg, () => null), []);
+  const online = useOnline();
 
   if (!cfg) return null;
 
   return (
     <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono text-[12px] text-inkSoft">
+      {!online && (
+        <span className="inline-flex items-center gap-1 text-warn" title="No network connection">
+          <span aria-hidden className="w-1.5 h-1.5 rounded-full bg-warn" />
+          offline
+        </span>
+      )}
       <span
         className="text-inkSoft italic focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
         tabIndex={0}
