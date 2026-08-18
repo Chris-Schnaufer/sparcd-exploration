@@ -74,9 +74,9 @@ Feature: Assign a batch to a collection and a camera location
     And a location can be chosen with the keyboard or by clicking it
 
   @unmapped
-  Scenario: A location's exact position can be checked before committing to it
+  Scenario: A location's elevation can be checked before committing to it, with no coordinates shown
     When a location's details are opened
-    Then its decimal coordinates, its UTM coordinates, and its elevation in both metres and feet are shown
+    Then its elevation in both metres and feet is shown, with no coordinates
 
   @unmapped
   Scenario: Two locations sharing an identifier are kept apart
