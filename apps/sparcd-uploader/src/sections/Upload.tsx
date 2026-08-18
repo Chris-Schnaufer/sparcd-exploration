@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { OfflineBanner, useOnline } from '@sparcd/auth-ui';
 import { useStore, type FileEntry } from '../store';
 import { useLocations } from '../lib/useLocations';
 import { useCollections } from '../lib/useCollections';
@@ -46,6 +47,9 @@ export function Upload() {
   const collection =
     collections.data?.find((c) => c.key === selectedBucket || c.bucket === selectedBucket) ?? null;
   const effectiveDryRun = dryRun;
+  // A dry run never touches the network (nothing is written), so it's still
+  // usable offline — only a real upload/retry needs to be gated.
+  const online = useOnline();
 
   const [snap, setSnap] = useState<UploadSnapshot | null>(null);
   const runRef = useRef<UploadRun | StreamingUploadRun | null>(null);
@@ -127,8 +131,8 @@ export function Upload() {
   // processed, and (the same integrity gate Assign used to enforce up front)
   // every ready file has a capture time. If processing finishes but a file
   // still lacks a capture time, this simply doesn't fire yet: the render
-  // below already redirects the user back to Assign to fix it, and this
-  // effect re-fires (closedRef is per-run, not per-render) once they do.
+  // below already lets the user fix it inline, and this effect re-fires
+  // (closedRef is per-run, not per-render) once they do.
   useEffect(() => {
     maybeCloseQueue(files);
   }, [files]);
@@ -189,6 +193,7 @@ export function Upload() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-7">
+      <OfflineBanner message="You're offline — the dry run still works, but a real upload won't until your connection is back." />
       {/* Run configuration */}
       <section className="space-y-3">
         <h2 className={sectionLabel}>Upload</h2>
@@ -289,6 +294,7 @@ export function Upload() {
           ) : snap?.phase === 'partial' && !snap.dryRun ? (
             <button
               onClick={retryFailed}
+              title={!online ? "You're offline" : undefined}
               className="bg-ink text-paper border border-ink px-3.5 py-2.5 sm:py-1.5 min-h-[44px] sm:min-h-0 text-[14px] font-body font-[600] hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
             >
               Retry failed files
@@ -296,6 +302,7 @@ export function Upload() {
           ) : (
             <button
               onClick={start}
+              title={!effectiveDryRun && !online ? "You're offline" : undefined}
               className="bg-ink text-paper border border-ink px-3.5 py-2.5 sm:py-1.5 min-h-[44px] sm:min-h-0 text-[14px] font-body font-[600] hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
             >
               {effectiveDryRun ? 'Start dry run' : 'Start upload'}

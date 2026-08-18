@@ -173,13 +173,13 @@ When("a location's details are opened", async ({ app }) => {
 });
 
 Then(
-  'its decimal coordinates, its UTM coordinates, and its elevation in both metres and feet are shown',
+  "its elevation in both metres and feet is shown, with no coordinates",
   async ({ app }) => {
     const detail = app.deploymentOptions().filter({ hasText: 'Bear Canyon' }).first();
-    await expect(detail).toContainText('32.40000, -110.70000');
-    await expect(detail).toContainText(/12S \d+E \d+N/);
     await expect(detail).toContainText('1200 m');
     await expect(detail).toContainText('3937.01 ft');
+    await expect(detail).not.toContainText('32.4');
+    await expect(detail).not.toContainText('12S');
   },
 );
 
@@ -195,8 +195,8 @@ Then('both are offered as separate locations', async ({ app }) => {
   await app.openDeploymentList();
   await app.page.getByPlaceholder('Filter by name or id…').fill('DUP9');
   await expect(app.deploymentOptions()).toHaveCount(2);
-  await expect(app.deploymentOptions().nth(0)).toContainText('33.0000');
-  await expect(app.deploymentOptions().nth(1)).toContainText('33.5000');
+  await expect(app.deploymentOptions().nth(0)).toContainText('2000 m');
+  await expect(app.deploymentOptions().nth(1)).toContainText('2100 m');
 });
 
 Then('an entry repeated with identical identifier and coordinates is offered once', async ({ app }) => {
