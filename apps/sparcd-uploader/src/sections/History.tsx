@@ -129,63 +129,75 @@ export function History() {
       setSnap(null);
       setVerifyingBatchId(batch.id);
       setVerifyProgress(null);
-      if (!s3Config) {
-        setMessage('Connect to a storage endpoint before resuming.');
-        return;
-      }
-      // The first await below must be the actual gated call — permission
-      // request, directory picker, or the hidden <input>'s `.click()` —
-      // not this session load. Firefox/Safari require those to fire within
-      // the click's transient user-activation window; an unrelated await
-      // ahead of them (even a fast IndexedDB read) silently breaks it: no
-      // prompt, no error, nothing happens. Kick the load off in parallel
-      // instead and only consume it once the gated step has resolved.
-      const sessionPromise = loadSession(batch.id);
-      const onProgress = (done: number, total: number) => setVerifyProgress({ done, total });
+      // handedOff: the else branch below fires a synchronous click and returns;
+      // onReselectInput owns the lock from that point on, so the finally must
+      // not clear it here.
+      let handedOff = false;
+      try {
+        if (!s3Config) {
+          setMessage('Connect to a storage endpoint before resuming.');
+          return;
+        }
+        // The first await below must be the actual gated call — permission
+        // request, directory picker, or the hidden <input>'s `.click()` —
+        // not this session load. Firefox/Safari require those to fire within
+        // the click's transient user-activation window; an unrelated await
+        // ahead of them (even a fast IndexedDB read) silently breaks it: no
+        // prompt, no error, nothing happens. Kick the load off in parallel
+        // instead and only consume it once the gated step has resolved.
+        const sessionPromise = loadSession(batch.id);
+        const onProgress = (done: number, total: number) => setVerifyProgress({ done, total });
 
-      // Durable handle: revalidate permission inside this click gesture, then
-      // re-hash against the recorded files — a same-size in-place edit between
-      // sessions would otherwise slip through, so mismatches surface as problems.
-      if (batch.fileAccessMode === 'persistent-handle' && batch.dirHandle) {
-        const restore = await restoreFromHandle(
-          batch,
-          sessionPromise.then((s) => s?.files ?? []),
-          onProgress,
-        );
-        const session = await sessionPromise;
-        if (!session) {
-          setMessage('Session record is missing.');
-          return;
+        // Durable handle: revalidate permission inside this click gesture, then
+        // re-hash against the recorded files — a same-size in-place edit between
+        // sessions would otherwise slip through, so mismatches surface as problems.
+        if (batch.fileAccessMode === 'persistent-handle' && batch.dirHandle) {
+          const restore = await restoreFromHandle(
+            batch,
+            sessionPromise.then((s) => s?.files ?? []),
+            onProgress,
+          );
+          const session = await sessionPromise;
+          if (!session) {
+            setMessage('Session record is missing.');
+            return;
+          }
+          if (restore.ok) {
+            await launch(batch, session, restore.attached, restore.problems);
+            return;
+          }
+          setMessage(restore.reason);
+          // fall through to reselect
         }
-        if (restore.ok) {
-          await launch(batch, session, restore.attached, restore.problems);
-          return;
-        }
-        setMessage(restore.reason);
-        // fall through to reselect
-      }
 
-      // Reselect path.
-      if (supportsDirectoryHandle) {
-        const picked = await reselectFolder();
-        if (!picked) return; // user dismissed
-        const session = await sessionPromise;
-        if (!session) {
-          setMessage('Session record is missing.');
-          return;
+        // Reselect path.
+        if (supportsDirectoryHandle) {
+          const picked = await reselectFolder();
+          if (!picked) return; // user dismissed
+          const session = await sessionPromise;
+          if (!session) {
+            setMessage('Session record is missing.');
+            return;
+          }
+          const { attached, problems: probs } = await reconcileReselect(session.files, picked.scanned, onProgress);
+          // Opportunistically upgrade the session to a durable handle for next time.
+          if (picked.handle) {
+            await updateBatch(batch.id, { dirHandle: picked.handle, fileAccessMode: 'persistent-handle' });
+          }
+          await launch(batch, session, attached, probs);
+        } else {
+          // No durable picker — fall back to a transient <input webkitdirectory>,
+          // fired synchronously here for the same reason. `onReselectInput`
+          // loads its own session once files actually arrive.
+          handedOff = true;
+          pendingReselect.current = batch;
+          reselectRef.current?.click();
         }
-        const { attached, problems: probs } = await reconcileReselect(session.files, picked.scanned, onProgress);
-        // Opportunistically upgrade the session to a durable handle for next time.
-        if (picked.handle) {
-          await updateBatch(batch.id, { dirHandle: picked.handle, fileAccessMode: 'persistent-handle' });
+      } finally {
+        if (!handedOff) {
+          setVerifyingBatchId(null);
+          setVerifyProgress(null);
         }
-        await launch(batch, session, attached, probs);
-      } else {
-        // No durable picker — fall back to a transient <input webkitdirectory>,
-        // fired synchronously here for the same reason. `onReselectInput`
-        // loads its own session once files actually arrive.
-        pendingReselect.current = batch;
-        reselectRef.current?.click();
       }
     },
     [s3Config, launch],
@@ -195,16 +207,21 @@ export function History() {
     async (list: FileList | null) => {
       const batch = pendingReselect.current;
       pendingReselect.current = null;
-      if (!batch || !list || list.length === 0) return;
-      const session = await loadSession(batch.id);
-      if (!session) {
-        setMessage('Session record is missing.');
-        return;
+      try {
+        if (!batch || !list || list.length === 0) return;
+        const session = await loadSession(batch.id);
+        if (!session) {
+          setMessage('Session record is missing.');
+          return;
+        }
+        const { attached, problems: probs } = await reconcileReselect(session.files, scanFileList(list), (done, total) =>
+          setVerifyProgress({ done, total }),
+        );
+        await launch(batch, session, attached, probs);
+      } finally {
+        setVerifyingBatchId(null);
+        setVerifyProgress(null);
       }
-      const { attached, problems: probs } = await reconcileReselect(session.files, scanFileList(list), (done, total) =>
-        setVerifyProgress({ done, total }),
-      );
-      await launch(batch, session, attached, probs);
     },
     [launch],
   );
