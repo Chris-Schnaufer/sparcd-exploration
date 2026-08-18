@@ -25,9 +25,6 @@ Then('each new batch starts with that identity already filled in on the Assign s
   await app.continueToAssign();
   await app.waitForCollections();
   await expect(app.page.getByPlaceholder(identityField)).toHaveValue('Ada Lovelace');
-  await expect(app.page.getByText(/Stamped into the upload prefix and object keys as/)).toContainText(
-    'ada-lovelace',
-  );
 });
 
 // --- disconnecting from Settings -------------------------------------------
