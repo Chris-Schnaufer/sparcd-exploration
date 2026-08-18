@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useStore } from '../store';
 import { useLocations } from '../lib/useLocations';
 import { useCollections, useCollectionDeployments } from '../lib/useCollections';
@@ -79,9 +79,19 @@ export function Assign() {
   // Picking a deployment implies a zone — the camera's naive EXIF wall-clock
   // needs to be interpreted in wherever it physically sits, not the browser's
   // zone. Fires only when the *selection* changes, so a manual override the
-  // user makes afterward for the same location sticks.
+  // user makes afterward for the same location sticks. The mount-time run is
+  // special-cased: uploadTimeZone/selectedLocationKey are both restored from
+  // sessionStorage before this component ever renders, so if the location on
+  // mount is the same one that was already selected, re-deriving here would
+  // clobber a manual override that survived the reload.
+  const mountedLocationKeyRef = useRef(selectedLocationKey);
+  const isFirstLocationEffect = useRef(true);
   useEffect(() => {
     if (!location) return;
+    if (isFirstLocationEffect.current) {
+      isFirstLocationEffect.current = false;
+      if (location.key === mountedLocationKeyRef.current) return;
+    }
     setUploadTimeZone(timeZoneForCoords(location.latitude, location.longitude));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location?.key]);
