@@ -82,7 +82,7 @@ Then(
 
 Then('that the collection ID is given to contact an administrator with', async ({ app }) => {
   await expect(app.page.getByText(/that's usually a setup issue on the storage side/)).toContainText(
-    `this collection ID: ${BUCKET_A}`,
+    `this collection ID: ${UUID_A}`,
   );
 });
 

@@ -213,7 +213,7 @@ export function Upload() {
         {!effectiveDryRun && (
           <Note
             tone="warn"
-            message={`If not testing the upload and it fails right away, that's usually a setup issue on the storage side, not something you did wrong. Contact your administrator and give them this collection ID: ${collection.bucket}.`}
+            message={`If not testing the upload and it fails right away, that's usually a setup issue on the storage side, not something you did wrong. Contact your administrator and give them this collection ID: ${collection.uuid}.`}
           />
         )}
 
