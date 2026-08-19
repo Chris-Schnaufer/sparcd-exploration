@@ -36,8 +36,8 @@ export function StatePill({ state }: { state: UploadState }) {
   return (
     <span
       className={`inline-flex items-center gap-1.5 border px-2.5 py-1 font-mono text-[12px] leading-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 ${c.cls}`}
+      role="status"
       tabIndex={0}
-      title="Current upload status"
       aria-label={`Upload status: ${c.description}`}
     >
       <span aria-hidden>{c.glyph}</span>
