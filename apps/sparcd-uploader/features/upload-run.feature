@@ -155,5 +155,5 @@ Feature: Upload and publish a batch
   Scenario: The next batch from the same site keeps the previous choices
     Given a real upload has completed
     When "Next batch" is chosen
-    Then the wizard returns to the Drop step with an empty batch
+    Then the wizard returns to the Files step with an empty batch
     And the collection, deployment, uploader identity, description and timezone of the previous batch are kept
