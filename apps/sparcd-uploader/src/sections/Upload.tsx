@@ -104,7 +104,10 @@ export function Upload() {
     };
 
     const onVisibility = () => {
-      if (document.visibilityState === 'visible') acquire();
+      if (document.visibilityState !== 'visible') return;
+      void lock?.release();
+      lock = null;
+      acquire();
     };
 
     acquire();
