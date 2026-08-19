@@ -142,11 +142,11 @@ export class App {
     await expect(this.connectForm()).toBeVisible();
     await this.fillConnection(fields);
     await this.page.getByRole('button', { name: 'Connect', exact: true }).click();
-    await expect(this.page.getByRole('button', { name: 'Disconnect' })).toBeVisible();
+    await expect(this.page.getByRole('button', { name: 'Logout' })).toBeVisible();
   }
 
   async disconnectFromHeader(): Promise<void> {
-    await this.page.getByRole('button', { name: 'Disconnect' }).click();
+    await this.page.getByRole('button', { name: 'Logout' }).click();
   }
 
   // --- navigation ----------------------------------------------------------
@@ -320,7 +320,7 @@ export class App {
     if (await this.connectForm().isVisible()) {
       await this.fillConnection();
       await this.page.getByRole('button', { name: 'Connect', exact: true }).click();
-      await expect(this.page.getByRole('button', { name: 'Disconnect' })).toBeVisible();
+      await expect(this.page.getByRole('button', { name: 'Logout' })).toBeVisible();
     }
   }
 
@@ -676,18 +676,16 @@ export class App {
     timeout = 60_000,
   ): Promise<void> {
     await expect(this.runPhase()).toHaveText(phase, { timeout });
-    // A finished real run pops the "Upload complete" dialog (PR #26), a
-    // full-screen overlay that would swallow the next click on Back, History,
-    // Settings or Next batch. Dismiss it so scenarios can carry on; dry runs
-    // never show it, so this is a no-op for them.
-    if (phase === 'done') await this.dismissUploadCompleteDialog();
-  }
-
-  async dismissUploadCompleteDialog(): Promise<void> {
-    const dialog = this.page.getByRole('dialog', { name: 'Upload complete' });
-    if (await dialog.isVisible().catch(() => false)) {
-      await dialog.getByRole('button', { name: 'OK' }).click();
-      await expect(dialog).toBeHidden();
+    // A real (non-dry-run) run reaching 'done' pops a confirmation dialog
+    // whose backdrop covers the page — dismiss it so later steps can click
+    // through, same as a user would.
+    if (phase === 'done') {
+      const dialog = this.page.getByRole('dialog', { name: 'Upload complete' });
+      const ok = dialog.getByRole('button', { name: 'OK' });
+      if (await ok.isVisible().catch(() => false)) {
+        await ok.click();
+        await expect(dialog).toBeHidden();
+      }
     }
   }
 
