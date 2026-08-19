@@ -254,7 +254,8 @@ When('an uploader identity is typed', async ({ app }) => {
 Then(
   "the tool shows the key-safe form of it that will appear in the upload's storage path and object names",
   async ({ app }) => {
-    await expect(app.page.getByText(/Stamped into the upload prefix and object keys as/)).toContainText(
+    await app.gotoSection('Settings');
+    await expect(app.page.getByText(/Used in upload prefixes and object keys as/)).toContainText(
       'ada-lovelace',
     );
   },
@@ -266,6 +267,7 @@ When('a description is entered', async ({ app }) => {
 });
 
 Then("it is stored as the upload's description in the upload's metadata file", async ({ app }) => {
+  await app.continueToUpload();
   await app.page.getByRole('button', { name: /Click to preview the generated bundle files/ }).click();
   await expect(app.page.getByRole('button', { name: 'UploadMeta.json' })).toBeVisible();
   await expect(app.page.locator('pre')).toContainText('"description": "South ridge, July retrieval"');
@@ -279,6 +281,7 @@ Given('a collection, a deployment and an uploader identity have been chosen', as
 });
 
 When('the preview is opened', async ({ app }) => {
+  await app.continueToUpload();
   await app.page.getByRole('button', { name: /Click to preview the generated bundle files/ }).click();
   await expect(app.page.locator('pre').first()).toBeVisible();
 });

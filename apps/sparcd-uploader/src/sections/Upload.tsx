@@ -17,6 +17,7 @@ import { onFilesReady } from '../lib/processing';
 import { captureTimeComplete, processingComplete } from '../lib/validation';
 import { Note, RunMonitor } from '../components/RunMonitor';
 import { UploadCompleteDialog } from '../components/UploadCompleteDialog';
+import { MetadataPreview } from '../components/MetadataPreview';
 import { CaptureTimeEditor } from '../components/CaptureTimeEditor';
 
 const sectionLabel = 'font-[600] text-[11px] tracking-[0.16em] uppercase text-inkSoft mb-2';
@@ -50,6 +51,11 @@ export function Upload() {
   // A dry run never touches the network (nothing is written), so it's still
   // usable offline — only a real upload/retry needs to be gated.
   const online = useOnline();
+
+  // Preview is opt-in — building it rebuilds the whole bundle. Unlike on
+  // Assign, nothing on this step is still being live-edited, so it just
+  // reflects the current files/description/etc. directly, no debounce needed.
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const [snap, setSnap] = useState<UploadSnapshot | null>(null);
   const runRef = useRef<UploadRun | StreamingUploadRun | null>(null);
@@ -230,6 +236,39 @@ export function Upload() {
             message={`Still inspecting ${stillInspecting} file${stillInspecting === 1 ? '' : 's'} in the background — uploading proceeds as each one finishes; publishing waits until every file is done.`}
           />
         )}
+
+        <div className="space-y-2">
+          <h2 className={sectionLabel}>Preview</h2>
+          {previewOpen ? (
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => setPreviewOpen(false)}
+                className="font-body text-[12px] text-inkSoft hover:text-ink underline underline-offset-4 decoration-rule focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              >
+                Hide preview
+              </button>
+              <MetadataPreview
+                location={location}
+                collectionUuid={collection.uuid}
+                bucket={collection.bucket}
+                uploaderSlug={slug}
+                description={description}
+                timeZone={uploadTimeZone}
+                files={files}
+              />
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setPreviewOpen(true)}
+              className="w-full border border-rule bg-paper px-3 py-2.5 text-left font-body text-[13px] text-inkSoft hover:text-ink hover:border-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1"
+            >
+              Click to preview the generated bundle files (UploadMeta.json, deployments/media/observations CSVs)…
+            </button>
+          )}
+        </div>
+
 
         <div className="flex items-center gap-3">
           <label className="font-body text-[13px] text-inkSoft w-28">Concurrency</label>

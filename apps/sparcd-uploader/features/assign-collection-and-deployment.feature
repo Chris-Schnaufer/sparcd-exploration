@@ -99,11 +99,13 @@ Feature: Assign a batch to a collection and a camera location
     And no deployment can be chosen until it can be read
 
   @unmapped
-  Scenario: The uploader identity is shown as the name that will be stamped on the upload
+  Scenario: The uploader identity typed here carries through to its key-safe form in Settings
     When an uploader identity is typed
     Then the tool shows the key-safe form of it that will appear in the upload's storage path and object names
     # The identity is free text; the tool does not check it against the
-    # credentials it connected with.
+    # credentials it connected with. Assign itself only holds the raw
+    # identity — the key-safe preview lives in Settings, since that field is
+    # the same shared uploaderUser Assign just set.
 
   @unmapped
   Scenario: A description can be recorded with the batch
