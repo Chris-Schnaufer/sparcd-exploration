@@ -59,23 +59,13 @@ export function ConnectionChip({ identity, onDisconnect }: ConnectionChipProps) 
           offline
         </span>
       )}
-      <span
-        className="text-inkSoft italic focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
-        tabIndex={0}
-        title="S3 endpoint you're connected to"
-        aria-label={`S3 endpoint: ${hostOf(cfg.endpoint)}`}
-      >
+      <span className="text-inkSoft italic" title="S3 endpoint you're connected to">
         {hostOf(cfg.endpoint)}
       </span>
       <span aria-hidden className="text-ruleSoft">
         ·
       </span>
-      <span
-        className="text-inkMute italic focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
-        tabIndex={0}
-        title="Your access key (masked)"
-        aria-label={`Access key, masked: ${maskKey(cfg.accessKey)}`}
-      >
+      <span className="text-inkMute italic" title="Your access key (masked)">
         {maskKey(cfg.accessKey)}
       </span>
       {identity && (
@@ -83,12 +73,7 @@ export function ConnectionChip({ identity, onDisconnect }: ConnectionChipProps) 
           <span aria-hidden className="text-ruleSoft">
             ·
           </span>
-          <span
-            className="text-inkSoft font-[600] focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
-            tabIndex={0}
-            title="Identity recorded with your activity"
-            aria-label={`Identity: ${identity}`}
-          >
+          <span className="text-inkSoft font-[600]" title="Identity recorded with your activity">
             {identity}
           </span>
         </>
