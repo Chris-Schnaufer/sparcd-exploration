@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { OfflineBanner, useOnline } from '@sparcd/auth-ui';
 import { useStore, type FileEntry } from '../store';
 import { useLocations } from '../lib/useLocations';
@@ -190,7 +190,7 @@ export function Upload() {
 
   const retryPending = useRef(false);
   const [retryError, setRetryError] = useState<string | null>(null);
-  const retryFailed = async () => {
+  const retryFailed = useCallback(async () => {
     // The async gap before resumeUpload's first emit leaves the Retry button
     // mounted — guard so a double-click can't start two concurrent runs.
     if (!snap || !s3Config || retryPending.current) return;
@@ -215,7 +215,7 @@ export function Upload() {
     } finally {
       retryPending.current = false;
     }
-  };
+  }, [snap, s3Config, files, concurrency]);
 
   // Self-heal after an interruption the user might not notice — a run that
   // landed on 'partial' (some files failed after exhausting their own
@@ -243,7 +243,7 @@ export function Upload() {
       document.removeEventListener('visibilitychange', tryAutoResume);
       window.removeEventListener('online', tryAutoResume);
     };
-  });
+  }, [snap, retryFailed]);
 
   if (!location || !collection || !slug) {
     return (
