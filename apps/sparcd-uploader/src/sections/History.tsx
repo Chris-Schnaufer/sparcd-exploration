@@ -131,10 +131,6 @@ export function History() {
       setSnap(null);
       setVerifyingBatchId(batch.id);
       setVerifyProgress(null);
-      // handedOff: the else branch below fires a synchronous click and returns;
-      // onReselectInput owns the lock from that point on, so the finally must
-      // not clear it here.
-      let handedOff = false;
       try {
         if (!s3Config) {
           setMessage('Connect to a storage endpoint before resuming.');
@@ -188,18 +184,18 @@ export function History() {
           }
           await launch(batch, session, attached, probs);
         } else {
-          // No durable picker — fall back to a transient <input webkitdirectory>,
-          // fired synchronously here for the same reason. `onReselectInput`
-          // loads its own session once files actually arrive.
-          handedOff = true;
+          // No durable picker — fall back to a transient <input webkitdirectory>.
+          // Release the lock before clicking: on Firefox/Safari a cancelled picker
+          // fires no change event, so onReselectInput never runs. onReselectInput
+          // re-acquires the lock itself when files actually arrive.
+          setVerifyingBatchId(null);
+          setVerifyProgress(null);
           pendingReselect.current = batch;
           reselectRef.current?.click();
         }
       } finally {
-        if (!handedOff) {
-          setVerifyingBatchId(null);
-          setVerifyProgress(null);
-        }
+        setVerifyingBatchId(null);
+        setVerifyProgress(null);
       }
     },
     [s3Config, launch],
@@ -209,8 +205,10 @@ export function History() {
     async (list: File[] | null) => {
       const batch = pendingReselect.current;
       pendingReselect.current = null;
+      if (!batch || !list || list.length === 0) return;
+      setVerifyingBatchId(batch.id);
+      setVerifyProgress(null);
       try {
-        if (!batch || !list || list.length === 0) return;
         const session = await loadSession(batch.id);
         if (!session) {
           setMessage('Session record is missing.');
