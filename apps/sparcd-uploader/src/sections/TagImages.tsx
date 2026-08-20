@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import { useStore } from '../store';
 import { useSpecies } from '../lib/useSpecies';
 import { SpeciesPanel } from '../components/SpeciesPanel';
 import { AppliedSpecies } from '../components/AppliedSpecies';
+import { ImageAdjustments } from '../components/ImageAdjustments';
+import { cssFilter, NEUTRAL, type Adjustments } from '../lib/adjustments';
 
 export function TagImages() {
   const s3Config = useStore((s) => s.s3Config);
@@ -31,25 +34,33 @@ export function TagImages() {
     }
   }, [files, focusedId]);
 
-  // Object URLs for image display — created once per file, revoked on unmount.
-  const urlMap = useRef<Map<string, string>>(new Map());
+  // Separate URL maps: thumbMap for the strip (thumbnail blob), fullMap for the
+  // large focus view (original file). Both revoked on unmount.
+  const thumbMap = useRef<Map<string, string>>(new Map());
+  const fullMap = useRef<Map<string, string>>(new Map());
   useEffect(() => {
-    const map = urlMap.current;
+    const tm = thumbMap.current;
+    const fm = fullMap.current;
     for (const f of files) {
-      if (!map.has(f.id)) {
-        const src = f.thumbnail ? URL.createObjectURL(f.thumbnail) : URL.createObjectURL(f.file);
-        map.set(f.id, src);
+      if (!tm.has(f.id)) {
+        tm.set(f.id, URL.createObjectURL(f.thumbnail ?? f.file));
+      }
+      if (!fm.has(f.id)) {
+        fm.set(f.id, URL.createObjectURL(f.file));
       }
     }
     return () => {
-      for (const url of map.values()) URL.revokeObjectURL(url);
-      map.clear();
+      for (const url of tm.values()) URL.revokeObjectURL(url);
+      for (const url of fm.values()) URL.revokeObjectURL(url);
+      tm.clear();
+      fm.clear();
     };
   }, [files]);
 
   const [filter, setFilter] = useState('');
   const filterRef = useRef<HTMLInputElement>(null);
   const [recent, setRecent] = useState<string[]>([]);
+  const [adjustments, setAdjustments] = useState<Adjustments>(NEUTRAL);
 
   const focusedObs = useMemo(
     () => (focusedId ? (preTags[focusedId] ?? []) : []),
@@ -102,7 +113,7 @@ export function TagImages() {
   );
 
   const focusedFile = files.find((f) => f.id === focusedId) ?? null;
-  const focusedUrl = focusedId ? (urlMap.current.get(focusedId) ?? null) : null;
+  const focusedUrl = focusedId ? (fullMap.current.get(focusedId) ?? null) : null;
 
   return (
     <div className="flex flex-col">
@@ -110,22 +121,36 @@ export function TagImages() {
         {/* Left: image area */}
         <div className="flex flex-col flex-1 min-w-0 min-h-0 gap-3 pr-3 overflow-y-auto">
           {/* Focus view */}
-          <div className="border border-rule bg-paperHover flex items-center justify-center overflow-hidden" style={{ height: '360px' }}>
+          <div className="relative border border-rule bg-paperHover flex items-center justify-center overflow-hidden" style={{ height: '360px' }}>
             {focusedUrl ? (
-              <img
-                src={focusedUrl}
-                alt={focusedFile?.fileName ?? ''}
-                className="max-h-full max-w-full object-contain"
-              />
+              <TransformWrapper>
+                <TransformComponent wrapperStyle={{ width: '100%', height: '100%' }}>
+                  <img
+                    src={focusedUrl}
+                    alt={focusedFile?.fileName ?? ''}
+                    className="max-h-full max-w-full object-contain"
+                    style={{ filter: cssFilter(adjustments) }}
+                  />
+                </TransformComponent>
+              </TransformWrapper>
             ) : (
               <span className="text-inkMute font-body text-[13px]">Select an image</span>
+            )}
+            {focusedUrl && (
+              <div className="absolute bottom-2 left-2 z-10">
+                <ImageAdjustments
+                  value={adjustments}
+                  onChange={setAdjustments}
+                  onReset={() => setAdjustments(NEUTRAL)}
+                />
+              </div>
             )}
           </div>
 
           {/* Thumbnail strip */}
           <div className="flex gap-2 overflow-x-auto pb-1">
             {files.map((f) => {
-              const url = urlMap.current.get(f.id);
+              const url = thumbMap.current.get(f.id);
               const isFocused = f.id === focusedId;
               const isSelected = selected.has(f.id);
               const hasTag = (preTags[f.id] ?? []).length > 0;
