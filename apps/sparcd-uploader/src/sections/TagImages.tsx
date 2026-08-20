@@ -1,11 +1,152 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
+import { TransformWrapper, TransformComponent, type ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
 import { useStore } from '../store';
 import { useSpecies } from '../lib/useSpecies';
 import { SpeciesPanel } from '../components/SpeciesPanel';
 import { AppliedSpecies } from '../components/AppliedSpecies';
 import { ImageAdjustments } from '../components/ImageAdjustments';
 import { cssFilter, NEUTRAL, type Adjustments } from '../lib/adjustments';
+
+const CTRL_BTN =
+  'flex items-center justify-center font-mono border border-rule text-inkSoft hover:text-ink hover:bg-paperHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent';
+
+// Returns the pixel size the image will render at inside a container of cw×ch.
+function fitBounds(cw: number, ch: number, iw: number, ih: number): { w: number; h: number } | null {
+  if (!cw || !ch || !iw || !ih) return null;
+  const scale = Math.min(cw / iw, ch / ih);
+  return { w: Math.round(iw * scale), h: Math.round(ih * scale) };
+}
+
+// ─── Image pane ──────────────────────────────────────────────────────────────
+// Renders the focus image with zoom/pan, adjustment controls, prev/next, and
+// an optional expand button.  All controls are positioned relative to a wrapper
+// div that is sized to the rendered image bounds — so they always sit over the
+// image regardless of the container's aspect ratio.
+
+interface ImagePaneProps {
+  url: string;
+  alt: string;
+  adjustments: Adjustments;
+  onAdjust: (a: Adjustments) => void;
+  onLoad: (e: React.SyntheticEvent<HTMLImageElement>) => void;
+  bounds: { w: number; h: number } | null;   // rendered image pixel size
+  containerDims: { w: number; h: number };
+  transformRef: React.RefObject<ReactZoomPanPinchRef>;
+  focusedId: string | null;
+  hovered: boolean;
+  onHoverChange: (v: boolean) => void;
+  hasPrev: boolean;
+  hasNext: boolean;
+  onPrev: () => void;
+  onNext: () => void;
+  onExpand?: () => void;
+  ctrlBg: string;
+  zoomBtnSize: string;     // e.g. "w-7 h-7 text-[16px]"
+  navBtnSize: string;      // e.g. "w-11 h-14 text-[28px] font-bold"
+  fileName?: string;
+}
+
+function ImagePane({
+  url, alt, adjustments, onAdjust, onLoad,
+  bounds, containerDims,
+  transformRef, focusedId,
+  hovered, onHoverChange,
+  hasPrev, hasNext, onPrev, onNext, onExpand,
+  ctrlBg,
+  zoomBtnSize, navBtnSize,
+  fileName,
+}: ImagePaneProps) {
+  const dimStyle: React.CSSProperties = bounds
+    ? { position: 'relative', width: bounds.w, height: bounds.h, overflow: 'hidden' }
+    : {
+        position: 'relative',
+        maxWidth: containerDims.w || undefined,
+        maxHeight: containerDims.h || undefined,
+        overflow: 'hidden',
+      };
+
+  return (
+    <div
+      className="relative flex-1 min-w-0 min-h-0 flex items-center justify-center bg-paperHover overflow-hidden"
+      onMouseEnter={() => onHoverChange(true)}
+      onMouseLeave={() => onHoverChange(false)}
+    >
+      {/* Inner wrapper — exactly the rendered image size so controls sit on the image */}
+      <div style={dimStyle}>
+        <TransformWrapper ref={transformRef} key={focusedId ?? 'none'}>
+          {({ zoomIn, zoomOut, resetTransform }) => (
+            <>
+              <TransformComponent
+                wrapperStyle={{ width: '100%', height: '100%' }}
+                contentStyle={bounds ? { width: '100%', height: '100%' } : undefined}
+              >
+                <img
+                  src={url}
+                  alt={alt}
+                  className={bounds ? 'w-full h-full' : 'max-w-full max-h-full'}
+                  style={{ filter: cssFilter(adjustments), display: 'block' }}
+                  onLoad={onLoad}
+                />
+              </TransformComponent>
+
+              {/* Zoom controls — top-right of image */}
+              <div className="absolute top-2 right-2 z-10 flex flex-col gap-1">
+                <button type="button" onClick={() => zoomIn()}
+                  className={`${zoomBtnSize} ${CTRL_BTN} ${ctrlBg}`}
+                  title="Zoom in" aria-label="Zoom in">+</button>
+                <button type="button" onClick={() => zoomOut()}
+                  className={`${zoomBtnSize} ${CTRL_BTN} ${ctrlBg}`}
+                  title="Zoom out" aria-label="Zoom out">−</button>
+                <button type="button" onClick={() => resetTransform()}
+                  className={`${zoomBtnSize.replace(/text-\S+/, 'text-[11px]')} ${CTRL_BTN} ${ctrlBg}`}
+                  title="Reset zoom" aria-label="Reset zoom">1:1</button>
+              </div>
+
+              {/* Expand — top-left of image */}
+              {onExpand && (
+                <button type="button" onClick={onExpand}
+                  className={`absolute top-2 left-2 z-10 ${zoomBtnSize.split(' ').slice(0, 2).join(' ')} text-[13px] ${CTRL_BTN} ${ctrlBg}`}
+                  title="Open full screen" aria-label="Open full screen">⛶</button>
+              )}
+
+              {/* Adjust — bottom-left of image */}
+              <div className="absolute bottom-2 left-2 z-10">
+                <ImageAdjustments
+                  key={focusedId ?? 'none'}
+                  value={adjustments}
+                  onChange={onAdjust}
+                  onReset={() => onAdjust(NEUTRAL)}
+                  containerHovered={hovered}
+                />
+              </div>
+            </>
+          )}
+        </TransformWrapper>
+      </div>
+
+      {/* Prev / Next — sit at the outer edges of the image container */}
+      {hasPrev && (
+        <button type="button" onClick={onPrev}
+          className={`absolute left-2 top-1/2 -translate-y-1/2 z-10 ${navBtnSize} ${CTRL_BTN} ${ctrlBg}`}
+          title="Previous image (←)" aria-label="Previous image">‹</button>
+      )}
+      {hasNext && (
+        <button type="button" onClick={onNext}
+          className={`absolute right-2 top-1/2 -translate-y-1/2 z-10 ${navBtnSize} ${CTRL_BTN} ${ctrlBg}`}
+          title="Next image (→)" aria-label="Next image">›</button>
+      )}
+
+      {/* Filename label */}
+      {fileName && (
+        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-10 px-2 py-0.5 bg-gray-200/40 font-body text-[12px] text-inkSoft truncate max-w-[60%]">
+          {fileName}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── TagImages ────────────────────────────────────────────────────────────────
 
 export function TagImages() {
   const s3Config = useStore((s) => s.s3Config);
@@ -21,11 +162,9 @@ export function TagImages() {
   const { data: speciesData } = useSpecies(s3Config, connectionId);
   const species = speciesData?.species ?? [];
 
-  // Selection: a Set of fileIds. The "focused" image is the last one clicked.
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [focusedId, setFocusedId] = useState<string | null>(null);
 
-  // Initialize focus to the first file.
   useEffect(() => {
     if (files.length > 0 && focusedId === null) {
       const id = files[0].id;
@@ -34,20 +173,14 @@ export function TagImages() {
     }
   }, [files, focusedId]);
 
-  // Separate URL maps: thumbMap for the strip (thumbnail blob), fullMap for the
-  // large focus view (original file). Both revoked on unmount.
   const thumbMap = useRef<Map<string, string>>(new Map());
   const fullMap = useRef<Map<string, string>>(new Map());
   useEffect(() => {
     const tm = thumbMap.current;
     const fm = fullMap.current;
     for (const f of files) {
-      if (!tm.has(f.id)) {
-        tm.set(f.id, URL.createObjectURL(f.thumbnail ?? f.file));
-      }
-      if (!fm.has(f.id)) {
-        fm.set(f.id, URL.createObjectURL(f.file));
-      }
+      if (!tm.has(f.id)) tm.set(f.id, URL.createObjectURL(f.thumbnail ?? f.file));
+      if (!fm.has(f.id)) fm.set(f.id, URL.createObjectURL(f.file));
     }
     return () => {
       for (const url of tm.values()) URL.revokeObjectURL(url);
@@ -59,17 +192,71 @@ export function TagImages() {
 
   const [filter, setFilter] = useState('');
   const filterRef = useRef<HTMLInputElement>(null);
+  const [modalFilter, setModalFilter] = useState('');
+  const modalFilterRef = useRef<HTMLInputElement>(null);
   const [recent, setRecent] = useState<string[]>([]);
   const [adjustments, setAdjustments] = useState<Adjustments>(NEUTRAL);
-  useEffect(() => { setAdjustments(NEUTRAL); }, [focusedId]);
   const [imageHovered, setImageHovered] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalImageHovered, setModalImageHovered] = useState(false);
   const ctrlBg = imageHovered ? 'bg-gray-200/40' : 'bg-transparent';
+  const modalCtrlBg = modalImageHovered ? 'bg-gray-200/40' : 'bg-transparent';
+
+  // Container sizes tracked by ResizeObserver so the image can be constrained.
+  const focusViewRef = useRef<HTMLDivElement>(null);
+  const focusTransformRef = useRef<ReactZoomPanPinchRef>(null);
+  const [focusDims, setFocusDims] = useState({ w: 0, h: 0 });
+  const modalPaneRef = useRef<HTMLDivElement>(null);
+  const modalTransformRef = useRef<ReactZoomPanPinchRef>(null);
+  const [modalDims, setModalDims] = useState({ w: 0, h: 0 });
+
+  // Natural image dimensions — set once the img element fires onLoad.
+  const [naturalDims, setNaturalDims] = useState({ w: 0, h: 0 });
+
+  // Reset per-image state whenever the focused image changes.
+  useEffect(() => {
+    setAdjustments(NEUTRAL);
+    setNaturalDims({ w: 0, h: 0 });
+  }, [focusedId]);
+
+  useEffect(() => {
+    const el = focusViewRef.current;
+    if (!el) return;
+    const ob = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      setFocusDims({ w: width, h: height });
+      focusTransformRef.current?.resetTransform(0);
+    });
+    ob.observe(el);
+    return () => ob.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!modalOpen) return;
+    const el = modalPaneRef.current;
+    if (!el) return;
+    const ob = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      setModalDims({ w: width, h: height });
+      modalTransformRef.current?.resetTransform(0);
+    });
+    ob.observe(el);
+    return () => ob.disconnect();
+  }, [modalOpen]);
+
+  const focusBounds = useMemo(
+    () => fitBounds(focusDims.w, focusDims.h, naturalDims.w, naturalDims.h),
+    [focusDims, naturalDims],
+  );
+  const modalBounds = useMemo(
+    () => fitBounds(modalDims.w, modalDims.h, naturalDims.w, naturalDims.h),
+    [modalDims, naturalDims],
+  );
 
   const focusedObs = useMemo(
     () => (focusedId ? (preTags[focusedId] ?? []) : []),
     [preTags, focusedId],
   );
-
   const appliedSet = useMemo(
     () => new Set(focusedObs.map((o) => o.scientificName)),
     [focusedObs],
@@ -78,7 +265,6 @@ export function TagImages() {
   const handleThumbClick = useCallback(
     (id: string, e: React.MouseEvent) => {
       if (e.shiftKey && focusedId) {
-        // Range select from focusedId to id.
         const ids = files.map((f) => f.id);
         const a = ids.indexOf(focusedId);
         const b = ids.indexOf(id);
@@ -128,6 +314,7 @@ export function TagImages() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setModalOpen(false); return; }
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (e.key === 'ArrowLeft') { e.preventDefault(); goTo(focusedIndex - 1); }
       if (e.key === 'ArrowRight') { e.preventDefault(); goTo(focusedIndex + 1); }
@@ -136,92 +323,82 @@ export function TagImages() {
     return () => window.removeEventListener('keydown', onKey);
   }, [focusedIndex, goTo]);
 
+  const handleImageLoad = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
+    setNaturalDims({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight });
+  }, []);
+
+  const speciesPanel = (
+    filterVal: string,
+    onFilterChange: (v: string) => void,
+    ref: React.RefObject<HTMLInputElement>,
+  ) => (
+    <SpeciesPanel
+      species={species}
+      onApply={handleApply}
+      filter={filterVal}
+      onFilterChange={onFilterChange}
+      filterRef={ref}
+      bindingFor={() => null}
+      capturingFor={null}
+      onStartCapture={() => {}}
+      onClearKey={() => {}}
+      recent={recent}
+      appliedSet={appliedSet}
+      hasFocus={focusedId !== null}
+      selectionCount={selected.size > 1 ? selected.size : 0}
+      disabled={focusedId === null}
+      headerSlot={
+        focusedId ? (
+          <AppliedSpecies
+            observations={focusedObs}
+            disabled={focusedId === null}
+            onSetCount={(name, count) => setPreTagCount(focusedId, name, count)}
+            onRemove={(name) => removePreTag(focusedId, name)}
+            onDetagAll={() => clearFileTags(focusedId)}
+          />
+        ) : undefined
+      }
+    />
+  );
+
   return (
-    <div className="flex flex-col">
-      <div className="flex gap-0" style={{ height: 'calc(100dvh - 220px)' }}>
+    <div className="flex flex-col" style={{ height: 'calc(100dvh - 220px)' }}>
+      <div className="flex flex-1 min-h-0 gap-0">
         {/* Left: image area */}
-        <div className="flex flex-col flex-1 min-w-0 min-h-0 gap-3 pr-3 overflow-y-auto">
-          {/* Focus view */}
-          <div
-            className="relative border border-rule bg-paperHover flex items-center justify-center overflow-hidden"
-            style={{ height: '360px' }}
-            onMouseEnter={() => setImageHovered(true)}
-            onMouseLeave={() => setImageHovered(false)}
-          >
+        <div className="flex flex-col flex-1 min-w-0 min-h-0 gap-3 pr-3">
+          {/* Focus view — fills available height */}
+          <div ref={focusViewRef} className="flex-1 min-h-0 flex border border-rule">
             {focusedUrl ? (
-              <TransformWrapper key={focusedId ?? 'none'}>
-                {({ zoomIn, zoomOut, resetTransform }) => (
-                  <>
-                    <TransformComponent wrapperStyle={{ width: '100%', height: '100%' }}>
-                      <img
-                        src={focusedUrl}
-                        alt={focusedFile?.fileName ?? ''}
-                        className="max-h-full max-w-full object-contain"
-                        style={{ filter: cssFilter(adjustments) }}
-                      />
-                    </TransformComponent>
-                    <div className="absolute top-2 right-2 z-10 flex flex-col gap-1">
-                      <button
-                        type="button"
-                        onClick={() => zoomIn()}
-                        className={`w-7 h-7 flex items-center justify-center text-[16px] font-mono border border-rule ${ctrlBg} text-inkSoft hover:text-ink hover:bg-paperHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent`}
-                        title="Zoom in"
-                        aria-label="Zoom in"
-                      >+</button>
-                      <button
-                        type="button"
-                        onClick={() => zoomOut()}
-                        className={`w-7 h-7 flex items-center justify-center text-[16px] font-mono border border-rule ${ctrlBg} text-inkSoft hover:text-ink hover:bg-paperHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent`}
-                        title="Zoom out"
-                        aria-label="Zoom out"
-                      >−</button>
-                      <button
-                        type="button"
-                        onClick={() => resetTransform()}
-                        className={`w-7 h-7 flex items-center justify-center text-[11px] font-mono border border-rule ${ctrlBg} text-inkSoft hover:text-ink hover:bg-paperHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent`}
-                        title="Reset zoom"
-                        aria-label="Reset zoom"
-                      >1:1</button>
-                    </div>
-                  </>
-                )}
-              </TransformWrapper>
+              <ImagePane
+                url={focusedUrl}
+                alt={focusedFile?.fileName ?? ''}
+                adjustments={adjustments}
+                onAdjust={setAdjustments}
+                onLoad={handleImageLoad}
+                bounds={focusBounds}
+                containerDims={focusDims}
+                transformRef={focusTransformRef}
+                focusedId={focusedId}
+                hovered={imageHovered}
+                onHoverChange={setImageHovered}
+                hasPrev={focusedIndex > 0}
+                hasNext={focusedIndex >= 0 && focusedIndex < files.length - 1}
+                onPrev={() => goTo(focusedIndex - 1)}
+                onNext={() => goTo(focusedIndex + 1)}
+                onExpand={() => setModalOpen(true)}
+                ctrlBg={ctrlBg}
+                zoomBtnSize="w-7 h-7 text-[16px]"
+                navBtnSize="w-11 h-14 text-[28px] font-bold"
+              />
             ) : (
-              <span className="text-inkMute font-body text-[13px]">Select an image</span>
-            )}
-            {focusedIndex > 0 && (
-              <button
-                type="button"
-                onClick={() => goTo(focusedIndex - 1)}
-                className={`absolute left-2 top-1/2 -translate-y-1/2 z-10 w-11 h-14 flex items-center justify-center text-[28px] font-bold border border-rule ${ctrlBg} text-inkSoft hover:text-ink hover:bg-paperHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent`}
-                title="Previous image (←)"
-                aria-label="Previous image"
-              >‹</button>
-            )}
-            {focusedIndex >= 0 && focusedIndex < files.length - 1 && (
-              <button
-                type="button"
-                onClick={() => goTo(focusedIndex + 1)}
-                className={`absolute right-2 top-1/2 -translate-y-1/2 z-10 w-11 h-14 flex items-center justify-center text-[28px] font-bold border border-rule ${ctrlBg} text-inkSoft hover:text-ink hover:bg-paperHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent`}
-                title="Next image (→)"
-                aria-label="Next image"
-              >›</button>
-            )}
-            {focusedUrl && (
-              <div className="absolute bottom-2 left-2 z-10">
-                <ImageAdjustments
-                  key={focusedId ?? 'none'}
-                  value={adjustments}
-                  onChange={setAdjustments}
-                  onReset={() => setAdjustments(NEUTRAL)}
-                  containerHovered={imageHovered}
-                />
+              <div className="w-full h-full bg-paperHover flex items-center justify-center">
+                <span className="text-inkMute font-body text-[13px]">Select an image</span>
               </div>
             )}
           </div>
 
           {/* Thumbnail strip */}
-          <div className="flex gap-2 overflow-x-auto pb-1">
+          <div className="shrink-0 flex gap-2 overflow-x-auto pb-1">
             {files.map((f) => {
               const url = thumbMap.current.get(f.id);
               const isFocused = f.id === focusedId;
@@ -232,11 +409,7 @@ export function TagImages() {
                   key={f.id}
                   onClick={(e) => handleThumbClick(f.id, e)}
                   className={`relative shrink-0 w-20 h-20 border-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
-                    isFocused
-                      ? 'border-ink'
-                      : isSelected
-                        ? 'border-accent'
-                        : 'border-transparent hover:border-rule'
+                    isFocused ? 'border-ink' : isSelected ? 'border-accent' : 'border-transparent hover:border-rule'
                   }`}
                   title={f.fileName}
                 >
@@ -248,11 +421,8 @@ export function TagImages() {
                     </span>
                   )}
                   {hasTag && (
-                    <span
-                      className="absolute bottom-0.5 right-0.5 w-2.5 h-2.5 rounded-full bg-ok border border-paper"
-                      title="Tagged"
-                      aria-label="Tagged"
-                    />
+                    <span className="absolute bottom-0.5 right-0.5 w-2.5 h-2.5 rounded-full bg-ok border border-paper"
+                      title="Tagged" aria-label="Tagged" />
                   )}
                 </button>
               );
@@ -260,44 +430,18 @@ export function TagImages() {
           </div>
 
           {focusedFile && (
-            <p className="font-body text-[12px] text-inkSoft truncate">{focusedFile.fileName}</p>
+            <p className="shrink-0 font-body text-[12px] text-inkSoft truncate">{focusedFile.fileName}</p>
           )}
         </div>
 
         {/* Right: species panel */}
         <div className="w-72 shrink-0 flex flex-col h-full min-h-0">
-          <SpeciesPanel
-            species={species}
-            onApply={handleApply}
-            filter={filter}
-            onFilterChange={setFilter}
-            filterRef={filterRef}
-            bindingFor={() => null}
-            capturingFor={null}
-            onStartCapture={() => {}}
-            onClearKey={() => {}}
-            recent={recent}
-            appliedSet={appliedSet}
-            hasFocus={focusedId !== null}
-            selectionCount={selected.size > 1 ? selected.size : 0}
-            disabled={focusedId === null}
-            headerSlot={
-              focusedId ? (
-                <AppliedSpecies
-                  observations={focusedObs}
-                  disabled={focusedId === null}
-                  onSetCount={(name, count) => setPreTagCount(focusedId, name, count)}
-                  onRemove={(name) => removePreTag(focusedId, name)}
-                  onDetagAll={() => clearFileTags(focusedId)}
-                />
-              ) : undefined
-            }
-          />
+          {speciesPanel(filter, setFilter, filterRef)}
         </div>
       </div>
 
       {/* Footer nav */}
-      <div className="flex items-center justify-between gap-4 border-t border-ruleSoft pt-4 mt-4">
+      <div className="shrink-0 flex items-center justify-between gap-4 border-t border-ruleSoft pt-4 mt-4">
         <button
           onClick={() => setStep('inspect')}
           className="border border-ink text-ink px-3.5 py-1.5 text-[14px] font-body hover:bg-paperHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
@@ -316,6 +460,54 @@ export function TagImages() {
           </button>
         </div>
       </div>
+
+      {/* Full-screen tagging modal */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="absolute inset-2 flex bg-paper border border-rule shadow-2xl overflow-hidden">
+            {/* Image pane */}
+            <div ref={modalPaneRef} className="flex-1 min-w-0 min-h-0 flex">
+              {focusedUrl ? (
+                <ImagePane
+                  url={focusedUrl}
+                  alt={focusedFile?.fileName ?? ''}
+                  adjustments={adjustments}
+                  onAdjust={setAdjustments}
+                  onLoad={handleImageLoad}
+                  bounds={modalBounds}
+                  containerDims={modalDims}
+                  transformRef={modalTransformRef}
+                  focusedId={focusedId}
+                  hovered={modalImageHovered}
+                  onHoverChange={setModalImageHovered}
+                  hasPrev={focusedIndex > 0}
+                  hasNext={focusedIndex >= 0 && focusedIndex < files.length - 1}
+                  onPrev={() => goTo(focusedIndex - 1)}
+                  onNext={() => goTo(focusedIndex + 1)}
+                  ctrlBg={modalCtrlBg}
+                  zoomBtnSize="w-9 h-9 text-[18px]"
+                  navBtnSize="w-14 h-20 text-[36px] font-bold"
+                  fileName={focusedFile?.fileName}
+                />
+              ) : null}
+            </div>
+
+            {/* Close */}
+            <button
+              type="button"
+              onClick={() => setModalOpen(false)}
+              className={`absolute top-3 left-3 z-20 w-9 h-9 text-[18px] ${CTRL_BTN} ${modalCtrlBg}`}
+              title="Close (Esc)"
+              aria-label="Close"
+            >✕</button>
+
+            {/* Species panel */}
+            <div className="w-96 shrink-0 border-l border-rule flex flex-col h-full min-h-0">
+              {speciesPanel(modalFilter, setModalFilter, modalFilterRef)}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
