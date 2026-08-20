@@ -530,9 +530,13 @@ export function TagImages() {
           Back
         </button>
         <div className="flex items-center gap-3">
-          {Object.keys(preTags).length === 0 && (
-            <span className="font-body text-[12px] text-inkSoft">No species tagged yet — tagging is optional</span>
-          )}
+          <button
+            onClick={() => setStep('assign')}
+            className="border border-rule text-inkSoft px-3.5 py-1.5 text-[14px] font-body hover:bg-paperHover hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+            title="Skip tagging — go straight to Assign"
+          >
+            Skip
+          </button>
           <button
             onClick={() => setStep('assign')}
             className="bg-ink text-paper border border-ink px-3.5 py-1.5 text-[14px] font-body font-[600] hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
