@@ -206,7 +206,6 @@ export function TagImages() {
   const filterRef = useRef<HTMLInputElement>(null);
   const [modalFilter, setModalFilter] = useState('');
   const modalFilterRef = useRef<HTMLInputElement>(null);
-  const [recent, setRecent] = useState<string[]>([]);
   const [adjustments, setAdjustments] = useState<Adjustments>(NEUTRAL);
   const [imageHovered, setImageHovered] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
@@ -313,10 +312,6 @@ export function TagImages() {
     (tag: Parameters<typeof addPreTag>[1]) => {
       const targets = selected.size > 0 ? [...selected] : focusedId ? [focusedId] : [];
       for (const id of targets) addPreTag(id, tag);
-      setRecent((prev) => {
-        const without = prev.filter((s) => s !== tag.scientificName);
-        return [tag.scientificName, ...without].slice(0, 12);
-      });
     },
     [selected, focusedId, addPreTag],
   );
@@ -393,7 +388,6 @@ export function TagImages() {
       capturingFor={null}
       onStartCapture={() => {}}
       onClearKey={() => {}}
-      recent={recent}
       appliedSet={appliedSet}
       hasFocus={focusedId !== null}
       selectionCount={selected.size > 1 ? selected.size : 0}

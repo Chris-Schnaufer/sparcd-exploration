@@ -13,7 +13,6 @@ export type SpeciesPanelProps = {
   capturingFor: string | null;
   onStartCapture: (scientificName: string) => void;
   onClearKey: (scientificName: string) => void;
-  recent: string[]; // scientificNames, most-recent first
   appliedSet: Set<string>;
   hasFocus: boolean;
   selectionCount: number;
@@ -35,16 +34,10 @@ export function SpeciesPanel(props: SpeciesPanelProps) {
     [species],
   );
 
-  const ordered = useMemo(() => {
-    const base = filter.trim() ? fuse.search(filter.trim()).map((r) => r.item) : species;
-    if (!props.recent.length) return base;
-    const rank = new Map(props.recent.map((s, i) => [s, i]));
-    return [...base].sort((a, b) => {
-      const ra = rank.has(a.scientificName) ? rank.get(a.scientificName)! : Infinity;
-      const rb = rank.has(b.scientificName) ? rank.get(b.scientificName)! : Infinity;
-      return ra - rb;
-    });
-  }, [species, filter, fuse, props.recent]);
+  const ordered = useMemo(
+    () => (filter.trim() ? fuse.search(filter.trim()).map((r) => r.item) : species),
+    [species, filter, fuse],
+  );
 
   const trimmed = filter.trim();
   const exact = species.some(
