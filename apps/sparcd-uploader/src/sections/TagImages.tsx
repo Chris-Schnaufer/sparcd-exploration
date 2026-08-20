@@ -164,6 +164,7 @@ export function TagImages() {
   const setPreTagCount = useStore((s) => s.setPreTagCount);
   const clearFileTags = useStore((s) => s.clearFileTags);
   const setStep = useStore((s) => s.setStep);
+  const goBack = useStore((s) => s.goBack);
 
   const { data: speciesData } = useSpecies(s3Config, connectionId);
   const species = speciesData?.species ?? [];
@@ -524,7 +525,7 @@ export function TagImages() {
       {/* Footer nav */}
       <div className="shrink-0 flex items-center justify-between gap-4 border-t border-ruleSoft pt-4 mt-4">
         <button
-          onClick={() => setStep('inspect')}
+          onClick={goBack}
           className="border border-ink text-ink px-3.5 py-1.5 text-[14px] font-body hover:bg-paperHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
         >
           Back

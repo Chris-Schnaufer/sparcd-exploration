@@ -51,6 +51,7 @@ type UploaderState = {
   theme: Theme;
   elevationUnit: ElevationUnit; // display pref for location elevation (persisted)
   step: WizardStep;
+  stepHistory: WizardStep[];
   files: FileEntry[];
   validations: Record<string, FileValidation>;
   scanning: boolean;
@@ -75,6 +76,7 @@ type UploaderState = {
   toggleTheme: () => void;
   setElevationUnit: (unit: ElevationUnit) => void;
   setStep: (step: WizardStep) => void;
+  goBack: () => void;
   setScanning: (scanning: boolean) => void;
   setProcessing: (processing: boolean) => void;
   setFiles: (files: ScannedFile[], dirHandle?: FileSystemDirectoryHandle | null) => void;
@@ -143,6 +145,7 @@ export const useStore = create<UploaderState>()(
       theme: 'light',
       elevationUnit: 'meters',
       step: 'drop',
+      stepHistory: [],
       files: [],
       validations: {},
       scanning: false,
@@ -195,7 +198,12 @@ export const useStore = create<UploaderState>()(
       setSection: (section) => set({ section }),
       toggleTheme: () => set((s) => ({ theme: s.theme === 'light' ? 'dark' : 'light' })),
       setElevationUnit: (elevationUnit) => set({ elevationUnit }),
-      setStep: (step) => set({ step }),
+      setStep: (step) => set((s) => ({ step, stepHistory: [...s.stepHistory, s.step] })),
+      goBack: () => set((s) => {
+        if (!s.stepHistory.length) return s;
+        const prev = s.stepHistory[s.stepHistory.length - 1];
+        return { step: prev, stepHistory: s.stepHistory.slice(0, -1) };
+      }),
       setScanning: (scanning) => set({ scanning }),
       setProcessing: (processing) => set({ processing }),
 
@@ -298,6 +306,7 @@ export const useStore = create<UploaderState>()(
           files: [],
           validations: {},
           step: 'drop',
+          stepHistory: [],
           batchToken: s.batchToken + 1,
           dirHandle: null,
           fileAccessMode: 'reselect-required',
@@ -354,6 +363,7 @@ export const useStore = create<UploaderState>()(
           files: [],
           validations: {},
           step: 'drop',
+          stepHistory: [],
           batchToken: s.batchToken + 1,
           dirHandle: null,
           fileAccessMode: 'reselect-required',
