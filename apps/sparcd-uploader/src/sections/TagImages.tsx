@@ -105,10 +105,10 @@ export function TagImages() {
   const focusedUrl = focusedId ? (urlMap.current.get(focusedId) ?? null) : null;
 
   return (
-    <div className="flex flex-col h-full" style={{ minHeight: '60vh' }}>
-      <div className="flex flex-1 min-h-0 gap-0">
+    <div className="flex flex-col">
+      <div className="flex gap-0" style={{ height: 'calc(100dvh - 220px)' }}>
         {/* Left: image area */}
-        <div className="flex flex-col flex-1 min-w-0 gap-3 pr-3">
+        <div className="flex flex-col flex-1 min-w-0 min-h-0 gap-3 pr-3 overflow-y-auto">
           {/* Focus view */}
           <div className="border border-rule bg-paperHover flex items-center justify-center overflow-hidden" style={{ height: '360px' }}>
             {focusedUrl ? (
@@ -167,7 +167,7 @@ export function TagImages() {
         </div>
 
         {/* Right: species panel */}
-        <div className="w-72 shrink-0 flex flex-col min-h-0">
+        <div className="w-72 shrink-0 flex flex-col h-full min-h-0">
           <SpeciesPanel
             species={species}
             onApply={handleApply}
