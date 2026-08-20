@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { TransformWrapper, TransformComponent, type ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
 import { useStore } from '../store';
 import { useSpecies } from '../lib/useSpecies';
+import { useKeyBindings } from '../lib/useKeyBindings';
 import { SpeciesPanel } from '../components/SpeciesPanel';
 import { AppliedSpecies } from '../components/AppliedSpecies';
 import { ImageAdjustments } from '../components/ImageAdjustments';
@@ -166,9 +167,11 @@ export function TagImages() {
 
   const { data: speciesData } = useSpecies(s3Config, connectionId);
   const species = speciesData?.species ?? [];
+  const { bindingFor, setBinding, clearBinding } = useKeyBindings(species);
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [focusedId, setFocusedId] = useState<string | null>(null);
+  const [capturingFor, setCapturingFor] = useState<string | null>(null);
 
   // Blur whatever the browser focused on step entry (typically the filter input
   // after the Continue button is removed) so the first keypress goes to the
@@ -278,8 +281,13 @@ export function TagImages() {
     for (const s of species) {
       if (s.keyBinding) m.set(s.keyBinding.toUpperCase(), { scientificName: s.scientificName, commonName: s.commonName });
     }
+    // User bindings override data defaults.
+    for (const s of species) {
+      const userKey = bindingFor(s.scientificName);
+      if (userKey) m.set(userKey.toUpperCase(), { scientificName: s.scientificName, commonName: s.commonName });
+    }
     return m;
-  }, [species]);
+  }, [species, bindingFor]);
 
   const handleThumbClick = useCallback(
     (id: string, e: React.MouseEvent) => {
@@ -329,8 +337,23 @@ export function TagImages() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { setModalOpen(false); return; }
+      if (e.key === 'Escape') {
+        if (capturingFor) { setCapturingFor(null); return; }
+        setModalOpen(false);
+        return;
+      }
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+      // Capture mode: assign the pressed key to the waiting species.
+      if (capturingFor) {
+        if (e.key.length === 1) {
+          e.preventDefault();
+          setBinding(capturingFor, e.key);
+          setCapturingFor(null);
+        }
+        return;
+      }
+
       if (e.key === 'ArrowLeft') { e.preventDefault(); goTo(focusedIndex - 1); return; }
       if (e.key === 'ArrowRight') { e.preventDefault(); goTo(focusedIndex + 1); return; }
       if (!focusedId) return;
@@ -347,7 +370,16 @@ export function TagImages() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [focusedIndex, goTo, keyMap, focusedId, appliedSet, preTags, setPreTagCount, handleApply]);
+  }, [focusedIndex, goTo, keyMap, focusedId, appliedSet, preTags, setPreTagCount, handleApply,
+      capturingFor, setBinding]);
+
+  const handleStartCapture = useCallback((scientificName: string) => {
+    setCapturingFor(scientificName);
+  }, []);
+
+  const handleClearKey = useCallback((scientificName: string) => {
+    clearBinding(scientificName);
+  }, [clearBinding]);
 
   const handleDrop = useCallback(
     (fileId: string, e: React.DragEvent) => {
@@ -384,10 +416,10 @@ export function TagImages() {
       filter={filterVal}
       onFilterChange={onFilterChange}
       filterRef={ref}
-      bindingFor={() => null}
-      capturingFor={null}
-      onStartCapture={() => {}}
-      onClearKey={() => {}}
+      bindingFor={bindingFor}
+      capturingFor={capturingFor}
+      onStartCapture={handleStartCapture}
+      onClearKey={handleClearKey}
       appliedSet={appliedSet}
       hasFocus={focusedId !== null}
       selectionCount={selected.size > 1 ? selected.size : 0}
