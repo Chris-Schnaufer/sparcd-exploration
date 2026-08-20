@@ -12,18 +12,21 @@ export function ImageAdjustments({
   value,
   onChange,
   onReset,
+  containerHovered = false,
 }: {
   value: Adjustments;
   onChange: (next: Adjustments) => void;
   onReset: () => void;
+  containerHovered?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const neutral = isNeutral(value);
+  const ctrlBg = containerHovered || open ? 'bg-gray-200/40' : 'bg-transparent';
 
   return (
     <div className="flex flex-col items-start gap-2">
       {open && (
-        <div className="w-56 bg-panel/95 border border-rule shadow-sm p-3 flex flex-col gap-2.5">
+        <div className="w-56 bg-paperHover border border-rule shadow-sm p-3 flex flex-col gap-2.5">
           {FIELDS.map((f) => (
             <label key={f.key} className="flex flex-col gap-1">
               <span className="flex items-center justify-between">
@@ -58,7 +61,7 @@ export function ImageAdjustments({
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-pressed={open}
-        className="text-[12px] font-mono border border-rule bg-panel/95 px-3 py-2.5 min-h-[44px] sm:px-2 sm:py-0.5 sm:min-h-0 text-inkSoft hover:text-ink hover:border-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+        className={`text-[12px] font-mono border border-rule ${ctrlBg} px-3 py-2.5 min-h-[44px] sm:px-2 sm:py-0.5 sm:min-h-0 text-inkSoft hover:text-ink hover:border-ink hover:bg-paperHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent`}
         title="View-only image adjustments (does not change the file)"
       >
         Adjust {open ? '▴' : '▾'}

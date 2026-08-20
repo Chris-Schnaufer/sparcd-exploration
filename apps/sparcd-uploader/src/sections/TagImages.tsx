@@ -61,6 +61,9 @@ export function TagImages() {
   const filterRef = useRef<HTMLInputElement>(null);
   const [recent, setRecent] = useState<string[]>([]);
   const [adjustments, setAdjustments] = useState<Adjustments>(NEUTRAL);
+  useEffect(() => { setAdjustments(NEUTRAL); }, [focusedId]);
+  const [imageHovered, setImageHovered] = useState(false);
+  const ctrlBg = imageHovered ? 'bg-gray-200/40' : 'bg-transparent';
 
   const focusedObs = useMemo(
     () => (focusedId ? (preTags[focusedId] ?? []) : []),
@@ -114,6 +117,24 @@ export function TagImages() {
 
   const focusedFile = files.find((f) => f.id === focusedId) ?? null;
   const focusedUrl = focusedId ? (fullMap.current.get(focusedId) ?? null) : null;
+  const focusedIndex = focusedId ? files.findIndex((f) => f.id === focusedId) : -1;
+
+  const goTo = useCallback((index: number) => {
+    const f = files[index];
+    if (!f) return;
+    setFocusedId(f.id);
+    setSelected(new Set([f.id]));
+  }, [files]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key === 'ArrowLeft') { e.preventDefault(); goTo(focusedIndex - 1); }
+      if (e.key === 'ArrowRight') { e.preventDefault(); goTo(focusedIndex + 1); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [focusedIndex, goTo]);
 
   return (
     <div className="flex flex-col">
@@ -121,27 +142,79 @@ export function TagImages() {
         {/* Left: image area */}
         <div className="flex flex-col flex-1 min-w-0 min-h-0 gap-3 pr-3 overflow-y-auto">
           {/* Focus view */}
-          <div className="relative border border-rule bg-paperHover flex items-center justify-center overflow-hidden" style={{ height: '360px' }}>
+          <div
+            className="relative border border-rule bg-paperHover flex items-center justify-center overflow-hidden"
+            style={{ height: '360px' }}
+            onMouseEnter={() => setImageHovered(true)}
+            onMouseLeave={() => setImageHovered(false)}
+          >
             {focusedUrl ? (
-              <TransformWrapper>
-                <TransformComponent wrapperStyle={{ width: '100%', height: '100%' }}>
-                  <img
-                    src={focusedUrl}
-                    alt={focusedFile?.fileName ?? ''}
-                    className="max-h-full max-w-full object-contain"
-                    style={{ filter: cssFilter(adjustments) }}
-                  />
-                </TransformComponent>
+              <TransformWrapper key={focusedId ?? 'none'}>
+                {({ zoomIn, zoomOut, resetTransform }) => (
+                  <>
+                    <TransformComponent wrapperStyle={{ width: '100%', height: '100%' }}>
+                      <img
+                        src={focusedUrl}
+                        alt={focusedFile?.fileName ?? ''}
+                        className="max-h-full max-w-full object-contain"
+                        style={{ filter: cssFilter(adjustments) }}
+                      />
+                    </TransformComponent>
+                    <div className="absolute top-2 right-2 z-10 flex flex-col gap-1">
+                      <button
+                        type="button"
+                        onClick={() => zoomIn()}
+                        className={`w-7 h-7 flex items-center justify-center text-[16px] font-mono border border-rule ${ctrlBg} text-inkSoft hover:text-ink hover:bg-paperHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent`}
+                        title="Zoom in"
+                        aria-label="Zoom in"
+                      >+</button>
+                      <button
+                        type="button"
+                        onClick={() => zoomOut()}
+                        className={`w-7 h-7 flex items-center justify-center text-[16px] font-mono border border-rule ${ctrlBg} text-inkSoft hover:text-ink hover:bg-paperHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent`}
+                        title="Zoom out"
+                        aria-label="Zoom out"
+                      >−</button>
+                      <button
+                        type="button"
+                        onClick={() => resetTransform()}
+                        className={`w-7 h-7 flex items-center justify-center text-[11px] font-mono border border-rule ${ctrlBg} text-inkSoft hover:text-ink hover:bg-paperHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent`}
+                        title="Reset zoom"
+                        aria-label="Reset zoom"
+                      >1:1</button>
+                    </div>
+                  </>
+                )}
               </TransformWrapper>
             ) : (
               <span className="text-inkMute font-body text-[13px]">Select an image</span>
             )}
+            {focusedIndex > 0 && (
+              <button
+                type="button"
+                onClick={() => goTo(focusedIndex - 1)}
+                className={`absolute left-2 top-1/2 -translate-y-1/2 z-10 w-11 h-14 flex items-center justify-center text-[28px] font-bold border border-rule ${ctrlBg} text-inkSoft hover:text-ink hover:bg-paperHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent`}
+                title="Previous image (←)"
+                aria-label="Previous image"
+              >‹</button>
+            )}
+            {focusedIndex >= 0 && focusedIndex < files.length - 1 && (
+              <button
+                type="button"
+                onClick={() => goTo(focusedIndex + 1)}
+                className={`absolute right-2 top-1/2 -translate-y-1/2 z-10 w-11 h-14 flex items-center justify-center text-[28px] font-bold border border-rule ${ctrlBg} text-inkSoft hover:text-ink hover:bg-paperHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent`}
+                title="Next image (→)"
+                aria-label="Next image"
+              >›</button>
+            )}
             {focusedUrl && (
               <div className="absolute bottom-2 left-2 z-10">
                 <ImageAdjustments
+                  key={focusedId ?? 'none'}
                   value={adjustments}
                   onChange={setAdjustments}
                   onReset={() => setAdjustments(NEUTRAL)}
+                  containerHovered={imageHovered}
                 />
               </div>
             )}
