@@ -97,7 +97,7 @@ export function SpeciesPanel(props: SpeciesPanelProps) {
             iconUrl={s.iconUrl}
             common={s.commonName}
             scientific={s.scientificName}
-            badge={props.bindingFor(s.scientificName)}
+            badge={props.bindingFor(s.scientificName) ?? s.keyBinding}
             capturing={props.capturingFor === s.scientificName}
             applied={props.appliedSet.has(s.scientificName)}
             disabled={props.disabled}
