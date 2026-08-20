@@ -282,7 +282,7 @@ export function Assign() {
 
       <div className="flex items-center justify-between gap-4 border-t border-ruleSoft pt-5">
         <button
-          onClick={() => setStep('inspect')}
+          onClick={() => setStep('tag')}
           className="border border-ink text-ink px-3.5 py-1.5 text-[14px] font-body hover:bg-paperHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
         >
           Back

@@ -3,6 +3,7 @@ import { useStore } from '../store';
 import { StepIndicator } from '../components/StepIndicator';
 import { DropZone } from '../components/DropZone';
 import { FileList } from '../components/FileList';
+import { TagImages } from './TagImages';
 import { Assign } from './Assign';
 import { Upload } from './Upload';
 import { formatBytes } from '../lib/scanFiles';
@@ -82,8 +83,8 @@ export function NewUpload() {
               </button>
               <button
                 disabled={!summary.ready}
-                onClick={() => setStep('assign')}
-                title={summary.ready ? 'Continue to assignment' : 'Resolve files that need attention first'}
+                onClick={() => setStep('tag')}
+                title={summary.ready ? 'Continue to tag species' : 'Resolve files that need attention first'}
                 className={`flex-1 sm:flex-none min-h-[44px] sm:min-h-0 bg-ink text-paper border border-ink px-3.5 py-2.5 sm:py-1.5 text-[14px] font-body font-[600] focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 ${
                   summary.ready
                     ? `hover:opacity-90 hover:animate-none ${throb ? 'animate-throb' : ''}`
@@ -101,6 +102,8 @@ export function NewUpload() {
           </p>
         </div>
       )}
+
+      {step === 'tag' && <TagImages />}
 
       {step === 'assign' && <Assign />}
 
