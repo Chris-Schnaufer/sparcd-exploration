@@ -40,6 +40,8 @@ interface ImagePaneProps {
   onPrev: () => void;
   onNext: () => void;
   onExpand?: () => void;
+  onDrop?: (e: React.DragEvent) => void;
+  onDragOver?: (e: React.DragEvent) => void;
   ctrlBg: string;
   zoomBtnSize: string;     // e.g. "w-7 h-7 text-[16px]"
   navBtnSize: string;      // e.g. "w-11 h-14 text-[28px] font-bold"
@@ -52,6 +54,7 @@ function ImagePane({
   transformRef, focusedId,
   hovered, onHoverChange,
   hasPrev, hasNext, onPrev, onNext, onExpand,
+  onDrop, onDragOver,
   ctrlBg,
   zoomBtnSize, navBtnSize,
   fileName,
@@ -70,6 +73,8 @@ function ImagePane({
       className="relative flex-1 min-w-0 min-h-0 flex items-center justify-center bg-paperHover overflow-hidden"
       onMouseEnter={() => onHoverChange(true)}
       onMouseLeave={() => onHoverChange(false)}
+      onDrop={onDrop}
+      onDragOver={onDragOver}
     >
       {/* Inner wrapper — exactly the rendered image size so controls sit on the image */}
       <div style={dimStyle}>
@@ -164,6 +169,13 @@ export function TagImages() {
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [focusedId, setFocusedId] = useState<string | null>(null);
+
+  // Blur whatever the browser focused on step entry (typically the filter input
+  // after the Continue button is removed) so the first keypress goes to the
+  // global key handler, not the filter.
+  useEffect(() => {
+    (document.activeElement as HTMLElement | null)?.blur();
+  }, []);
 
   useEffect(() => {
     if (files.length > 0 && focusedId === null) {
@@ -262,6 +274,14 @@ export function TagImages() {
     [focusedObs],
   );
 
+  const keyMap = useMemo(() => {
+    const m = new Map<string, { scientificName: string; commonName: string }>();
+    for (const s of species) {
+      if (s.keyBinding) m.set(s.keyBinding.toUpperCase(), { scientificName: s.scientificName, commonName: s.commonName });
+    }
+    return m;
+  }, [species]);
+
   const handleThumbClick = useCallback(
     (id: string, e: React.MouseEvent) => {
       if (e.shiftKey && focusedId) {
@@ -316,12 +336,43 @@ export function TagImages() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { setModalOpen(false); return; }
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (e.key === 'ArrowLeft') { e.preventDefault(); goTo(focusedIndex - 1); }
-      if (e.key === 'ArrowRight') { e.preventDefault(); goTo(focusedIndex + 1); }
+      if (e.key === 'ArrowLeft') { e.preventDefault(); goTo(focusedIndex - 1); return; }
+      if (e.key === 'ArrowRight') { e.preventDefault(); goTo(focusedIndex + 1); return; }
+      if (!focusedId) return;
+      const match = keyMap.get(e.key.toUpperCase());
+      if (match) {
+        e.preventDefault();
+        if (appliedSet.has(match.scientificName)) {
+          const obs = preTags[focusedId]?.find((o) => o.scientificName === match.scientificName);
+          if (obs) setPreTagCount(focusedId, match.scientificName, obs.count + 1);
+        } else {
+          handleApply({ scientificName: match.scientificName, commonName: match.commonName, count: 1 });
+        }
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [focusedIndex, goTo]);
+  }, [focusedIndex, goTo, keyMap, focusedId, appliedSet, preTags, setPreTagCount, handleApply]);
+
+  const handleDrop = useCallback(
+    (fileId: string, e: React.DragEvent) => {
+      e.preventDefault();
+      const raw = e.dataTransfer.getData('application/x-species');
+      if (!raw) return;
+      try {
+        const payload = JSON.parse(raw) as { scientificName: string; commonName: string };
+        addPreTag(fileId, { scientificName: payload.scientificName, commonName: payload.commonName, count: 1 });
+      } catch { /* ignore malformed drag data */ }
+    },
+    [addPreTag],
+  );
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes('application/x-species')) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    }
+  }, []);
 
   const handleImageLoad = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
     setNaturalDims({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight });
@@ -386,6 +437,8 @@ export function TagImages() {
                 onPrev={() => goTo(focusedIndex - 1)}
                 onNext={() => goTo(focusedIndex + 1)}
                 onExpand={() => setModalOpen(true)}
+                onDrop={focusedId ? (e) => handleDrop(focusedId, e) : undefined}
+                onDragOver={handleDragOver}
                 ctrlBg={ctrlBg}
                 zoomBtnSize="w-7 h-7 text-[16px]"
                 navBtnSize="w-11 h-14 text-[28px] font-bold"
@@ -408,6 +461,8 @@ export function TagImages() {
                 <button
                   key={f.id}
                   onClick={(e) => handleThumbClick(f.id, e)}
+                  onDrop={(e) => handleDrop(f.id, e)}
+                  onDragOver={handleDragOver}
                   className={`relative shrink-0 w-20 h-20 border-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
                     isFocused ? 'border-ink' : isSelected ? 'border-accent' : 'border-transparent hover:border-rule'
                   }`}
@@ -484,6 +539,8 @@ export function TagImages() {
                   hasNext={focusedIndex >= 0 && focusedIndex < files.length - 1}
                   onPrev={() => goTo(focusedIndex - 1)}
                   onNext={() => goTo(focusedIndex + 1)}
+                  onDrop={focusedId ? (e) => handleDrop(focusedId, e) : undefined}
+                  onDragOver={handleDragOver}
                   ctrlBg={modalCtrlBg}
                   zoomBtnSize="w-9 h-9 text-[18px]"
                   navBtnSize="w-14 h-20 text-[36px] font-bold"

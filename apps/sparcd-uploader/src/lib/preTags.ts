@@ -21,6 +21,7 @@ export type AppliedTag = {
 
 /** The built-in non-animal label. Mutually exclusive with real species. */
 export const GHOST = { label: 'Casper', commonName: 'Ghost' } as const;
+export const GHOST_KEY = 'G';
 
 export const isGhostObs = (o: DraftObservation): boolean => o.scientificName === GHOST.label;
 

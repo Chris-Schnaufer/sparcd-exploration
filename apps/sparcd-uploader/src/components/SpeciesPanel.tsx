@@ -2,7 +2,6 @@ import { useMemo, type ReactNode, type RefObject } from 'react';
 import Fuse from 'fuse.js';
 import type { Species } from '../lib/species';
 import type { AppliedTag } from '../lib/preTags';
-import { GHOST } from '../lib/preTags';
 
 export type SpeciesPanelProps = {
   species: Species[];
@@ -22,8 +21,6 @@ export type SpeciesPanelProps = {
   headerSlot?: ReactNode;
   onZoom?: (species: Species) => void;
 };
-
-const GHOST_KEY = 'G';
 
 export function SpeciesPanel(props: SpeciesPanelProps) {
   const { species, filter } = props;
@@ -81,16 +78,6 @@ export function SpeciesPanel(props: SpeciesPanelProps) {
       </div>
 
       <div className="flex-1 overflow-y-auto min-h-0">
-        <Row
-          chip="◯ Ghost"
-          common="Ghost"
-          scientific="empty / false-trigger"
-          badge={GHOST_KEY}
-          applied={props.appliedSet.has(GHOST.label)}
-          disabled={props.disabled}
-          onApply={() => props.onApply({ scientificName: GHOST.label, commonName: GHOST.commonName, count: 1 })}
-        />
-
         {ordered.map((s) => (
           <Row
             key={s.key}
@@ -101,6 +88,7 @@ export function SpeciesPanel(props: SpeciesPanelProps) {
             capturing={props.capturingFor === s.scientificName}
             applied={props.appliedSet.has(s.scientificName)}
             disabled={props.disabled}
+            dragPayload={{ scientificName: s.scientificName, commonName: s.commonName }}
             onApply={() => props.onApply({ scientificName: s.scientificName, commonName: s.commonName, count: 1 })}
             onStartCapture={() => props.onStartCapture(s.scientificName)}
             onClearKey={props.bindingFor(s.scientificName) ? () => props.onClearKey(s.scientificName) : undefined}
@@ -137,6 +125,7 @@ type RowProps = {
   capturing?: boolean;
   applied?: boolean;
   disabled: boolean;
+  dragPayload?: { scientificName: string; commonName: string };
   onApply: () => void;
   onStartCapture?: () => void;
   onClearKey?: () => void;
@@ -168,6 +157,11 @@ function Row(p: RowProps) {
       <button
         onClick={p.onApply}
         disabled={p.disabled}
+        draggable={!p.disabled && !!p.dragPayload}
+        onDragStart={p.dragPayload && !p.disabled ? (e) => {
+          e.dataTransfer.setData('application/x-species', JSON.stringify(p.dragPayload));
+          e.dataTransfer.effectAllowed = 'copy';
+        } : undefined}
         className="flex items-center gap-3 flex-1 min-w-0 text-left disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent -outline-offset-2"
         title={p.disabled ? 'Focus an image first' : p.applied ? `${p.common} already applied` : `Apply ${p.common}`}
       >
