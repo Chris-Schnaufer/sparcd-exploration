@@ -24,7 +24,7 @@ import { sanitizeRelPath, nameCounts, resolveOneName } from './normalize';
 import { naiveInZoneToUtcNaive } from './exifTime';
 import type { MediaKind } from './scanFiles';
 import type { FileEntry } from '../store';
-import { isGhostObs, type DraftObservation } from './preTags';
+import type { DraftObservation } from './preTags';
 
 /** One blob to stream: the full object key (= media_path) plus its source. */
 export type UploadItem = {
@@ -221,7 +221,7 @@ export async function buildBundle(input: BuildInput): Promise<BundlePreview> {
   const observationsCsv = serializeObservations(observations);
   const imagesWithSpecies = input.preTags
     ? uploadItems.filter((item) =>
-        (input.preTags![item.id] ?? []).some((o) => !isGhostObs(o)),
+        (input.preTags![item.id] ?? []).some((o) => o.count > 0),
       ).length
     : 0;
 
