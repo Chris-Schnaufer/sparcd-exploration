@@ -19,6 +19,7 @@ import {
   type DraftObservation,
   type AppliedTag,
 } from './lib/preTags';
+import { getTagsForHash, saveTagsForHash } from './lib/preTagStorage';
 import { localTimeZone, type NaiveDateTime } from './lib/exifTime';
 import type { ElevationUnit } from './lib/coords';
 
@@ -242,6 +243,8 @@ export const useStore = create<UploaderState>()(
             if (f.processState === 'queued') files[i] = { ...f, processState: 'processing' as const };
           }
 
+          const preTagUpdates: Record<string, DraftObservation[]> = {};
+
           for (const result of results) {
             const i = index.get(result.id);
             if (i === undefined) continue;
@@ -262,9 +265,22 @@ export const useStore = create<UploaderState>()(
                 };
             files[i] = next;
             validationUpdates[result.id] = validateFile(next);
+
+            // Restore persisted tags if this file just got a sha256 and has
+            // no in-session tags yet.
+            if (!result.error && result.sha256 && !s.preTags[result.id]) {
+              const saved = getTagsForHash(result.sha256);
+              if (saved.length > 0) preTagUpdates[result.id] = saved;
+            }
           }
 
-          return { files, validations: { ...s.validations, ...validationUpdates } };
+          return {
+            files,
+            validations: { ...s.validations, ...validationUpdates },
+            ...(Object.keys(preTagUpdates).length > 0
+              ? { preTags: { ...s.preTags, ...preTagUpdates } }
+              : {}),
+          };
         });
       },
 
@@ -324,31 +340,33 @@ export const useStore = create<UploaderState>()(
       setUploadConcurrency: (value) => set({ uploadConcurrency: value }),
 
       addPreTag: (fileId, tag) =>
-        set((s) => ({
-          preTags: {
-            ...s.preTags,
-            [fileId]: addObservation(s.preTags[fileId] ?? [], tag),
-          },
-        })),
+        set((s) => {
+          const next = addObservation(s.preTags[fileId] ?? [], tag);
+          const sha256 = s.files.find((f) => f.id === fileId)?.sha256;
+          if (sha256) saveTagsForHash(sha256, next);
+          return { preTags: { ...s.preTags, [fileId]: next } };
+        }),
 
       removePreTag: (fileId, scientificName) =>
-        set((s) => ({
-          preTags: {
-            ...s.preTags,
-            [fileId]: removeObservation(s.preTags[fileId] ?? [], scientificName),
-          },
-        })),
+        set((s) => {
+          const next = removeObservation(s.preTags[fileId] ?? [], scientificName);
+          const sha256 = s.files.find((f) => f.id === fileId)?.sha256;
+          if (sha256) saveTagsForHash(sha256, next);
+          return { preTags: { ...s.preTags, [fileId]: next } };
+        }),
 
       setPreTagCount: (fileId, scientificName, count) =>
-        set((s) => ({
-          preTags: {
-            ...s.preTags,
-            [fileId]: setObservationCount(s.preTags[fileId] ?? [], scientificName, count),
-          },
-        })),
+        set((s) => {
+          const next = setObservationCount(s.preTags[fileId] ?? [], scientificName, count);
+          const sha256 = s.files.find((f) => f.id === fileId)?.sha256;
+          if (sha256) saveTagsForHash(sha256, next);
+          return { preTags: { ...s.preTags, [fileId]: next } };
+        }),
 
       clearFileTags: (fileId) =>
         set((s) => {
+          const sha256 = s.files.find((f) => f.id === fileId)?.sha256;
+          if (sha256) saveTagsForHash(sha256, []);
           const next = { ...s.preTags };
           delete next[fileId];
           return { preTags: next };
