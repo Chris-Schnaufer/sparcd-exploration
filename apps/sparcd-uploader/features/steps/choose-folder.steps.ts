@@ -11,7 +11,7 @@ import { join } from 'node:path';
 const tmpDir = (name: string) =>
   join(tmpdir(), 'sparcd-bdd-folders', `${name}-${Math.random().toString(36).slice(2)}`, FOLDER);
 
-Given('the New upload section is showing the Drop step', async ({ app }) => {
+Given('the New upload section is showing the Files step', async ({ app }) => {
   await app.expectStep('Files');
   await expect(app.page.getByText('Drop a folder of media')).toBeVisible();
 });
@@ -102,7 +102,7 @@ Then('the tool reports that the folder was read but held no images or videos', a
   await expect(app.page.getByText(/The folder was read but held no/)).toBeVisible();
 });
 
-Then('it stays on the Drop step so another folder can be chosen', async ({ app }) => {
+Then('it stays on the Files step so another folder can be chosen', async ({ app }) => {
   await app.expectStep('Files');
   await expect(app.page.getByText('Choose another folder')).toBeVisible();
 });

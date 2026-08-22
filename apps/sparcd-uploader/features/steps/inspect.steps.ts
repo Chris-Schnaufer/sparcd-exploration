@@ -293,7 +293,7 @@ When('"Start over" is chosen', async ({ app }) => {
   await app.page.getByRole('button', { name: 'Start over' }).click();
 });
 
-Then('the batch is cleared and the wizard returns to the Drop step', async ({ app }) => {
+Then('the batch is cleared and the wizard returns to the Files step', async ({ app }) => {
   await app.expectStep('Files');
   await expect(app.page.getByText('Drop a folder of media')).toBeVisible();
   await expect(app.fileListPane()).toHaveCount(0);
