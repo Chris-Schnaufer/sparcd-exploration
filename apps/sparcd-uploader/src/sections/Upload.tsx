@@ -87,12 +87,17 @@ export function Upload() {
     if (!running || !('wakeLock' in navigator)) return;
     let lock: WakeLockSentinel | null = null;
     let cancelled = false;
+    // Incremented on every acquire() call. The resolved sentinel is kept only
+    // if gen still matches — two visibility events arriving before either
+    // request resolves would otherwise orphan the first sentinel.
+    let gen = 0;
 
     const acquire = () => {
+      const myGen = ++gen;
       navigator.wakeLock
         .request('screen')
         .then((l) => {
-          if (cancelled) {
+          if (cancelled || myGen !== gen) {
             void l.release();
           } else {
             lock = l;
@@ -104,7 +109,10 @@ export function Upload() {
     };
 
     const onVisibility = () => {
-      if (document.visibilityState === 'visible') acquire();
+      if (document.visibilityState !== 'visible') return;
+      void lock?.release();
+      lock = null;
+      acquire();
     };
 
     acquire();
