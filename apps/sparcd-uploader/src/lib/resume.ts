@@ -54,6 +54,7 @@ export type ReconcileProblem = { localPath: string; fileName: string; reason: st
 export async function restoreFromHandle(
   batch: BatchRecord,
   recordsPromise: Promise<FileRecord[]>,
+  onProgress?: (done: number, total: number) => void,
 ): Promise<RestoreResult> {
   const handle = batch.dirHandle;
   if (!handle) return { ok: false, reason: 'No durable folder handle is stored for this session.' };
@@ -68,23 +69,37 @@ export async function restoreFromHandle(
 
   const records = await recordsPromise;
   const scanned = await scanDirectoryHandle(handle);
-  const { attached, problems } = await reconcileReselect(records, scanned);
+  const { attached, problems } = await reconcileReselect(records, scanned, onProgress);
   return { ok: true, attached, problems };
 }
 
 // Hash a set of files through the existing worker pool, returning relPath → digest.
-function hashAll(items: { id: string; file: File; fileKind: MediaKind }[]): Promise<Map<string, string>> {
+// `onProgress` is throttled to ~150ms — re-hashing a large batch (thousands of
+// files) can take real time, and firing on every single result would mean a
+// React state update per file at the call site.
+function hashAll(
+  items: { id: string; file: File; fileKind: MediaKind }[],
+  onProgress?: (done: number, total: number) => void,
+): Promise<Map<string, string>> {
   return new Promise((resolve) => {
     const out = new Map<string, string>();
     if (items.length === 0) {
       resolve(out);
       return;
     }
+    let done = 0;
+    let lastReported = 0;
     const run = processBatch(
       items,
       () => {},
       (r) => {
         if (r.sha256) out.set(r.id, r.sha256);
+        done++;
+        const now = Date.now();
+        if (onProgress && (now - lastReported >= 150 || done === items.length)) {
+          lastReported = now;
+          onProgress(done, items.length);
+        }
       },
     );
     void run.done.then(() => resolve(out));
@@ -100,6 +115,7 @@ function hashAll(items: { id: string; file: File; fileKind: MediaKind }[]): Prom
 export async function reconcileReselect(
   records: FileRecord[],
   scanned: ScannedFile[],
+  onProgress?: (done: number, total: number) => void,
 ): Promise<{ attached: Map<string, File>; problems: ReconcileProblem[] }> {
   const byPath = new Map(scanned.map((f) => [f.relPath, f]));
   const problems: ReconcileProblem[] = [];
@@ -124,6 +140,7 @@ export async function reconcileReselect(
 
   const hashes = await hashAll(
     candidates.map((c) => ({ id: c.record.localPath, file: c.file, fileKind: c.mediaKind })),
+    onProgress,
   );
 
   const attached = new Map<string, File>();

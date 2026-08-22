@@ -55,6 +55,13 @@ export function History() {
   const [snap, setSnap] = useState<UploadSnapshot | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [problems, setProblems] = useState<ReconcileProblem[]>([]);
+  // Re-verifying a large batch's content hashes before resume can take real
+  // time with otherwise no visible feedback — surfaced in that batch's own
+  // tile so it doesn't look like Resume is just doing nothing. `active`
+  // isn't set yet during this phase (only once launch() actually starts the
+  // run), so track which batch verification is for separately.
+  const [verifyingBatchId, setVerifyingBatchId] = useState<string | null>(null);
+  const [verifyProgress, setVerifyProgress] = useState<{ done: number; total: number } | null>(null);
   const runRef = useRef<UploadRun | null>(null);
   const reselectRef = useRef<HTMLInputElement>(null);
   const pendingReselect = useRef<BatchRecord | null>(null);
@@ -84,6 +91,8 @@ export function History() {
       attached: Map<string, File>,
       probs: ReconcileProblem[],
     ) => {
+      setVerifyingBatchId(null);
+      setVerifyProgress(null);
       const missingRequired = session.files.filter((f) => f.state !== 'done' && !attached.has(f.localPath));
       if (missingRequired.length > 0) {
         setProblems([
@@ -120,61 +129,73 @@ export function History() {
     async (batch: BatchRecord) => {
       setProblems([]);
       setSnap(null);
-      if (!s3Config) {
-        setMessage('Connect to a storage endpoint before resuming.');
-        return;
-      }
-      // The first await below must be the actual gated call — permission
-      // request, directory picker, or the hidden <input>'s `.click()` —
-      // not this session load. Firefox/Safari require those to fire within
-      // the click's transient user-activation window; an unrelated await
-      // ahead of them (even a fast IndexedDB read) silently breaks it: no
-      // prompt, no error, nothing happens. Kick the load off in parallel
-      // instead and only consume it once the gated step has resolved.
-      const sessionPromise = loadSession(batch.id);
+      setVerifyingBatchId(batch.id);
+      setVerifyProgress(null);
+      try {
+        if (!s3Config) {
+          setMessage('Connect to a storage endpoint before resuming.');
+          return;
+        }
+        // The first await below must be the actual gated call — permission
+        // request, directory picker, or the hidden <input>'s `.click()` —
+        // not this session load. Firefox/Safari require those to fire within
+        // the click's transient user-activation window; an unrelated await
+        // ahead of them (even a fast IndexedDB read) silently breaks it: no
+        // prompt, no error, nothing happens. Kick the load off in parallel
+        // instead and only consume it once the gated step has resolved.
+        const sessionPromise = loadSession(batch.id);
+        const onProgress = (done: number, total: number) => setVerifyProgress({ done, total });
 
-      // Durable handle: revalidate permission inside this click gesture, then
-      // re-hash against the recorded files — a same-size in-place edit between
-      // sessions would otherwise slip through, so mismatches surface as problems.
-      if (batch.fileAccessMode === 'persistent-handle' && batch.dirHandle) {
-        const restore = await restoreFromHandle(
-          batch,
-          sessionPromise.then((s) => s?.files ?? []),
-        );
-        const session = await sessionPromise;
-        if (!session) {
-          setMessage('Session record is missing.');
-          return;
+        // Durable handle: revalidate permission inside this click gesture, then
+        // re-hash against the recorded files — a same-size in-place edit between
+        // sessions would otherwise slip through, so mismatches surface as problems.
+        if (batch.fileAccessMode === 'persistent-handle' && batch.dirHandle) {
+          const restore = await restoreFromHandle(
+            batch,
+            sessionPromise.then((s) => s?.files ?? []),
+            onProgress,
+          );
+          const session = await sessionPromise;
+          if (!session) {
+            setMessage('Session record is missing.');
+            return;
+          }
+          if (restore.ok) {
+            await launch(batch, session, restore.attached, restore.problems);
+            return;
+          }
+          setMessage(restore.reason);
+          // fall through to reselect
         }
-        if (restore.ok) {
-          await launch(batch, session, restore.attached, restore.problems);
-          return;
-        }
-        setMessage(restore.reason);
-        // fall through to reselect
-      }
 
-      // Reselect path.
-      if (supportsDirectoryHandle) {
-        const picked = await reselectFolder();
-        if (!picked) return; // user dismissed
-        const session = await sessionPromise;
-        if (!session) {
-          setMessage('Session record is missing.');
-          return;
+        // Reselect path.
+        if (supportsDirectoryHandle) {
+          const picked = await reselectFolder();
+          if (!picked) return; // user dismissed
+          const session = await sessionPromise;
+          if (!session) {
+            setMessage('Session record is missing.');
+            return;
+          }
+          const { attached, problems: probs } = await reconcileReselect(session.files, picked.scanned, onProgress);
+          // Opportunistically upgrade the session to a durable handle for next time.
+          if (picked.handle) {
+            await updateBatch(batch.id, { dirHandle: picked.handle, fileAccessMode: 'persistent-handle' });
+          }
+          await launch(batch, session, attached, probs);
+        } else {
+          // No durable picker — fall back to a transient <input webkitdirectory>.
+          // Release the lock before clicking: on Firefox/Safari a cancelled picker
+          // fires no change event, so onReselectInput never runs. onReselectInput
+          // re-acquires the lock itself when files actually arrive.
+          setVerifyingBatchId(null);
+          setVerifyProgress(null);
+          pendingReselect.current = batch;
+          reselectRef.current?.click();
         }
-        const { attached, problems: probs } = await reconcileReselect(session.files, picked.scanned);
-        // Opportunistically upgrade the session to a durable handle for next time.
-        if (picked.handle) {
-          await updateBatch(batch.id, { dirHandle: picked.handle, fileAccessMode: 'persistent-handle' });
-        }
-        await launch(batch, session, attached, probs);
-      } else {
-        // No durable picker — fall back to a transient <input webkitdirectory>,
-        // fired synchronously here for the same reason. `onReselectInput`
-        // loads its own session once files actually arrive.
-        pendingReselect.current = batch;
-        reselectRef.current?.click();
+      } finally {
+        setVerifyingBatchId(null);
+        setVerifyProgress(null);
       }
     },
     [s3Config, launch],
@@ -185,13 +206,22 @@ export function History() {
       const batch = pendingReselect.current;
       pendingReselect.current = null;
       if (!batch || !list || list.length === 0) return;
-      const session = await loadSession(batch.id);
-      if (!session) {
-        setMessage('Session record is missing.');
-        return;
+      setVerifyingBatchId(batch.id);
+      setVerifyProgress(null);
+      try {
+        const session = await loadSession(batch.id);
+        if (!session) {
+          setMessage('Session record is missing.');
+          return;
+        }
+        const { attached, problems: probs } = await reconcileReselect(session.files, scanFileList(list), (done, total) =>
+          setVerifyProgress({ done, total }),
+        );
+        await launch(batch, session, attached, probs);
+      } finally {
+        setVerifyingBatchId(null);
+        setVerifyProgress(null);
       }
-      const { attached, problems: probs } = await reconcileReselect(session.files, scanFileList(list));
-      await launch(batch, session, attached, probs);
     },
     [launch],
   );
@@ -303,6 +333,7 @@ export function History() {
       <ul className="space-y-3">
         {rows.map(({ batch, counts }) => {
           const isActive = active === batch.id;
+          const isVerifying = verifyingBatchId === batch.id && !!verifyProgress;
           const total = batch.totalFiles;
           return (
             <li key={batch.id} className="border border-ruleSoft bg-panel px-4 py-3 space-y-2">
@@ -330,17 +361,25 @@ export function History() {
                 )}
               </p>
 
+              {isVerifying && verifyProgress && (
+                <p className="font-body text-[12px] text-inkSoft">
+                  Verifying <span className="font-mono text-ink">{verifyProgress.done}</span> of{' '}
+                  <span className="font-mono text-ink">{verifyProgress.total}</span> files against
+                  the original folder…
+                </p>
+              )}
+
               <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-1">
                 {!batch.completedAt && (
                   <button
-                    disabled={running}
+                    disabled={running || verifyingBatchId !== null}
                     title={!online ? "You're offline" : undefined}
                     onClick={() => void beginResume(batch)}
                     className={`bg-ink text-paper border border-ink min-h-[44px] sm:min-h-0 px-4 sm:px-3 py-1 text-[13px] font-body font-[600] hover:opacity-90 ${
-                      running ? 'opacity-40 cursor-not-allowed' : ''
+                      running || verifyingBatchId !== null ? 'opacity-40 cursor-not-allowed' : ''
                     }`}
                   >
-                    {isActive ? 'Resuming…' : 'Resume'}
+                    {verifyingBatchId === batch.id ? 'Verifying…' : isActive ? 'Resuming…' : 'Resume'}
                   </button>
                 )}
                 <button
