@@ -22,9 +22,11 @@ import {
   restoreFromHandle,
   reconcileReselect,
   reselectFolder,
+  ensureBundle,
   type ReconcileProblem,
 } from '../lib/resume';
 import { scanFileList, supportsDirectoryHandle } from '../lib/scanFiles';
+import type { ProcessResponse } from '../lib/processPool';
 import { resumeUpload, type UploadRun, type UploadSnapshot } from '../lib/upload';
 import { Note, RunMonitor } from '../components/RunMonitor';
 import { PublishedUploads } from '../components/PublishedUploads';
@@ -62,6 +64,9 @@ export function History() {
   // run), so track which batch verification is for separately.
   const [verifyingBatchId, setVerifyingBatchId] = useState<string | null>(null);
   const [verifyProgress, setVerifyProgress] = useState<{ done: number; total: number } | null>(null);
+  // True while the fallback <input> picker is open. Separate from verifyingBatchId
+  // so Resume is disabled without showing "Verifying…" on every row.
+  const [pickerOpen, setPickerOpen] = useState(false);
   const runRef = useRef<UploadRun | null>(null);
   const reselectRef = useRef<HTMLInputElement>(null);
   const pendingReselect = useRef<BatchRecord | null>(null);
@@ -80,6 +85,17 @@ export function History() {
 
   // Abandon an in-flight resume if the section unmounts.
   useEffect(() => () => runRef.current?.cancel(), []);
+
+  // Clear pickerOpen when the native picker is cancelled. The `cancel` event on
+  // <input type="file"> is supported in Chrome 113+, Firefox 91+, Safari 17+.
+  // Browsers that don't support it leave pickerOpen true until onChange fires.
+  useEffect(() => {
+    if (!pickerOpen || !reselectRef.current) return;
+    const input = reselectRef.current;
+    const onCancel = () => setPickerOpen(false);
+    input.addEventListener('cancel', onCancel);
+    return () => input.removeEventListener('cancel', onCancel);
+  }, [pickerOpen]);
 
   const running = snap?.phase === 'blobs' || snap?.phase === 'metadata';
   const online = useOnline();
@@ -125,6 +141,40 @@ export function History() {
     [s3Config, concurrency, refresh],
   );
 
+  // If this session was interrupted before it ever reached publish
+  // (`session.bundle` is null), resolve any still-unprocessed files and
+  // attach the bundle it never got, before proceeding exactly as a normal
+  // resume would. `ensureBundle` is a no-op once a bundle already exists.
+  const launchWithBundle = useCallback(
+    async (
+      batch: BatchRecord,
+      session: LoadedSession,
+      attached: Map<string, File>,
+      probs: ReconcileProblem[],
+      resolved: Map<string, ProcessResponse>,
+    ) => {
+      const result = await ensureBundle(batch, session, resolved);
+      if (!result.ok) {
+        setVerifyingBatchId(null);
+        setVerifyProgress(null);
+        setProblems([...probs, ...result.problems]);
+        setMessage(
+          `${result.problems.length} file${result.problems.length === 1 ? '' : 's'} couldn't be resolved to resume this upload.`,
+        );
+        return;
+      }
+      const finalSession = session.bundle ? session : await loadSession(batch.id);
+      if (!finalSession) {
+        setVerifyingBatchId(null);
+        setVerifyProgress(null);
+        setMessage('Session record is missing.');
+        return;
+      }
+      await launch(batch, finalSession, attached, probs);
+    },
+    [launch],
+  );
+
   const beginResume = useCallback(
     async (batch: BatchRecord) => {
       setProblems([]);
@@ -161,7 +211,7 @@ export function History() {
             return;
           }
           if (restore.ok) {
-            await launch(batch, session, restore.attached, restore.problems);
+            await launchWithBundle(batch, session, restore.attached, restore.problems, restore.resolved);
             return;
           }
           setMessage(restore.reason);
@@ -177,12 +227,12 @@ export function History() {
             setMessage('Session record is missing.');
             return;
           }
-          const { attached, problems: probs } = await reconcileReselect(session.files, picked.scanned, onProgress);
+          const { attached, problems: probs, resolved } = await reconcileReselect(session.files, picked.scanned, onProgress);
           // Opportunistically upgrade the session to a durable handle for next time.
           if (picked.handle) {
             await updateBatch(batch.id, { dirHandle: picked.handle, fileAccessMode: 'persistent-handle' });
           }
-          await launch(batch, session, attached, probs);
+          await launchWithBundle(batch, session, attached, probs, resolved);
         } else {
           // No durable picker — fall back to a transient <input webkitdirectory>.
           // Release the lock before clicking: on Firefox/Safari a cancelled picker
@@ -190,6 +240,7 @@ export function History() {
           // re-acquires the lock itself when files actually arrive.
           setVerifyingBatchId(null);
           setVerifyProgress(null);
+          setPickerOpen(true);
           pendingReselect.current = batch;
           reselectRef.current?.click();
         }
@@ -198,11 +249,12 @@ export function History() {
         setVerifyProgress(null);
       }
     },
-    [s3Config, launch],
+    [s3Config, launchWithBundle],
   );
 
   const onReselectInput = useCallback(
     async (list: File[] | null) => {
+      setPickerOpen(false);
       const batch = pendingReselect.current;
       pendingReselect.current = null;
       if (!batch || !list || list.length === 0) return;
@@ -214,16 +266,16 @@ export function History() {
           setMessage('Session record is missing.');
           return;
         }
-        const { attached, problems: probs } = await reconcileReselect(session.files, scanFileList(list), (done, total) =>
+        const { attached, problems: probs, resolved } = await reconcileReselect(session.files, scanFileList(list), (done, total) =>
           setVerifyProgress({ done, total }),
         );
-        await launch(batch, session, attached, probs);
+        await launchWithBundle(batch, session, attached, probs, resolved);
       } finally {
         setVerifyingBatchId(null);
         setVerifyProgress(null);
       }
     },
-    [launch],
+    [launchWithBundle],
   );
 
   const discard = useCallback(
@@ -372,11 +424,11 @@ export function History() {
               <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-1">
                 {!batch.completedAt && (
                   <button
-                    disabled={running || verifyingBatchId !== null}
+                    disabled={running || verifyingBatchId !== null || pickerOpen}
                     title={!online ? "You're offline" : undefined}
                     onClick={() => void beginResume(batch)}
                     className={`bg-ink text-paper border border-ink min-h-[44px] sm:min-h-0 px-4 sm:px-3 py-1 text-[13px] font-body font-[600] hover:opacity-90 ${
-                      running || verifyingBatchId !== null ? 'opacity-40 cursor-not-allowed' : ''
+                      running || verifyingBatchId !== null || pickerOpen ? 'opacity-40 cursor-not-allowed' : ''
                     }`}
                   >
                     {verifyingBatchId === batch.id ? 'Verifying…' : isActive ? 'Resuming…' : 'Resume'}
