@@ -158,6 +158,51 @@ function isRunFatalBlobError(err: unknown): boolean {
 // Full jitter: random in [0, base * 2^attempt].
 const backoff = (attempt: number) => Math.random() * (BASE_BACKOFF_MS * 2 ** attempt);
 
+// Resolves once the browser reports it has a network link — immediately if
+// it already does. A whole-connection drop makes every concurrently-uploading
+// lane fail at once, which looks identical (per file) to N independent
+// failures — without pausing here instead of spending a retry attempt, that
+// single blip alone can exhaust MAX_FILE_FAILURES and abort the run as
+// "systemic" well before the network has any chance to come back.
+// How often to re-check `navigator.onLine` even without an `online` event —
+// the event isn't guaranteed to fire (VPNs and some adapters can leave it
+// permanently wrong), so this is the escape hatch that keeps a stuck reading
+// from hanging the run forever instead of just delaying it.
+const ONLINE_POLL_MS = 30_000;
+
+function waitForOnline(signal: AbortSignal): Promise<void> {
+  // Strictly `false`, not falsy: `navigator.onLine` is `undefined` in plain
+  // Node (no `window` either, e.g. the test environment) — treat "unknown"
+  // as online rather than waiting on a `window.addEventListener` that would
+  // throw there.
+  if (typeof window === 'undefined' || navigator.onLine !== false) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      window.removeEventListener('online', onDone);
+      window.removeEventListener('focus', onDone);
+      clearInterval(poll);
+      signal.removeEventListener('abort', onAbort);
+    };
+    // Resolving here doesn't assert the network is actually back — the
+    // caller re-checks `navigator.onLine` itself and calls back in if it's
+    // still reporting offline. This just guarantees that recheck happens
+    // periodically and whenever the tab regains focus, so a stuck or
+    // never-fired `online` event can't wait forever.
+    const onDone = () => {
+      cleanup();
+      resolve();
+    };
+    const onAbort = () => {
+      cleanup();
+      reject(new Error('cancelled'));
+    };
+    window.addEventListener('online', onDone);
+    window.addEventListener('focus', onDone);
+    const poll = setInterval(onDone, ONLINE_POLL_MS);
+    signal.addEventListener('abort', onAbort);
+  });
+}
+
 // A statObject 404 (the object isn't there) is a recognizable shape; anything
 // without a 2xx/expected stat means "re-upload".
 function isNotFound(err: unknown): boolean {
@@ -324,6 +369,20 @@ function makeRunner(
   // Upload (or skip) one blob. Returns once the object is present and verified,
   // or throws on a non-recoverable failure.
   const processItem = async (sessionId: string, fp: FileProgress, it: PlanItem): Promise<void> => {
+    // Shared by the pre-verify check below and the upload retry loop — a
+    // whole-connection drop hits `statObject` (verify) exactly as it hits
+    // `writeImmutableStream` (upload), so a resume started offline needs the
+    // same wait-don't-fail treatment before it ever reaches the network,
+    // not just once the retry loop is already running.
+    const ensureOnline = async (): Promise<void> => {
+      while (typeof window !== 'undefined' && navigator.onLine === false) {
+        if (cancelled) throw new Error('cancelled');
+        log('warn', `waiting for network to retry ${it.key}`);
+        await waitForOnline(abort.signal);
+      }
+      if (cancelled) throw new Error('cancelled');
+    };
+
     // A completed blob from a prior run: sanity-check the remote copy before
     // skipping it. Size + recorded SHA-256 metadata is the portable contract.
     const verifyExisting = async (): Promise<boolean> => {
@@ -346,6 +405,7 @@ function makeRunner(
     };
 
     if (it.doneAlready) {
+      await ensureOnline();
       if (await verifyExisting()) return;
     }
 
@@ -357,8 +417,9 @@ function makeRunner(
       throw new Error(fp.error);
     }
 
-    for (let attempt = 0; ; attempt++) {
-      if (cancelled) throw new Error('cancelled');
+    let attempt = 0;
+    for (;;) {
+      await ensureOnline();
       fp.attempt = attempt + 1;
       fp.state = 'uploading';
       snap.uploadedBytes -= fp.loaded; // reset this file's contribution on retry
@@ -413,6 +474,7 @@ function makeRunner(
         const wait = backoff(attempt);
         log('warn', `retry ${it.key} (attempt ${attempt + 2}) after ${Math.round(wait)}ms: ${msg}`);
         await sleep(wait);
+        attempt++;
       }
     }
   };
