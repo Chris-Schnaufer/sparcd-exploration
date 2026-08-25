@@ -141,6 +141,7 @@ export class App {
     await this.open();
     await expect(this.connectForm()).toBeVisible();
     await this.fillConnection(fields);
+    await this.page.getByLabel('Remember endpoint & access key on this device').check();
     await this.page.getByRole('button', { name: 'Connect', exact: true }).click();
     await expect(this.page.getByRole('button', { name: 'Logout' })).toBeVisible();
   }
