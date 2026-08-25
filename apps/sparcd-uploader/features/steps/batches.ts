@@ -55,7 +55,7 @@ export const clipVideo = (name = 'BIG_CLIP.MP4'): FileSpec => ({
  * wizard reaches the Upload step. Use only for scenarios whose behavior is
  * specifically about background examination continuing during upload.
  */
-export const SLOW_PAD_BYTES = 160 * 1024 * 1024;
+export const SLOW_PAD_BYTES = 512 * 1024 * 1024;
 
 export const slowVideo = (name = 'BIG_CLIP.MP4'): FileSpec => ({
   path: `${FOLDER}/${name}`,
