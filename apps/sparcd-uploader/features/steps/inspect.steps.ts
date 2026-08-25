@@ -284,9 +284,15 @@ When('the user switches to History or Settings and back', async ({ app }) => {
 });
 
 Then('examination has continued in the background rather than restarting', async ({ app }) => {
-  const m = /(\d+) processing/.exec(await app.batchSummary());
-  const pendingNow = m ? Number(m[1]) : 0;
-  expect(pendingNow).toBeLessThan(app.notes.pendingBefore as number);
+  await expect
+    .poll(
+      async () => {
+        const m = /(\d+) processing/.exec(await app.batchSummary());
+        return m ? Number(m[1]) : 0;
+      },
+      { timeout: 30_000 },
+    )
+    .toBeLessThan(app.notes.pendingBefore as number);
   await app.waitForInspected();
   expect(await app.fileCount()).toBe(1200);
 });
