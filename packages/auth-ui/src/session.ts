@@ -14,7 +14,8 @@ import type { S3Config } from '@sparcd/types';
  * SPARC'd tools in this tab (the BrandSwitcher) and reloading the page.
  * BroadcastChannel relays the same config live to OTHER TABS, which is how a
  * freshly opened tab — with its own empty sessionStorage — picks up a session
- * that is already running. Close every tab and the secret is gone.
+ * that is already running, and keeps it: what arrives over the channel is
+ * stashed in that tab too. Close every tab and the secret is gone.
  */
 const STORAGE_KEY = 'sparcd-connection';
 const SESSION_KEY = 'sparcd-connection-tab';
@@ -143,10 +144,11 @@ export function clearSharedConnection(): void {
 /**
  * Fire `cb` whenever another tab connects/disconnects live. `getCurrentConfig`
  * lets this tab answer a `request` from a tab that just opened (it has no
- * persisted secret to fall back on, so it asks whoever's already connected).
+ * stash of its own to fall back on, so it asks whoever's already connected).
  * Also fires its own `request` immediately on subscribe, so a freshly opened
- * tab picks up an already-connected session from a sibling tab without ever
- * touching disk. Returns an unsubscribe function.
+ * tab picks up an already-connected session from a sibling tab. What arrives
+ * goes into this tab's own stash, making an adopted session as durable here as
+ * one the user typed in. Returns an unsubscribe function.
  */
 export function subscribeSharedConnection(
   cb: (cfg: S3Config | null) => void,
@@ -155,9 +157,13 @@ export function subscribeSharedConnection(
   const ch = getChannel();
   if (!ch) return () => {};
   const handler = (e: MessageEvent<LiveMessage>) => {
+    // Straight to the private helpers: `saveSharedConnection` would rebroadcast
+    // what we just received and bounce the message between tabs forever.
     if (e.data.type === 'connect') {
+      saveSessionConnection(e.data.config);
       cb(e.data.config);
     } else if (e.data.type === 'disconnect') {
+      clearSessionConnection();
       cb(null);
     } else if (e.data.type === 'request') {
       const current = getCurrentConfig();
