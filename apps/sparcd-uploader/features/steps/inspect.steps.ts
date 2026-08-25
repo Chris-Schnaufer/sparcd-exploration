@@ -241,6 +241,7 @@ Then('it explains that files needing attention must be resolved first', async ({
 // --- working while examination continues -----------------------------------
 
 Given('a large batch is still being examined', async ({ app }) => {
+  await app.holdInspect('BIG_CLIP.MP4');
   await app.rescan(slowPublishableBatch());
   await expect(app.fileListPane()).toBeVisible();
   await expect.poll(() => app.batchSummary()).toMatch(/\d+ processing/);
@@ -262,6 +263,7 @@ Then('examination carries on in the background while the user works on Assign', 
   // The Upload step reports the still-running examination, then it completes
   // without anyone going back to Inspect.
   await expect(app.page.getByText(/still being inspected/)).toBeVisible();
+  await app.releaseHeldInspect();
   await expect(app.page.getByText(/still being inspected/)).toHaveCount(0, { timeout: 60_000 });
   await expect(app.page.getByText(/^\d+ files ready · /)).toBeVisible();
 });

@@ -703,4 +703,33 @@ export class App {
       return el?.textContent ?? '';
     });
   }
+
+  /**
+   * Block the inspection result for `filename` from being dispatched until
+   * `releaseHeldInspect` is called. Set this before dropping the batch so the
+   * hook is in place before the worker finishes.
+   */
+  async holdInspect(filename: string): Promise<void> {
+    await this.page.evaluate((name) => {
+      const w = window as unknown as Record<string, unknown>;
+      w.__inspectHoldResolvers = [] as (() => void)[];
+      w.__holdInspectResult = (_id: string, fname: string): Promise<void> => {
+        if (fname !== name) return Promise.resolve();
+        return new Promise<void>((resolve) => {
+          (w.__inspectHoldResolvers as (() => void)[]).push(resolve);
+        });
+      };
+    }, filename);
+  }
+
+  /** Release all results held by `holdInspect` and clear the hook. */
+  async releaseHeldInspect(): Promise<void> {
+    await this.page.evaluate(() => {
+      const w = window as unknown as Record<string, unknown>;
+      w.__holdInspectResult = undefined;
+      const resolvers = (w.__inspectHoldResolvers as (() => void)[]) ?? [];
+      w.__inspectHoldResolvers = [];
+      for (const r of resolvers) r();
+    });
+  }
 }
