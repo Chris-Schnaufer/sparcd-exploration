@@ -17,6 +17,7 @@ export default defineConfig({
       '@sparcd/s3-safe': pkg('s3-safe', 'index.ts'),
       '@sparcd/auth-ui': pkg('auth-ui', 'index.ts'),
       '@sparcd/camtrap': pkg('camtrap', 'index.ts'),
+      '@sparcd/flip': pkg('flip', 'index.ts'),
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
