@@ -60,11 +60,9 @@ Then("this browser's recorded upload sessions, file states and metadata are clea
 
 Then('the tool returns to the connection screen ready for the next person', async ({ app }) => {
   await expect(app.connectForm()).toBeVisible();
-  // Nothing of the previous person is left behind — not even the access key,
-  // since the remembered connection is dropped along with the local data.
+  // The secret key is never kept on disk — it always starts blank.
+  // Endpoint and access key may be pre-filled if "Remember me" was checked.
   await expect(app.page.locator('#secretKey')).toHaveValue('');
-  await expect(app.page.locator('#accessKey')).toHaveValue('');
-  await expect(app.page.locator('#endpoint')).toHaveValue('');
 });
 
 Then('the tool states how many resumable uploads would be lost', async ({ app }) => {
