@@ -54,13 +54,20 @@ async function seedBatch(page: Page): Promise<void> {
           createdAt: new Date().toISOString(),
           returnUrl,
           accessMode: 'reselect-required',
+          // Everything the Uploader's Inspect pass would have established, so
+          // the seed stays a faithful stand-in for a real hand-off.
           files: files.map((fileName, i) => ({
             relPath: `SDCARD/${fileName}`,
             fileName,
             size: 100 + i,
             sha256: `sha-${i}`,
-            captureTimestamp: `2026-07-01T12:0${i}:00`,
             mediaKind: 'image',
+            exifTimestamp: `2026-07-01T12:0${i}:00`,
+            mimeType: 'image/jpeg',
+            exifCamera: 'RECONYX HP2X',
+            gps: { lat: 31.5, lon: -110.2 },
+            width: 2048,
+            height: 1536,
             thumb: new Blob([gif], { type: 'image/gif' }),
           })),
           tags: {},

@@ -28,21 +28,31 @@ import { taggerBatchUrl, uploaderReturnUrl } from './siblings';
 export const returningFlipId = (): string | null =>
   new URLSearchParams(window.location.search).get('flip');
 
-const toFlipFile = (f: FileEntry): FlipFile => {
-  const naive = f.exifNaive ?? f.manualNaive;
-  return {
-    relPath: f.relPath,
-    fileName: f.fileName,
-    size: f.size,
-    sha256: f.sha256!,
-    // The camera's own wall-clock, unconverted — the same value Inspect shows.
-    // The upload zone is applied later, at bundle build, and is the uploader's
-    // business alone.
-    captureTimestamp: naive ? formatNaive(naive) : undefined,
-    mediaKind: f.mediaKind,
-    thumb: f.thumbnail,
-  };
-};
+// Everything Inspect established travels, because the batch is rebuilt from
+// this on the way back and there is no second Inspect pass to recover a field
+// that didn't. Most of it only feeds the file list, but `mimeType` is the
+// worker's own sniff and lands in media.csv — drop it and `mimeFor` falls back
+// to the extension, so a batch that went through the tagger would publish
+// different bytes from the same batch uploaded straight through.
+const toFlipFile = (f: FileEntry): FlipFile => ({
+  relPath: f.relPath,
+  fileName: f.fileName,
+  size: f.size,
+  sha256: f.sha256!,
+  mediaKind: f.mediaKind,
+  // Both wall-clocks, unconverted and kept apart. The upload zone is applied
+  // later, at bundle build; and Inspect shows a camera time as read-only fact
+  // but an entered time as the user's own correction, so collapsing the two
+  // would bring a manual entry home disguised as EXIF.
+  exifTimestamp: f.exifNaive ? formatNaive(f.exifNaive) : undefined,
+  manualTimestamp: f.manualNaive ? formatNaive(f.manualNaive) : undefined,
+  mimeType: f.mimeType,
+  exifCamera: f.exifCamera,
+  gps: f.gps,
+  width: f.width,
+  height: f.height,
+  thumb: f.thumbnail,
+});
 
 /**
  * Write the hand-off record for the current batch and navigate to the tagger.
@@ -81,7 +91,13 @@ const toFileEntry = (f: FlipFile, file: File, record: FlipRecord): FileEntry => 
   mediaKind: f.mediaKind,
   processState: 'ready',
   sha256: f.sha256,
-  exifNaive: parseNaive(f.captureTimestamp),
+  exifNaive: parseNaive(f.exifTimestamp),
+  manualNaive: parseNaive(f.manualTimestamp),
+  mimeType: f.mimeType,
+  exifCamera: f.exifCamera,
+  gps: f.gps,
+  width: f.width,
+  height: f.height,
   thumbnail: f.thumb,
   preTags: record.tags[f.relPath] ?? [],
 });

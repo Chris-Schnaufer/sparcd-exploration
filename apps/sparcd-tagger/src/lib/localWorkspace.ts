@@ -3,7 +3,7 @@
 // uploader's hand-off record into the same shape. Pure — everything downstream
 // of `TagImage` is then identical for both modes.
 
-import type { FlipObservation, FlipRecord } from '@sparcd/flip';
+import { captureTimestampOf, type FlipObservation, type FlipRecord } from '@sparcd/flip';
 import type { DraftRecord } from './db';
 import type { TagImage } from './workspace';
 
@@ -17,7 +17,9 @@ export function localTagImages(record: FlipRecord): TagImage[] {
     key: f.relPath,
     fileName: f.fileName,
     deploymentId: '',
-    baseTimestamp: f.captureTimestamp ?? '',
+    // One time to show, whichever source it came from — the tagger only needs
+    // the value; keeping the two apart is the uploader's concern.
+    baseTimestamp: captureTimestampOf(f) ?? '',
     // Copied, not aliased — a draft seeded from this must never write through
     // into the record the uploader is going to read back.
     baseObservations: (record.tags[f.relPath] ?? []).map((o) => ({ ...o })),

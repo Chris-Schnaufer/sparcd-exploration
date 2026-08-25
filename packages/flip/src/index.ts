@@ -27,18 +27,52 @@ export type FlipObservation = {
   freeTags: string;
 };
 
-/** One file in the handed-over batch. `relPath` is the uploader's scan id — the
- *  path within the chosen folder — and is unique within a batch, so it doubles
- *  as the tag key and the tagger's media key. */
+/**
+ * One file in the handed-over batch. `relPath` is the uploader's scan id — the
+ * path within the chosen folder — and is unique within a batch, so it doubles
+ * as the tag key and the tagger's media key.
+ *
+ * Everything Inspect established rides along, not just what the tagger needs to
+ * draw a tile: the batch is rebuilt from this record on the way back, and a
+ * field that didn't travel is a field the uploader has to do without. Most of
+ * it is display-only, but `mimeType` reaches `media.csv`, so a batch that went
+ * through the tagger would otherwise publish differently from the same batch
+ * uploaded straight through.
+ */
 export interface FlipFile {
   relPath: string;
   fileName: string;
   size: number;
   sha256: string;
-  captureTimestamp?: string; // naive wall-clock `YYYY-MM-DDTHH:mm:ss`, as the camera wrote it
   mediaKind: 'image' | 'video';
+
+  // Capture time, naive wall-clock `YYYY-MM-DDTHH:mm:ss` with no zone applied.
+  // The two sources stay apart: the uploader shows and offers different things
+  // for a time the camera wrote than for one a person entered, so a manual time
+  // must not come home looking like EXIF.
+  /** The camera's own capture time, from EXIF or the video container. */
+  exifTimestamp?: string;
+  /** A capture time entered by hand for a file the camera left blank. */
+  manualTimestamp?: string;
+
+  /** The worker's own sniff of the media type — authoritative over the file
+   *  extension, and the value that lands in `media.csv`. */
+  mimeType?: string;
+  exifCamera?: string;
+  gps?: { lat: number; lon: number };
+  width?: number;
+  height?: number;
+
   thumb?: Blob; // the 64px thumbnail the uploader already computed
 }
+
+/**
+ * The one capture time to display for a file: the camera's own, else the one
+ * entered by hand. Mirrors how the uploader resolves it at bundle build, so the
+ * tagger shows the same value the upload will carry.
+ */
+export const captureTimestampOf = (file: FlipFile): string | undefined =>
+  file.exifTimestamp ?? file.manualTimestamp;
 
 /**
  * How the tagger can reach the full-resolution bytes. `persistent-handle` means

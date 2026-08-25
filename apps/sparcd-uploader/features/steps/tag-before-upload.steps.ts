@@ -54,7 +54,7 @@ When('"Tag species first" is chosen', async ({ app }) => {
 });
 
 Then(
-  'every examined file is handed over with its name, size, fingerprint, capture time and thumbnail',
+  'every examined file is handed over with everything the examination established',
   async ({ app }) => {
     const [record] = await app.readFlipRecords();
     expect(record.id).toBe(app.notes.flipId);
@@ -66,16 +66,27 @@ Then(
       'SDCARD/IMG_0002.JPG',
       'SDCARD/IMG_0003.JPG',
     ]);
+
     const first = byPath['SDCARD/IMG_0001.JPG'];
     expect(first.fileName).toBe('IMG_0001.JPG');
     expect(first.size).toBeGreaterThan(0);
     expect(first.sha256).toMatch(/^[0-9a-f]{64}$/);
-    // The camera's own wall-clock, unconverted — the upload zone is applied
-    // later, when the bundle is built.
-    expect(first.captureTimestamp).toBe('2026-07-01T12:00:00');
     expect(first.mediaKind).toBe('image');
     expect(first.thumb).toBe(true);
-    expect(byPath['SDCARD/CLIP_0001.MP4'].mediaKind).toBe('video');
+    // The camera's own wall-clock, unconverted and in the camera's own slot —
+    // the upload zone is applied later, when the bundle is built.
+    expect(first.exifTimestamp).toBe('2026-07-01T12:00:00');
+    expect(first.manualTimestamp).toBeUndefined();
+    // The worker's own sniff, not a guess from the file extension. This one
+    // reaches media.csv, so losing it would change what gets published.
+    expect(first.mimeType).toBe('image/jpeg');
+    expect(first.width).toBeGreaterThan(0);
+    expect(first.height).toBeGreaterThan(0);
+
+    const clip = byPath['SDCARD/CLIP_0001.MP4'];
+    expect(clip.mediaKind).toBe('video');
+    expect(clip.mimeType).toBe('video/mp4');
+    expect(clip.exifTimestamp).toBe('2026-07-01T12:30:00');
   },
 );
 
@@ -125,6 +136,19 @@ Then('the wizard is on the Inspect step with the same files', async ({ app }) =>
   await app.expectStep('Inspect');
   expect(await app.fileCount()).toBe(4);
 });
+
+Then(
+  'each file still shows the capture time and pixel size the examination found',
+  async ({ app }) => {
+    // Nothing was examined a second time on the way back, so these can only be
+    // here if the hand-off carried them.
+    const rows = await app.listedFiles();
+    const byName = Object.fromEntries(rows.map((r) => [r.name, r]));
+    expect(byName['IMG_0001.JPG'].timestamp).toBe('2026-07-01 12:00:00');
+    expect(byName['IMG_0001.JPG'].dimensions).toMatch(/^\d+×\d+$/);
+    expect(byName['CLIP_0001.MP4'].timestamp).toBe('2026-07-01 12:30:00');
+  },
+);
 
 Then('each tagged file shows the species and count it was given', async ({ app }) => {
   const rows = await app.listedFiles();
@@ -214,4 +238,10 @@ Then('they are still in media.csv like every other image', async ({ app }) => {
   const names = writtenCsvRows(app, 'media.csv').map((r) => r[6]);
   expect(names).toContain('IMG_0003.JPG');
   expect(names).toContain('CLIP_0001.MP4');
+});
+
+Then('every media row carries the media type the examination sniffed', async ({ app }) => {
+  const byName = Object.fromEntries(writtenCsvRows(app, 'media.csv').map((r) => [r[6], r[7]]));
+  expect(byName['IMG_0001.JPG']).toBe('image/jpeg');
+  expect(byName['CLIP_0001.MP4']).toBe('video/mp4');
 });

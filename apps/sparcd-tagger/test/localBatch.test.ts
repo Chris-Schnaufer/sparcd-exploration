@@ -29,7 +29,8 @@ const record = (over: Partial<FlipRecord> = {}): FlipRecord => ({
       fileName: 'IMG_0001.JPG',
       size: 100,
       sha256: 'aa',
-      captureTimestamp: '2026-08-01T06:30:00',
+      exifTimestamp: '2026-08-01T06:30:00',
+      mimeType: 'image/jpeg',
       mediaKind: 'image',
     },
     { relPath: 'SD/CLIP.MP4', fileName: 'CLIP.MP4', size: 200, sha256: 'bb', mediaKind: 'video' },
@@ -50,6 +51,12 @@ describe('the record as the workspace sees it', () => {
     const [image, clip] = localTagImages(record());
     expect(image.baseTimestamp).toBe('2026-08-01T06:30:00');
     expect(clip.baseTimestamp).toBe('');
+  });
+
+  it('shows a time entered by hand for a file the camera left blank', () => {
+    const src = record();
+    src.files[1] = { ...src.files[1], manualTimestamp: '2026-08-01T07:00:00' };
+    expect(localTagImages(src)[1].baseTimestamp).toBe('2026-08-01T07:00:00');
   });
 
   it('has no deployment — the uploader assigns one after tagging', () => {

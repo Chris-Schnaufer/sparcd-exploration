@@ -30,13 +30,16 @@ Feature: Identify species before the batch is uploaded
   @A1
   Scenario: The batch is handed over whole
     When "Tag species first" is chosen
-    Then every examined file is handed over with its name, size, fingerprint, capture time and thumbnail
+    Then every examined file is handed over with everything the examination established
     And the browser goes to the Tagger carrying the batch's id
+    # The batch is rebuilt from the hand-off on the way back and never examined
+    # a second time, so anything left behind here is lost for good.
 
   @A1
   Scenario: Tags made in the Tagger come back on the batch
     Given a batch was tagged in the Tagger and handed back
     Then the wizard is on the Inspect step with the same files
+    And each file still shows the capture time and pixel size the examination found
     And each tagged file shows the species and count it was given
     And files left untagged are shown as untagged
     And the summary says how many files are tagged
@@ -75,3 +78,6 @@ Feature: Identify species before the batch is uploaded
     When it is published
     Then the untagged files have no observation row at all
     And they are still in media.csv like every other image
+    And every media row carries the media type the examination sniffed
+    # Not a guess from the file extension: a batch that went through the Tagger
+    # must publish the same media.csv as one uploaded straight through.

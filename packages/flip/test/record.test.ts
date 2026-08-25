@@ -8,11 +8,13 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   flipDb,
   mergeTags,
+  captureTimestampOf,
   writeFlipRecord,
   readFlipRecord,
   updateFlipTags,
   setFlipStatus,
   finishFlipRecord,
+  type FlipFile,
   type FlipObservation,
   type FlipRecord,
 } from '../src/index';
@@ -33,16 +35,29 @@ const ghost: FlipObservation = {
   freeTags: '',
 };
 
+/** A file carrying everything the uploader's Inspect pass establishes. */
+const inspected = (over: Partial<FlipFile> = {}): FlipFile => ({
+  relPath: 'SD/IMG_0001.JPG',
+  fileName: 'IMG_0001.JPG',
+  size: 100,
+  sha256: 'aa',
+  mediaKind: 'image',
+  exifTimestamp: '2026-07-01T12:00:00',
+  mimeType: 'image/jpeg',
+  exifCamera: 'RECONYX HP2X',
+  gps: { lat: 31.5, lon: -110.2 },
+  width: 2048,
+  height: 1536,
+  ...over,
+});
+
 const record = (over: Partial<FlipRecord> = {}): FlipRecord => ({
   id: 'batch-1',
   v: 1,
   createdAt: '2026-08-25T10:00:00.000Z',
   returnUrl: '/sparcd-exploration/uploader/?flip=batch-1',
   accessMode: 'persistent-handle',
-  files: [
-    { relPath: 'SD/IMG_0001.JPG', fileName: 'IMG_0001.JPG', size: 100, sha256: 'aa', mediaKind: 'image' },
-    { relPath: 'SD/IMG_0002.JPG', fileName: 'IMG_0002.JPG', size: 200, sha256: 'bb', mediaKind: 'image' },
-  ],
+  files: [inspected(), { ...inspected(), relPath: 'SD/IMG_0002.JPG', fileName: 'IMG_0002.JPG' }],
   tags: {},
   status: 'pending',
   ...over,
@@ -63,11 +78,53 @@ describe('mergeTags', () => {
   });
 });
 
+describe('capture time', () => {
+  it('shows the time the camera wrote when there is one', () => {
+    expect(captureTimestampOf(inspected())).toBe('2026-07-01T12:00:00');
+  });
+
+  it('falls back to a time entered by hand', () => {
+    const f = inspected({ exifTimestamp: undefined, manualTimestamp: '2026-07-01T09:30:00' });
+    expect(captureTimestampOf(f)).toBe('2026-07-01T09:30:00');
+  });
+
+  it('prefers the camera over a stray manual entry, as the bundle does', () => {
+    expect(captureTimestampOf(inspected({ manualTimestamp: '2020-01-01T00:00:00' }))).toBe(
+      '2026-07-01T12:00:00',
+    );
+  });
+
+  it('is absent for a file with neither', () => {
+    expect(captureTimestampOf(inspected({ exifTimestamp: undefined }))).toBeUndefined();
+  });
+});
+
 describe('the record round trip', () => {
   it('reads back everything the uploader wrote', async () => {
     await writeFlipRecord(record());
     const back = await readFlipRecord('batch-1');
     expect(back).toEqual(record());
+  });
+
+  // The batch is rebuilt from this record on the way back, and there is no
+  // second Inspect pass — a field that does not survive the round trip is a
+  // field the uploader has to publish without.
+  it('keeps every result Inspect established, not just what draws a tile', async () => {
+    await writeFlipRecord(record());
+    const [file] = (await readFlipRecord('batch-1'))!.files;
+    expect(file.mimeType).toBe('image/jpeg');
+    expect(file.exifCamera).toBe('RECONYX HP2X');
+    expect(file.gps).toEqual({ lat: 31.5, lon: -110.2 });
+    expect(file.width).toBe(2048);
+    expect(file.height).toBe(1536);
+  });
+
+  it('keeps a hand-entered time in its own slot, never in the camera one', async () => {
+    const manual = inspected({ exifTimestamp: undefined, manualTimestamp: '2026-07-01T09:30:00' });
+    await writeFlipRecord(record({ files: [manual] }));
+    const [file] = (await readFlipRecord('batch-1'))!.files;
+    expect(file.exifTimestamp).toBeUndefined();
+    expect(file.manualTimestamp).toBe('2026-07-01T09:30:00');
   });
 
   it('is absent for an id nobody wrote', async () => {
