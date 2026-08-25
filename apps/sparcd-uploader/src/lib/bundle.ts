@@ -17,8 +17,12 @@ import {
   serializeUploadMeta,
   serializeUploadComplete,
   uploadStamp,
+  buildObservationComments,
+  parseTagMarkers,
+  defaultObservationId,
   type UploadCompleteJson,
 } from '@sparcd/camtrap';
+import type { FlipObservation } from '@sparcd/flip';
 import { locationToDeployment, type Location } from './locations';
 import { sanitizeRelPath, nameCounts, resolveOneName } from './normalize';
 import { naiveInZoneToUtcNaive } from './exifTime';
@@ -38,6 +42,7 @@ export type UploadItem = {
   captureTimestamp?: string; // resolved naive-UTC capture time (post-tz), media.csv col 4
   mediaKind: MediaKind;
   mimeType: string;
+  preTags?: FlipObservation[]; // species applied in the tagger before this upload
 };
 
 export type BundlePreview = {
@@ -57,6 +62,53 @@ export type BundlePreview = {
 };
 
 const enc = new TextEncoder();
+
+/** The tagger's non-animal label. Mirrored here rather than imported across
+ *  apps; it is a value in the published data, so the two copies are pinned by
+ *  the same fixtures. */
+const GHOST_SCIENTIFIC_NAME = 'Casper';
+
+/** Whether a file counts toward `imagesWithSpecies` — a real animal was
+ *  identified, so an empty-frame mark alone doesn't. */
+const hasSpecies = (preTags: FlipObservation[] | undefined): boolean =>
+  !!preTags?.some((o) => o.scientificName !== GHOST_SCIENTIFIC_NAME);
+
+/**
+ * The observation rows for one file, shared by both bundle builders so a
+ * tagged file publishes byte-identically whichever path produced the bundle.
+ *
+ * A file the tagger never touched falls through to `untagged`, which is each
+ * path's own existing behaviour — no row at all from `buildBundle`, one
+ * placeholder row from `buildBundleFromRecords`.
+ */
+function observationRowsFor(
+  file: {
+    mediaId: string;
+    deploymentId: string;
+    timestamp: string;
+    preTags?: FlipObservation[];
+  },
+  untagged: () => Observation[],
+): Observation[] {
+  const preTags = file.preTags ?? [];
+  if (preTags.length === 0) return untagged();
+  return preTags.map((o, i) => ({
+    observationId: defaultObservationId(file.mediaId, i),
+    mediaId: file.mediaId,
+    deploymentId: file.deploymentId,
+    timestamp: file.timestamp,
+    scientificName: o.scientificName,
+    count: o.count,
+    // Free tags are raw `[PREFIX:value]` markers the tagger preserved verbatim;
+    // parsing them back into markers keeps them in the col-19 string alongside
+    // the two reserved ones instead of appended as loose text.
+    tags: buildObservationComments({
+      commonName: o.commonName || undefined,
+      requestedSpecies: o.requestedSpecies || undefined,
+      extra: parseTagMarkers(o.freeTags),
+    }),
+  }));
+}
 
 async function sha256Hex(parts: Uint8Array[]): Promise<string> {
   const total = parts.reduce((n, p) => n + p.length, 0);
@@ -156,6 +208,7 @@ export function planItemFor(f: FileEntry, naming: BatchNaming, timeZone: string)
     captureTimestamp: captureFor(f, timeZone) || undefined,
     mediaKind: f.mediaKind,
     mimeType: mimeFor(f),
+    preTags: f.preTags,
   };
 }
 
@@ -210,16 +263,31 @@ export async function buildBundle(input: BuildInput): Promise<BundlePreview> {
     mimeType: it.mimeType,
   }));
 
+  // Empty on an ordinary initial upload — the tagger's canonical base. A batch
+  // that came back from the tagger already carrying species publishes those
+  // rows here instead, so the images and their identifications land together.
+  const observations: Observation[] = uploadItems.flatMap((it) =>
+    observationRowsFor(
+      {
+        mediaId: it.key,
+        deploymentId: deployment.deploymentId,
+        timestamp: it.captureTimestamp ?? '',
+        preTags: it.preTags,
+      },
+      () => [],
+    ),
+  );
+
   const deploymentsCsv = serializeDeployments([deployment]);
   const mediaCsv = serializeMedia(media);
-  const observationsCsv = serializeObservations([]); // always empty on initial upload
+  const observationsCsv = serializeObservations(observations);
 
   const uploadMetaJson = serializeUploadMeta(
     buildUploadMeta({
       uploadUser: uploaderSlug,
       date: now,
       imageCount: ready.length,
-      imagesWithSpecies: 0,
+      imagesWithSpecies: uploadItems.filter((it) => hasSpecies(it.preTags)).length,
       bucket,
       uploadPath,
       description,
@@ -275,6 +343,7 @@ export type ResolvedFileRecord = {
   remoteKey: string;
   captureTimestamp?: string;
   mimeType?: string;
+  preTags?: FlipObservation[];
 };
 
 export type ResumeBundle = {
@@ -317,18 +386,31 @@ export async function buildBundleFromRecords(input: {
     mimeType: f.mimeType ?? 'application/octet-stream',
   }));
 
-  // One placeholder observation row per file, matching `buildBundle` — a
-  // resumed-before-bundle batch's observations.csv must publish the same
-  // shape as a normal upload's, not an empty table.
-  const observations: Observation[] = files.map((f) => ({
-    observationId: f.fileName,
-    mediaId: f.remoteKey,
-    deploymentId: deployment.deploymentId,
-    timestamp: f.captureTimestamp ?? '',
-    scientificName: '',
-    count: 0,
-    tags: '',
-  }));
+  // One placeholder observation row per untagged file — a resumed-before-bundle
+  // batch's observations.csv must publish the same shape as a normal upload's,
+  // not an empty table. A file the tagger identified publishes its species rows
+  // instead, exactly as `buildBundle` would have.
+  const observations: Observation[] = files.flatMap((f) =>
+    observationRowsFor(
+      {
+        mediaId: f.remoteKey,
+        deploymentId: deployment.deploymentId,
+        timestamp: f.captureTimestamp ?? '',
+        preTags: f.preTags,
+      },
+      () => [
+        {
+          observationId: f.fileName,
+          mediaId: f.remoteKey,
+          deploymentId: deployment.deploymentId,
+          timestamp: f.captureTimestamp ?? '',
+          scientificName: '',
+          count: 0,
+          tags: '',
+        },
+      ],
+    ),
+  );
 
   const deploymentsCsv = serializeDeployments([deployment]);
   const mediaCsv = serializeMedia(media);
@@ -339,7 +421,7 @@ export async function buildBundleFromRecords(input: {
       uploadUser: uploaderSlug,
       date: startedAt,
       imageCount: files.length,
-      imagesWithSpecies: 0,
+      imagesWithSpecies: files.filter((f) => hasSpecies(f.preTags)).length,
       bucket,
       uploadPath,
       description,
