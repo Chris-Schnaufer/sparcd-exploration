@@ -68,11 +68,9 @@ export async function handOffToTagger(): Promise<void> {
     v: 1,
     createdAt: new Date().toISOString(),
     returnUrl: uploaderReturnUrl(id),
-    accessMode: s.fileAccessMode,
     dirHandle: s.dirHandle ?? undefined,
     files: s.files.filter((f) => f.processState === 'ready' && f.sha256).map(toFlipFile),
     tags: {},
-    status: 'pending',
   });
   window.location.href = taggerBatchUrl(id);
 }

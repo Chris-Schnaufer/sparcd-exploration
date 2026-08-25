@@ -1,14 +1,15 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../store';
 import { StepIndicator } from '../components/StepIndicator';
 import { DropZone } from '../components/DropZone';
 import { FileList } from '../components/FileList';
 import { Assign } from './Assign';
 import { Upload } from './Upload';
-import { formatBytes } from '../lib/scanFiles';
+import { canPickFolder, formatBytes, supportsDirectoryHandle } from '../lib/scanFiles';
 import { summarize } from '../lib/validation';
 import { ensureProcessing } from '../lib/processing';
 import { reselectFolder } from '../lib/resume';
+import type { FlipRecord } from '@sparcd/flip';
 import {
   adoptRecord,
   adoptReselected,
@@ -167,8 +168,6 @@ function useFlipReturn(): FlipPending | null {
 type FlipPending = Exclude<FlipReturn, { kind: 'restored' }>;
 
 function FlipReturnPanel({ state }: { state: FlipPending }) {
-  const [busy, setBusy] = useState(false);
-
   if (state.kind === 'not-found') {
     return (
       <Panel title="That batch isn't here">
@@ -180,31 +179,80 @@ function FlipReturnPanel({ state }: { state: FlipPending }) {
       </Panel>
     );
   }
+  if (state.kind === 'needs-reselect') return <ReselectPanel record={state.record} />;
+  return <ReopenPanel record={state.record} />;
+}
 
-  const record = state.record;
+/**
+ * No durable handle rode along with the batch, so the folder has to be pointed
+ * at again. Same three-way choice the drop zone makes: the File System Access
+ * picker where it exists (it hands back a handle for next time), the rendered
+ * `webkitdirectory` input on a desktop browser without it, and individual files
+ * on a device that cannot present a folder picker at all.
+ */
+function ReselectPanel({ record }: { record: FlipRecord }) {
+  const [busy, setBusy] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const folderPick = canPickFolder();
 
-  if (state.kind === 'needs-reselect') {
-    return (
-      <Panel title="Choose the folder again">
-        <p>
-          Your tags are safe. This browser doesn't keep a durable handle on the folder, so it needs
-          you to point at <span className="font-mono text-ink">{record.files.length}</span> files
-          once more before they can be uploaded.
-        </p>
-        <PanelButton
-          busy={busy}
-          label="Choose folder"
-          onClick={async () => {
-            setBusy(true);
-            const picked = await reselectFolder();
-            if (picked) adoptReselected(record, picked.scanned);
-            setBusy(false);
-          }}
-        />
-      </Panel>
-    );
+  async function adopt(list?: FileList) {
+    setBusy(true);
+    try {
+      const picked = await reselectFolder(list);
+      if (picked) adoptReselected(record, picked.scanned);
+    } finally {
+      setBusy(false);
+    }
   }
 
+  return (
+    <Panel title="Choose the folder again">
+      <p>
+        Your tags are safe. This browser doesn't keep a durable handle on the folder, so it needs
+        you to point at <span className="font-mono text-ink">{record.files.length}</span> files
+        once more before they can be uploaded.
+      </p>
+      <PanelButton
+        busy={busy}
+        label={folderPick ? 'Choose folder' : 'Choose photos or videos'}
+        onClick={() => {
+          if (supportsDirectoryHandle) void adopt();
+          else inputRef.current?.click();
+        }}
+      />
+      {folderPick ? (
+        <input
+          ref={inputRef}
+          type="file"
+          // @ts-expect-error — non-standard but widely supported folder picker
+          webkitdirectory=""
+          directory=""
+          multiple
+          hidden
+          onChange={onPick}
+        />
+      ) : (
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/jpeg,video/mp4"
+          multiple
+          hidden
+          onChange={onPick}
+        />
+      )}
+    </Panel>
+  );
+
+  function onPick(e: React.ChangeEvent<HTMLInputElement>) {
+    const list = e.target.files;
+    if (list?.length) void adopt(list);
+    e.target.value = '';
+  }
+}
+
+function ReopenPanel({ record }: { record: FlipRecord }) {
+  const [busy, setBusy] = useState(false);
   return (
     <Panel title="Reopen the batch">
       <p>

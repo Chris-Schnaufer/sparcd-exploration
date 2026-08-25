@@ -43,8 +43,16 @@ Feature: Tag a batch that has not been uploaded yet
   Scenario: Handing the batch back returns to the Uploader with the tags
     Given a species has been applied to an image
     When "Done · back to Uploader" is chosen
-    Then the batch is marked done and carries the tag
+    Then the batch carries the tag for the Uploader to read
     And the browser goes back to the Uploader carrying the batch's id
+
+  @unmapped
+  Scenario: Done only ever goes to this site's own Uploader
+    Given the batch points somewhere other than the Uploader to return to
+    When "Done · back to Uploader" is chosen
+    Then the browser goes to this site's Uploader anyway
+    # Batches live in storage any page on this origin can write, so where a
+    # batch says to go back to is not taken on trust.
 
   @A1
   Scenario: Coming back to the batch resumes the tagging

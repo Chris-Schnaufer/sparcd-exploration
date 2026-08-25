@@ -21,7 +21,6 @@ const FILES = ['IMG001.JPG', 'IMG002.JPG', 'IMG003.JPG'];
 type FlipRow = {
   id: string;
   tags: Record<string, { scientificName: string; commonName: string; count: number }[]>;
-  status: string;
   taggerUser?: string;
 };
 
@@ -53,7 +52,6 @@ async function seedBatch(page: Page): Promise<void> {
           v: 1,
           createdAt: new Date().toISOString(),
           returnUrl,
-          accessMode: 'reselect-required',
           // Everything the Uploader's Inspect pass would have established, so
           // the seed stays a faithful stand-in for a real hand-off.
           files: files.map((fileName, i) => ({
@@ -71,7 +69,6 @@ async function seedBatch(page: Page): Promise<void> {
             thumb: new Blob([gif], { type: 'image/gif' }),
           })),
           tags: {},
-          status: 'pending',
         });
         tx.oncomplete = () => resolve();
       });
@@ -94,6 +91,30 @@ async function readBatch(page: Page): Promise<FlipRow | undefined> {
     db.close();
     return row;
   }, BATCH_ID);
+}
+
+/** Rewrite part of the seeded record — stands in for whatever else on this
+ *  origin could have written it. */
+async function patchBatch(page: Page, patch: Record<string, unknown>): Promise<void> {
+  await page.evaluate(
+    async ({ id, patch }: { id: string; patch: Record<string, unknown> }) => {
+      const open = indexedDB.open('sparcd-flip');
+      const db: IDBDatabase = await new Promise((resolve) => {
+        open.onsuccess = () => resolve(open.result);
+      });
+      const store = db.transaction('records', 'readwrite').objectStore('records');
+      const existing: Record<string, unknown> = await new Promise((resolve) => {
+        const req = store.get(id);
+        req.onsuccess = () => resolve(req.result);
+      });
+      await new Promise<void>((resolve) => {
+        const req = store.put({ ...existing, ...patch });
+        req.onsuccess = () => resolve();
+      });
+      db.close();
+    },
+    { id: BATCH_ID, patch },
+  );
 }
 
 // The Uploader is a different app on the same origin; stand in for it so the
@@ -120,6 +141,12 @@ Given('the Uploader has handed over a batch of images', async ({ page }) => {
 
 Given('the link points at a batch that is not in this browser', async ({ page }) => {
   await openBatch(page, 'no-such-batch');
+});
+
+Given('the batch points somewhere other than the Uploader to return to', async ({ page }) => {
+  await patchBatch(page, { returnUrl: 'https://elsewhere.example/landing' });
+  await openBatch(page, BATCH_ID);
+  await expect(gridCell(page, 'IMG001.JPG')).toBeVisible();
 });
 
 // --- opening ----------------------------------------------------------------
@@ -189,17 +216,24 @@ Then('the batch records Coyote against that image', async ({ page }) => {
 
 When('"Done · back to Uploader" is chosen', async ({ page }) => {
   await page.getByRole('button', { name: 'Done · back to Uploader' }).click();
-  await page.waitForURL(/\/uploader\/\?flip=/);
+  // Not `?flip=` — a batch whose return trip was rejected lands on the bare
+  // uploader instead.
+  await page.waitForURL(/\/uploader\//);
 });
 
-Then('the batch is marked done and carries the tag', async ({ page }) => {
+Then('the batch carries the tag for the Uploader to read', async ({ page }) => {
   const row = await readBatch(page);
-  expect(row?.status).toBe('done');
   expect(row?.tags['SDCARD/IMG002.JPG'][0].commonName).toBe('Coyote');
 });
 
 Then("the browser goes back to the Uploader carrying the batch's id", async ({ page }) => {
   expect(page.url()).toContain(RETURN_URL);
+});
+
+Then("the browser goes to this site's Uploader anyway", async ({ page }) => {
+  const url = new URL(page.url());
+  expect(url.host).toBe('localhost:5312');
+  expect(url.pathname).toBe('/sparcd-exploration/uploader/');
 });
 
 When('the batch is opened again', async ({ page }) => {

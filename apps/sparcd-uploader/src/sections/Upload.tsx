@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { OfflineBanner, useOnline } from '@sparcd/auth-ui';
+import { deleteFlipRecord } from '@sparcd/flip';
 import { useStore, type FileEntry } from '../store';
 import { useLocations } from '../lib/useLocations';
 import { useCollections } from '../lib/useCollections';
@@ -39,6 +40,7 @@ export function Upload() {
   const concurrency = useStore((s) => s.uploadConcurrency);
   const setConcurrency = useStore((s) => s.setUploadConcurrency);
   const nextBatch = useStore((s) => s.nextBatch);
+  const flipId = useStore((s) => s.flipId);
   const fileAccessMode = useStore((s) => s.fileAccessMode);
   const dirHandle = useStore((s) => s.dirHandle);
 
@@ -187,6 +189,16 @@ export function Upload() {
       if (arrived.length > 0) streamingRef.current.notifyReady(arrived);
     });
   }, []);
+
+  // The hand-off record exists to get a batch to the tagger and its tags back;
+  // once those tags are published it is dead weight holding paths, hashes,
+  // thumbnails and possibly a live folder handle. Only a real publish clears it
+  // — a dry run wrote nothing, and "Start over" is not the user saying they are
+  // finished with the tags.
+  useEffect(() => {
+    if (!flipId || snap?.phase !== 'done' || snap.dryRun) return;
+    void deleteFlipRecord(flipId);
+  }, [flipId, snap?.phase, snap?.dryRun]);
 
   // Close the run's queue the moment the batch is fully known — every file
   // processed, and (the same integrity gate Assign used to enforce up front)

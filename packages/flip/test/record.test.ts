@@ -11,8 +11,9 @@ import {
   captureTimestampOf,
   writeFlipRecord,
   readFlipRecord,
+  deleteFlipRecord,
+  pruneFlipRecords,
   updateFlipTags,
-  setFlipStatus,
   finishFlipRecord,
   type FlipFile,
   type FlipObservation,
@@ -56,10 +57,8 @@ const record = (over: Partial<FlipRecord> = {}): FlipRecord => ({
   v: 1,
   createdAt: '2026-08-25T10:00:00.000Z',
   returnUrl: '/sparcd-exploration/uploader/?flip=batch-1',
-  accessMode: 'persistent-handle',
   files: [inspected(), { ...inspected(), relPath: 'SD/IMG_0002.JPG', fileName: 'IMG_0002.JPG' }],
   tags: {},
-  status: 'pending',
   ...over,
 });
 
@@ -130,6 +129,36 @@ describe('the record round trip', () => {
   it('is absent for an id nobody wrote', async () => {
     expect(await readFlipRecord('nope')).toBeUndefined();
   });
+
+  it('reports a record from a schema it does not know as absent', async () => {
+    await flipDb.records.put({ ...record(), v: 2 } as unknown as FlipRecord);
+    expect(await readFlipRecord('batch-1')).toBeUndefined();
+  });
+});
+
+describe('not keeping batches forever', () => {
+  it('deletes a record outright', async () => {
+    await writeFlipRecord(record());
+    await deleteFlipRecord('batch-1');
+    expect(await readFlipRecord('batch-1')).toBeUndefined();
+  });
+
+  it('sweeps up hand-offs nobody came back for', async () => {
+    const old = new Date('2026-01-01T00:00:00.000Z').toISOString();
+    await writeFlipRecord(record({ id: 'stale', createdAt: old }));
+    await writeFlipRecord(record({ id: 'fresh', createdAt: new Date().toISOString() }));
+    const removed = await pruneFlipRecords();
+    expect(removed).toBe(1);
+    expect(await readFlipRecord('stale')).toBeUndefined();
+    expect(await readFlipRecord('fresh')).toBeDefined();
+  });
+
+  it('keeps a batch that is merely a fortnight old', async () => {
+    const now = Date.parse('2026-08-25T00:00:00.000Z');
+    const fortnight = new Date(now - 14 * 24 * 60 * 60 * 1000).toISOString();
+    await writeFlipRecord(record({ createdAt: fortnight }));
+    expect(await pruneFlipRecords(now)).toBe(0);
+  });
 });
 
 describe('tag updates', () => {
@@ -145,22 +174,15 @@ describe('tag updates', () => {
     await updateFlipTags('gone', { x: [coyote] });
     expect(await readFlipRecord('gone')).toBeUndefined();
   });
-
-  it('tracks the status the tagger moves it through', async () => {
-    await writeFlipRecord(record());
-    await setFlipStatus('batch-1', 'tagging');
-    expect((await readFlipRecord('batch-1'))!.status).toBe('tagging');
-  });
 });
 
 describe('the hand back', () => {
-  it('merges the final tags, records the tagger, and closes the record', async () => {
+  it('merges the final tags and records who tagged them', async () => {
     await writeFlipRecord(record({ tags: { 'SD/IMG_0001.JPG': [coyote] } }));
     await finishFlipRecord('batch-1', { 'SD/IMG_0002.JPG': [ghost] }, 'anita');
     const back = await readFlipRecord('batch-1');
     expect(back!.tags).toEqual({ 'SD/IMG_0001.JPG': [coyote], 'SD/IMG_0002.JPG': [ghost] });
     expect(back!.taggerUser).toBe('anita');
-    expect(back!.status).toBe('done');
   });
 
   it('accepts a blank tagger identity — the tagger never forces one', async () => {

@@ -72,6 +72,20 @@ Feature: Identify species before the batch is uploaded
     And each row carries the common name the tagger used
     And the upload metadata counts the images with a real animal on them
 
+  @unmapped
+  Scenario: The hand-off is thrown away once its batch is published
+    Given a batch was tagged in the Tagger and handed back
+    When it is published
+    Then nothing about the hand-off is left on this machine
+    # It held file paths, fingerprints, thumbnails and possibly a live folder
+    # handle. A dry run leaves it alone — nothing was published.
+
+  @unmapped
+  Scenario: A dry run keeps the hand-off, so the tags are not lost
+    Given a batch was tagged in the Tagger and handed back
+    When a dry run of it is started
+    Then the hand-off is still on this machine
+
   @A1
   Scenario: An untagged file is accepted and published as untagged
     Given a batch was tagged in the Tagger and handed back

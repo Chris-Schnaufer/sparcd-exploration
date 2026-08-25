@@ -13,15 +13,10 @@
 // exposed as an action the UI can offer rather than something that just fails.
 
 import { create } from 'zustand';
-import {
-  readFlipRecord,
-  setFlipStatus,
-  finishFlipRecord,
-  updateFlipTags,
-  type FlipRecord,
-} from '@sparcd/flip';
+import { readFlipRecord, finishFlipRecord, updateFlipTags, type FlipRecord } from '@sparcd/flip';
 import type { DraftRecord } from './db';
 import { tagsFromDrafts } from './localWorkspace';
+import { safeReturnUrl } from './siblings';
 
 /** The batch id this page load was opened with, if any. Read synchronously so
  *  the app can skip the Connect gate on the very first render. */
@@ -61,7 +56,6 @@ export const useLocalBatch = create<LocalBatchState>((set, get) => ({
     const media: Record<string, Blob> = {};
     for (const f of record.files) if (f.thumb) media[f.relPath] = f.thumb;
     set({ status: 'ready', record, media });
-    void setFlipStatus(record.id, 'tagging');
     if (record.dirHandle) await get().attachOriginals();
   },
 
@@ -111,24 +105,6 @@ async function walkDirectory(dir: FileSystemDirectoryHandle): Promise<Map<string
   return out;
 }
 
-// --- Media URLs -------------------------------------------------------------
-
-// One object URL per file, revoked the moment a better blob replaces it (the
-// original arriving in place of its thumbnail) so a large batch doesn't leak a
-// URL per swap. The page navigating back to the uploader frees the rest.
-const objectUrls = new Map<string, { blob: Blob; url: string }>();
-
-export function localMediaUrl(relPath: string, blob: Blob): string {
-  const current = objectUrls.get(relPath);
-  if (current) {
-    if (current.blob === blob) return current.url;
-    URL.revokeObjectURL(current.url);
-  }
-  const url = URL.createObjectURL(blob);
-  objectUrls.set(relPath, { blob, url });
-  return url;
-}
-
 // --- Saving back -----------------------------------------------------------
 
 export function saveLocalTags(id: string, drafts: Record<string, DraftRecord>): Promise<void> {
@@ -142,5 +118,5 @@ export async function finishLocalBatch(
   taggerUser: string,
 ): Promise<void> {
   await finishFlipRecord(record.id, tagsFromDrafts(drafts), taggerUser);
-  window.location.href = record.returnUrl;
+  window.location.href = safeReturnUrl(record.returnUrl, window.location.origin);
 }

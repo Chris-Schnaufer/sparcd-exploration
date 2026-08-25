@@ -74,27 +74,20 @@ export interface FlipFile {
 export const captureTimestampOf = (file: FlipFile): string | undefined =>
   file.exifTimestamp ?? file.manualTimestamp;
 
-/**
- * How the tagger can reach the full-resolution bytes. `persistent-handle` means
- * a durable folder handle rode along and the tagger can re-open the folder
- * (with a user gesture if the browser demands one); `reselect-required` means
- * there is no handle and only the thumbnails are available.
- */
-export type FlipAccessMode = 'persistent-handle' | 'reselect-required';
-
-export type FlipStatus = 'pending' | 'tagging' | 'done';
-
 export interface FlipRecord {
   id: string;
+  /** Schema version. A record this build does not understand is treated as
+   *  absent rather than guessed at, so a future v2 can never be misread. */
   v: 1;
-  createdAt: string; // ISO
+  createdAt: string; // ISO; drives the pruning sweep below
   returnUrl: string; // where the tagger sends the user back to
-  accessMode: FlipAccessMode;
+  /** Present when the browser granted a durable folder handle. Its presence is
+   *  the only thing anything branches on — no handle means thumbnails only,
+   *  and the folder has to be chosen again on the way back. */
   dirHandle?: FileSystemDirectoryHandle;
   files: FlipFile[];
   tags: Record<string, FlipObservation[]>; // keyed by relPath; `[]` means detagged
   taggerUser?: string;
-  status: FlipStatus;
 }
 
 class FlipDb extends Dexie {
@@ -127,9 +120,43 @@ export async function writeFlipRecord(record: FlipRecord): Promise<void> {
   await flipDb.records.put(record);
 }
 
-export function readFlipRecord(id: string): Promise<FlipRecord | undefined> {
-  return flipDb.records.get(id);
+/**
+ * Read a record this build understands. A row stamped with a schema version
+ * this build has never seen is reported absent rather than half-read: both
+ * tools already have an honest "no such batch" state, and a v2 record read as
+ * a v1 one would silently lose or misplace whatever v2 added.
+ */
+export async function readFlipRecord(id: string): Promise<FlipRecord | undefined> {
+  const rec = await flipDb.records.get(id);
+  return rec?.v === 1 ? rec : undefined;
 }
+
+export async function deleteFlipRecord(id: string): Promise<void> {
+  await flipDb.records.delete(id);
+}
+
+/** How long an abandoned hand-off is kept. */
+const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Drop hand-offs nobody came back for. A record holds file paths, content
+ * hashes, thumbnails and sometimes a live folder handle; the uploader deletes
+ * one the moment its batch publishes, so what this sweeps up is the batches
+ * that were started and abandoned. Without it the store only ever grows.
+ *
+ * A full scan, because `createdAt` is not indexed — the store holds one row per
+ * hand-off a person has personally started, so there is nothing here worth an
+ * index for.
+ */
+export async function pruneFlipRecords(now = Date.now()): Promise<number> {
+  const cutoff = new Date(now - MAX_AGE_MS).toISOString();
+  return flipDb.records.filter((r) => r.createdAt < cutoff).delete();
+}
+
+// Sweep on first import, in both tools. Nothing waits on it and nothing depends
+// on it having finished — an old record costs space, never correctness — so a
+// failure here must not stop a batch from opening.
+void pruneFlipRecords().catch(() => {});
 
 /**
  * Merge tags for some images into the record. Runs inside a read-write
@@ -147,15 +174,7 @@ export async function updateFlipTags(
   });
 }
 
-export async function setFlipStatus(id: string, status: FlipStatus): Promise<void> {
-  await flipDb.transaction('rw', flipDb.records, async () => {
-    const rec = await flipDb.records.get(id);
-    if (!rec) return;
-    await flipDb.records.put({ ...rec, status });
-  });
-}
-
-/** The tagger's final hand-back: merge the last tags, record who tagged, close. */
+/** The tagger's final hand-back: merge the last tags, record who tagged. */
 export async function finishFlipRecord(
   id: string,
   tags: Record<string, FlipObservation[]>,
@@ -164,11 +183,6 @@ export async function finishFlipRecord(
   await flipDb.transaction('rw', flipDb.records, async () => {
     const rec = await flipDb.records.get(id);
     if (!rec) return;
-    await flipDb.records.put({
-      ...rec,
-      tags: mergeTags(rec.tags, tags),
-      taggerUser,
-      status: 'done',
-    });
+    await flipDb.records.put({ ...rec, tags: mergeTags(rec.tags, tags), taggerUser });
   });
 }

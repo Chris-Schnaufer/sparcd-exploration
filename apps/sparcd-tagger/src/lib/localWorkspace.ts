@@ -17,6 +17,7 @@ export function localTagImages(record: FlipRecord): TagImage[] {
     key: f.relPath,
     fileName: f.fileName,
     deploymentId: '',
+    mediaKind: f.mediaKind,
     // One time to show, whichever source it came from — the tagger only needs
     // the value; keeping the two apart is the uploader's concern.
     baseTimestamp: captureTimestampOf(f) ?? '',

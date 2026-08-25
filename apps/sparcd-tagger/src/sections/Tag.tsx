@@ -38,7 +38,7 @@ import { useLocalBatch, saveLocalTags } from '../lib/localBatch';
 import { localTagImages } from '../lib/localWorkspace';
 import { DEFAULT_SPECIES } from '../lib/defaultSpecies';
 import type { Species } from '../lib/species';
-import { isVideoKey, type TagImage } from '../lib/workspace';
+import { isVideoImage, type TagImage } from '../lib/workspace';
 import type { DraftRecord } from '../lib/db';
 
 const GHOST_KEY = 'g';
@@ -824,12 +824,20 @@ function FocusPane({
   // through images within a Focus session — the night-frame burst workflow.
   const [adjustments, setAdjustments] = useState<Adjustments>(NEUTRAL);
   const filter = useMemo(() => cssFilter(adjustments), [adjustments]);
-  const showAdjust = !!current && !isVideoKey(current.key);
+  const isVideo = !!current && isVideoImage(current);
+  const showAdjust = !!current && !isVideo;
 
   return (
     <div className="flex flex-col min-h-[55svh] lg:min-h-0 bg-paper">
       <div className="relative flex-1 min-h-0 grid place-items-center p-4 overflow-hidden">
-        {current && <FocusImage objectKey={current.key} alt={current.fileName} filter={filter} />}
+        {current && (
+          <FocusImage
+            objectKey={current.key}
+            alt={current.fileName}
+            isVideo={isVideo}
+            filter={filter}
+          />
+        )}
         {showAdjust && (
           // On phones the zoom controls own bottom-right, so park adjustments at
           // top-left to keep both off the squeezed image; restore bottom-left ≥lg.
@@ -984,17 +992,19 @@ function Segmented({
 function FocusImage({
   objectKey,
   alt,
+  isVideo,
   filter,
 }: {
   objectKey: string;
   alt: string;
+  isVideo: boolean;
   filter?: string;
 }) {
   const { url, isError } = useMediaUrl(objectKey);
   if (isError)
     return <div className="text-[13px] font-mono text-warn">Could not load this image.</div>;
   if (!url) return <div className="text-[13px] font-mono text-inkMute">…</div>;
-  if (isVideoKey(objectKey)) return <FocusVideo src={url} alt={alt} resetKey={objectKey} />;
+  if (isVideo) return <FocusVideo src={url} alt={alt} resetKey={objectKey} />;
   return <ZoomableImage src={url} alt={alt} resetKey={objectKey} filter={filter} />;
 }
 

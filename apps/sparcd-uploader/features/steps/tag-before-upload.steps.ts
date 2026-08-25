@@ -58,7 +58,6 @@ Then(
   async ({ app }) => {
     const [record] = await app.readFlipRecords();
     expect(record.id).toBe(app.notes.flipId);
-    expect(record.status).toBe('pending');
     const byPath = Object.fromEntries(record.files.map((f: any) => [f.relPath, f]));
     expect(Object.keys(byPath).sort()).toEqual([
       'SDCARD/CLIP_0001.MP4',
@@ -99,7 +98,7 @@ Then("the browser goes to the Tagger carrying the batch's id", async ({ app }) =
 Given('a batch was tagged in the Tagger and handed back', async ({ app }) => {
   const id = await handOff(app);
   app.notes.flipId = id;
-  await app.patchFlipRecord(id, { tags: TAGS, taggerUser: 'anita', status: 'done' });
+  await app.patchFlipRecord(id, { tags: TAGS, taggerUser: 'anita' });
   await handBack(app, id);
   // A dragged-in folder never had a durable handle, so the folder is chosen
   // again — and the fake picker is reset by the navigation, so re-seed it.
@@ -111,7 +110,7 @@ Given('a batch was tagged in the Tagger and handed back', async ({ app }) => {
 Given('a batch tagged in the Tagger is handed back with no remembered folder', async ({ app }) => {
   const id = await handOff(app);
   app.notes.flipId = id;
-  await app.patchFlipRecord(id, { tags: TAGS, status: 'done' });
+  await app.patchFlipRecord(id, { tags: TAGS });
   await handBack(app, id);
   await app.seedPickedFolder(app.lastSpecs);
 });
@@ -125,7 +124,6 @@ Given(
     // answers neither queryPermission nor requestPermission.
     await app.patchFlipRecord(id, {
       tags: TAGS,
-      status: 'done',
       dirHandle: { kind: 'directory', name: 'SDCARD' },
     });
     await handBack(app, id);
@@ -198,6 +196,21 @@ When('it is published', async ({ app }) => {
   await app.dryRunCheckbox().uncheck();
   await app.startRun();
   await app.waitForRunPhase('done');
+});
+
+When('a dry run of it is started', async ({ app }) => {
+  await app.walkToUploadStep();
+  await app.startRun();
+  await app.waitForRunPhase('done');
+});
+
+Then('nothing about the hand-off is left on this machine', async ({ app }) => {
+  await expect.poll(async () => (await app.readFlipRecords()).length).toBe(0);
+});
+
+Then('the hand-off is still on this machine', async ({ app }) => {
+  const records = await app.readFlipRecords();
+  expect(records.map((r) => r.id)).toEqual([app.notes.flipId]);
 });
 
 Then(

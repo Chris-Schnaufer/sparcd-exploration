@@ -5,6 +5,8 @@
 import { describe, it, expect } from 'vitest';
 import type { FlipRecord } from '@sparcd/flip';
 import { localTagImages, tagsFromDrafts } from '../src/lib/localWorkspace';
+import { isVideoImage } from '../src/lib/workspace';
+import { safeReturnUrl, uploaderPath } from '../src/lib/siblings';
 import { DEFAULT_SPECIES } from '../src/lib/defaultSpecies';
 import { GHOST, blankDraft } from '../src/lib/drafts';
 import type { DraftObservation, DraftRecord } from '../src/lib/db';
@@ -22,7 +24,6 @@ const record = (over: Partial<FlipRecord> = {}): FlipRecord => ({
   v: 1,
   createdAt: '2026-08-25T10:00:00.000Z',
   returnUrl: '/sparcd-exploration/uploader/?flip=batch-1',
-  accessMode: 'persistent-handle',
   files: [
     {
       relPath: 'SD/IMG_0001.JPG',
@@ -36,7 +37,6 @@ const record = (over: Partial<FlipRecord> = {}): FlipRecord => ({
     { relPath: 'SD/CLIP.MP4', fileName: 'CLIP.MP4', size: 200, sha256: 'bb', mediaKind: 'video' },
   ],
   tags: {},
-  status: 'pending',
   ...over,
 });
 
@@ -61,6 +61,19 @@ describe('the record as the workspace sees it', () => {
 
   it('has no deployment — the uploader assigns one after tagging', () => {
     expect(localTagImages(record()).every((i) => i.deploymentId === '')).toBe(true);
+  });
+
+  // The uploader's worker already sniffed the bytes; re-guessing from the file
+  // name would be a worse answer than the one we were handed.
+  it('carries the media kind the uploader established', () => {
+    const [image, clip] = localTagImages(record());
+    expect(isVideoImage(image)).toBe(false);
+    expect(isVideoImage(clip)).toBe(true);
+  });
+
+  it('falls back to the extension for a canonical record, which has no kind', () => {
+    const canonical = { ...localTagImages(record())[1], mediaKind: undefined };
+    expect(isVideoImage(canonical)).toBe(true);
   });
 
   it('seeds each image from the tags already in the record, so re-entry resumes', () => {
@@ -105,5 +118,41 @@ describe('the offline species vocabulary', () => {
 
   it('carries the key bindings the desktop app uses', () => {
     expect(DEFAULT_SPECIES.find((s) => s.commonName === 'Bear')?.keyBinding).toBe('B');
+  });
+});
+
+// The record is read out of a database every page on this origin can write, so
+// the Done button's destination is not trusted input.
+describe('where Done is allowed to go', () => {
+  const ORIGIN = 'https://culverlab.github.io';
+  const OURS = `${ORIGIN}${uploaderPath()}`;
+
+  it('derives the uploader sibling from this tool own base path', () => {
+    expect(uploaderPath()).toMatch(/^\/.*uploader\/$/);
+  });
+
+  it('honours the uploader URL the Uploader itself wrote', () => {
+    const back = `${uploaderPath()}?flip=batch-1`;
+    expect(safeReturnUrl(back, ORIGIN)).toBe(`${ORIGIN}${back}`);
+  });
+
+  it('sends an off-origin destination to our own uploader instead', () => {
+    expect(safeReturnUrl('https://elsewhere.example/landing', ORIGIN)).toBe(OURS);
+  });
+
+  it('treats a protocol-relative URL as the off-origin destination it is', () => {
+    expect(safeReturnUrl('//elsewhere.example/landing', ORIGIN)).toBe(OURS);
+  });
+
+  it('refuses a same-origin path that is not the uploader', () => {
+    expect(safeReturnUrl('/somewhere/else', ORIGIN)).toBe(OURS);
+  });
+
+  it('refuses a script URL', () => {
+    expect(safeReturnUrl('javascript:void 0', ORIGIN)).toBe(OURS);
+  });
+
+  it('refuses nonsense rather than throwing', () => {
+    expect(safeReturnUrl('', ORIGIN)).toBe(OURS);
   });
 });
