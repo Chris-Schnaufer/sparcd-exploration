@@ -311,6 +311,9 @@ export const useStore = create<UploaderState>()(
           batchToken: s.batchToken + 1,
           dirHandle: null,
           fileAccessMode: 'reselect-required',
+          activeRun: null,
+          activeSnap: null,
+          activeRunSource: null,
         }));
       },
 
