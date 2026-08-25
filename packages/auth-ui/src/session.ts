@@ -114,7 +114,11 @@ export function loadSessionConnection(): S3Config | null {
     return null;
   }
   if (!raw) return null;
-  liveConfig = JSON.parse(raw) as S3Config;
+  try {
+    liveConfig = JSON.parse(raw) as S3Config;
+  } catch {
+    return null;
+  }
   return liveConfig;
 }
 
