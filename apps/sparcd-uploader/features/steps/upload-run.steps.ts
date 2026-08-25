@@ -336,7 +336,7 @@ Then('the number of parallel uploads can be set between 4 and 16', async ({ app 
 });
 
 Then('it defaults to 8', async ({ app }) => {
-  await app.reopen();
+  await app.reopenInNewTab();
   await expect(app.connectForm()).toBeVisible();
   await app.fillConnection();
   await app.page.getByRole('button', { name: 'Connect', exact: true }).click();

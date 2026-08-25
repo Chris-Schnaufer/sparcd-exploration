@@ -75,6 +75,15 @@ When('the uploader is opened again in a new page load', async ({ app }) => {
   await app.reopen();
 });
 
+Then('it is still connected without asking for the secret again', async ({ app }) => {
+  await expect(app.page.getByRole('button', { name: 'Logout' })).toBeVisible();
+  await expect(app.connectForm()).toHaveCount(0);
+});
+
+When('the tab is closed and the uploader is opened in a new one', async ({ app }) => {
+  await app.reopenInNewTab();
+});
+
 Then('the endpoint and access key are pre-filled from the previous connection', async ({ app }) => {
   await expect(app.page.locator('#endpoint')).toHaveValue(S3_ORIGIN);
   await expect(app.page.locator('#accessKey')).toHaveValue(ACCESS_KEY);
@@ -200,7 +209,7 @@ Then('the uploader identity is pre-filled with the connected access key', async 
 Then(
   'an identity carried over from a previous connection in this browser is not overwritten by connecting',
   async ({ app }) => {
-    await app.reopen();
+    await app.reopenInNewTab();
     await app.fillConnection({ accessKey: 'AKIADIFFERENT002' });
     await app.page.getByRole('button', { name: 'Connect', exact: true }).click();
     await expect(app.page.getByRole('button', { name: 'Logout' })).toBeVisible();

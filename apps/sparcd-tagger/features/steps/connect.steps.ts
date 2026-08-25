@@ -101,6 +101,19 @@ Given('a successful connection was made earlier in this browser', async ({ page 
 
 When('the tagger is opened again in a new page load', async ({ page }) => {
   await page.reload();
+});
+
+Then('it is still connected without asking for the secret again', async ({ page }) => {
+  await expect(sectionTab(page, 'Browse')).toBeVisible();
+  await expect(page.locator('#secretKey')).toHaveCount(0);
+});
+
+// The session lives in sessionStorage, which is per-tab: emptying it and
+// reloading is exactly what a new tab sees — localStorage survives to pre-fill
+// the form, and no other tab is open to relay the secret.
+When('the tab is closed and the tagger is opened in a new one', async ({ page }) => {
+  await page.evaluate(() => sessionStorage.clear());
+  await page.reload();
   await expect(page.getByRole('button', { name: 'Connect', exact: true })).toBeVisible();
 });
 

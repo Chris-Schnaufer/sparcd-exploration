@@ -3,16 +3,21 @@ import type { S3Config } from '@sparcd/types';
 /**
  * Shared S3 session across every SPARC'd tool on one origin.
  *
- * The secret key is NEVER written to disk — only `PersistedConnection`
- * (everything except `secretKey`) lives in localStorage, purely so a reload
- * can pre-fill the Connect form without asking the user to retype the
- * endpoint/access key/region. The full config (secret included) is only ever
- * held in memory and relayed live to OTHER TABS ALREADY OPEN in this browser
- * session via BroadcastChannel — never persisted, so a tab opened later (or
- * after a reload) can't retroactively pick it up and always has to ask the
- * user for the secret again.
+ * The secret key never reaches localStorage. Only `PersistedConnection`
+ * (everything except `secretKey`) lives there, purely so the Connect form can
+ * be pre-filled with the endpoint/access key/region on a machine where no
+ * session is running.
+ *
+ * The full config, secret included, is kept two places, both of which die with
+ * the tab: a module-level value for this tab's own synchronous reads, and a
+ * tab-scoped sessionStorage stash so the session survives navigating between
+ * SPARC'd tools in this tab (the BrandSwitcher) and reloading the page.
+ * BroadcastChannel relays the same config live to OTHER TABS, which is how a
+ * freshly opened tab — with its own empty sessionStorage — picks up a session
+ * that is already running. Close every tab and the secret is gone.
  */
 const STORAGE_KEY = 'sparcd-connection';
+const SESSION_KEY = 'sparcd-connection-tab';
 const CHANNEL_NAME = 'sparcd-connection-live';
 
 export type PersistedConnection = Omit<S3Config, 'secretKey'>;
@@ -54,6 +59,22 @@ function clearPersistedConnection(): void {
   }
 }
 
+function saveSessionConnection(cfg: S3Config): void {
+  try {
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(cfg));
+  } catch {
+    /* storage unavailable (private mode / quota) — nothing to do */
+  }
+}
+
+function clearSessionConnection(): void {
+  try {
+    sessionStorage.removeItem(SESSION_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 let channel: BroadcastChannel | null = null;
 function getChannel(): BroadcastChannel | null {
   if (typeof BroadcastChannel === 'undefined') return null;
@@ -80,17 +101,37 @@ export function getLiveConnection(): S3Config | null {
   return liveConfig;
 }
 
-/** Persists the non-secret fields and live-relays the full config (secret
- *  included) to any other tab open right now — nothing secret ever hits disk. */
+/**
+ * Restore this tab's session at boot — the full config, secret included, so
+ * the caller can seed its own state and skip the Connect screen. Also refills
+ * the module-level value, so `getLiveConnection()` agrees from the first read.
+ */
+export function loadSessionConnection(): S3Config | null {
+  let raw: string | null;
+  try {
+    raw = sessionStorage.getItem(SESSION_KEY);
+  } catch {
+    return null;
+  }
+  if (!raw) return null;
+  liveConfig = JSON.parse(raw) as S3Config;
+  return liveConfig;
+}
+
+/** Persists the non-secret fields to localStorage, stashes the full config in
+ *  this tab's sessionStorage, and live-relays it to any other tab open right
+ *  now. Nothing secret outlives the tab. */
 export function saveSharedConnection(cfg: S3Config): void {
   const { secretKey: _secretKey, ...persisted } = cfg;
   savePersistedConnection(persisted);
+  saveSessionConnection(cfg);
   liveConfig = cfg;
   getChannel()?.postMessage({ type: 'connect', config: cfg } satisfies LiveMessage);
 }
 
 export function clearSharedConnection(): void {
   clearPersistedConnection();
+  clearSessionConnection();
   liveConfig = null;
   getChannel()?.postMessage({ type: 'disconnect' } satisfies LiveMessage);
 }

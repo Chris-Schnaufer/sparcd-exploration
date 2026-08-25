@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { S3Config } from '@sparcd/types';
 import {
+  loadSessionConnection,
   saveSharedConnection,
   clearSharedConnection,
   subscribeSharedConnection,
@@ -58,19 +59,25 @@ type TaggerState = {
   setBurstThreshold: (value: number) => void;
 };
 
+// This tab's own session, if it has one — same tab, so a BrandSwitcher hop to
+// another SPARC'd tool or a reload lands straight back in the app. Nothing is
+// cached yet at module init, so unlike the cross-tab handler below this needs
+// no cache clear and no connectionId bump.
+const initialSession = loadSessionConnection();
+
 export const useStore = create<TaggerState>()(
-  // The secret key is NEVER persisted to disk — only non-secret connection
-  // fields live in localStorage (see @sparcd/auth-ui's session module), purely
-  // to pre-fill the Connect form on reload. s3Config always starts null here;
-  // the user re-enters the secret every time, UNLESS another tab in this
-  // browser session is already connected, in which case
-  // `subscribeSharedConnection`'s live (never-persisted) cross-tab relay picks
-  // it up within a message round-trip of mount. Zustand's own persist here
-  // covers only cheap UI prefs (theme). Transient state (selection, sync,
+  // The secret key never reaches localStorage — only non-secret connection
+  // fields live there (see @sparcd/auth-ui's session module), to pre-fill the
+  // Connect form on a machine with no session running. s3Config starts from
+  // this tab's own sessionStorage session, so switching tools or reloading
+  // keeps the user in; failing that, a sibling tab's live relay
+  // (`subscribeSharedConnection`) supplies one within a message round-trip of
+  // mount, and otherwise the user enters the secret. Zustand's own persist
+  // here covers only cheap UI prefs (theme). Transient state (selection, sync,
   // pendingSnapshots) is excluded too.
   persist(
     (set) => ({
-      s3Config: null,
+      s3Config: initialSession,
       connectionId: 0,
       section: 'browse',
       theme: 'light',
