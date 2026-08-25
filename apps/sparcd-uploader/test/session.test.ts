@@ -12,15 +12,50 @@ const storage = () => {
 };
 const local = storage();
 const session = storage();
+
+type Listener = (e: { data: unknown }) => void;
+
+/** A BroadcastChannel that, like the real one, never delivers what it posts
+ *  back to itself — so `fromSibling` is the only way a message arrives. */
+class FakeChannel {
+  static current: FakeChannel | null = null;
+  readonly posted: unknown[] = [];
+  private readonly listeners = new Set<Listener>();
+
+  constructor() {
+    FakeChannel.current = this;
+  }
+
+  postMessage(message: unknown): void {
+    this.posted.push(message);
+  }
+
+  addEventListener(_type: string, fn: Listener): void {
+    this.listeners.add(fn);
+  }
+
+  removeEventListener(_type: string, fn: Listener): void {
+    this.listeners.delete(fn);
+  }
+
+  fromSibling(data: unknown): void {
+    for (const fn of this.listeners) fn({ data });
+  }
+}
+
 Object.assign(globalThis, {
   localStorage: local,
   sessionStorage: session,
-  // No cross-tab relay in Node — this suite is about what the tab keeps.
-  BroadcastChannel: undefined,
+  BroadcastChannel: FakeChannel,
 });
 
-const { saveSharedConnection, clearSharedConnection, loadSessionConnection, getLiveConnection } =
-  await import('../../../packages/auth-ui/src/session');
+const {
+  saveSharedConnection,
+  clearSharedConnection,
+  loadSessionConnection,
+  getLiveConnection,
+  subscribeSharedConnection,
+} = await import('../../../packages/auth-ui/src/session');
 
 const CONFIG: S3Config = {
   endpoint: 'http://localhost:5311',
@@ -72,5 +107,27 @@ describe('shared connection storage', () => {
 
   it('reports no session when the tab has none', () => {
     expect(loadSessionConnection()).toBeNull();
+  });
+
+  it('stashes a session adopted from another tab, and rebroadcasts nothing', () => {
+    const seen: (S3Config | null)[] = [];
+    const unsubscribe = subscribeSharedConnection(
+      (cfg) => void seen.push(cfg),
+      () => null,
+    );
+    const channel = FakeChannel.current!;
+    channel.posted.length = 0; // the `request` fired on subscribe
+
+    channel.fromSibling({ type: 'connect', config: CONFIG });
+
+    expect(seen).toEqual([CONFIG]);
+    expect(loadSessionConnection()).toEqual(CONFIG);
+
+    channel.fromSibling({ type: 'disconnect' });
+
+    expect(seen).toEqual([CONFIG, null]);
+    expect(session.getItem('sparcd-connection-tab')).toBeNull();
+    expect(channel.posted).toEqual([]);
+    unsubscribe();
   });
 });
