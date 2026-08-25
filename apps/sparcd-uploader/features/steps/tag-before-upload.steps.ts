@@ -233,11 +233,12 @@ Then('each row carries the common name the tagger used', async ({ app }) => {
   expect(comments).toContain('[COMMONNAME:Ghost]');
 });
 
-Then('the upload metadata counts the images with a real animal on them', async ({ app }) => {
+Then('the upload metadata counts every identified image, empty frames included', async ({ app }) => {
   const meta = JSON.parse(app.s3.puts.find((p) => p.key.endsWith('UploadMeta.json'))!.body);
   expect(meta.imageCount).toBe(4);
-  // The coyote counts; the frame marked empty does not.
-  expect(meta.imagesWithSpecies).toBe(1);
+  // The coyote and the frame marked empty both count — camtrap's definition
+  // (Ghost is species-present), so this number agrees with a later tagger sync.
+  expect(meta.imagesWithSpecies).toBe(2);
 });
 
 Then('the untagged files have no observation row at all', async ({ app }) => {

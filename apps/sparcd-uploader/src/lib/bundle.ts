@@ -18,6 +18,7 @@ import {
   serializeUploadComplete,
   uploadStamp,
   buildObservationComments,
+  hasSpeciesPresent,
   parseTagMarkers,
   defaultObservationId,
   type UploadCompleteJson,
@@ -63,15 +64,11 @@ export type BundlePreview = {
 
 const enc = new TextEncoder();
 
-/** The tagger's non-animal label. Mirrored here rather than imported across
- *  apps; it is a value in the published data, so the two copies are pinned by
- *  the same fixtures. */
-const GHOST_SCIENTIFIC_NAME = 'Casper';
-
-/** Whether a file counts toward `imagesWithSpecies` — a real animal was
- *  identified, so an empty-frame mark alone doesn't. */
+/** Whether a file counts toward `imagesWithSpecies` — camtrap's definition
+ *  (any positive-count identification, Ghost included), so this number agrees
+ *  with what the tagger's sync delta would later compute. */
 const hasSpecies = (preTags: FlipObservation[] | undefined): boolean =>
-  !!preTags?.some((o) => o.scientificName !== GHOST_SCIENTIFIC_NAME);
+  hasSpeciesPresent(preTags ?? []);
 
 /**
  * The observation rows for one file, shared by both bundle builders so a

@@ -70,7 +70,7 @@ Feature: Identify species before the batch is uploaded
     When it is published
     Then observations.csv has one row per species applied, against the right image
     And each row carries the common name the tagger used
-    And the upload metadata counts the images with a real animal on them
+    And the upload metadata counts every identified image, empty frames included
 
   @unmapped
   Scenario: The hand-off is thrown away once its batch is published

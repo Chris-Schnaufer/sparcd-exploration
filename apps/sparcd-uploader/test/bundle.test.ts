@@ -362,7 +362,7 @@ describe('a batch tagged before upload publishes its species', () => {
     expect(rows[0].mediaId).toBe(b.items[0].key);
   });
 
-  it('counts images with a real animal in imagesWithSpecies — an empty frame is not one', async () => {
+  it('counts every identified image in imagesWithSpecies — Ghost included, per camtrap', async () => {
     const b = await build([
       { ...ready('a/IMG001.JPG'), preTags: [coyote] },
       { ...ready('b/IMG002.JPG'), preTags: [ghost] },
@@ -370,7 +370,7 @@ describe('a batch tagged before upload publishes its species', () => {
     ]);
     const meta = parseUploadMeta(b.uploadMetaJson);
     expect(meta.imageCount).toBe(3);
-    expect(meta.imagesWithSpecies).toBe(1);
+    expect(meta.imagesWithSpecies).toBe(2);
   });
 
   it('still marks an empty frame as tagged in observations.csv', async () => {
