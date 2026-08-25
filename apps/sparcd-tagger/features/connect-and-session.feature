@@ -101,4 +101,4 @@ Feature: Connect the tagger to a collection store and manage the session
     Given the tagger is connected
     When the theme control in the header is used
     Then the workspace switches between the light and dark presentation
-    And the choice is remembered for the rest of the browser session
+    And the choice is remembered on this machine, shared with the other SPARC'd tools

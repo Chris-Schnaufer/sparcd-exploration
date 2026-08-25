@@ -14,3 +14,5 @@ export {
   subscribeSharedConnection,
 } from './session';
 export type { PersistedConnection } from './session';
+export { loadSharedTheme, saveSharedTheme } from './theme';
+export type { Theme } from './theme';

@@ -351,13 +351,16 @@ Then('the workspace switches between the light and dark presentation', async ({ 
   await expect(page.locator('html')).toHaveClass(/dark/);
 });
 
-Then('the choice is remembered for the rest of the browser session', async ({ page }) => {
-  await page.reload();
-  await expect(page.locator('html')).toHaveClass(/dark/);
-  expect(await page.evaluate(() => sessionStorage.getItem('sparcd-tagger-session'))).toContain(
-    'dark',
-  );
-});
+Then(
+  "the choice is remembered on this machine, shared with the other SPARC'd tools",
+  async ({ page }) => {
+    await page.reload();
+    await expect(page.locator('html')).toHaveClass(/dark/);
+    // One key for every tool on this origin, so walking to another one from the
+    // brand switcher lands in the same appearance.
+    expect(await page.evaluate(() => localStorage.getItem('sparcd-theme'))).toBe('dark');
+  },
+);
 
 // --- helpers ----------------------------------------------------------------
 

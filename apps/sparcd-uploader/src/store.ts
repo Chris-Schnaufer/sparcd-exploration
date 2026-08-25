@@ -6,6 +6,9 @@ import {
   saveSharedConnection,
   clearSharedConnection,
   subscribeSharedConnection,
+  loadSharedTheme,
+  saveSharedTheme,
+  type Theme,
 } from '@sparcd/auth-ui';
 import type { ScannedFile } from './lib/scanFiles';
 import type { ProcessResponse } from './lib/processPool';
@@ -18,7 +21,7 @@ import type { ElevationUnit } from './lib/coords';
 export type { ElevationUnit };
 export type Section = 'new' | 'history' | 'settings';
 export type WizardStep = 'drop' | 'inspect' | 'assign' | 'upload';
-export type Theme = 'light' | 'dark';
+export type { Theme };
 export type ProcessState = 'queued' | 'processing' | 'ready' | 'error';
 
 /** A scanned file plus the results of P1 worker processing. */
@@ -112,6 +115,28 @@ function getFileIndex(files: FileEntry[]): Map<string, number> {
 // access key is non-secret, so it's safe to have persisted).
 const initialPersisted = loadPersistedConnection();
 
+const LEGACY_THEME_KEY = 'sparcd-uploader-session';
+
+/** The choice this tool persisted for itself before the shared home existed. */
+function legacyTheme(): Theme | null {
+  try {
+    const raw = sessionStorage.getItem(LEGACY_THEME_KEY);
+    if (!raw) return null;
+    const theme = (JSON.parse(raw) as { state?: { theme?: string } }).state?.theme;
+    return theme === 'light' || theme === 'dark' ? theme : null;
+  } catch {
+    return null;
+  }
+}
+
+function initialTheme(): Theme {
+  const shared = loadSharedTheme();
+  if (shared) return shared;
+  const legacy = legacyTheme();
+  if (legacy) saveSharedTheme(legacy);
+  return legacy ?? 'light';
+}
+
 export const useStore = create<UploaderState>()(
   // The secret key is NEVER persisted to disk — only the non-secret fields
   // (endpoint/access key/region/etc.) live in localStorage, purely to pre-fill
@@ -120,14 +145,15 @@ export const useStore = create<UploaderState>()(
   // session is already connected, in which case `subscribeSharedConnection`'s
   // live (never-persisted) cross-tab relay picks it up within a message
   // round-trip of mount. Zustand's own persist here covers only cheap UI
-  // prefs (theme, elevationUnit); the in-flight batch (files, handles,
+  // prefs (elevationUnit and the Assign strings below — the theme lives in the
+  // shared home every SPARC'd tool reads); the in-flight batch (files, handles,
   // validations) is excluded too.
   persist(
     (set) => ({
       s3Config: null,
       connectionId: 0,
       section: 'new',
-      theme: 'light',
+      theme: initialTheme(),
       elevationUnit: 'meters',
       step: 'drop',
       files: [],
@@ -179,7 +205,12 @@ export const useStore = create<UploaderState>()(
         }));
       },
       setSection: (section) => set({ section }),
-      toggleTheme: () => set((s) => ({ theme: s.theme === 'light' ? 'dark' : 'light' })),
+      toggleTheme: () =>
+        set((s) => {
+          const theme: Theme = s.theme === 'light' ? 'dark' : 'light';
+          saveSharedTheme(theme);
+          return { theme };
+        }),
       setElevationUnit: (elevationUnit) => set({ elevationUnit }),
       setStep: (step) => set({ step }),
       setScanning: (scanning) => set({ scanning }),
@@ -325,7 +356,6 @@ export const useStore = create<UploaderState>()(
       // different connection is harmless: Assign already clears/reselects
       // either one when it doesn't match the connected backend's data.
       partialize: (s) => ({
-        theme: s.theme,
         elevationUnit: s.elevationUnit,
         uploaderUser: s.uploaderUser,
         selectedLocationKey: s.selectedLocationKey,
