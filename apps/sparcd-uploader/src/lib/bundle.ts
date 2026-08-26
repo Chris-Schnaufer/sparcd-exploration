@@ -219,6 +219,7 @@ export async function buildBundle(input: BuildInput): Promise<BundlePreview> {
     mediaId: it.key,
     deploymentId: deployment.deploymentId,
     timestamp: it.captureTimestamp ?? '',
+    observationType: 'blank',
     scientificName: '',
     tags: '',
   }));
@@ -338,6 +339,7 @@ export async function buildBundleFromRecords(input: {
     mediaId: f.remoteKey,
     deploymentId: deployment.deploymentId,
     timestamp: f.captureTimestamp ?? '',
+    observationType: 'blank',
     scientificName: '',
     count: 0,
     tags: '',

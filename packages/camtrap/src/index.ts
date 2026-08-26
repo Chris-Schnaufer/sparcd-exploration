@@ -39,6 +39,7 @@ export type Observation = {
   mediaId: string;
   deploymentId: string;
   timestamp: string; // ISO; v016 observation timestamp column
+  observationType: 'animal' | 'blank'; // "blank" = no species identified yet
   scientificName: string;
   count?: number; // undefined → column written blank (no species identified)
   tags: string; // concatenated [PREFIX:value] markers
@@ -153,7 +154,7 @@ export function serializeObservations(observations: Observation[]): string {
         '', // 2  sequence_id
         o.mediaId, // 3  media_id (= full key)
         o.timestamp, // 4  timestamp
-        '', // 5  observation_type
+        o.observationType, // 5  observation_type
         'false', // 6  camera_setup
         '', // 7  taxon_id
         o.scientificName, // 8  scientific_name
@@ -427,15 +428,19 @@ export function parseMedia(csv: string): Media[] {
 
 /** Parse `observations.csv` into typed rows. `tags` is the raw col-19 comments. */
 export function parseObservations(csv: string): Observation[] {
-  return parseCsvRows(csv).map((r) => ({
-    observationId: r[OBS_COL.observationId] ?? '',
-    mediaId: r[OBS_COL.mediaId] ?? '',
-    deploymentId: r[OBS_COL.deploymentId] ?? '',
-    timestamp: r[OBS_COL.timestamp] ?? '',
-    scientificName: r[OBS_COL.scientificName] ?? '',
-    count: Number(r[OBS_COL.count] ?? '0'),
-    tags: r[OBS_COL.comments] ?? '',
-  }));
+  return parseCsvRows(csv).map((r) => {
+    const rawType = r[OBS_COL.observationType] ?? '';
+    return {
+      observationId: r[OBS_COL.observationId] ?? '',
+      mediaId: r[OBS_COL.mediaId] ?? '',
+      deploymentId: r[OBS_COL.deploymentId] ?? '',
+      timestamp: r[OBS_COL.timestamp] ?? '',
+      observationType: rawType === 'animal' ? 'animal' : 'blank',
+      scientificName: r[OBS_COL.scientificName] ?? '',
+      count: Number(r[OBS_COL.count] ?? '0'),
+      tags: r[OBS_COL.comments] ?? '',
+    };
+  });
 }
 
 // --- Tag marker grammar ----------------------------------------------------
@@ -533,6 +538,7 @@ function buildObservationRow(
   row[OBS_COL.deploymentId] = edit.deploymentId;
   row[OBS_COL.mediaId] = edit.mediaId;
   row[OBS_COL.timestamp] = edit.timestamp;
+  row[OBS_COL.observationType] = 'animal';
   row[OBS_COL.cameraSetup] = 'false';
   row[OBS_COL.scientificName] = o.scientificName;
   row[OBS_COL.count] = String(o.count);
