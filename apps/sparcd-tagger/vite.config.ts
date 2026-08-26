@@ -10,6 +10,7 @@ const pkg = (name: string, entry: string) =>
 export default defineConfig({
   // Served from a subpath on GitHub Pages: culverlab.github.io/sparcd-exploration/tagger/
   base: '/sparcd-exploration/tagger/',
+  server: { port: 5312 },
   plugins: [react()],
   resolve: {
     alias: {

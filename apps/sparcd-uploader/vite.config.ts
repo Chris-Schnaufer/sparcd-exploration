@@ -10,8 +10,8 @@ const pkg = (name: string, entry: string) =>
 
 export default defineConfig({
   // Served from a subpath on GitHub Pages: culverlab.github.io/sparcd-exploration/uploader/
-  // Vite dev still serves from '/', so this only affects the production build.
   base: '/sparcd-exploration/uploader/',
+  server: { port: 5311 },
   plugins: [react()],
   // The dep scanner doesn't follow Web Workers, so exifr and hash-wasm (only
   // imported by fileProcessor.worker.ts) were discovered on first use and made

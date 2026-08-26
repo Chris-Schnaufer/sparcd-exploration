@@ -2,6 +2,10 @@
 // BrandSwitcher's `siblingTools()` does it, so the hand-off works unchanged in
 // dev and on GitHub Pages. BASE_URL '/sparcd-exploration/uploader/' → family
 // root '/sparcd-exploration/'.
+//
+// In dev the tagger runs on a different port, so VITE_TAGGER_ORIGIN
+// (http://localhost:5312) is prepended. In production the variable is absent
+// and the root-relative path resolves correctly on the shared origin.
 
 const familyRoot = (): string => {
   const base = import.meta.env.BASE_URL || '/';
@@ -9,8 +13,10 @@ const familyRoot = (): string => {
 };
 
 /** Where the uploader sends the user to tag a handed-over batch. */
-export const taggerBatchUrl = (flipId: string): string =>
-  `${familyRoot()}tagger/?batch=${encodeURIComponent(flipId)}`;
+export const taggerBatchUrl = (flipId: string): string => {
+  const devOrigin = import.meta.env.VITE_TAGGER_ORIGIN ?? '';
+  return `${devOrigin}${familyRoot()}tagger/?batch=${encodeURIComponent(flipId)}`;
+};
 
 /** Where the tagger sends them back to, stamped into the record it reads. */
 export const uploaderReturnUrl = (flipId: string): string =>
