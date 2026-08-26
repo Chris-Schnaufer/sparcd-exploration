@@ -279,10 +279,10 @@ When('a batch is published', async ({ app }) => {
   await app.waitForRunPhase('done');
 });
 
-Then('an empty observations table is written alongside the media table', async ({ app }) => {
-  const observations = app.s3.puts.find((p) => p.key.endsWith('observations.csv'))!;
-  expect(observations).toBeTruthy();
-  expect(observations.body).toBe('');
+Then('a placeholder observations table is written alongside the media table', async ({ app }) => {
+  const obsRows = writtenCsvRows(app, 'observations.csv');
+  expect(obsRows).toHaveLength(4);
+  for (const row of obsRows) expect(row[5]).toBe('blank'); // observationType col
   expect(writtenCsvRows(app, 'media.csv')).toHaveLength(4);
 });
 
