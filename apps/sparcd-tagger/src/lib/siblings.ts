@@ -13,24 +13,19 @@ export const uploaderPath = (): string => `${familyRoot()}uploader/`;
  *
  * A hand-off record is read out of a database every page on this origin can
  * write, so its `returnUrl` is not trusted input — taken at face value it would
- * turn Done into an open redirect. Anything that is not the uploader is replaced
- * by the sibling URL derived from our own base path.
- *
- * In dev the uploader runs on a different port; VITE_UPLOADER_ORIGIN pins that
- * port so root-relative return URLs resolve to the correct dev server. In
- * production the variable is absent and `origin` (shared origin) is used.
+ * turn Done into an open redirect. Anything that is not this origin's uploader
+ * is replaced by the sibling URL derived from our own base path, which is where
+ * the user wanted to go anyway.
  */
 export function safeReturnUrl(returnUrl: string, origin: string): string {
-  const uploaderOrigin = import.meta.env.VITE_UPLOADER_ORIGIN ?? origin;
-  const path = uploaderPath();
-  const fallback = `${uploaderOrigin}${path}`;
+  const fallback = `${origin}${uploaderPath()}`;
   let url: URL;
   try {
-    url = new URL(returnUrl, uploaderOrigin);
+    url = new URL(returnUrl, origin);
   } catch {
     return fallback;
   }
-  if (url.origin !== uploaderOrigin) return fallback;
-  if (!url.pathname.startsWith(path)) return fallback;
+  if (url.origin !== origin) return fallback;
+  if (!url.pathname.startsWith(uploaderPath())) return fallback;
   return url.href;
 }

@@ -11,7 +11,13 @@ const pkg = (name: string, entry: string) =>
 export default defineConfig({
   // Served from a subpath on GitHub Pages: culverlab.github.io/sparcd-exploration/uploader/
   base: '/sparcd-exploration/uploader/',
-  server: { port: 5311 },
+  server: {
+    port: 5311,
+    // In dev the tagger runs as a separate Vite process on :5312. Proxying its
+    // path here keeps both apps on the same origin (:5311) so they can share
+    // the IndexedDB database that carries the flip hand-off record.
+    proxy: { '/sparcd-exploration/tagger': 'http://localhost:5312' },
+  },
   plugins: [react()],
   // The dep scanner doesn't follow Web Workers, so exifr and hash-wasm (only
   // imported by fileProcessor.worker.ts) were discovered on first use and made
