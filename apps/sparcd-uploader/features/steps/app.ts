@@ -142,11 +142,11 @@ export class App {
     await expect(this.connectForm()).toBeVisible();
     await this.fillConnection(fields);
     await this.page.getByRole('button', { name: 'Connect', exact: true }).click();
-    await expect(this.page.getByRole('button', { name: 'Disconnect' })).toBeVisible();
+    await expect(this.page.getByRole('button', { name: 'Logout' })).toBeVisible();
   }
 
   async disconnectFromHeader(): Promise<void> {
-    await this.page.getByRole('button', { name: 'Disconnect' }).click();
+    await this.page.getByRole('button', { name: 'Logout' }).click();
   }
 
   // --- navigation ----------------------------------------------------------
@@ -320,7 +320,7 @@ export class App {
     if (await this.connectForm().isVisible()) {
       await this.fillConnection();
       await this.page.getByRole('button', { name: 'Connect', exact: true }).click();
-      await expect(this.page.getByRole('button', { name: 'Disconnect' })).toBeVisible();
+      await expect(this.page.getByRole('button', { name: 'Logout' })).toBeVisible();
     }
   }
 
@@ -600,25 +600,6 @@ export class App {
     await this.continueToUpload();
   }
 
-  /**
-   * Start the run while at least one file is still being examined. As-built
-   * that is the only way the run's blob queue ever closes, so it is the only
-   * way a run reaches the publish phase — see features/CORRECTIONS.md.
-   *
-   * On a fast machine the slow file can finish before the wizard gets here; in
-   * that case re-scan the same folder and try again rather than start a run
-   * that could never publish.
-   */
-  async startRunWhileInspecting(): Promise<void> {
-    const note = this.page.getByText(/still being inspected/);
-    for (let attempt = 0; attempt < 3; attempt++) {
-      if (await note.isVisible().catch(() => false)) break;
-      await this.rescanFromUploadStep();
-    }
-    await expect(note).toBeVisible();
-    await this.startRun();
-  }
-
   // --- Assign --------------------------------------------------------------
 
   async waitForCollections(): Promise<void> {
@@ -695,6 +676,17 @@ export class App {
     timeout = 60_000,
   ): Promise<void> {
     await expect(this.runPhase()).toHaveText(phase, { timeout });
+    // A real (non-dry-run) run reaching 'done' pops a confirmation dialog
+    // whose backdrop covers the page — dismiss it so later steps can click
+    // through, same as a user would.
+    if (phase === 'done') {
+      const dialog = this.page.getByRole('dialog', { name: 'Upload complete' });
+      const ok = dialog.getByRole('button', { name: 'OK' });
+      if (await ok.isVisible().catch(() => false)) {
+        await ok.click();
+        await expect(dialog).toBeHidden();
+      }
+    }
   }
 
   /** The collection picker on the History screen (a plain <select>). */
@@ -709,6 +701,35 @@ export class App {
         (d) => d.className.includes('font-mono') && d.className.includes('text-[11.5px]'),
       );
       return el?.textContent ?? '';
+    });
+  }
+
+  /**
+   * Block the inspection result for `filename` from being dispatched until
+   * `releaseHeldInspect` is called. Set this before dropping the batch so the
+   * hook is in place before the worker finishes.
+   */
+  async holdInspect(filename: string): Promise<void> {
+    await this.page.evaluate((name) => {
+      const w = window as unknown as Record<string, unknown>;
+      w.__inspectHoldResolvers = [] as (() => void)[];
+      w.__holdInspectResult = (_id: string, fname: string): Promise<void> => {
+        if (fname !== name) return Promise.resolve();
+        return new Promise<void>((resolve) => {
+          (w.__inspectHoldResolvers as (() => void)[]).push(resolve);
+        });
+      };
+    }, filename);
+  }
+
+  /** Release all results held by `holdInspect` and clear the hook. */
+  async releaseHeldInspect(): Promise<void> {
+    await this.page.evaluate(() => {
+      const w = window as unknown as Record<string, unknown>;
+      w.__holdInspectResult = undefined;
+      const resolvers = (w.__inspectHoldResolvers as (() => void)[]) ?? [];
+      w.__inspectHoldResolvers = [];
+      for (const r of resolvers) r();
     });
   }
 }
