@@ -325,6 +325,7 @@ export const useStore = create<UploaderState>()(
       },
       setSection: (section) => set({ section }),
       beginActiveRun: () => {
+        const previousRun = get().activeRun;
         const generation = get().activeRunGeneration + 1;
         set({
           activeRun: null,
@@ -334,6 +335,7 @@ export const useStore = create<UploaderState>()(
           activeRunGeneration: generation,
           activeRunSource: 'upload',
         });
+        previousRun?.cancel();
         return generation;
       },
       setActiveRun: (run, generation, streamingRun) => {

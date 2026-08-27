@@ -121,6 +121,7 @@ export function Upload() {
   const attachedRef = useRef<Map<string, File> | null>(null);
   const running =
     snap?.phase === 'preparing' || snap?.phase === 'blobs' || snap?.phase === 'metadata';
+  const anyRunActive = activeRun !== null;
   // Dismisses the "upload complete" popup — reset whenever a new run (fresh
   // start or resume) begins, so a later run's completion pops it again.
   const [completeDismissed, setCompleteDismissed] = useState(false);
@@ -355,7 +356,7 @@ export function Upload() {
               <input
                 type="checkbox"
                 checked={effectiveDryRun}
-                disabled={running}
+                disabled={anyRunActive}
                 onChange={(e) => setDryRun(e.target.checked)}
                 className="accent-accent"
               />
@@ -434,6 +435,7 @@ export function Upload() {
                   min={4}
                   max={32}
                   value={concurrency}
+                  disabled={anyRunActive}
                   onChange={(e) => setConcurrency(Number(e.target.value))}
                   className="flex-1 accent-accent"
                 />
@@ -484,9 +486,9 @@ export function Upload() {
       <div className="flex flex-wrap items-center justify-between gap-4 border-t border-ruleSoft pt-5">
         <button
           onClick={() => setStep('assign')}
-          disabled={running}
+          disabled={anyRunActive}
           className={`border border-ink text-ink px-3.5 py-2.5 sm:py-1.5 min-h-[44px] sm:min-h-0 text-[14px] font-body hover:bg-paperHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 ${
-            running ? 'opacity-40 cursor-not-allowed' : ''
+            anyRunActive ? 'opacity-40 cursor-not-allowed' : ''
           }`}
         >
           Back
@@ -499,6 +501,13 @@ export function Upload() {
               className="border border-warn text-warn px-3.5 py-2.5 sm:py-1.5 min-h-[44px] sm:min-h-0 text-[14px] font-body hover:bg-paperHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
             >
               Cancel
+            </button>
+          ) : anyRunActive ? (
+            <button
+              disabled
+              className="bg-ink text-paper border border-ink px-3.5 py-2.5 sm:py-1.5 min-h-[44px] sm:min-h-0 text-[14px] font-body font-[600] opacity-40 cursor-not-allowed"
+            >
+              {effectiveDryRun ? 'Start dry run' : 'Start upload'}
             </button>
           ) : snap?.phase === 'done' && !snap.dryRun ? (
             <button
