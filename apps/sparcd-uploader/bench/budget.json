@@ -1,0 +1,16 @@
+{
+  "workload": {
+    "jpegCount": 360,
+    "jpegBytes": 262144,
+    "multipartFileCount": 2,
+    "multipartFileBytes": 12582912,
+    "totalFiles": 362,
+    "totalMediaBytes": 119537664
+  },
+  "backstopsMs": {
+    "preprocessMs": 10000,
+    "payloadMs": 20000,
+    "publishMs": 22000,
+    "endToEndMs": 90000
+  }
+}
