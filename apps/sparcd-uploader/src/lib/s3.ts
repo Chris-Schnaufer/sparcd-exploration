@@ -97,9 +97,12 @@ export async function discoverSettingsBucket(
   const buckets = (await client.listBuckets()).sort(
     (a, b) => settingsRank(a) - settingsRank(b) || a.localeCompare(b),
   );
-  // The two conventional names are almost always the answer, and probing them
-  // first turns a store-wide fan-out into one or two requests. Everything else
-  // is only worth asking once neither of them has the marker.
+  // An official deployment keeps its settings in `sparcd-settings-<uuid>` or
+  // the legacy `sparcd`, so asking those two first answers it in one request.
+  // A BYO-S3 store that keeps them anywhere else pays those two and then the
+  // ordered sweep, which still stops at the first hit rather than reading the
+  // whole store — measured on a 129-bucket store whose marker sits midway
+  // through the alphabet, 81 HEADs instead of 129.
   const conventional = buckets.filter((b) => settingsRank(b) < 2);
   const rest = buckets.filter((b) => settingsRank(b) === 2);
   const found =
