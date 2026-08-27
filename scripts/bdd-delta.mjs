@@ -89,12 +89,14 @@ const anyScenarioChange = added.length + modified.length + deleted.length > 0
 if (!anyScenarioChange && !sourceChanged) blocks.push('No BDD or app-source changes.')
 
 if (anyScenarioChange) {
-  for (const app of apps) {
-    const rows = [
-      ...added.filter((r) => r.app === app).map((r) => ({ ...r, mark: '➕' })),
-      ...modified.filter((r) => r.app === app).map((r) => ({ ...r, mark: '✏️' })),
-      ...deleted.filter((r) => r.app === app).map((r) => ({ ...r, mark: '➖' })),
-    ]
+  const rowsFor = (app) => [
+    ...added.filter((r) => r.app === app).map((r) => ({ ...r, mark: '➕' })),
+    ...modified.filter((r) => r.app === app).map((r) => ({ ...r, mark: '✏️' })),
+    ...deleted.filter((r) => r.app === app).map((r) => ({ ...r, mark: '➖' })),
+  ]
+  const changed = (app) => (rowsFor(app).length > 0 ? 0 : 1)
+  for (const app of apps.sort((a, b) => changed(a) - changed(b) || a.localeCompare(b))) {
+    const rows = rowsFor(app)
     if (rows.length === 0) {
       blocks.push(`**${app}** — no scenario changes`)
       continue
