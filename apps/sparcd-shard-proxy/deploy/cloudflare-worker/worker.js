@@ -92,8 +92,15 @@ async function hmac(key, data) {
 }
 
 async function sha256hex(data) {
-  return toHex(new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(data))));
+  const bytes = typeof data === 'string' ? encoder.encode(data) : data;
+  return toHex(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)));
 }
+
+// Header names and the fixed reasons below are HTTP tokens, so this never has
+// anything to do — it is here because the output is markup and the input came
+// off the wire.
+const escapeXml = (s) =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 // encodeURIComponent leaves !'()* alone; SigV4 wants them percent-encoded.
 const encodeRfc3986 = (s) =>
@@ -118,7 +125,15 @@ function parseAuthorization(header) {
 function canonicalQueryString(url) {
   return [...url.searchParams]
     .map(([key, value]) => [encodeRfc3986(key), encodeRfc3986(value)])
-    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    // Sort by encoded key, then by encoded value. The value tiebreak is not
+    // decorative: `?partNumber=2&partNumber=1` is a legitimate shape, and both
+    // the browser SDK (@smithy/signature-v4 sorts the serialized pairs) and
+    // aws4fetch sort values, so a verifier that stops at the key disagrees with
+    // every real client. Note that some upstreams — MinIO among them —
+    // canonicalize duplicate values in wire order instead, and will reject such
+    // a request no matter what fronts them.
+    .sort(([ka, va], [kb, vb]) =>
+      ka < kb ? -1 : ka > kb ? 1 : va < vb ? -1 : va > vb ? 1 : 0)
     .map(([key, value]) => `${key}=${value}`)
     .join('&');
 }
@@ -131,13 +146,31 @@ function canonicalQueryString(url) {
  * path and query the client sent, so verification has to happen before the
  * host rewrite and before the `x-id` strip.
  */
-async function verifyClientSignature(request, url, env) {
+async function verifyClientSignature(request, url, body, env) {
   const auth = parseAuthorization(request.headers.get('Authorization'));
   if (!auth) return 'missing or unparseable Authorization header';
 
   const [accessKeyId, date, region, service, terminator] = auth.credential;
   if (accessKeyId !== env.CLIENT_ACCESS_KEY_ID) return 'unknown access key';
   if (service !== 's3' || terminator !== 'aws4_request') return 'unexpected credential scope';
+
+  // A header the caller did not sign is a header an attacker can add to a
+  // captured request. This Worker forwards every `x-amz-*` upstream and signs
+  // it there, so an unsigned one would be laundered into an authentic-looking
+  // upstream request — `x-amz-acl: public-read` bolted onto someone else's
+  // PUT. S3 enforces the same rule for the same reason. `host` and
+  // `x-amz-date` are required because the whole scheme rests on them: the
+  // first binds the signature to this shard, the second to the time window.
+  const signed = new Set(auth.signedHeaders);
+  for (const required of ['host', 'x-amz-date', 'x-amz-content-sha256']) {
+    if (!signed.has(required)) return `${required} is not in SignedHeaders`;
+  }
+  for (const [name] of request.headers) {
+    if (DROP_FROM_CLIENT.has(name)) continue;
+    if (name.startsWith('x-amz-') && !signed.has(name)) {
+      return `unsigned x-amz header: ${name}`;
+    }
+  }
 
   // A signature with no expiry is a bearer token forever. The window bounds
   // how long a captured request stays replayable.
@@ -148,10 +181,27 @@ async function verifyClientSignature(request, url, env) {
   if (Math.abs(Date.now() - signedAt) > MAX_CLOCK_SKEW_MS) return 'x-amz-date outside the window';
   if (parts[1] + parts[2] + parts[3] !== date) return 'x-amz-date does not match the credential scope';
 
-  // The signature covers the *declared* payload hash, not the body, so there
-  // is nothing to read here — the body stays unbuffered until re-signing.
+  // The signature covers the *declared* payload hash, not the bytes. Checking
+  // the declaration against the body is what stops a captured PUT from being
+  // replayed inside the window with different contents.
   const payloadHash = request.headers.get('x-amz-content-sha256');
   if (!payloadHash) return 'missing x-amz-content-sha256';
+  if (payloadHash === 'UNSIGNED-PAYLOAD') {
+    // Accepted, because the uploader's blob path produces it: the browser AWS
+    // SDK hashes string and ArrayBuffer bodies but declares UNSIGNED-PAYLOAD
+    // for a Blob, and image uploads stream Blob slices so memory stays flat.
+    // The consequence is real and worth stating: for those requests the body
+    // is not bound to the signature, so a captured PUT can be replayed with
+    // different contents until x-amz-date ages out. The README says how to
+    // close it client-side.
+  } else if (!/^[0-9a-f]{64}$/.test(payloadHash)) {
+    // `STREAMING-AWS4-HMAC-SHA256-PAYLOAD` and friends carry their own chunk
+    // framing and per-chunk signatures. Verifying those means implementing
+    // the chunked protocol; rejecting is the honest answer.
+    return `unsupported x-amz-content-sha256: ${payloadHash}`;
+  } else if (await sha256hex(body ?? new ArrayBuffer(0)) !== payloadHash) {
+    return 'body does not match x-amz-content-sha256';
+  }
 
   // Cloudflare rewrites Host on the way out, but on the way in it still holds
   // the shard hostname the client signed. Read it from the URL, which is the
@@ -220,15 +270,26 @@ export default {
       });
     }
 
+    // Buffered before verification, because verification hashes it: the
+    // declared x-amz-content-sha256 is only worth anything if the bytes are
+    // checked against it. The same buffer then goes upstream, which is also
+    // what the Caddy recipe's `request_buffers` achieves — a length-less body
+    // never reaches the upstream as Transfer-Encoding: chunked, which RGW
+    // rejects. Camera-trap objects are a few MB, and a Worker's body limit
+    // (100 MB free, 500 MB paid) is the real ceiling either way.
+    const body = request.method === 'GET' || request.method === 'HEAD'
+      ? undefined
+      : await request.arrayBuffer();
+
     const inbound = new URL(request.url);
-    const rejection = await verifyClientSignature(request, inbound, env);
+    const rejection = await verifyClientSignature(request, inbound, body, env);
     if (rejection) {
       // S3-shaped so a browser S3 client surfaces it as an S3 error rather than
       // an opaque network failure. CORS headers included, or the browser shows
       // the caller nothing at all.
       return new Response(
         `<?xml version="1.0" encoding="UTF-8"?><Error><Code>SignatureDoesNotMatch</Code>` +
-          `<Message>${rejection}</Message></Error>`,
+          `<Message>${escapeXml(rejection)}</Message></Error>`,
         { status: 403, headers: { ...corsHeaders(origin), 'Content-Type': 'application/xml' } },
       );
     }
@@ -244,18 +305,6 @@ export default {
     // Strip it after verification and before re-signing, so neither signature
     // disagrees with the query it covers.
     url.searchParams.delete('x-id');
-
-    // The Caddy recipe uses `request_buffers` so a length-less body never
-    // reaches the upstream as Transfer-Encoding: chunked, which RGW rejects.
-    // Buffering here is the same fix, and it also lets aws4fetch sign the real
-    // payload hash. Camera-trap objects are a few MB; a Worker's body limit
-    // (100 MB free, 500 MB paid) is the real ceiling either way. Swap in
-    // `request.body` plus a fixed `x-amz-content-sha256: UNSIGNED-PAYLOAD`
-    // header if you need to stream something larger and your upstream accepts
-    // chunked requests.
-    const body = request.method === 'GET' || request.method === 'HEAD'
-      ? undefined
-      : await request.arrayBuffer();
 
     const aws = new AwsClient({
       accessKeyId: env.S3_ACCESS_KEY_ID,

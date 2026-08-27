@@ -40,7 +40,9 @@ What that buys and costs:
   its credentials.
 - **Replay inside the signature window is accepted.** The Worker requires
   `x-amz-date` within ±15 minutes and rejects anything older, which is the same
-  posture S3 itself takes; it does not track nonces.
+  posture S3 itself takes; it does not track nonces. Within that window a
+  captured request can be sent again. See below for what that does and does not
+  let an attacker change.
 - **Request bodies are capped**: 100 MB on the free plan, 500 MB on paid.
   Camera-trap JPEGs and short MP4s are well under that; a multi-GB object is
   not.
@@ -52,6 +54,49 @@ Everything else matches the Caddyfile: the Worker owns CORS, strips the
 upstream's per-bucket CORS headers, removes the SDK's `?x-id=` param, and
 buffers request bodies so a length-less body never reaches the upstream as
 `Transfer-Encoding: chunked`.
+
+## What a replayed request can change
+
+Inside the 15-minute window, a captured request can be sent again. What an
+attacker can *alter* while reusing the signature depends on how the client
+declared its payload:
+
+- **Nothing in the headers.** Every `x-amz-*` header must appear in the
+  caller's `SignedHeaders` or the Worker rejects the request naming the
+  offender. Adding `x-amz-acl: public-read` to someone else's captured PUT does
+  not work, and neither does adding anything else — the Worker signs what it
+  forwards, so an unsigned header would be laundered into an authentic upstream
+  request.
+- **Nothing in the body, when the client declared a real hash.** The Worker
+  hashes the bytes it received and rejects a mismatch, so the signature is
+  bound to the content.
+- **The body, when the client declared `UNSIGNED-PAYLOAD`.** There is nothing
+  to check the bytes against. This is a real gap and it is open by default,
+  because the uploader uses it.
+
+### Why `UNSIGNED-PAYLOAD` is accepted
+
+The browser AWS SDK picks the mode from the body type
+(`@smithy/signature-v4`'s `getPayloadHash`): a string or `ArrayBuffer` body is
+hashed, anything else — `Blob`, `ReadableStream` — is declared
+`UNSIGNED-PAYLOAD`. In this repo that splits cleanly:
+
+| what | body type | declared |
+|---|---|---|
+| Camtrap CSVs, `UploadMeta.json` (`writeImmutable`, `replaceIfUnchanged`) | `Uint8Array` / `string` | real SHA-256 |
+| images and video (`writeImmutableStream`, and its `Blob.slice` parts) | `Blob` | `UNSIGNED-PAYLOAD` |
+
+Rejecting `UNSIGNED-PAYLOAD` would reject every image upload, which is the
+entire workload. To close the gap instead, hand the SDK bytes rather than a
+`Blob` — `await blob.arrayBuffer()` before the `PutObject` — and the SDK hashes
+it, the Worker checks it, and the body is bound. The cost is the whole object
+in memory per in-flight lane, which is exactly what the streaming path exists to
+avoid; on a phone uploading a folder of images that is not a free trade. Weigh
+it against your actual threat model: an attacker needs a captured signed request
+and a 15-minute window to spend it in.
+
+`STREAMING-AWS4-HMAC-SHA256-PAYLOAD` is rejected outright — verifying it means
+implementing AWS's chunk framing, and nothing here emits it.
 
 ## Setup
 
