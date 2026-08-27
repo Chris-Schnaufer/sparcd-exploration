@@ -115,6 +115,17 @@ export class App {
     await expect(this.page.locator('#root')).toBeAttached();
   }
 
+  /**
+   * Stand in for closing the last tab and opening a fresh one. The session is
+   * held in sessionStorage, which is per-tab, so emptying it and reloading is
+   * exactly what a new tab sees: localStorage survives to pre-fill the form,
+   * and with no other tab open there is nothing to relay the secret.
+   */
+  async reopenInNewTab(): Promise<void> {
+    await this.page.evaluate(() => sessionStorage.clear());
+    await this.reopen();
+  }
+
   async openSecondTab(): Promise<Page> {
     const page = await this.page.context().newPage();
     await this.s3.install(page, S3_ORIGIN);
@@ -661,7 +672,7 @@ export class App {
   // --- Upload --------------------------------------------------------------
 
   dryRunCheckbox(): Locator {
-    return this.page.getByLabel('Dry run — log every PUT, write nothing');
+    return this.page.getByLabel('Test the upload, nothing is written');
   }
 
   async startRun(): Promise<void> {

@@ -3,9 +3,13 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import type { S3Config } from '@sparcd/types';
 import {
   loadPersistedConnection,
+  loadSessionConnection,
   saveSharedConnection,
   clearSharedConnection,
   subscribeSharedConnection,
+  loadSharedTheme,
+  saveSharedTheme,
+  type Theme,
 } from '@sparcd/auth-ui';
 import type { ScannedFile } from './lib/scanFiles';
 import type { ProcessResponse } from './lib/processPool';
@@ -18,7 +22,7 @@ import type { ElevationUnit } from './lib/coords';
 export type { ElevationUnit };
 export type Section = 'new' | 'history' | 'settings';
 export type WizardStep = 'drop' | 'inspect' | 'assign' | 'upload';
-export type Theme = 'light' | 'dark';
+export type { Theme };
 export type ProcessState = 'queued' | 'processing' | 'ready' | 'error';
 
 /** A scanned file plus the results of P1 worker processing. */
@@ -57,7 +61,7 @@ type UploaderState = {
   selectedBucket: string | null; // selected collection key `${bucket}::${uuid}` (Assign)
   uploadDescription: string; // free-text description for UploadMeta
   uploadTimeZone: string; // IANA zone EXIF naive times are interpreted in; default = browser zone
-  dryRun: boolean; // on by default; logs PUTs and writes nothing
+  dryRun: boolean; // off by default; when on, logs PUTs and writes nothing
   uploadConcurrency: number; // parallel blob lanes, 4–16
 
   connect: (config: S3Config, remember: boolean) => void;
@@ -112,22 +116,51 @@ function getFileIndex(files: FileEntry[]): Map<string, number> {
 // access key is non-secret, so it's safe to have persisted).
 const initialPersisted = loadPersistedConnection();
 
+// This tab's own session, if it has one — same tab, so a BrandSwitcher hop to
+// another SPARC'd tool or a reload lands straight back in the app. Nothing is
+// cached yet at module init, so unlike the cross-tab handler below this needs
+// no cache clear and no connectionId bump.
+const initialSession = loadSessionConnection();
+
+const LEGACY_THEME_KEY = 'sparcd-uploader-session';
+
+/** The choice this tool persisted for itself before the shared home existed. */
+function legacyTheme(): Theme | null {
+  try {
+    const raw = sessionStorage.getItem(LEGACY_THEME_KEY);
+    if (!raw) return null;
+    const theme = (JSON.parse(raw) as { state?: { theme?: string } }).state?.theme;
+    return theme === 'light' || theme === 'dark' ? theme : null;
+  } catch {
+    return null;
+  }
+}
+
+function initialTheme(): Theme {
+  const shared = loadSharedTheme();
+  if (shared) return shared;
+  const legacy = legacyTheme();
+  if (legacy) saveSharedTheme(legacy);
+  return legacy ?? 'light';
+}
+
 export const useStore = create<UploaderState>()(
-  // The secret key is NEVER persisted to disk — only the non-secret fields
-  // (endpoint/access key/region/etc.) live in localStorage, purely to pre-fill
-  // the Connect form on reload. s3Config itself always starts null here; the
-  // user re-enters the secret every time, UNLESS another tab in this browser
-  // session is already connected, in which case `subscribeSharedConnection`'s
-  // live (never-persisted) cross-tab relay picks it up within a message
-  // round-trip of mount. Zustand's own persist here covers only cheap UI
-  // prefs (theme, elevationUnit); the in-flight batch (files, handles,
-  // validations) is excluded too.
+  // The secret key never reaches localStorage — only the non-secret fields
+  // (endpoint/access key/region/etc.) live there, to pre-fill the Connect form
+  // on a machine with no session running. s3Config starts from this tab's own
+  // sessionStorage session, so switching tools or reloading keeps the user in;
+  // failing that, a sibling tab's live relay (`subscribeSharedConnection`)
+  // supplies one within a message round-trip of mount, and otherwise the user
+  // enters the secret. Zustand's own persist here covers only cheap UI prefs
+  // (elevationUnit and the Assign strings below — the theme lives in the
+  // shared home every SPARC'd tool reads); the in-flight batch (files,
+  // handles, validations) is excluded too.
   persist(
     (set) => ({
-      s3Config: null,
+      s3Config: initialSession,
       connectionId: 0,
       section: 'new',
-      theme: 'light',
+      theme: initialTheme(),
       elevationUnit: 'meters',
       step: 'drop',
       files: [],
@@ -145,7 +178,7 @@ export const useStore = create<UploaderState>()(
       selectedBucket: null,
       uploadDescription: '',
       uploadTimeZone: localTimeZone(),
-      dryRun: true,
+      dryRun: false,
       uploadConcurrency: 8,
 
       connect: (config, remember) => {
@@ -179,7 +212,12 @@ export const useStore = create<UploaderState>()(
         }));
       },
       setSection: (section) => set({ section }),
-      toggleTheme: () => set((s) => ({ theme: s.theme === 'light' ? 'dark' : 'light' })),
+      toggleTheme: () =>
+        set((s) => {
+          const theme: Theme = s.theme === 'light' ? 'dark' : 'light';
+          saveSharedTheme(theme);
+          return { theme };
+        }),
       setElevationUnit: (elevationUnit) => set({ elevationUnit }),
       setStep: (step) => set({ step }),
       setScanning: (scanning) => set({ scanning }),
@@ -325,7 +363,6 @@ export const useStore = create<UploaderState>()(
       // different connection is harmless: Assign already clears/reselects
       // either one when it doesn't match the connected backend's data.
       partialize: (s) => ({
-        theme: s.theme,
         elevationUnit: s.elevationUnit,
         uploaderUser: s.uploaderUser,
         selectedLocationKey: s.selectedLocationKey,
