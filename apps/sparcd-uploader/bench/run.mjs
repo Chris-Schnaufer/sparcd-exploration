@@ -1,6 +1,7 @@
 import { CreateBucketCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { appendFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { spawn, spawnSync } from 'node:child_process';
+import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -20,14 +21,18 @@ function run(command, args, options = {}) {
   if (result.status !== 0) throw new Error(`${command} ${args.join(' ')} exited ${result.status}`);
 }
 
+// Plain node:http, not fetch: while the container boots, Docker's userland
+// proxy accepts connections on the mapped port and immediately closes them,
+// which undici's fetch mishandles (retry loop locally, silent exit 13 on
+// GitHub runners). node:http surfaces it as a plain ECONNRESET we can retry.
 async function waitFor(url, label) {
   const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
-    try {
-      const response = await fetch(url);
-      await response.arrayBuffer();
-      if (response.ok) return;
-    } catch {}
+    const status = await new Promise((resolve) => {
+      const req = http.get(url, (res) => { res.resume(); resolve(res.statusCode); });
+      req.on('error', () => resolve(0));
+    });
+    if (status === 200) return;
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   throw new Error(`${label} did not become ready`);
