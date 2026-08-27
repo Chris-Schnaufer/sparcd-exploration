@@ -1,10 +1,20 @@
 import type { Page } from '@playwright/test';
 import { Given, When, Then, expect } from './fixtures';
-import { ACCESS_KEY, SECRET_KEY, S3_ORIGIN } from './app';
-import { standardBatch } from './batches';
+import { ACCESS_KEY, SECRET_KEY, S3_ORIGIN, type App } from './app';
+import { publishableBatch, standardBatch } from './batches';
 import { BUCKET_B, COLLECTION_A_NAME, COLLECTION_B_NAME, UUID_B } from './fixtures-data';
 
 const AWS_ENDPOINT = 'https://s3.us-west-2.amazonaws.com';
+const METADATA_NAMES = ['deployments.csv', 'media.csv', 'observations.csv', 'UploadMeta.json', 'UploadComplete.json'];
+
+function holdFirstMediaPut(app: App): void {
+  let held = false;
+  app.s3.holdPut = (_bucket, key) => {
+    if (held || METADATA_NAMES.some((name) => key.endsWith(name))) return false;
+    held = true;
+    return true;
+  };
+}
 
 Given('the uploader is open in a browser', async ({ app }) => {
   await app.open();
@@ -123,9 +133,49 @@ Given('two tabs are connected to the same storage endpoint', async ({ app }) => 
   await expect((app.notes.secondTab as Page).getByRole('button', { name: 'Logout' })).toBeVisible();
 });
 
+Given('two tabs are connected and one has a live upload', async ({ app }) => {
+  await app.connect();
+  app.notes.secondTab = await app.openSecondTab();
+  await expect((app.notes.secondTab as Page).getByRole('button', { name: 'Logout' })).toBeVisible();
+  await app.dropFolder(publishableBatch());
+  await app.walkToUploadStep({ uploader: 'Ada Lovelace', description: 'Cross-tab logout' });
+  holdFirstMediaPut(app);
+  await app.dryRunCheckbox().uncheck();
+  await app.startRun();
+  await expect.poll(() => app.s3.puts.length, { timeout: 30_000 }).toBeGreaterThan(0);
+});
+
+Given('the connected uploader has a live upload', async ({ app }) => {
+  await app.connect();
+  await app.dropFolder(publishableBatch());
+  await app.walkToUploadStep({ uploader: 'Ada Lovelace', description: 'Connection replacement' });
+  holdFirstMediaPut(app);
+  await app.dryRunCheckbox().uncheck();
+  await app.startRun();
+  await expect.poll(() => app.s3.puts.length, { timeout: 30_000 }).toBeGreaterThan(0);
+});
+
 When('one of them disconnects', async ({ app }) => {
   const tab = app.notes.secondTab as Page;
   await tab.getByRole('button', { name: 'Logout' }).click();
+});
+
+When('another tab replaces the shared connection', async ({ app }) => {
+  await app.page.evaluate(() => {
+    const channel = new BroadcastChannel('sparcd-connection-live');
+    channel.postMessage({
+      type: 'connect',
+      config: {
+        endpoint: 'https://replacement.example',
+        region: 'us-west-2',
+        accessKey: 'AKIAREPLACEMENT',
+        secretKey: 'replacement-secret',
+        forcePathStyle: false,
+        secure: true,
+      },
+    });
+    channel.close();
+  });
 });
 
 Then('the other returns to the connection screen', async ({ app }) => {
@@ -137,6 +187,17 @@ Then('its in-progress batch, chosen collection and chosen deployment are cleared
   await app.page.getByRole('button', { name: 'Connect', exact: true }).click();
   await app.expectStep('Files');
   await expect(app.page.getByText('Drop a folder of media')).toBeVisible();
+});
+
+Then('the live upload stops without publishing metadata', async ({ app }) => {
+  app.s3.releaseHeldPuts();
+  await app.page.waitForTimeout(500);
+  expect(app.s3.puts.some((put) => METADATA_NAMES.some((name) => put.key.endsWith(name)))).toBe(false);
+  expect(await app.readBatchRecords()).toHaveLength(1);
+});
+
+Then('the replacement connection is adopted', async ({ app }) => {
+  await expect(app.page.locator('header')).toContainText('replacement.example');
 });
 
 Then('the header shows the endpoint host and a masked form of the access key', async ({ app }) => {

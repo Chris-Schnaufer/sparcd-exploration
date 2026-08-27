@@ -7,6 +7,7 @@ import { NewUpload } from './sections/NewUpload';
 import { History } from './sections/History';
 import { Settings } from './sections/Settings';
 import { uploadStateOf } from './lib/uploadState';
+import { cancelProcessing } from './lib/processing';
 
 // Dev-only, non-secret prefill (endpoint only). Secrets are never prefilled.
 const devEndpoint = import.meta.env.VITE_SPARCD_S3_ENDPOINT as string | undefined;
@@ -19,6 +20,7 @@ const connectPrefill = { ...persistedConnection, ...(devEndpoint ? { endpoint: d
 
 export function App() {
   const s3Config = useStore((s) => s.s3Config);
+  const connectionId = useStore((s) => s.connectionId);
   const section = useStore((s) => s.section);
   const connect = useStore((s) => s.connect);
   const theme = useStore((s) => s.theme);
@@ -27,6 +29,10 @@ export function App() {
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
   }, [theme]);
+
+  useEffect(() => {
+    cancelProcessing();
+  }, [connectionId]);
 
   // Warn on tab close/reload while any real run (fresh or resume) is in flight.
   // Lives here rather than in the section components so it covers History resume
