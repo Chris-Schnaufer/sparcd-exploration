@@ -550,7 +550,10 @@ export const useStore = create<UploaderState>()(
 // Also answers a sibling tab's own request with our current s3Config, if any.
 subscribeSharedConnection((cfg) => {
   clearClientCache();
-  if (!cfg) invalidateFileIndex();
+  if (!cfg) {
+    invalidateFileIndex();
+    useStore.getState().activeRun?.cancel();
+  }
   useStore.setState((s) => ({
     s3Config: cfg,
     connectionId: s.connectionId + 1,
@@ -567,6 +570,10 @@ subscribeSharedConnection((cfg) => {
           selectedLocationKey: null,
           selectedBucket: null,
           uploaderUser: '',
+          activeRun: null,
+          activeSnap: null,
+          activeRunSource: null,
+          historyResumePreparation: null,
         }),
   }));
 }, () => useStore.getState().s3Config);
