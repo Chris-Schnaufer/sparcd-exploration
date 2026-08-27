@@ -72,6 +72,21 @@ packaged unit reads no environment file of its own.
 - **The certificate volume.** `server rebuild` wipes the root disk and
   preserves attached volumes, so mounting one at `/var/lib/caddy` means
   certificates are issued once and reused forever.
+
+  On a rebuild it is already labelled `caddydata` and nothing is formatted. On
+  a first boot the script scans `/dev/vdb` and `/dev/sdb`, and formats only if
+  **exactly one** of them carries no filesystem signature at all — zero or
+  several and the boot fails with the reason. Guessing here destroys somebody's
+  data. If you know the volume, name it exactly and skip the scan by exporting
+  `CERT_DEV` before that step:
+
+  ```
+  CERT_DEV=/dev/disk/by-id/virtio-$(echo $VOLUME_ID | cut -c1-20)
+  ```
+
+  OpenStack exposes attached volumes under `/dev/disk/by-id/virtio-<first 20
+  characters of the volume UUID>`, which survives a device-name reshuffle where
+  `/dev/vdb` does not.
 - **BBR** (`net.ipv4.tcp_congestion_control=bbr` plus `net.core.default_qdisc=fq`).
   On a long lossy path, cubic collapses per-connection throughput on loss that
   is not congestion. BBR does not.
