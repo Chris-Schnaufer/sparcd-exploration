@@ -28,6 +28,12 @@ authenticate once and move between them; the explorer has its own sign-in.
   other readers already consume.
 - **`apps/sparcd-home`** — the shared landing page and app switcher served at
   the deploy root.
+- **`apps/sparcd-shard-proxy`** — a reverse proxy that presents one S3
+  endpoint as several origins, so a browser can upload over several
+  connections instead of the single one it coalesces onto per origin. It also
+  supplies the CORS that Ceph RGW has no service-level answer for. A Caddyfile,
+  a compose file, and a smoke test; recipes for a VM and for a Cloudflare
+  Worker.
 
 Each app's `README.md` (and `plan.md` where present) carries its full
 design and phase breakdown.
@@ -60,6 +66,7 @@ apps/
   sparcd-explorer/   # marimo notebooks for data exploration (Python, uv)
   sparcd-uploader/   # batch prep + upload, BYO-S3 (TS, Vite)
   sparcd-tagger/     # tagging interface, BYO-S3 (TS, Vite)
+  sparcd-shard-proxy/# multi-origin S3 proxy + CORS (Caddy, compose, smoke test)
 packages/
   auth-ui/           # shared connection gate + saved-login session
   camtrap/           # Camtrap-DP data contract (readers, merge, time-shift)
