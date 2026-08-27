@@ -38,7 +38,15 @@ jobs:
             echo 'BDD_DELTA_EOF'
           } >> "$GITHUB_OUTPUT"
 
+      - name: Job summary
+        run: echo "$REPORT" >> "$GITHUB_STEP_SUMMARY"
+        env:
+          REPORT: ${{ steps.report.outputs.body }}
+
+      # Fork PRs get a read-only token, so the comment upsert would 403;
+      # for those the job summary above is the report.
       - name: Post sticky comment
+        if: github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/github-script@v7
         with:
           script: |
