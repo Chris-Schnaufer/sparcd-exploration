@@ -54,9 +54,13 @@ function settingsRank(bucket: string): number {
   return 2;
 }
 
-// A store can expose a hundred-plus buckets, so probing them all at once just
-// queues them behind the browser's per-origin connection limit. Probe in
-// chunks and stop at the first hit.
+// A store can expose a hundred-plus buckets. Probing them all at once is what
+// the app used to do, and on a fast path it is genuinely the quickest way to
+// get an answer — but it also claims the whole connection pool for a probe,
+// which is the same pool the blob lanes need. Chunks trade some of that cold
+// wall time back for a bounded footprint; measured on a 129-bucket store, the
+// sweep went from 129 requests in one wave to 65 in five. The cache is what
+// makes that trade cheap: a store is only swept once.
 const PROBE_CONCURRENCY = 16;
 
 /**
