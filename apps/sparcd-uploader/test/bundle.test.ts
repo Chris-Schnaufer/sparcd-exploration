@@ -19,7 +19,6 @@ import {
   OBS_COLUMN_COUNT,
   MEDIA_COL,
 } from '@sparcd/camtrap';
-import { fixture } from '../../../packages/camtrap/test/fixtures';
 import {
   buildBundle,
   resolveBatchNaming,
