@@ -22,6 +22,11 @@ services:
     environment:
       MINIO_ROOT_USER: smokekey
       MINIO_ROOT_PASSWORD: smokesecret
+    # Published so the Cloudflare Worker recipe can point `wrangler dev` at a
+    # real upstream without cloud resources. Caddy reaches MinIO over the
+    # compose network and does not need this.
+    ports:
+      - "9000:9000"
 
   minio-init:
     image: minio/mc:latest

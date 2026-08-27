@@ -30,6 +30,12 @@ custom_domain = true
 pattern = "shard4.example.org"
 custom_domain = true
 
-# S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY are secrets, not vars:
-#   npx wrangler secret put S3_ACCESS_KEY_ID
+# Four secrets, not vars. Two pairs, and the Worker will not start serving
+# usefully without all four — see the README:
+#
+#   npx wrangler secret put S3_ACCESS_KEY_ID       # reaches the upstream
 #   npx wrangler secret put S3_SECRET_ACCESS_KEY
+#   npx wrangler secret put CLIENT_ACCESS_KEY_ID   # what browsers sign with
+#   npx wrangler secret put CLIENT_SECRET_ACCESS_KEY
+#
+# For `wrangler dev`, put the same four in an untracked `.dev.vars`.

@@ -11,22 +11,41 @@ subrequest.** Cloudflare rewrites it to the upstream's hostname. SigV4 signs
 Host, so the browser's signature is invalid by the time the request lands —
 signature passthrough is not available here, at any amount of cleverness.
 
-So this Worker **re-signs**. It holds bucket-scoped S3 credentials as Worker
-secrets, drops the browser's `Authorization`, and signs the request itself.
-That means:
+So this Worker **verifies, then re-signs**, and it holds two credential pairs
+to do it:
 
-- **Credentials move server-side.** The Worker can act on the bucket by
-  itself, which the Caddy recipe's proxy cannot. Scope the key tightly — one
-  bucket, the operations you actually need.
-- **The browser never holds an S3 secret.** For a public-facing tool that is
-  usually the better posture, not the worse one. It also becomes the place to
-  put your own authorization, since the Worker now decides who gets to use the
-  credential.
+| | held by | signs / verifies |
+|---|---|---|
+| `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | the Worker only | the upstream request |
+| `CLIENT_ACCESS_KEY_ID` / `CLIENT_SECRET_ACCESS_KEY` | the Worker and its browser clients | the inbound request |
+
+Every request must arrive carrying a valid SigV4 signature over the client
+pair. The Worker recomputes that signature and rejects a mismatch with 403
+before the upstream credential is touched. **CORS does not substitute for
+this**: it restrains browsers and nothing else, so a Worker that re-signs
+whatever arrives is an open proxy for its own S3 credential, reachable by
+`curl` from anywhere.
+
+What that buys and costs:
+
+- **The real S3 credential never leaves the Worker.** Browsers hold only the
+  proxy-issued pair, which is scoped to this proxy and which you can rotate on
+  its own — a leaked client pair is a `wrangler secret put` away from dead,
+  with no involvement from whoever issued the underlying S3 key.
+- **The Worker can act on the bucket by itself**, which the Caddy recipe's
+  proxy cannot. Scope the upstream key tightly: one bucket, the operations you
+  actually need.
+- **Clients are unchanged.** A browser S3 client signs exactly as it does
+  today, with the shard hostname as its endpoint and the proxy-issued pair as
+  its credentials.
+- **Replay inside the signature window is accepted.** The Worker requires
+  `x-amz-date` within ±15 minutes and rejects anything older, which is the same
+  posture S3 itself takes; it does not track nonces.
 - **Request bodies are capped**: 100 MB on the free plan, 500 MB on paid.
   Camera-trap JPEGs and short MP4s are well under that; a multi-GB object is
   not.
-- **The passthrough option is the VM.** If you need the proxy to be
-  credential-free, use [Docker + Caddy](../../README.md#docker--caddy) or the
+- **The passthrough option is the VM.** If you need a proxy that holds no
+  credential at all, use [Docker + Caddy](../../README.md#docker--caddy) or the
   [Jetstream2 image](../jetstream2/).
 
 Everything else matches the Caddyfile: the Worker owns CORS, strips the
@@ -36,18 +55,46 @@ buffers request bodies so a length-less body never reaches the upstream as
 
 ## Setup
 
-```sh
-npm install
+1. **Install and configure.**
 
-# UPSTREAM, S3_REGION, and the shard hostnames live in wrangler.toml.
-$EDITOR wrangler.toml
+   ```sh
+   npm install
+   $EDITOR wrangler.toml    # UPSTREAM, S3_REGION, the shard hostnames
+   ```
 
-npx wrangler secret put S3_ACCESS_KEY_ID
-npx wrangler secret put S3_SECRET_ACCESS_KEY
+2. **Set the upstream credential.** Scope it to the bucket you are fronting.
 
-npx wrangler deploy --dry-run   # bundles and type-checks without publishing
-npx wrangler deploy
-```
+   ```sh
+   npx wrangler secret put S3_ACCESS_KEY_ID
+   npx wrangler secret put S3_SECRET_ACCESS_KEY
+   ```
+
+3. **Mint and set the client-facing credential.** This pair is yours to invent
+   — it is never sent anywhere but this Worker, so any random access-key-shaped
+   string and any high-entropy secret will do:
+
+   ```sh
+   openssl rand -hex 10 | tr 'a-f' 'A-F'   # access key id
+   openssl rand -base64 32                 # secret access key
+
+   npx wrangler secret put CLIENT_ACCESS_KEY_ID
+   npx wrangler secret put CLIENT_SECRET_ACCESS_KEY
+   ```
+
+   **The deployment is not complete until this step is done.** The Worker
+   rejects every request while these are unset, which is the intended failure
+   direction, but a Worker that verifies against a guessable pair is no better
+   than one that does not verify at all.
+
+4. **Deploy.**
+
+   ```sh
+   npx wrangler deploy --dry-run   # bundles and type-checks without publishing
+   npx wrangler deploy
+   ```
+
+5. **Hand the client pair to the uploader**, together with the shard hostnames
+   as its endpoints. Nothing else about the client changes.
 
 Each `[[routes]]` entry with `custom_domain = true` gets its own DNS record in
 a zone on your Cloudflare account. Four entries, four origins, four browser
@@ -60,14 +107,49 @@ installed.
 
 ## Verify it
 
-The repo's smoke test works unchanged against Worker origins, minus the signed
-checks — the Worker re-signs, so the browser's credentials are irrelevant and
-signing from the test proves nothing about the upstream:
+Run the repo's smoke test **with the client-facing credentials** — that is what
+a browser will present, and an unsigned run cannot tell a working Worker from a
+broken one:
 
 ```sh
-node ../../smoke.mjs --origins https://shard1.example.org,https://shard2.example.org
+S3_ACCESS_KEY_ID=$CLIENT_ACCESS_KEY_ID \
+S3_SECRET_ACCESS_KEY=$CLIENT_SECRET_ACCESS_KEY \
+  node ../../smoke.mjs --origins https://shard1.example.org,https://shard2.example.org
 ```
 
-Unsigned, each origin should still answer with S3 XML (an `AccessDenied` or a
-bucket listing, depending on how you scoped the key) rather than a
-connection-level failure or a 501.
+Every origin should answer the signed checks with 2xx. A `SignatureDoesNotMatch`
+means verification is rejecting your pair; the smoke test fails on it rather
+than accepting it as "S3 answered".
+
+### Against the local stack
+
+`../../compose.dev.yaml` publishes MinIO on `localhost:9000` so the Worker can
+be exercised end to end with no cloud resources:
+
+```sh
+docker compose -f ../../compose.dev.yaml up -d --wait
+
+cat > .dev.vars <<'EOF'
+UPSTREAM=http://localhost:9000
+S3_ACCESS_KEY_ID=smokekey
+S3_SECRET_ACCESS_KEY=smokesecret
+CLIENT_ACCESS_KEY_ID=CLIENTKEY
+CLIENT_SECRET_ACCESS_KEY=clientsecret
+EOF
+
+npx wrangler dev --local --port 8787
+
+# in another shell
+S3_ACCESS_KEY_ID=CLIENTKEY S3_SECRET_ACCESS_KEY=clientsecret \
+  node ../../smoke.mjs --base http://localhost --ports 8787 --bucket smoke-test \
+    --sign-host shard1.example.org
+```
+
+`wrangler dev` presents the request as having arrived at the first hostname in
+`[[routes]]`, not at `localhost:8787`, and the Worker verifies against the
+hostname the client signed. `--sign-host` matches the two up. In a real
+deployment the two are the same name and the flag is unnecessary.
+
+`.dev.vars` is untracked. Re-run with a wrong `S3_SECRET_ACCESS_KEY` on the
+smoke side and every signed check comes back 403 `SignatureDoesNotMatch` — that
+is the verification path doing its job.

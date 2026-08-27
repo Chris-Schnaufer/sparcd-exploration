@@ -23,6 +23,7 @@ __marimo__/
 apps/sparcd-shard-proxy/deploy/cloudflare-worker/package-lock.json
 
 # Secrets
+.dev.vars
 .env
 .env.local
 .env.*.local
