@@ -48,36 +48,65 @@ export function getClient(cfg: S3Config): SafeS3Client {
   return client;
 }
 
-/**
- * Discover buckets that contain `Settings/locations.json`. Name preferences
- * keep official SPARC'd buckets first, but any readable bucket with the marker
- * works for BYO-S3 deployments.
- */
-export async function discoverSettingsBuckets(client: SafeS3Client): Promise<string[]> {
-  const buckets = await client.listBuckets();
-  const found: string[] = [];
-  await Promise.all(
-    buckets.map(async (bucket) => {
-      try {
-        await client.statObject(bucket, LOCATIONS_KEY);
-        found.push(bucket);
-      } catch {
-        // Not a settings bucket, not readable, or blocked by CORS. Keep probing.
-      }
-    }),
-  );
-  return found.sort((a, b) => settingsRank(a) - settingsRank(b) || a.localeCompare(b));
-}
-
 function settingsRank(bucket: string): number {
   if (bucket.startsWith('sparcd-settings-')) return 0;
   if (bucket === 'sparcd') return 1;
   return 2;
 }
 
-export async function discoverSettingsBucket(client: SafeS3Client): Promise<string> {
-  const buckets = await discoverSettingsBuckets(client);
-  if (buckets[0]) return buckets[0];
+// A store can expose a hundred-plus buckets, so probing them all at once just
+// queues them behind the browser's per-origin connection limit. Probe in
+// chunks and stop at the first hit.
+const PROBE_CONCURRENCY = 16;
+
+/**
+ * First bucket in `buckets` order carrying the marker, or null. Chunked so the
+ * winner is the earliest in the caller's preference order and not merely the
+ * one whose probe came back first.
+ */
+async function firstBucketWithMarker(
+  client: SafeS3Client,
+  buckets: string[],
+): Promise<string | null> {
+  for (let i = 0; i < buckets.length; i += PROBE_CONCURRENCY) {
+    const chunk = buckets.slice(i, i + PROBE_CONCURRENCY);
+    const hits = await Promise.all(
+      chunk.map((bucket) => client.statObject(bucket, LOCATIONS_KEY).then(() => true, () => false)),
+    );
+    const at = hits.indexOf(true);
+    if (at >= 0) return chunk[at];
+  }
+  return null;
+}
+
+/**
+ * Find the bucket holding `Settings/locations.json`. Name preferences keep
+ * official SPARC'd buckets first, but any readable bucket with the marker works
+ * for BYO-S3 deployments.
+ *
+ * `hint` is a previously discovered bucket: one HEAD confirms it and skips the
+ * search entirely. A hint that no longer answers falls through to the full
+ * probe rather than failing the connect.
+ */
+export async function discoverSettingsBucket(
+  client: SafeS3Client,
+  hint?: string,
+): Promise<string> {
+  if (hint && (await firstBucketWithMarker(client, [hint]))) return hint;
+
+  const buckets = (await client.listBuckets()).sort(
+    (a, b) => settingsRank(a) - settingsRank(b) || a.localeCompare(b),
+  );
+  // The two conventional names are almost always the answer, and probing them
+  // first turns a store-wide fan-out into one or two requests. Everything else
+  // is only worth asking once neither of them has the marker.
+  const conventional = buckets.filter((b) => settingsRank(b) < 2);
+  const rest = buckets.filter((b) => settingsRank(b) === 2);
+  const found =
+    (await firstBucketWithMarker(client, conventional)) ??
+    (await firstBucketWithMarker(client, rest));
+  if (found) return found;
+
   throw new Error(
     `No readable settings bucket found. The connected credentials must be able to HEAD/GET "${LOCATIONS_KEY}" in one visible bucket, and that bucket must allow this web origin via CORS.`,
   );
@@ -91,9 +120,12 @@ export type LocationsResult = LocationsParse & { settingsBucket: string };
  * common cases into actionable messages — this is the "validate browser CORS
  * read behavior" surface for P2.
  */
-export async function fetchLocations(cfg: S3Config): Promise<LocationsResult> {
+export async function fetchLocations(
+  cfg: S3Config,
+  settingsBucketHint?: string,
+): Promise<LocationsResult> {
   const client = getClient(cfg);
-  const settingsBucket = await discoverSettingsBucket(client);
+  const settingsBucket = await discoverSettingsBucket(client, settingsBucketHint);
   let bytes: Uint8Array;
   try {
     bytes = await client.getObject(settingsBucket, LOCATIONS_KEY);

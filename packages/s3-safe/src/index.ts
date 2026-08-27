@@ -535,6 +535,26 @@ export class SafeS3Client {
 // collection is or how it is keyed.
 
 const COLLECTION_BUCKET_PREFIX = 'sparcd-';
+// A store can expose a hundred-plus buckets. Firing every marker probe at once
+// just queues them all behind the browser's per-origin connection limit, and
+// starves whatever else the page needs mid-connect. Sixteen keeps the pipe full
+// without the pile-up.
+const PROBE_CONCURRENCY = 16;
+
+/** Map with a bounded number of calls in flight, preserving input order. */
+async function mapLimit<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let next = 0;
+  const worker = async () => {
+    for (let i = next++; i < items.length; i = next++) out[i] = await fn(items[i]);
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+}
 
 export type CollectionRef = {
   key: string; // `${bucket}::${uuid}`
@@ -558,27 +578,25 @@ export async function listCollections(client: SafeS3Client): Promise<CollectionR
   const candidates = buckets.filter(
     (b) => b.startsWith(COLLECTION_BUCKET_PREFIX) && b.length > COLLECTION_BUCKET_PREFIX.length,
   );
-  const found: CollectionRef[] = [];
-  await Promise.all(
-    candidates.map(async (bucket) => {
-      const uuid = bucket.slice(COLLECTION_BUCKET_PREFIX.length).toLowerCase();
-      try {
-        const bytes = await client.getObject(bucket, `Collections/${uuid}/collection.json`);
-        const doc = JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>;
-        found.push({
-          key: `${bucket}::${uuid}`,
-          bucket,
-          uuid,
-          name: cleanStr(doc.nameProperty),
-          organization: cleanStr(doc.organizationProperty),
-          contact: cleanStr(doc.contactInfoProperty),
-          description: cleanStr(doc.descriptionProperty),
-        });
-      } catch {
-        // No marker, or unreadable / CORS-blocked. Keep probing.
-      }
-    }),
-  );
+  const probed = await mapLimit(candidates, PROBE_CONCURRENCY, async (bucket) => {
+    const uuid = bucket.slice(COLLECTION_BUCKET_PREFIX.length).toLowerCase();
+    try {
+      const bytes = await client.getObject(bucket, `Collections/${uuid}/collection.json`);
+      const doc = JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>;
+      return {
+        key: `${bucket}::${uuid}`,
+        bucket,
+        uuid,
+        name: cleanStr(doc.nameProperty),
+        organization: cleanStr(doc.organizationProperty),
+        contact: cleanStr(doc.contactInfoProperty),
+        description: cleanStr(doc.descriptionProperty),
+      };
+    } catch {
+      return null; // No marker, or unreadable / CORS-blocked. Keep probing.
+    }
+  });
+  const found = probed.filter((r): r is CollectionRef => r !== null);
   // Sort by display name so pickers read alphabetically; fall back to bucket,
   // then uuid as a stable tiebreak.
   return found.sort(

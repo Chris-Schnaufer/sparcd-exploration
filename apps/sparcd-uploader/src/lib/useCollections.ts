@@ -7,17 +7,30 @@ import {
   type CollectionRef,
   type PublishedUpload,
 } from './s3';
+import { readDiscovery, writeDiscovery } from './discoveryCache';
 
 /**
  * List the collection buckets for the connected endpoint (cached per endpoint).
  * Each ref already carries its human-readable name, so no separate name fetch
  * is needed.
+ *
+ * The picker renders from the previous connect's answer straight away. Marking
+ * that seed as stale (`initialDataUpdatedAt: 1`) is what makes the fresh probe
+ * run in the background on every connect rather than at the staleTime the
+ * in-session cache uses; once it lands, normal staleTime takes over.
  */
 export function useCollections(cfg: S3Config | null, connectionId: number) {
+  const remembered = cfg ? readDiscovery(cfg)?.collections : undefined;
   return useQuery<CollectionRef[]>({
     queryKey: ['collections', connectionId, cfg?.endpoint],
-    queryFn: () => listCollections(cfg!),
+    queryFn: async () => {
+      const refs = await listCollections(cfg!);
+      writeDiscovery(cfg!, { collections: refs });
+      return refs;
+    },
     enabled: !!cfg,
+    initialData: remembered,
+    initialDataUpdatedAt: remembered ? 1 : undefined,
     staleTime: 5 * 60 * 1000,
     retry: 1,
   });

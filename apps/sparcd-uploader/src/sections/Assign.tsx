@@ -5,6 +5,7 @@ import { useStore } from '../store';
 import { Spinner } from '../components/Spinner';
 import { useLocations } from '../lib/useLocations';
 import { useCollections, useCollectionDeployments } from '../lib/useCollections';
+import { clearDiscovery } from '../lib/discoveryCache';
 import { DeploymentPicker } from '../components/DeploymentPicker';
 import { CollectionPicker } from '../components/CollectionPicker';
 import { CaptureTimeEditor } from '../components/CaptureTimeEditor';
@@ -86,9 +87,18 @@ export function Assign() {
   const slug = sanitizeUploaderUser(uploaderUser);
 
   const queryClient = useQueryClient();
-  const refreshCollections = () =>
+  // Refresh means "ask the store again from scratch", so the remembered shape
+  // goes too — otherwise a settings bucket that moved would keep being
+  // confirmed by the cached hint instead of re-searched.
+  const reprobe = () => {
+    if (s3Config) clearDiscovery(s3Config);
+  };
+  const refreshCollections = () => {
+    reprobe();
     void queryClient.invalidateQueries({ queryKey: ['collections'] });
+  };
   const refreshDeployments = () => {
+    reprobe();
     void queryClient.invalidateQueries({ queryKey: ['locations'] });
     void queryClient.invalidateQueries({ queryKey: ['collectionDeployments'] });
   };
