@@ -1,7 +1,7 @@
 // Upload orchestration. Runs the full publish sequence for one bundle:
 //
 //   1. Stream every image blob under the upload prefix (bounded concurrency,
-//      exponential backoff + jitter on transient failures, HEAD verify).
+//      exponential backoff + jitter on transient failures).
 //   2. Write the three CSVs.
 //   3. Write UploadMeta.json — upstream SPARC'd's completion marker, so it
 //      lands after the blobs and CSVs.
@@ -65,7 +65,7 @@ import {
 export type UploadPhase = 'idle' | 'preparing' | 'blobs' | 'metadata' | 'partial' | 'done' | 'error';
 // 'inspecting': part of the batch, not yet processed by Inspect — only
 // reachable via a streamed run; a fixed-plan run never has such a file.
-export type FileState = 'inspecting' | 'pending' | 'uploading' | 'verifying' | 'done' | 'skipped' | 'failed';
+export type FileState = 'inspecting' | 'pending' | 'uploading' | 'done' | 'skipped' | 'failed';
 
 export type FileProgress = {
   id: string;
@@ -101,7 +101,7 @@ export type UploadSnapshot = {
 /**
  * How the blob lane count is decided. `manual` reads `get()` live on every
  * pull, so a mid-run slider change applies without restarting the run;
- * `adaptive` hands the target to the throughput hill climber.
+ * `adaptive` hands the target to the throughput controller.
  */
 export type ConcurrencyControl = { mode: 'manual'; get: () => number } | { mode: 'adaptive' };
 
@@ -110,7 +110,6 @@ export type UploadParams = {
   build: Omit<BuildInput, 'now'>;
   dryRun: boolean;
   concurrency: ConcurrencyControl; // parallel blob lanes
-  verifyAfterPut?: boolean; // default true; false trusts the PUT response, saving a HEAD per file
   // Resume metadata persisted in the batch row; absent for dry runs.
   uploaderUser?: string; // raw identity (the slug lives in build.uploaderSlug)
   fileAccessMode?: FileAccessMode;
@@ -122,7 +121,6 @@ export type ResumeParams = {
   session: LoadedSession;
   attached: Map<string, File>; // localPath → reattached source file
   concurrency: ConcurrencyControl;
-  verifyAfterPut?: boolean;
 };
 
 export type UploadRun = { cancel: () => void; done: Promise<void> };
@@ -285,6 +283,7 @@ const fileRecordFor = (sessionId: string, it: UploadItem, state: FileRecord['sta
   state,
   remoteKey: it.key,
   attempt: 0,
+  preTags: it.preTags,
 });
 
 /** A file record for a scanned-but-not-yet-processed file — everything a
@@ -378,9 +377,9 @@ function makeRunner(
   config: S3Config,
   concurrency: ConcurrencyControl,
   onUpdate: (snap: UploadSnapshot) => void,
-  opts: { persist: boolean; isResume: boolean; dryRun: boolean; verifyAfterPut: boolean },
+  opts: { persist: boolean; isResume: boolean; dryRun: boolean },
 ) {
-  const { persist, isResume, dryRun, verifyAfterPut } = opts;
+  const { persist, isResume, dryRun } = opts;
   const client = getClient(config);
   let cancelled = false;
   let abort = new AbortController();
@@ -516,16 +515,6 @@ function makeRunner(
             emit();
           },
         });
-        // Portable verification: HEAD and confirm size + recorded digest.
-        // Optional: at high RTT the extra round-trip per file dominates small
-        // uploads, and the conditional PUT already succeeded with our body.
-        if (verifyAfterPut) {
-          fp.state = 'verifying';
-          emit(true);
-          const stat = await client.statObject(snap.bucket, it.key);
-          if (stat.size !== fp.size) throw new Error(`size mismatch (${stat.size} ≠ ${fp.size})`);
-          if (stat.metadata.sha256 !== it.sha256) throw new Error('sha256 metadata mismatch');
-        }
         fp.state = 'done';
         persistFile(sessionId, it.localPath, {
           state: 'done',
@@ -794,7 +783,7 @@ function makeRunner(
 
     if (cancelled) throw new Error('cancelled');
 
-    if (!dryRun && !verifyAfterPut) await finalReview(plan.sessionId, plan.uploadPath, plan.items);
+    if (!dryRun) await finalReview(plan.sessionId, plan.uploadPath, plan.items);
 
     const failed = snap.files.filter((f) => f.state === 'failed').length;
     if (failed > 0) {
@@ -963,7 +952,7 @@ function makeRunner(
     if (fatal) throw fatal;
     if (cancelled) throw new Error('cancelled');
 
-    if (!dryRun && !verifyAfterPut) await finalReview(seed.sessionId, seed.uploadPath, pulled);
+    if (!dryRun) await finalReview(seed.sessionId, seed.uploadPath, pulled);
 
     // The blob loop only exits normally (no fatal/cancel) once the queue is
     // closed and drained — the caller only closes it once every file in the
@@ -1058,7 +1047,6 @@ export function runStreamingUpload(
     persist,
     isResume: false,
     dryRun,
-    verifyAfterPut: params.verifyAfterPut ?? true,
   });
   const sessionId = crypto.randomUUID();
   runner.snap.sessionId = sessionId;
@@ -1281,7 +1269,6 @@ export function resumeUpload(
     persist: true,
     isResume: true,
     dryRun: false,
-    verifyAfterPut: params.verifyAfterPut ?? true,
   });
   runner.snap.sessionId = batch.id;
 

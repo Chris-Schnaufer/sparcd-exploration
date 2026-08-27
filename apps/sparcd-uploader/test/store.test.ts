@@ -72,9 +72,8 @@ describe('store persistence', () => {
     useStore.getState().setDryRun(false);
     useStore.getState().setConcurrencyMode('manual');
     useStore.getState().setUploadConcurrency(16);
-    useStore.getState().setVerifyAfterPut(false);
     useStore.getState().setFiles([scanned('a.jpg')]);
-    useStore.getState().setActiveRunSessionId('session-1');
+    useStore.getState().setActiveSnap({ sessionId: 'session-1' } as never);
 
     const persisted = JSON.parse(window.sessionStorage.getItem('sparcd-uploader-session')!).state;
 
@@ -88,7 +87,6 @@ describe('store persistence', () => {
       dryRun: false,
       concurrencyMode: 'manual',
       uploadConcurrency: 16,
-      verifyAfterPut: false,
     });
   });
 });

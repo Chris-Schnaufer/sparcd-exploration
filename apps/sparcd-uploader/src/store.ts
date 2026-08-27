@@ -11,10 +11,12 @@ import {
   saveSharedTheme,
   type Theme,
 } from '@sparcd/auth-ui';
+import type { FlipObservation } from '@sparcd/flip';
 import type { ScannedFile } from './lib/scanFiles';
 import type { ProcessResponse } from './lib/processPool';
 import type { FileAccessMode, LoadedSession } from './lib/db';
 import type { ReconcileProblem } from './lib/resume';
+import type { UploadRun, StreamingUploadRun, UploadSnapshot } from './lib/upload';
 import { validateBatch, validateFile, type FileValidation } from './lib/validation';
 import { clearClientCache } from './lib/s3';
 import { localTimeZone, type NaiveDateTime } from './lib/exifTime';
@@ -47,6 +49,10 @@ export type FileEntry = ScannedFile & {
   thumbnail?: Blob;
   mimeType?: string; // worker-authoritative media type
   processError?: string;
+  // Species the tagger applied before this batch was ever uploaded. Carried
+  // opaquely: the uploader displays it read-only and emits it as observation
+  // rows, and never edits it.
+  preTags?: FlipObservation[];
 };
 
 type UploaderState = {
@@ -65,6 +71,9 @@ type UploaderState = {
   // resume access mode so a closed tab can re-read the same bytes.
   dirHandle: FileSystemDirectoryHandle | null;
   fileAccessMode: FileAccessMode;
+  // Set once this batch has been round-tripped through the tagger; it is the
+  // shared record's id, so "Edit tags" re-enters the same tagging session.
+  flipId: string | null;
   uploaderUser: string; // free-text identity, normalized into a slug for keys
   selectedLocationKey: string | null; // chosen deployment location key (Assign)
   selectedBucket: string | null; // selected collection key `${bucket}::${uuid}` (Assign)
@@ -73,19 +82,38 @@ type UploaderState = {
   dryRun: boolean; // off by default; when on, logs PUTs and writes nothing
   concurrencyMode: ConcurrencyMode; // adaptive tunes lanes during the run; manual pins them
   uploadConcurrency: number; // manual lane count, 4–32
-  verifyAfterPut: boolean; // HEAD-check each blob after PUT; off saves a round-trip per file
   pendingResume: PendingResume | null; // prepared in History, consumed by the Upload step
-  activeRunSessionId: string | null; // session id of a wet run in flight in the Upload step
+  // Active upload run and its latest snapshot. Components subscribe to
+  // activeSnap for display; the run lives here so disconnect() and App-level
+  // beforeunload can reach it without depending on whichever component started
+  // it, and so section navigation stops rendering a run rather than ending it.
+  activeRun: UploadRun | StreamingUploadRun | null;
+  activeSnap: UploadSnapshot | null;
+  // Always 'upload': History prepares a resume and hands it to the wizard's
+  // Upload step, which is the one surface that runs anything. Kept as a field
+  // because disconnect and the beforeunload guard read it to tell a real run
+  // from none.
+  activeRunSource: 'upload' | null;
 
   connect: (config: S3Config, remember: boolean) => void;
   disconnect: () => void;
   setSection: (section: Section) => void;
+  setActiveRun: (run: UploadRun | StreamingUploadRun) => void;
+  setActiveSnap: (snap: UploadSnapshot | null) => void;
+  clearActiveRun: () => void;
   toggleTheme: () => void;
   setElevationUnit: (unit: ElevationUnit) => void;
   setStep: (step: WizardStep) => void;
   setScanning: (scanning: boolean) => void;
   setProcessing: (processing: boolean) => void;
   setFiles: (files: ScannedFile[], dirHandle?: FileSystemDirectoryHandle | null) => void;
+  /** Adopt a batch coming back from the tagger, already reattached to real
+   *  Files and already carrying its Inspect results — nothing to re-process. */
+  adoptTaggedBatch: (input: {
+    flipId: string;
+    files: FileEntry[];
+    dirHandle: FileSystemDirectoryHandle | null;
+  }) => void;
   applyProgress: (started: string[], results: ProcessResponse[]) => void;
   revalidate: () => void;
   setThumbnail: (id: string, thumbnail: Blob) => void;
@@ -100,9 +128,7 @@ type UploaderState = {
   setDryRun: (value: boolean) => void;
   setConcurrencyMode: (value: ConcurrencyMode) => void;
   setUploadConcurrency: (value: number) => void;
-  setVerifyAfterPut: (value: boolean) => void;
   setPendingResume: (value: PendingResume | null) => void;
-  setActiveRunSessionId: (value: string | null) => void;
   nextBatch: () => void;
 };
 
@@ -174,7 +200,7 @@ export const useStore = create<UploaderState>()(
   // make a researcher retype the form; the in-flight batch (files, handles,
   // validations, step) is excluded too — it can't survive a reload anyway.
   persist(
-    (set) => ({
+    (set, get) => ({
       s3Config: initialSession,
       connectionId: 0,
       section: 'new',
@@ -188,6 +214,7 @@ export const useStore = create<UploaderState>()(
       batchToken: 0,
       dirHandle: null,
       fileAccessMode: 'reselect-required',
+      flipId: null,
       // Defaults to the connected access key (the closest thing to a "login
       // name" this app has) — but only ever as a fill-in for blank; a value the
       // user typed or already had is never overwritten.
@@ -199,9 +226,10 @@ export const useStore = create<UploaderState>()(
       dryRun: false,
       concurrencyMode: 'adaptive',
       uploadConcurrency: 8,
-      verifyAfterPut: true,
       pendingResume: null,
-      activeRunSessionId: null,
+      activeRun: null,
+      activeSnap: null,
+      activeRunSource: null,
 
       connect: (config, remember) => {
         clearClientCache();
@@ -215,6 +243,7 @@ export const useStore = create<UploaderState>()(
         }));
       },
       disconnect: () => {
+        get().activeRun?.cancel();
         clearClientCache();
         clearSharedConnection();
         invalidateFileIndex();
@@ -227,13 +256,20 @@ export const useStore = create<UploaderState>()(
           validations: {},
           dirHandle: null,
           fileAccessMode: 'reselect-required',
+          flipId: null,
           selectedLocationKey: null,
           selectedBucket: null,
           uploaderUser: '',
           uploadTimeZone: localTimeZone(),
+          activeRun: null,
+          activeSnap: null,
+          activeRunSource: null,
         }));
       },
       setSection: (section) => set({ section }),
+      setActiveRun: (run) => set({ activeRun: run, activeRunSource: 'upload' }),
+      setActiveSnap: (snap) => set({ activeSnap: snap }),
+      clearActiveRun: () => set({ activeRun: null, activeSnap: null, activeRunSource: null }),
       toggleTheme: () =>
         set((s) => {
           const theme: Theme = s.theme === 'light' ? 'dark' : 'light';
@@ -260,6 +296,24 @@ export const useStore = create<UploaderState>()(
           batchToken: s.batchToken + 1,
           dirHandle,
           fileAccessMode: dirHandle ? 'persistent-handle' : 'reselect-required',
+          flipId: null,
+        }));
+      },
+
+      // Every file arrives `ready` with its hash, capture time, and thumbnail
+      // already known — they were computed before the batch left for the tagger
+      // and rode back in the shared record. `ensureProcessing` finds nothing
+      // queued and idles, so Inspect renders instantly instead of re-hashing.
+      adoptTaggedBatch: ({ flipId, files, dirHandle }) => {
+        invalidateFileIndex();
+        set((s) => ({
+          files,
+          validations: validateBatch(files),
+          step: 'inspect' as const,
+          batchToken: s.batchToken + 1,
+          dirHandle,
+          fileAccessMode: dirHandle ? 'persistent-handle' : 'reselect-required',
+          flipId,
         }));
       },
 
@@ -347,6 +401,10 @@ export const useStore = create<UploaderState>()(
           batchToken: s.batchToken + 1,
           dirHandle: null,
           fileAccessMode: 'reselect-required',
+          flipId: null,
+          activeRun: null,
+          activeSnap: null,
+          activeRunSource: null,
         }));
       },
 
@@ -359,9 +417,7 @@ export const useStore = create<UploaderState>()(
       setDryRun: (value) => set({ dryRun: value }),
       setConcurrencyMode: (value) => set({ concurrencyMode: value }),
       setUploadConcurrency: (value) => set({ uploadConcurrency: value }),
-      setVerifyAfterPut: (value) => set({ verifyAfterPut: value }),
       setPendingResume: (value) => set({ pendingResume: value }),
-      setActiveRunSessionId: (value) => set({ activeRunSessionId: value }),
 
       // Start a fresh batch after a completed upload, keeping the deployment,
       // uploader, target collection, and description so a researcher can chain
@@ -375,6 +431,10 @@ export const useStore = create<UploaderState>()(
           batchToken: s.batchToken + 1,
           dirHandle: null,
           fileAccessMode: 'reselect-required',
+          flipId: null,
+          activeRun: null,
+          activeSnap: null,
+          activeRunSource: null,
         }));
       },
     }),
@@ -399,7 +459,6 @@ export const useStore = create<UploaderState>()(
         dryRun: s.dryRun,
         concurrencyMode: s.concurrencyMode,
         uploadConcurrency: s.uploadConcurrency,
-        verifyAfterPut: s.verifyAfterPut,
       }),
     },
   ),
@@ -424,6 +483,7 @@ subscribeSharedConnection((cfg) => {
           validations: {},
           dirHandle: null,
           fileAccessMode: 'reselect-required' as const,
+          flipId: null,
           selectedLocationKey: null,
           selectedBucket: null,
           uploaderUser: '',

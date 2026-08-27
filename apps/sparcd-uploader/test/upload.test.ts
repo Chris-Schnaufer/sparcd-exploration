@@ -387,7 +387,7 @@ describe('upload runs continue past per-file blob failures', () => {
     expect(mocks.markBatchComplete).toHaveBeenCalledTimes(1);
   });
 
-  it('skips the post-PUT HEAD when verifyAfterPut is off', async () => {
+  it('confirms a resumed run by one listing pass, with no per-file HEAD', async () => {
     const session = makeSession(Array.from({ length: 3 }, () => 'pending'));
     mocks.client = makeClient(session.files);
     let last: UploadSnapshot | null = null;
@@ -398,7 +398,6 @@ describe('upload runs continue past per-file blob failures', () => {
         session,
         attached: attachedFor(session.files),
         concurrency: manual(2),
-        verifyAfterPut: false,
       },
       (snap) => {
         last = snap;
@@ -412,7 +411,7 @@ describe('upload runs continue past per-file blob failures', () => {
     expect(mocks.client.listObjects).toHaveBeenCalledTimes(1);
   });
 
-  it('final review fails files the listing contradicts when verifyAfterPut is off', async () => {
+  it('final review fails files the listing contradicts', async () => {
     const session = makeSession(Array.from({ length: 3 }, () => 'pending'));
     mocks.client = makeClient(session.files);
     // Listing reports file 1 truncated and file 2 missing entirely.
@@ -428,7 +427,6 @@ describe('upload runs continue past per-file blob failures', () => {
         session,
         attached: attachedFor(session.files),
         concurrency: manual(3),
-        verifyAfterPut: false,
       },
       (snap) => {
         last = snap;
@@ -1043,7 +1041,7 @@ describe('streamed runs upload as files individually become ready', () => {
     expect(warned!.text).toContain('QuotaExceededError');
   });
 
-  it('confirms a streamed run by one listing pass when the per-file HEAD is off', async () => {
+  it('confirms a streamed run by one listing pass, with no per-file HEAD', async () => {
     const entries = [makeFileEntry(0), makeFileEntry(1), makeFileEntry(2)];
     const client = makeStreamingClient();
     mocks.client = client;
@@ -1054,7 +1052,6 @@ describe('streamed runs upload as files individually become ready', () => {
         config: CONFIG,
         dryRun: false,
         concurrency: manual(2),
-        verifyAfterPut: false,
         uploaderUser: 'user',
         fileAccessMode: 'reselect-required',
         build: {
@@ -1099,7 +1096,6 @@ describe('streamed runs upload as files individually become ready', () => {
         config: CONFIG,
         dryRun: false,
         concurrency: manual(1),
-        verifyAfterPut: false,
         uploaderUser: 'user',
         fileAccessMode: 'reselect-required',
         build: {

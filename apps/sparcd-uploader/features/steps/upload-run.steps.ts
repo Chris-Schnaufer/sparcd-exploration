@@ -135,37 +135,49 @@ When('a file has been uploaded', async ({ app }) => {
   await app.waitForRunPhase('done');
 });
 
-Then("the tool re-reads the stored object's size and recorded fingerprint", async ({ app }) => {
-  for (const put of mediaPuts(app)) {
-    expect(app.s3.heads).toContain(`${put.bucket}/${put.key}`);
-    expect(put.meta.sha256).toMatch(/^[0-9a-f]{64}$/);
-  }
-});
+Then(
+  'the tool lists the upload folder and confirms every object is stored at its recorded size',
+  async ({ app }) => {
+    const puts = mediaPuts(app);
+    // `Collections/<uuid>/Uploads/<stamp>_<user>/` — the whole batch in one pass,
+    // not the per-file subfolders underneath it.
+    const folder = puts[0].key.split('/').slice(0, 4).join('/');
+    expect(app.s3.lists).toContain(`${puts[0].bucket}/${folder}/`);
+    // The confirmation is the listing, so no media object is re-read one by one.
+    for (const put of puts) expect(app.s3.heads).not.toContain(`${put.bucket}/${put.key}`);
+    await expect(
+      app.page.getByText(new RegExp(`final review: all ${puts.length} objects confirmed`)),
+    ).toBeVisible();
+  },
+);
 
-Then('a mismatch is treated as a failure of that file, not as a success', async ({ app }) => {
-  // Re-run against storage that quietly rewrites one object's recorded digest
-  // after accepting the write.
-  app.s3.afterPut = (_bucket, key, obj) => {
-    if (key.endsWith('IMG_0002.JPG')) obj.meta.sha256 = 'f'.repeat(64);
-  };
-  const metadataBefore = app.s3.puts.filter((p) => METADATA_NAMES.some((n) => p.key.endsWith(n))).length;
-  await rescanFromUpload(app, standardBatch());
-  await app.dryRunCheckbox().uncheck();
-  await app.startRun();
-  await expect(app.page.getByText(/sha256 metadata mismatch/).first()).toBeVisible({ timeout: 60_000 });
-  const rows = await app.page.locator('div[data-index]').allTextContents();
-  const mismatched = rows.find((r) => r.includes('IMG_0002.JPG'))!;
-  expect(mismatched).not.toContain('done');
-  expect(
-    app.s3.puts.filter((p) => METADATA_NAMES.some((n) => p.key.endsWith(n))).length,
-  ).toBe(metadataBefore);
-});
+Then(
+  'an object the listing contradicts is treated as a failure of that file, not as a success',
+  async ({ app }) => {
+    // Re-run against storage that accepts a write and then quietly truncates
+    // it, so the listing reports a size the metadata does not claim.
+    app.s3.afterPut = (_bucket, key, obj) => {
+      if (key.endsWith('IMG_0002.JPG')) obj.body = obj.body.subarray(0, 1);
+    };
+    const metadataBefore = app.s3.puts.filter((p) => METADATA_NAMES.some((n) => p.key.endsWith(n))).length;
+    await rescanFromUpload(app, standardBatch());
+    await app.dryRunCheckbox().uncheck();
+    await app.startRun();
+    await expect(app.page.getByText(/final review: size mismatch/).first()).toBeVisible({ timeout: 60_000 });
+    const rows = await app.page.locator('div[data-index]').allTextContents();
+    const mismatched = rows.find((r) => r.includes('IMG_0002.JPG'))!;
+    expect(mismatched).not.toContain('done');
+    expect(
+      app.s3.puts.filter((p) => METADATA_NAMES.some((n) => p.key.endsWith(n))).length,
+    ).toBe(metadataBefore);
+  },
+);
 
 // --- streaming past Inspect ------------------------------------------------
 
 Given('some files are still being examined', async ({ app }) => {
   await app.holdInspect('BIG_CLIP.MP4');
-  await rescanFromUpload(app, slowPublishableBatch());
+  await app.rescanFromUploadStep();
   await expect(app.page.getByText(/still being inspected/)).toBeVisible();
 });
 
@@ -206,7 +218,8 @@ Then(
     const keys = app.s3.puts.map((p) => p.key);
     const firstMetadata = keys.findIndex((k) => METADATA_NAMES.some((n) => k.endsWith(n)));
     expect(firstMetadata).toBe(4); // the four media objects come first
-    for (const put of mediaPuts(app)) expect(app.s3.heads).toContain(`${put.bucket}/${put.key}`);
+    // …and the listing that confirms them runs before any metadata is written.
+    await expect(app.page.getByText(/final review: all 4 objects confirmed/)).toBeVisible();
   },
 );
 
@@ -279,10 +292,10 @@ When('a batch is published', async ({ app }) => {
   await app.waitForRunPhase('done');
 });
 
-Then('an empty observations table is written alongside the media table', async ({ app }) => {
-  const observations = app.s3.puts.find((p) => p.key.endsWith('observations.csv'))!;
-  expect(observations).toBeTruthy();
-  expect(observations.body).toBe('');
+Then('a placeholder observations table is written alongside the media table', async ({ app }) => {
+  const obsRows = writtenCsvRows(app, 'observations.csv');
+  expect(obsRows).toHaveLength(4);
+  for (const row of obsRows) expect(row[5]).toBe('blank'); // observationType col
   expect(writtenCsvRows(app, 'media.csv')).toHaveLength(4);
 });
 
@@ -304,7 +317,7 @@ Given('a run is in progress', async ({ app }) => {
 Then('each file shows its own state and percentage', async ({ app }) => {
   const states = await app.page.locator('div[data-index] span.text-right').allTextContents();
   expect(states.length).toBeGreaterThan(0);
-  expect(states.some((s) => /^\d+%$/.test(s) || ['pending', 'done', 'inspecting', 'verifying'].includes(s))).toBe(true);
+  expect(states.some((s) => /^\d+%$/.test(s) || ['pending', 'done', 'inspecting'].includes(s))).toBe(true);
 });
 
 Then(
