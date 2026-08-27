@@ -69,6 +69,17 @@ write_files:
       		# The proxy owns CORS. Ceph RGW answers CORS per bucket only, so
       		# service-level calls (ListBuckets, the uploader's collection
       		# discovery) are browser-dead without this.
+      		#
+      		# Every Origin is reflected, because the tools this fronts are static
+      		# bring-your-own-credential pages served from wherever an operator puts
+      		# them. SigV4 is the authentication boundary, not CORS — see the
+      		# README's security note. To also pin the browser origin, replace both
+      		# Access-Control-Allow-Origin lines in this snippet with a literal:
+      		#
+      		#   header Access-Control-Allow-Origin "https://culverlab.github.io"
+      		#
+      		# and drop the `Vary "Origin"` lines, which only matter while the
+      		# answer varies.
       		header Access-Control-Allow-Origin "{http.request.header.Origin}"
       		header Access-Control-Allow-Methods "GET, HEAD, PUT, POST, DELETE"
       		header Access-Control-Allow-Headers "authorization, content-type, if-match, if-none-match, range, amz-sdk-invocation-id, amz-sdk-request, x-amz-content-sha256, x-amz-date, x-amz-meta-sha256, x-amz-user-agent, x-amz-checksum-crc32, x-amz-checksum-sha256, x-amz-checksum-mode, x-amz-sdk-checksum-algorithm, x-amz-security-token, x-amz-decoded-content-length, x-amz-trailer"
@@ -113,10 +124,21 @@ write_files:
       }
 runcmd:
   - sysctl --system
-  # The cert volume has to exist before Caddy does. Format only if blank.
+  # The cert volume has to exist before Caddy does. On a rebuild it is already
+  # labelled and nothing is formatted; on a first boot exactly one blank device
+  # is. A device carrying any other filesystem is left alone and the boot
+  # fails loudly — this runs unattended against whatever OpenStack attached.
   - |
-    DEV=/dev/vdb; [ -b $DEV ] || DEV=/dev/sdb
-    blkid $DEV >/dev/null 2>&1 || mkfs.ext4 -L caddydata $DEV
+    set -e
+    if ! blkid -L caddydata >/dev/null 2>&1; then
+      DEV=/dev/vdb; [ -b $DEV ] || DEV=/dev/sdb
+      [ -b "$DEV" ] || { echo "no candidate cert volume at /dev/vdb or /dev/sdb" >&2; exit 1; }
+      if blkid "$DEV" >/dev/null 2>&1; then
+        echo "refusing to format $DEV: it already holds $(blkid -o value -s TYPE "$DEV")" >&2
+        exit 1
+      fi
+      mkfs.ext4 -L caddydata "$DEV"
+    fi
     mkdir -p /var/lib/caddy
     grep -q caddydata /etc/fstab || echo 'LABEL=caddydata /var/lib/caddy ext4 defaults 0 2' >> /etc/fstab
     mount -a

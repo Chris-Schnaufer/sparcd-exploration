@@ -97,16 +97,20 @@ Four things cost real time to discover. They are load-bearing.
 
 | | [Docker + Caddy](#docker--caddy) | [Jetstream2 VM](./deploy/jetstream2/) | [Cloudflare Worker](./deploy/cloudflare-worker/) |
 |---|---|---|---|
-| Signature handling | passthrough | passthrough | re-signed at the edge |
+| Signature handling | passthrough | passthrough | verified, then re-signed |
 | S3 credentials | in the browser | in the browser | Worker secrets |
+| Browsers hold | the S3 credential | the S3 credential | a proxy-issued pair |
 | Shards | ports or subdomains | ports | subdomains |
 | HTTP/3 | yes | yes | yes |
 | You operate | a host | a VM image | nothing |
 
-Passthrough is the honest default: the proxy never sees a credential and
-cannot act on its own. The Worker recipe trades that for having no server, and
-gets a real benefit in exchange — the browser never holds an S3 secret. Read
-its README before choosing it.
+Passthrough is the honest default: the proxy never sees a credential and cannot
+act on its own. The Worker recipe trades that for having no server. Because it
+holds an S3 credential it has to authenticate its callers itself — it verifies
+the caller's SigV4 signature against a separate, proxy-issued key pair before
+re-signing upstream, which also means the browser never holds the real S3
+secret and that pair can be rotated on its own. Read its README before choosing
+it.
 
 ### Docker + Caddy
 
@@ -140,11 +144,15 @@ Per origin it asserts:
 - the preflight reflects the request `Origin` and allows the SigV4 headers
 - exactly one `Access-Control-Allow-Origin` comes back, on preflight and on
   the real response
-- the signed request is accepted by S3 — proof the Host survived the hop
+- the signed request is accepted by S3 with a 2xx — proof the Host survived the
+  hop
 - a length-less (chunked) request body does not come back `501`
 
-Credentials are optional; without them the signed checks run unsigned and only
-prove the request reached S3 and returned S3 XML.
+Credentials are optional but worth supplying: without them the signed checks
+run unsigned and prove only that the request reached S3 and returned S3 XML.
+Even then a `SignatureDoesNotMatch` or `InvalidAccessKeyId` fails the run
+rather than counting as "S3 answered", so a proxy whose own signing is broken
+cannot pass unsigned.
 
 ### Against a local stack, with no cloud resources
 
@@ -170,9 +178,38 @@ branch of the Host passthrough and not the portless `:443` branch.
 
 ## Client side
 
-A client stripes across shards by holding a list of endpoints and handing each
-upload lane one of them. In this repo the uploader takes a comma-separated
-shard list in Settings and builds one S3 client per endpoint, all sharing the
-connection's credentials. The requirements on any client are the two the proxy
-cannot cover: sign for the origin it is actually talking to, and strip `?x-id=`
-before signing.
+The proxy is only half the mechanism; something has to spread the lanes across
+the origins it hands out. Two requirements on any client, and they are exactly
+the two the proxy cannot cover:
+
+- **One connection per shard origin.** Build a separate S3 client per endpoint
+  rather than rewriting a URL per request, so the browser actually opens a
+  connection to each.
+- **Strip `?x-id=` before signing.** See lesson 4 above.
+
+Client-side striping ships in the uploader's endpoint-sharding PR
+(`pr/endpoint-sharding`), not on `main` yet. There it is a comma- or
+newline-separated **Endpoint shards** list in Settings; `getShardClients` in
+`apps/sparcd-uploader/src/lib/s3.ts` builds one client per endpoint, all
+sharing the connection's credentials. Blob lanes stripe round-robin and stay
+sticky per item so a retry lands on the same origin; metadata writes and
+listings stay on the primary endpoint.
+
+## Security note
+
+**SigV4 is the authentication boundary, not CORS.** The Caddy recipes hold no
+credentials at all — every request is authenticated by a signature the proxy
+neither makes nor checks, and forwards to an upstream that does.
+
+That is why the Caddyfile reflects whatever `Origin` it is sent. The tools this
+fronts are static bring-your-own-credential pages, served from wherever an
+operator puts them, and pinning one origin would break the next deployment of
+the same page. The cost is that any website can *attempt* a request through the
+proxy; without a valid signature for the upstream's own credentials, every one
+of those attempts fails at S3. Operators who want the browser origin boundary
+as well can pin a literal origin — the Caddyfile carries the two-line variant
+inline.
+
+The [Cloudflare Worker recipe](./deploy/cloudflare-worker/) is different in
+kind: it holds an S3 credential, so it verifies the caller's signature itself
+before re-signing. Read its README before deploying it.
