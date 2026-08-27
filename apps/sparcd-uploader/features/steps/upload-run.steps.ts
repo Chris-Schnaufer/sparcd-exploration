@@ -164,6 +164,7 @@ Then('a mismatch is treated as a failure of that file, not as a success', async 
 // --- streaming past Inspect ------------------------------------------------
 
 Given('some files are still being examined', async ({ app }) => {
+  await app.holdInspect('BIG_CLIP.MP4');
   await rescanFromUpload(app, slowPublishableBatch());
   await expect(app.page.getByText(/still being inspected/)).toBeVisible();
 });
@@ -177,6 +178,7 @@ When('the upload is started', async ({ app }) => {
 Then('files that have already been examined start uploading immediately', async ({ app }) => {
   await expect.poll(() => mediaPuts(app).length, { timeout: 30_000 }).toBeGreaterThanOrEqual(3);
   expect(app.s3.puts.every((p) => !p.key.endsWith('BIG_CLIP.MP4'))).toBe(true);
+  await app.releaseHeldInspect();
 });
 
 Then("each remaining file starts as soon as its own examination finishes", async ({ app }) => {
@@ -336,7 +338,7 @@ Then('the number of parallel uploads can be set between 4 and 16', async ({ app 
 });
 
 Then('it defaults to 8', async ({ app }) => {
-  await app.reopen();
+  await app.reopenInNewTab();
   await expect(app.connectForm()).toBeVisible();
   await app.fillConnection();
   await app.page.getByRole('button', { name: 'Connect', exact: true }).click();

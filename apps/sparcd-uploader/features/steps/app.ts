@@ -115,6 +115,17 @@ export class App {
     await expect(this.page.locator('#root')).toBeAttached();
   }
 
+  /**
+   * Stand in for closing the last tab and opening a fresh one. The session is
+   * held in sessionStorage, which is per-tab, so emptying it and reloading is
+   * exactly what a new tab sees: localStorage survives to pre-fill the form,
+   * and with no other tab open there is nothing to relay the secret.
+   */
+  async reopenInNewTab(): Promise<void> {
+    await this.page.evaluate(() => sessionStorage.clear());
+    await this.reopen();
+  }
+
   async openSecondTab(): Promise<Page> {
     const page = await this.page.context().newPage();
     await this.s3.install(page, S3_ORIGIN);
@@ -701,6 +712,35 @@ export class App {
         (d) => d.className.includes('font-mono') && d.className.includes('text-[11.5px]'),
       );
       return el?.textContent ?? '';
+    });
+  }
+
+  /**
+   * Block the inspection result for `filename` from being dispatched until
+   * `releaseHeldInspect` is called. Set this before dropping the batch so the
+   * hook is in place before the worker finishes.
+   */
+  async holdInspect(filename: string): Promise<void> {
+    await this.page.evaluate((name) => {
+      const w = window as unknown as Record<string, unknown>;
+      w.__inspectHoldResolvers = [] as (() => void)[];
+      w.__holdInspectResult = (_id: string, fname: string): Promise<void> => {
+        if (fname !== name) return Promise.resolve();
+        return new Promise<void>((resolve) => {
+          (w.__inspectHoldResolvers as (() => void)[]).push(resolve);
+        });
+      };
+    }, filename);
+  }
+
+  /** Release all results held by `holdInspect` and clear the hook. */
+  async releaseHeldInspect(): Promise<void> {
+    await this.page.evaluate(() => {
+      const w = window as unknown as Record<string, unknown>;
+      w.__holdInspectResult = undefined;
+      const resolvers = (w.__inspectHoldResolvers as (() => void)[]) ?? [];
+      w.__inspectHoldResolvers = [];
+      for (const r of resolvers) r();
     });
   }
 }
