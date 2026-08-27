@@ -9,6 +9,7 @@ export type { OfflineBannerProps } from './OfflineBanner';
 export { useOnline } from './useOnline';
 export {
   loadPersistedConnection,
+  loadSessionConnection,
   saveSharedConnection,
   clearSharedConnection,
   subscribeSharedConnection,
