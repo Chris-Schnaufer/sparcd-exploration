@@ -671,7 +671,7 @@ export class App {
   // --- Upload --------------------------------------------------------------
 
   dryRunCheckbox(): Locator {
-    return this.page.getByLabel('Dry run — log every PUT, write nothing');
+    return this.page.getByLabel('Test the upload, nothing is written');
   }
 
   async startRun(): Promise<void> {
