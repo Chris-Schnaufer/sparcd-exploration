@@ -73,7 +73,6 @@ type UploaderState = {
   dryRun: boolean; // off by default; when on, logs PUTs and writes nothing
   concurrencyMode: ConcurrencyMode; // adaptive tunes lanes during the run; manual pins them
   uploadConcurrency: number; // manual lane count, 4–32
-  verifyAfterPut: boolean; // HEAD-check each blob after PUT; off saves a round-trip per file
   pendingResume: PendingResume | null; // prepared in History, consumed by the Upload step
   activeRunSessionId: string | null; // session id of a wet run in flight in the Upload step
 
@@ -100,7 +99,6 @@ type UploaderState = {
   setDryRun: (value: boolean) => void;
   setConcurrencyMode: (value: ConcurrencyMode) => void;
   setUploadConcurrency: (value: number) => void;
-  setVerifyAfterPut: (value: boolean) => void;
   setPendingResume: (value: PendingResume | null) => void;
   setActiveRunSessionId: (value: string | null) => void;
   nextBatch: () => void;
@@ -199,7 +197,6 @@ export const useStore = create<UploaderState>()(
       dryRun: false,
       concurrencyMode: 'adaptive',
       uploadConcurrency: 8,
-      verifyAfterPut: true,
       pendingResume: null,
       activeRunSessionId: null,
 
@@ -359,7 +356,6 @@ export const useStore = create<UploaderState>()(
       setDryRun: (value) => set({ dryRun: value }),
       setConcurrencyMode: (value) => set({ concurrencyMode: value }),
       setUploadConcurrency: (value) => set({ uploadConcurrency: value }),
-      setVerifyAfterPut: (value) => set({ verifyAfterPut: value }),
       setPendingResume: (value) => set({ pendingResume: value }),
       setActiveRunSessionId: (value) => set({ activeRunSessionId: value }),
 
@@ -399,7 +395,6 @@ export const useStore = create<UploaderState>()(
         dryRun: s.dryRun,
         concurrencyMode: s.concurrencyMode,
         uploadConcurrency: s.uploadConcurrency,
-        verifyAfterPut: s.verifyAfterPut,
       }),
     },
   ),
