@@ -26,7 +26,7 @@ import {
 import type { FlipObservation } from '@sparcd/flip';
 import { locationToDeployment, type Location } from './locations';
 import { sanitizeRelPath, nameCounts, resolveOneName } from './normalize';
-import { naiveInZoneToUtcNaive } from './exifTime';
+import { naiveInZoneToUtcIso } from './exifTime';
 import type { MediaKind } from './scanFiles';
 import type { FileEntry } from '../store';
 
@@ -40,7 +40,7 @@ export type UploadItem = {
   file: File;
   size: number;
   sha256: string;
-  captureTimestamp?: string; // resolved naive-UTC capture time (post-tz), media.csv col 4
+  captureTimestamp?: string; // resolved ISO 8601 UTC capture time (post-tz), media.csv col 4
   mediaKind: MediaKind;
   mimeType: string;
   preTags?: FlipObservation[]; // species applied in the tagger before this upload
@@ -94,6 +94,7 @@ function observationRowsFor(
     mediaId: file.mediaId,
     deploymentId: file.deploymentId,
     timestamp: file.timestamp,
+    observationType: 'animal' as const,
     scientificName: o.scientificName,
     count: o.count,
     // Free tags are raw `[PREFIX:value]` markers the tagger preserved verbatim;
@@ -182,7 +183,7 @@ const mimeFor = (f: FileEntry): string =>
 // a manual Assign entry fills the gap for a file that has none.
 const captureFor = (f: FileEntry, timeZone: string): string => {
   const src = f.exifNaive ?? f.manualNaive;
-  return src ? naiveInZoneToUtcNaive(src, timeZone) : '';
+  return src ? naiveInZoneToUtcIso(src, timeZone) : '';
 };
 
 /**
@@ -246,9 +247,9 @@ export async function buildBundle(input: BuildInput): Promise<BundlePreview> {
   const deployment = locationToDeployment(location, collectionUuid);
 
   // Resolve each file's key/capture-time/mime-type once (per-file work isn't
-  // free), then project into both media rows and upload items. Publish is
-  // gated on every ready file having a capture time, so col 4 is never empty
-  // for a published batch.
+  // free), then project into media rows, observation rows, and upload items.
+  // Publish is gated on every ready file having a capture time, so col 4 is
+  // never empty for a published batch.
   const uploadItems: UploadItem[] = ready.map((f) => planItemFor(f, naming, timeZone));
 
   const media: Media[] = uploadItems.map((it) => ({
@@ -260,9 +261,9 @@ export async function buildBundle(input: BuildInput): Promise<BundlePreview> {
     mimeType: it.mimeType,
   }));
 
-  // Empty on an ordinary initial upload — the tagger's canonical base. A batch
-  // that came back from the tagger already carrying species publishes those
-  // rows here instead, so the images and their identifications land together.
+  // A batch that came back from the tagger already carrying species publishes
+  // those rows here instead of a placeholder. An untagged file gets one blank
+  // placeholder so every image is present in observations.csv from the start.
   const observations: Observation[] = uploadItems.flatMap((it) =>
     observationRowsFor(
       {
@@ -271,7 +272,17 @@ export async function buildBundle(input: BuildInput): Promise<BundlePreview> {
         timestamp: it.captureTimestamp ?? '',
         preTags: it.preTags,
       },
-      () => [],
+      () => [
+        {
+          observationId: it.fileName,
+          mediaId: it.key,
+          deploymentId: deployment.deploymentId,
+          timestamp: it.captureTimestamp ?? '',
+          observationType: 'blank',
+          scientificName: '',
+          tags: '',
+        },
+      ],
     ),
   );
 
@@ -383,10 +394,9 @@ export async function buildBundleFromRecords(input: {
     mimeType: f.mimeType ?? 'application/octet-stream',
   }));
 
-  // One placeholder observation row per untagged file — a resumed-before-bundle
-  // batch's observations.csv must publish the same shape as a normal upload's,
-  // not an empty table. A file the tagger identified publishes its species rows
-  // instead, exactly as `buildBundle` would have.
+  // A resumed-before-bundle batch's observations.csv must publish the same
+  // shape as a normal upload's. A file the tagger identified publishes its
+  // species rows instead of a placeholder.
   const observations: Observation[] = files.flatMap((f) =>
     observationRowsFor(
       {
@@ -401,6 +411,7 @@ export async function buildBundleFromRecords(input: {
           mediaId: f.remoteKey,
           deploymentId: deployment.deploymentId,
           timestamp: f.captureTimestamp ?? '',
+          observationType: 'blank',
           scientificName: '',
           count: 0,
           tags: '',

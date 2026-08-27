@@ -11,8 +11,6 @@ import {
   resumeUpload,
   runStreamingUpload,
   type StreamingUploadRun,
-  type UploadRun,
-  type UploadSnapshot,
 } from '../lib/upload';
 import { onFilesReady } from '../lib/processing';
 import type { ProcessResponse } from '../lib/processPool';
@@ -61,8 +59,14 @@ export function Upload() {
   // reflects the current files/description/etc. directly, no debounce needed.
   const [previewOpen, setPreviewOpen] = useState(false);
 
-  const [snap, setSnap] = useState<UploadSnapshot | null>(null);
-  const runRef = useRef<UploadRun | StreamingUploadRun | null>(null);
+  // Run and snapshot live in the store so they survive section navigation —
+  // unmounting this component stops rendering the run, not running it. Filter
+  // activeSnap by source so History resume snapshots don't appear here.
+  const snap = useStore((s) => s.activeRunSource === 'upload' ? s.activeSnap : null);
+  const activeRun = useStore((s) => s.activeRun);
+  const setActiveRun = useStore((s) => s.setActiveRun);
+  const setActiveSnap = useStore((s) => s.setActiveSnap);
+  const clearActiveRun = useStore((s) => s.clearActiveRun);
   // Set only while the current run is a streamed one (started via `start()`,
   // not a resume) — `notifyReady`/`close` don't exist on a plain `UploadRun`.
   const streamingRef = useRef<StreamingUploadRun | null>(null);
@@ -72,9 +76,9 @@ export function Upload() {
   // Dismisses the "upload complete" popup — reset whenever a new run (fresh
   // start or resume) begins, so a later run's completion pops it again.
   const [completeDismissed, setCompleteDismissed] = useState(false);
-
-  // Abandon an in-flight run if the step unmounts.
-  useEffect(() => () => runRef.current?.cancel(), []);
+  // Dry runs write nothing, so leaving mid-run has no real consequence —
+  // only a real run needs the beforeunload guard below.
+  const runningForReal = running && !!snap && !snap.dryRun;
 
   // Hold a screen wake lock while actively uploading, so OS/display idle-sleep
   // doesn't interrupt it. Best-effort: unsupported browsers (Firefox, as of
@@ -129,6 +133,19 @@ export function Upload() {
     };
   }, [running]);
 
+  // Warn on an actual tab close/reload too, not just in-app navigation —
+  // browsers ignore any custom message and show their own generic prompt.
+  useEffect(() => {
+    if (!runningForReal) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [runningForReal]);
+
+
   const ready = useMemo(() => files.filter((f) => f.processState === 'ready' && f.sha256), [files]);
   const stillInspecting = files.length - ready.length;
 
@@ -169,9 +186,9 @@ export function Upload() {
           files,
         },
       },
-      setSnap,
+      setActiveSnap,
     );
-    runRef.current = run;
+    setActiveRun(run, 'upload');
     streamingRef.current = run;
     maybeCloseQueue(files);
   };
@@ -264,7 +281,8 @@ export function Upload() {
       // A resumed run is a plain UploadRun (no notifyReady/close) — stop the
       // now-finished streaming run's methods from being called again.
       streamingRef.current = null;
-      runRef.current = resumeUpload({ config: s3Config, session: finalSession, attached, concurrency }, setSnap);
+      const run = resumeUpload({ config: s3Config, session: finalSession, attached, concurrency }, setActiveSnap);
+      setActiveRun(run, 'upload');
     } catch (e) {
       setRetryError(
         `Couldn't resume this upload (${e instanceof Error ? e.message : String(e)}). Retry again; if it keeps failing, go Back and start the upload over.`,
@@ -350,13 +368,13 @@ export function Upload() {
             onChange={(e) => setDryRun(e.target.checked)}
             className="accent-accent"
           />
-          Dry run — log every PUT, write nothing
+          Test the upload, nothing is written
         </label>
 
         {!effectiveDryRun && (
           <Note
             tone="warn"
-            message={`Wet upload uses the connected credentials directly. The bucket must allow this web origin with CORS, and the credentials must permit append-only PUT/HEAD/LIST for ${collection.bucket}.`}
+            message={`If not testing the upload and it fails right away, that's usually a setup issue on the storage side, not something you did wrong. Contact your administrator and give them this collection ID: ${collection.uuid}.`}
           />
         )}
 
@@ -445,7 +463,7 @@ export function Upload() {
         <div className="flex flex-wrap items-center gap-2">
           {running ? (
             <button
-              onClick={() => runRef.current?.cancel()}
+              onClick={() => activeRun?.cancel()}
               className="border border-warn text-warn px-3.5 py-2.5 sm:py-1.5 min-h-[44px] sm:min-h-0 text-[14px] font-body hover:bg-paperHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
             >
               Cancel
@@ -453,7 +471,7 @@ export function Upload() {
           ) : snap?.phase === 'done' && !snap.dryRun ? (
             <button
               onClick={() => {
-                setSnap(null);
+                clearActiveRun();
                 nextBatch();
               }}
               className="bg-ink text-paper border border-ink px-3.5 py-2.5 sm:py-1.5 min-h-[44px] sm:min-h-0 text-[14px] font-body font-[600] hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"

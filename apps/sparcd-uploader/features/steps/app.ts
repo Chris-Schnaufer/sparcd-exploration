@@ -152,6 +152,7 @@ export class App {
     await this.open();
     await expect(this.connectForm()).toBeVisible();
     await this.fillConnection(fields);
+    await this.page.getByLabel('Remember endpoint & access key on this device').check();
     await this.page.getByRole('button', { name: 'Connect', exact: true }).click();
     await expect(this.page.getByRole('button', { name: 'Logout' })).toBeVisible();
   }
@@ -754,7 +755,7 @@ export class App {
   // --- Upload --------------------------------------------------------------
 
   dryRunCheckbox(): Locator {
-    return this.page.getByLabel('Dry run — log every PUT, write nothing');
+    return this.page.getByLabel('Test the upload, nothing is written');
   }
 
   async startRun(): Promise<void> {

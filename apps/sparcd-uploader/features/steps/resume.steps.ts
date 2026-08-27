@@ -88,6 +88,7 @@ Then("each file's state is updated as it lands", async ({ app }) => {
 When('a dry run is started', async ({ app }) => {
   await app.dropFolder(publishableBatch());
   await app.walkToUploadStep({ uploader: 'Ada Lovelace' });
+  await app.dryRunCheckbox().check();
   await app.startRun();
   await app.waitForRunPhase('done');
 });

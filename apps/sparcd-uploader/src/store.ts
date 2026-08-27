@@ -15,6 +15,7 @@ import type { FlipObservation } from '@sparcd/flip';
 import type { ScannedFile } from './lib/scanFiles';
 import type { ProcessResponse } from './lib/processPool';
 import type { FileAccessMode } from './lib/db';
+import type { UploadRun, StreamingUploadRun, UploadSnapshot } from './lib/upload';
 import { validateBatch, validateFile, type FileValidation } from './lib/validation';
 import { clearClientCache } from './lib/s3';
 import { localTimeZone, type NaiveDateTime } from './lib/exifTime';
@@ -69,12 +70,25 @@ type UploaderState = {
   selectedBucket: string | null; // selected collection key `${bucket}::${uuid}` (Assign)
   uploadDescription: string; // free-text description for UploadMeta
   uploadTimeZone: string; // IANA zone EXIF naive times are interpreted in; default = browser zone
-  dryRun: boolean; // on by default; logs PUTs and writes nothing
+  dryRun: boolean; // off by default; when on, logs PUTs and writes nothing
   uploadConcurrency: number; // parallel blob lanes, 4–16
+  // Active upload run (fresh or resume from either Upload or History) and its
+  // latest snapshot. Components subscribe to activeSnap for display; the run
+  // lives here so disconnect() and App-level beforeunload can reach it without
+  // depending on whichever component started it.
+  activeRun: UploadRun | StreamingUploadRun | null;
+  activeSnap: UploadSnapshot | null;
+  // 'upload' = run started from the New-Upload wizard; 'history' = resume from
+  // History. Upload.tsx and History.tsx each filter activeSnap by source so they
+  // only render progress that belongs to them.
+  activeRunSource: 'upload' | 'history' | null;
 
-  connect: (config: S3Config) => void;
+  connect: (config: S3Config, remember: boolean) => void;
   disconnect: () => void;
   setSection: (section: Section) => void;
+  setActiveRun: (run: UploadRun | StreamingUploadRun, source: 'upload' | 'history') => void;
+  setActiveSnap: (snap: UploadSnapshot | null) => void;
+  clearActiveRun: () => void;
   toggleTheme: () => void;
   setElevationUnit: (unit: ElevationUnit) => void;
   setStep: (step: WizardStep) => void;
@@ -171,7 +185,7 @@ export const useStore = create<UploaderState>()(
   // shared home every SPARC'd tool reads); the in-flight batch (files,
   // handles, validations) is excluded too.
   persist(
-    (set) => ({
+    (set, get) => ({
       s3Config: initialSession,
       connectionId: 0,
       section: 'new',
@@ -194,12 +208,15 @@ export const useStore = create<UploaderState>()(
       selectedBucket: null,
       uploadDescription: '',
       uploadTimeZone: localTimeZone(),
-      dryRun: true,
+      dryRun: false,
       uploadConcurrency: 8,
+      activeRun: null,
+      activeSnap: null,
+      activeRunSource: null,
 
-      connect: (config) => {
+      connect: (config, remember) => {
         clearClientCache();
-        saveSharedConnection(config);
+        saveSharedConnection(config, remember);
         set((s) => ({
           s3Config: config,
           connectionId: s.connectionId + 1,
@@ -209,6 +226,7 @@ export const useStore = create<UploaderState>()(
         }));
       },
       disconnect: () => {
+        get().activeRun?.cancel();
         clearClientCache();
         clearSharedConnection();
         invalidateFileIndex();
@@ -226,9 +244,15 @@ export const useStore = create<UploaderState>()(
           selectedBucket: null,
           uploaderUser: '',
           uploadTimeZone: localTimeZone(),
+          activeRun: null,
+          activeSnap: null,
+          activeRunSource: null,
         }));
       },
       setSection: (section) => set({ section }),
+      setActiveRun: (run, source) => set({ activeRun: run, activeRunSource: source }),
+      setActiveSnap: (snap) => set({ activeSnap: snap }),
+      clearActiveRun: () => set({ activeRun: null, activeSnap: null, activeRunSource: null }),
       toggleTheme: () =>
         set((s) => {
           const theme: Theme = s.theme === 'light' ? 'dark' : 'light';
@@ -361,6 +385,9 @@ export const useStore = create<UploaderState>()(
           dirHandle: null,
           fileAccessMode: 'reselect-required',
           flipId: null,
+          activeRun: null,
+          activeSnap: null,
+          activeRunSource: null,
         }));
       },
 
@@ -386,6 +413,9 @@ export const useStore = create<UploaderState>()(
           dirHandle: null,
           fileAccessMode: 'reselect-required',
           flipId: null,
+          activeRun: null,
+          activeSnap: null,
+          activeRunSource: null,
         }));
       },
     }),

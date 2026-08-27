@@ -18,19 +18,23 @@ Feature: Upload and publish a batch
     # explicitly about background examination or cancelling an in-flight write.
 
   @unmapped
-  Scenario: A dry run is offered first and writes nothing
+  Scenario: A real upload is offered by default; a dry run is opt-in
     Given the upload has not been started
-    Then dry run is switched on by default
-    And starting it lists every object that would be written, with its size and fingerprint
+    Then dry run is switched off by default
+    # Dry run resets to off for every new page load; it is not remembered.
+
+  @unmapped
+  Scenario: Switching dry run on lists every object that would be written, without writing it
+    Given the upload has not been started
+    When the operator opts into a dry run
+    Then starting it lists every object that would be written, with its size and fingerprint
     And nothing is written to storage
     And the run is not recorded in History
-    # Dry run resets to on for every new page load; it is not remembered.
 
   @unmapped
   Scenario: A real upload states what access it needs before it starts
-    When dry run is switched off
-    Then the tool states that the credentials must permit append-only writes, reads and listing for the target collection's bucket
-    And that the bucket must allow this web origin
+    Then the tool states that a setup issue on the storage side is not the user's fault
+    And that the collection ID is given to contact an administrator with
 
   @F1
   Scenario: Every file in the batch is stored under one upload folder in the collection
@@ -84,7 +88,7 @@ Feature: Upload and publish a batch
   @A1
   Scenario: A batch with no species identifications is accepted and recorded as untagged
     When a batch is published
-    Then an empty observations table is written alongside the media table
+    Then a placeholder observations table is written alongside the media table
     And the upload metadata records that none of its images carry a species
     # The uploader has no tagging surface at all; every upload it makes is
     # untagged by construction.

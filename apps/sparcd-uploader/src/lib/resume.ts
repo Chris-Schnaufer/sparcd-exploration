@@ -27,7 +27,7 @@ import {
 } from './scanFiles';
 import { processBatch, type ProcessResponse } from './processPool';
 import { namingForUploadPath, objectKeyFor, buildBundleFromRecords, type ResolvedFileRecord } from './bundle';
-import { naiveInZoneToUtcNaive } from './exifTime';
+import { naiveInZoneToUtcIso } from './exifTime';
 
 export type RestoreOk = {
   ok: true;
@@ -331,7 +331,7 @@ export async function ensureBundle(
       problems.push({ localPath: rec.localPath, fileName: rec.fileName, reason: 'could not be inspected' });
       continue;
     }
-    const captureTimestamp = r.exifNaive ? naiveInZoneToUtcNaive(r.exifNaive, batch.uploadTimeZone) : '';
+    const captureTimestamp = r.exifNaive ? naiveInZoneToUtcIso(r.exifNaive, batch.uploadTimeZone) : '';
     if (!captureTimestamp) {
       problems.push({
         localPath: rec.localPath,
