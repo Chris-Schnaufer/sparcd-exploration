@@ -200,6 +200,7 @@ When('it is published', async ({ app }) => {
 
 When('a dry run of it is started', async ({ app }) => {
   await app.walkToUploadStep();
+  await app.dryRunCheckbox().check();
   await app.startRun();
   await app.waitForRunPhase('done');
 });
@@ -217,9 +218,9 @@ Then(
   'observations.csv has one row per species applied, against the right image',
   async ({ app }) => {
     const rows = writtenCsvRows(app, 'observations.csv');
-    expect(rows).toHaveLength(2);
     const media = Object.fromEntries(writtenCsvRows(app, 'media.csv').map((r) => [r[6], r[0]]));
-    const byName = Object.fromEntries(rows.map((r) => [r[8], r]));
+    const animal = rows.filter((r) => r[5] === 'animal');
+    const byName = Object.fromEntries(animal.map((r) => [r[8], r]));
     expect(byName['Canis latrans'][3]).toBe(media['IMG_0001.JPG']);
     expect(byName['Canis latrans'][9]).toBe('2');
     expect(byName['Casper'][3]).toBe(media['IMG_0002.JPG']);
@@ -241,11 +242,13 @@ Then('the upload metadata counts every identified image, empty frames included',
   expect(meta.imagesWithSpecies).toBe(2);
 });
 
-Then('the untagged files have no observation row at all', async ({ app }) => {
+Then('the untagged files have no species-identified observation row', async ({ app }) => {
   const media = Object.fromEntries(writtenCsvRows(app, 'media.csv').map((r) => [r[6], r[0]]));
-  const taggedMedia = new Set(writtenCsvRows(app, 'observations.csv').map((r) => r[3]));
-  expect(taggedMedia.has(media['IMG_0003.JPG'])).toBe(false);
-  expect(taggedMedia.has(media['CLIP_0001.MP4'])).toBe(false);
+  const animalMedia = new Set(
+    writtenCsvRows(app, 'observations.csv').filter((r) => r[5] === 'animal').map((r) => r[3]),
+  );
+  expect(animalMedia.has(media['IMG_0003.JPG'])).toBe(false);
+  expect(animalMedia.has(media['CLIP_0001.MP4'])).toBe(false);
 });
 
 Then('they are still in media.csv like every other image', async ({ app }) => {

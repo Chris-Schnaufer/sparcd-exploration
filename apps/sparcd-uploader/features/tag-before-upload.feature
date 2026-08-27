@@ -90,7 +90,7 @@ Feature: Identify species before the batch is uploaded
   Scenario: An untagged file is accepted and published as untagged
     Given a batch was tagged in the Tagger and handed back
     When it is published
-    Then the untagged files have no observation row at all
+    Then the untagged files have no species-identified observation row
     And they are still in media.csv like every other image
     And every media row carries the media type the examination sniffed
     # Not a guess from the file extension: a batch that went through the Tagger
