@@ -65,7 +65,7 @@ const hmac = (key, data) => createHmac('sha256', key).update(data).digest();
 
 const EMPTY_SHA256 = sha256hex('');
 
-function signedHeadersFor({ method, url, region, creds, signHost }) {
+function signedHeadersFor({ method, url, region, creds, signHost, payloadHash = EMPTY_SHA256 }) {
   const u = new URL(url);
   // Normally the signed Host is the host being connected to, exactly as a
   // browser does it. signHost covers a proxy reached at one address but
@@ -85,7 +85,7 @@ function signedHeadersFor({ method, url, region, creds, signHost }) {
 
   const headers = {
     host,
-    'x-amz-content-sha256': EMPTY_SHA256,
+    'x-amz-content-sha256': payloadHash,
     'x-amz-date': stamp,
   };
   if (creds.sessionToken) headers['x-amz-security-token'] = creds.sessionToken;
@@ -99,7 +99,7 @@ function signedHeadersFor({ method, url, region, creds, signHost }) {
     '',
     canonicalHeaders,
     signedHeaders,
-    EMPTY_SHA256,
+    payloadHash,
   ].join('\n');
 
   const scope = `${date}/${region}/s3/aws4_request`;
@@ -228,26 +228,43 @@ function describe(body, res) {
   return res.headers.get('x-amz-request-id') ? 'S3 responded' : 'no body';
 }
 
-async function checkChunked(origin) {
+async function checkChunked(origin, region, creds, signHost) {
   // HTTP/3 request bodies arrive with no Content-Length. A proxy that forwards
   // them unbuffered hands the HTTP/1.1 upstream `Transfer-Encoding: chunked`,
-  // which RGW answers with 501. This sends exactly that shape — unsigned, to
-  // the service root, where every S3 implementation rejects it before touching
-  // data — and only cares whether the answer is a 501.
+  // which RGW answers with 501. This sends exactly that shape — a POST to the
+  // service root, where every S3 implementation rejects it before touching
+  // data — and cares only whether the answer is a 501.
+  //
+  // Signed when credentials are available, because a proxy that authenticates
+  // its callers rejects an unsigned probe on its own doorstep and the hop
+  // never gets tested.
+  const payload = 'smoke';
+  const url = `${origin}/`;
+  const headers = creds
+    ? signedHeadersFor({
+        method: 'POST', url, region, creds, signHost, payloadHash: sha256hex(payload),
+      })
+    : { 'x-amz-content-sha256': sha256hex(payload) };
+  headers.origin = TEST_ORIGIN;
+
   const body = new ReadableStream({
     start(controller) {
-      controller.enqueue(new TextEncoder().encode('smoke'));
+      controller.enqueue(new TextEncoder().encode(payload));
       controller.close();
     },
   });
   let res;
   try {
-    res = await fetch(`${origin}/`, { method: 'POST', body, duplex: 'half', headers: { origin: TEST_ORIGIN } });
+    res = await fetch(url, { method: 'POST', body, duplex: 'half', headers });
   } catch (err) {
     return fail(`no response (${err.cause?.code ?? err.message})`);
   }
   if (res.status === 501) {
     return fail('HTTP 501 — chunked body reached the upstream (request_buffers missing?)');
+  }
+  const code = /<Code>([^<]+)<\/Code>/.exec(await res.text())?.[1];
+  if (SIGNATURE_ERRORS.includes(code)) {
+    return fail(`HTTP ${res.status} ${code} — the proxy rejected the probe, the hop is untested`);
   }
   return pass(`HTTP ${res.status}, length-less body survived the hop`);
 }
@@ -295,7 +312,10 @@ async function main() {
         await checkSigned(origin, `/${args.bucket}`, region, creds, args['sign-host']),
       ]);
     }
-    checks.push(['chunked body', await checkChunked(origin)]);
+    checks.push([
+      'chunked body',
+      await checkChunked(origin, region, creds, args['sign-host']),
+    ]);
 
     for (const [name, result] of checks) {
       if (!result.ok) failures++;
