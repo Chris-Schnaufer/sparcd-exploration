@@ -64,7 +64,7 @@ type UploaderState = {
   dryRun: boolean; // off by default; when on, logs PUTs and writes nothing
   uploadConcurrency: number; // parallel blob lanes, 4–16
 
-  connect: (config: S3Config) => void;
+  connect: (config: S3Config, remember: boolean) => void;
   disconnect: () => void;
   setSection: (section: Section) => void;
   toggleTheme: () => void;
@@ -181,9 +181,9 @@ export const useStore = create<UploaderState>()(
       dryRun: false,
       uploadConcurrency: 8,
 
-      connect: (config) => {
+      connect: (config, remember) => {
         clearClientCache();
-        saveSharedConnection(config);
+        saveSharedConnection(config, remember);
         set((s) => ({
           s3Config: config,
           connectionId: s.connectionId + 1,
