@@ -16,12 +16,14 @@
 import { createHash, createHmac } from 'node:crypto';
 
 const USAGE = `usage: node smoke.mjs [--base URL --ports 443,8443] [--origins URL,URL]
-                     [--bucket NAME] [--insecure]
+                     [--bucket NAME] [--sign-host HOST] [--insecure]
 
   --base      scheme://host to combine with --ports into shard origins
   --ports     comma-separated ports; 443 yields a portless origin
   --origins   explicit shard origins, instead of --base/--ports
   --bucket    also issue a signed HEAD against this bucket
+  --sign-host sign for this hostname instead of the one being connected to,
+              for a proxy reached through a tunnel or a port forward
   --insecure  accept untrusted TLS certificates (the local dev stack only)`;
 
 function parseArgs(argv) {
@@ -63,8 +65,12 @@ const hmac = (key, data) => createHmac('sha256', key).update(data).digest();
 
 const EMPTY_SHA256 = sha256hex('');
 
-function signedHeadersFor({ method, url, region, creds }) {
+function signedHeadersFor({ method, url, region, creds, signHost }) {
   const u = new URL(url);
+  // Normally the signed Host is the host being connected to, exactly as a
+  // browser does it. signHost covers a proxy reached at one address but
+  // addressed as another — `wrangler dev` is the case in this repo.
+  const host = signHost ?? u.host;
   const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
   const date = stamp.slice(0, 8);
 
@@ -78,7 +84,7 @@ function signedHeadersFor({ method, url, region, creds }) {
     .join('/');
 
   const headers = {
-    host: u.host,
+    host,
     'x-amz-content-sha256': EMPTY_SHA256,
     'x-amz-date': stamp,
   };
@@ -118,6 +124,7 @@ function signedHeadersFor({ method, url, region, creds }) {
 
 const TEST_ORIGIN = 'https://smoke.invalid';
 const REQUIRED_ALLOW_HEADERS = ['authorization', 'x-amz-content-sha256', 'x-amz-date'];
+const SIGNATURE_ERRORS = ['SignatureDoesNotMatch', 'InvalidAccessKeyId'];
 
 function fail(message) {
   return { ok: false, message };
@@ -166,11 +173,11 @@ async function checkPreflight(origin) {
   return pass(`HTTP ${res.status}, origin reflected, SigV4 headers allowed`);
 }
 
-async function checkSigned(origin, path, region, creds) {
+async function checkSigned(origin, path, region, creds, signHost) {
   const url = `${origin}${path}`;
   const method = path === '/' ? 'GET' : 'HEAD';
   const headers = creds
-    ? signedHeadersFor({ method, url, region, creds })
+    ? signedHeadersFor({ method, url, region, creds, signHost })
     : { 'x-amz-content-sha256': EMPTY_SHA256 };
   headers.origin = TEST_ORIGIN;
 
@@ -193,13 +200,21 @@ async function checkSigned(origin, path, region, creds) {
   const body = method === 'HEAD' ? '' : await res.text();
   const requestId = res.headers.get('x-amz-request-id');
   const isS3 = body.includes('<?xml') || body.includes('<ListAllMyBucketsResult') || requestId;
+  const code = /<Code>([^<]+)<\/Code>/.exec(body)?.[1];
 
   if (!creds) {
-    return isS3
-      ? pass(`HTTP ${res.status}, unsigned request reached S3 (${describe(body, res)})`)
-      : fail(`HTTP ${res.status}, response is not from S3`);
+    if (!isS3) return fail(`HTTP ${res.status}, response is not from S3`);
+    // A re-signing proxy answers unsigned requests with its own signature
+    // error. Treating that as "S3 answered" would report a proxy whose
+    // signing is broken as healthy.
+    if (SIGNATURE_ERRORS.includes(code)) {
+      return fail(`HTTP ${res.status} ${code} — rerun with the credentials this endpoint expects`);
+    }
+    return pass(`HTTP ${res.status}, unsigned request reached S3 (${describe(body, res)})`);
   }
-  if (res.status >= 400) {
+  // Anything but 2xx is a failure with credentials in hand: a redirect means
+  // the request did not complete where it was aimed.
+  if (res.status < 200 || res.status >= 300) {
     return fail(`HTTP ${res.status} ${describe(body, res)}`);
   }
   return pass(`HTTP ${res.status}, ${describe(body, res)}`);
@@ -269,12 +284,15 @@ async function main() {
     console.log(origin);
     const checks = [
       ['preflight', await checkPreflight(origin)],
-      [creds ? 'signed ListBuckets' : 'ListBuckets', await checkSigned(origin, '/', region, creds)],
+      [
+        creds ? 'signed ListBuckets' : 'ListBuckets',
+        await checkSigned(origin, '/', region, creds, args['sign-host']),
+      ],
     ];
     if (args.bucket) {
       checks.push([
         `${creds ? 'signed ' : ''}HEAD ${args.bucket}`,
-        await checkSigned(origin, `/${args.bucket}`, region, creds),
+        await checkSigned(origin, `/${args.bucket}`, region, creds, args['sign-host']),
       ]);
     }
     checks.push(['chunked body', await checkChunked(origin)]);
