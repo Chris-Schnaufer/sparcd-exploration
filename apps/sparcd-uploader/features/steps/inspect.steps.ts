@@ -5,6 +5,7 @@ import {
   jpegNoTime,
   manyJpegs,
   mp4At,
+  publishableBatch,
   slowPublishableBatch,
   slowVideo,
   standardBatch,
