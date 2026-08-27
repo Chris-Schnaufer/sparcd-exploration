@@ -27,7 +27,7 @@ import {
 } from '../lib/resume';
 import { scanFileList, supportsDirectoryHandle } from '../lib/scanFiles';
 import type { ProcessResponse } from '../lib/processPool';
-import { resumeUpload, type UploadRun, type UploadSnapshot } from '../lib/upload';
+import { resumeUpload } from '../lib/upload';
 import { Note, RunMonitor } from '../components/RunMonitor';
 import { PublishedUploads } from '../components/PublishedUploads';
 
@@ -52,9 +52,15 @@ export function History() {
   const s3Config = useStore((s) => s.s3Config);
   const concurrency = useStore((s) => s.uploadConcurrency);
 
+  // Run and snapshot live in the store so they survive section navigation.
+  // Filter activeSnap by source so New-Upload snapshots don't appear here.
+  const snap = useStore((s) => s.activeRunSource === 'history' ? s.activeSnap : null);
+  const setActiveRun = useStore((s) => s.setActiveRun);
+  const setActiveSnap = useStore((s) => s.setActiveSnap);
+  const clearActiveRun = useStore((s) => s.clearActiveRun);
+
   const [rows, setRows] = useState<Row[] | null>(null);
   const [active, setActive] = useState<string | null>(null); // sessionId being resumed
-  const [snap, setSnap] = useState<UploadSnapshot | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [problems, setProblems] = useState<ReconcileProblem[]>([]);
   // Re-verifying a large batch's content hashes before resume can take real
@@ -67,7 +73,6 @@ export function History() {
   // True while the fallback <input> picker is open. Separate from verifyingBatchId
   // so Resume is disabled without showing "Verifying…" on every row.
   const [pickerOpen, setPickerOpen] = useState(false);
-  const runRef = useRef<UploadRun | null>(null);
   const reselectRef = useRef<HTMLInputElement>(null);
   const pendingReselect = useRef<BatchRecord | null>(null);
 
@@ -83,9 +88,6 @@ export function History() {
     void refresh();
   }, [refresh]);
 
-  // Abandon an in-flight resume if the section unmounts.
-  useEffect(() => () => runRef.current?.cancel(), []);
-
   // Clear pickerOpen when the native picker is cancelled. The `cancel` event on
   // <input type="file"> is supported in Chrome 113+, Firefox 91+, Safari 17+.
   // Browsers that don't support it leave pickerOpen true until onChange fires.
@@ -96,6 +98,7 @@ export function History() {
     input.addEventListener('cancel', onCancel);
     return () => input.removeEventListener('cancel', onCancel);
   }, [pickerOpen]);
+
 
   const running = snap?.phase === 'blobs' || snap?.phase === 'metadata';
   const online = useOnline();
@@ -132,11 +135,11 @@ export function History() {
       const run = resumeUpload(
         { config: s3Config!, session, attached, concurrency },
         (s) => {
-          setSnap(s);
+          setActiveSnap(s);
           if (s.phase === 'done' || s.phase === 'error') void refresh();
         },
       );
-      runRef.current = run;
+      setActiveRun(run, 'history');
     },
     [s3Config, concurrency, refresh],
   );
@@ -178,7 +181,7 @@ export function History() {
   const beginResume = useCallback(
     async (batch: BatchRecord) => {
       setProblems([]);
-      setSnap(null);
+      setActiveSnap(null);
       setVerifyingBatchId(batch.id);
       setVerifyProgress(null);
       try {
@@ -280,15 +283,15 @@ export function History() {
 
   const discard = useCallback(
     async (sessionId: string) => {
-      if (runRef.current && active === sessionId) runRef.current.cancel();
-      await discardSession(sessionId);
       if (active === sessionId) {
+        useStore.getState().activeRun?.cancel();
         setActive(null);
-        setSnap(null);
+        clearActiveRun();
       }
+      await discardSession(sessionId);
       await refresh();
     },
-    [active, refresh],
+    [active, clearActiveRun, refresh],
   );
 
   if (rows === null) {
@@ -361,7 +364,7 @@ export function History() {
             </p>
             {running ? (
               <button
-                onClick={() => runRef.current?.cancel()}
+                onClick={() => useStore.getState().activeRun?.cancel()}
                 className="border border-warn text-warn px-3 py-1 text-[13px] font-body hover:bg-paperHover"
               >
                 Cancel
@@ -370,7 +373,7 @@ export function History() {
               <button
                 onClick={() => {
                   setActive(null);
-                  setSnap(null);
+                  clearActiveRun();
                 }}
                 className="border border-ink text-ink px-3 py-1 text-[13px] font-body hover:bg-paperHover"
               >

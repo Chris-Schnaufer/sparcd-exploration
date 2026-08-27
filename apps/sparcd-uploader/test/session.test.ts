@@ -74,14 +74,14 @@ beforeEach(() => {
 
 describe('shared connection storage', () => {
   it('stashes the full config in sessionStorage and restores it', () => {
-    saveSharedConnection(CONFIG);
+    saveSharedConnection(CONFIG, true);
 
     expect(loadSessionConnection()).toEqual(CONFIG);
     expect(getLiveConnection()).toEqual(CONFIG);
   });
 
   it('keeps the secret out of localStorage', () => {
-    saveSharedConnection(CONFIG);
+    saveSharedConnection(CONFIG, true);
 
     const persisted = JSON.parse(local.getItem('sparcd-connection') ?? '{}');
     expect(persisted).toEqual({
@@ -94,15 +94,22 @@ describe('shared connection storage', () => {
     expect(JSON.stringify(persisted)).not.toContain(CONFIG.secretKey);
   });
 
-  it('forgets everything on clear', () => {
-    saveSharedConnection(CONFIG);
+  it('clear ends the tab session but keeps the remembered fields', () => {
+    saveSharedConnection(CONFIG, true);
 
     clearSharedConnection();
 
     expect(session.getItem('sparcd-connection-tab')).toBeNull();
-    expect(local.getItem('sparcd-connection')).toBeNull();
+    expect(local.getItem('sparcd-connection')).not.toBeNull();
     expect(loadSessionConnection()).toBeNull();
     expect(getLiveConnection()).toBeNull();
+  });
+
+  it('connecting with remember off forgets a previously remembered connection', () => {
+    saveSharedConnection(CONFIG, true);
+    saveSharedConnection(CONFIG, false);
+
+    expect(local.getItem('sparcd-connection')).toBeNull();
   });
 
   it('reports no session when the tab has none', () => {

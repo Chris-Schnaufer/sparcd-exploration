@@ -123,19 +123,32 @@ export function loadSessionConnection(): S3Config | null {
   return liveConfig;
 }
 
-/** Persists the non-secret fields to localStorage, stashes the full config in
- *  this tab's sessionStorage, and live-relays it to any other tab open right
- *  now. Nothing secret outlives the tab. */
-export function saveSharedConnection(cfg: S3Config): void {
+/**
+ * Stashes the full config (secret included) in this tab's sessionStorage,
+ * live-relays it to any other tab open right now — nothing secret ever hits
+ * localStorage — and, only when `remember` is true, persists the non-secret
+ * fields so a later reload/restart pre-fills the Connect form.
+ * `remember: false` explicitly clears any previously-remembered connection
+ * rather than merely skipping the write, so unchecking "Remember me" actually
+ * forgets a stale value from an earlier session.
+ */
+export function saveSharedConnection(cfg: S3Config, remember: boolean): void {
   const { secretKey: _secretKey, ...persisted } = cfg;
-  savePersistedConnection(persisted);
+  if (remember) savePersistedConnection(persisted);
+  else clearPersistedConnection();
   saveSessionConnection(cfg);
   liveConfig = cfg;
   getChannel()?.postMessage({ type: 'connect', config: cfg } satisfies LiveMessage);
 }
 
+/**
+ * Live-relays a disconnect to any other tab open right now. Deliberately
+ * does NOT clear a remembered connection — like "remember me" on most sites,
+ * the preference is standing and survives an explicit logout; the endpoint/
+ * access key stay pre-filled next time. It's only ever cleared by connecting
+ * again with "Remember me" unchecked (see `saveSharedConnection`).
+ */
 export function clearSharedConnection(): void {
-  clearPersistedConnection();
   clearSessionConnection();
   liveConfig = null;
   getChannel()?.postMessage({ type: 'disconnect' } satisfies LiveMessage);
