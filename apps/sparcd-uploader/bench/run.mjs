@@ -25,6 +25,7 @@ async function waitFor(url, label) {
   while (Date.now() < deadline) {
     try {
       const response = await fetch(url);
+      await response.arrayBuffer();
       if (response.ok) return;
     } catch {}
     await new Promise((resolve) => setTimeout(resolve, 250));
@@ -36,6 +37,12 @@ function stop() {
   if (preview && !preview.killed) preview.kill('SIGTERM');
   if (containerStarted) spawnSync('docker', ['rm', '-f', containerName], { stdio: 'ignore' });
 }
+
+process.on('unhandledRejection', (err) => {
+  console.error('unhandledRejection:', err);
+  stop();
+  process.exit(1);
+});
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.once(signal, () => {
@@ -58,6 +65,7 @@ try {
   ]);
   containerStarted = true;
   await waitFor(`${minioOrigin}/minio/health/ready`, 'MinIO');
+  console.log('minio ready');
 
   const s3 = new S3Client({
     endpoint: minioOrigin,
@@ -86,6 +94,7 @@ try {
     Bucket: collectionBucket, Key: `Collections/${collectionUuid}/collection.json`,
     Body: JSON.stringify(collection), ContentType: 'application/json',
   }));
+  console.log('buckets seeded');
 
   run('pnpm', ['exec', 'vite', 'build'], {
     env: { ...process.env, VITE_SPARCD_S3_ENDPOINT: '' },

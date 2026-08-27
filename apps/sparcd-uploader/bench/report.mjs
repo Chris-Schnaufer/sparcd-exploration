@@ -18,7 +18,11 @@ if (mode !== 'compare' && mode !== 'update') {
   process.exit(2);
 }
 
-const summary = JSON.parse(await readFile(summaryFile, 'utf8'));
+const summary = await readFile(summaryFile, 'utf8').then(JSON.parse).catch(() => null);
+if (!summary) {
+  console.log('no summary.json — benchmark did not complete, skipping timing report');
+  process.exit(0);
+}
 const baseline = await readFile(baselineFile, 'utf8').then(JSON.parse).catch(() => ({ entries: [] }));
 
 if (mode === 'update') {
