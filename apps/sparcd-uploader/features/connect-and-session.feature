@@ -81,6 +81,13 @@ Feature: Connect the uploader to storage and manage the session
     And the live upload stops without publishing metadata
 
   @unmapped
+  Scenario: Replacing the shared connection stops obsolete Inspect workers
+    Given the connected uploader is inspecting a held file
+    When another tab replaces the shared connection
+    Then the replacement connection is adopted
+    And the obsolete Inspect workers are stopped
+
+  @unmapped
   Scenario: The header shows which endpoint and key are in use, never the secret
     Given the uploader is connected
     Then the header shows the endpoint host and a masked form of the access key

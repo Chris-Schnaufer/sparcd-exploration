@@ -205,6 +205,17 @@ function makeStreamingClient(
   };
 }
 
+function holdMetadataUntilAborted(client: FakeClient): void {
+  client.writeImmutable.mockImplementation(
+    async (_bucket: string, _key: string, _body: string, opts: { signal?: AbortSignal }) =>
+      new Promise<void>((_resolve, reject) => {
+        const abort = () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+        if (opts.signal?.aborted) abort();
+        else opts.signal?.addEventListener('abort', abort, { once: true });
+      }),
+  );
+}
+
 async function collect(run: { done: Promise<void> }, onDone: () => UploadSnapshot | null): Promise<UploadSnapshot> {
   await run.done;
   const snap = onDone();
@@ -215,6 +226,70 @@ async function collect(run: { done: Promise<void> }, onDone: () => UploadSnapsho
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.client = null;
+});
+
+describe('cancellation during metadata publication', () => {
+  it('aborts a resumed run metadata PUT and never publishes the remaining files', async () => {
+    const session = makeSession(['done']);
+    const client = makeClient(session.files);
+    holdMetadataUntilAborted(client);
+    mocks.client = client;
+    let last: UploadSnapshot | null = null;
+
+    const run = resumeUpload(
+      { config: CONFIG, session, attached: new Map(), concurrency: 1 },
+      (snap) => {
+        last = snap;
+      },
+    );
+    await vi.waitFor(() => expect(client.writeImmutable).toHaveBeenCalledTimes(1));
+    run.cancel();
+    const snap = await collect(run, () => last);
+
+    expect(snap.error).toBe('cancelled');
+    expect(client.writeImmutable).toHaveBeenCalledTimes(1);
+    expect(client.writeImmutable.mock.calls[0][3].signal.aborted).toBe(true);
+    expect(mocks.markBatchComplete).not.toHaveBeenCalled();
+  });
+
+  it('aborts a streamed run metadata PUT and never publishes the remaining files', async () => {
+    const entries = [makeFileEntry(0)];
+    const client = makeStreamingClient();
+    holdMetadataUntilAborted(client);
+    mocks.client = client;
+    let last: UploadSnapshot | null = null;
+
+    const run = runStreamingUpload(
+      {
+        config: CONFIG,
+        dryRun: false,
+        concurrency: 1,
+        uploaderUser: 'user',
+        fileAccessMode: 'reselect-required',
+        build: {
+          location: LOCATION,
+          collectionUuid: 'collection',
+          bucket: 'bucket',
+          uploaderSlug: 'user',
+          description: 'description',
+          timeZone: 'UTC',
+          files: entries,
+        },
+      },
+      (snap) => {
+        last = snap;
+      },
+    );
+    run.close(entries);
+    await vi.waitFor(() => expect(client.writeImmutable).toHaveBeenCalledTimes(1));
+    run.cancel();
+    const snap = await collect(run, () => last);
+
+    expect(snap.error).toBe('cancelled');
+    expect(client.writeImmutable).toHaveBeenCalledTimes(1);
+    expect(client.writeImmutable.mock.calls[0][3].signal.aborted).toBe(true);
+    expect(mocks.markBatchComplete).not.toHaveBeenCalled();
+  });
 });
 
 describe('upload runs continue past per-file blob failures', () => {

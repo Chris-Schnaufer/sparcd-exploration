@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import { Given, When, Then, expect } from './fixtures';
 import { ACCESS_KEY, SECRET_KEY, S3_ORIGIN, type App } from './app';
-import { publishableBatch, standardBatch } from './batches';
+import { publishableBatch, slowPublishableBatch, standardBatch } from './batches';
 import { BUCKET_B, COLLECTION_A_NAME, COLLECTION_B_NAME, UUID_B } from './fixtures-data';
 
 const AWS_ENDPOINT = 'https://s3.us-west-2.amazonaws.com';
@@ -155,6 +155,22 @@ Given('the connected uploader has a live upload', async ({ app }) => {
   await expect.poll(() => app.s3.puts.length, { timeout: 30_000 }).toBeGreaterThan(0);
 });
 
+Given('the connected uploader is inspecting a held file', async ({ app }) => {
+  await app.connect();
+  await app.page.evaluate(() => {
+    const state = window as unknown as { __terminatedInspectWorkers?: number };
+    state.__terminatedInspectWorkers = 0;
+    const terminate = Worker.prototype.terminate;
+    Worker.prototype.terminate = function terminateTracked(): void {
+      state.__terminatedInspectWorkers = (state.__terminatedInspectWorkers ?? 0) + 1;
+      terminate.call(this);
+    };
+  });
+  await app.holdInspect('BIG_CLIP.MP4');
+  await app.dropFolder(slowPublishableBatch());
+  await expect.poll(() => app.batchSummary()).toMatch(/processing/);
+});
+
 When('one of them disconnects', async ({ app }) => {
   const tab = app.notes.secondTab as Page;
   await tab.getByRole('button', { name: 'Logout' }).click();
@@ -198,6 +214,19 @@ Then('the live upload stops without publishing metadata', async ({ app }) => {
 
 Then('the replacement connection is adopted', async ({ app }) => {
   await expect(app.page.locator('header')).toContainText('replacement.example');
+});
+
+Then('the obsolete Inspect workers are stopped', async ({ app }) => {
+  await expect
+    .poll(() =>
+      app.page.evaluate(
+        () =>
+          (window as unknown as { __terminatedInspectWorkers?: number })
+            .__terminatedInspectWorkers ?? 0,
+      ),
+    )
+    .toBeGreaterThan(0);
+  await app.releaseHeldInspect();
 });
 
 Then('the header shows the endpoint host and a masked form of the access key', async ({ app }) => {
