@@ -165,7 +165,7 @@ Then('a mismatch is treated as a failure of that file, not as a success', async 
 
 Given('some files are still being examined', async ({ app }) => {
   await app.holdInspect('BIG_CLIP.MP4');
-  await rescanFromUpload(app, slowPublishableBatch());
+  await app.rescanFromUploadStep();
   await expect(app.page.getByText(/still being inspected/)).toBeVisible();
 });
 
