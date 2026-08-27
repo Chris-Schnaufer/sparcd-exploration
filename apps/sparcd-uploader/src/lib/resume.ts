@@ -9,6 +9,11 @@
 //      reselects the folder and we reconcile by relative path, size, and
 //      SHA-256 before queuing the remaining work. We never claim to upload
 //      bytes from a `localPath` string alone.
+//
+// A same-session round trip (leave the app and come straight back) is a
+// different problem: the batch was persisted minutes ago, so re-proving its
+// hashes buys nothing and costs seconds. `restoreFromHandleTrusted` covers
+// that case by matching on path + size and trusting the persisted hashes.
 
 import type { BatchRecord, FileRecord, BundleRecord } from './db';
 import { attachBundle, updateFileRecords } from './db';
@@ -22,7 +27,7 @@ import {
 } from './scanFiles';
 import { processBatch, type ProcessResponse } from './processPool';
 import { namingForUploadPath, objectKeyFor, buildBundleFromRecords, type ResolvedFileRecord } from './bundle';
-import { naiveInZoneToUtcNaive } from './exifTime';
+import { naiveInZoneToUtcIso } from './exifTime';
 
 export type RestoreOk = {
   ok: true;
@@ -42,6 +47,21 @@ export type RestoreOk = {
 
 export type RestoreFailed = { ok: false; reason: string };
 export type RestoreResult = RestoreOk | RestoreFailed;
+
+/**
+ * The trusted restore's success shape. Deliberately not `RestoreOk`: that type
+ * promises a `resolved` map of full `ProcessResponse`s — thumbnails included —
+ * which only exists because the re-hash path re-runs the whole Inspect
+ * pipeline. Nothing here re-processes anything, so there is no honest value to
+ * put there and the caller supplies thumbnails from its own store instead.
+ */
+export type TrustedRestoreOk = {
+  ok: true;
+  attached: Map<string, File>; // localPath → reattached source file
+  problems: ReconcileProblem[];
+};
+
+export type TrustedRestoreResult = TrustedRestoreOk | RestoreFailed;
 
 export type ReconcileProblem = { localPath: string; fileName: string; reason: string };
 
@@ -79,6 +99,70 @@ export async function restoreFromHandle(
   const scanned = await scanDirectoryHandle(handle);
   const { attached, problems, resolved } = await reconcileReselect(records, scanned, onProgress);
   return { ok: true, attached, problems, resolved };
+}
+
+/**
+ * Reattach source files from the stored directory handle without re-hashing —
+ * for a round trip that persisted the batch minutes ago in this same session,
+ * where a re-hash pass would cost seconds to re-prove something the session
+ * never stopped knowing.
+ *
+ * Verifies: read permission on the handle, that every record's relative path is
+ * still present in the folder, and that its byte size still matches.
+ * Trusts: everything the record already carries — sha256, capture time, camera,
+ * media kind, mime type — none of which is recomputed. A same-size in-place
+ * edit between persist and restore would go undetected, which is why the
+ * days-later resume uses `restoreFromHandle` instead.
+ *
+ * A record with no match or a size mismatch becomes a `ReconcileProblem` and is
+ * never attached; files on disk that no record mentions are ignored. There is
+ * no progress callback because there is no per-file work to report — the cost
+ * is the directory walk alone.
+ *
+ * `requestPermission` needs a live user gesture — Firefox and Safari silently
+ * no-op it (no prompt, no error) if anything gets awaited first, even a fast
+ * IndexedDB read. `recordsPromise` lets the caller kick that load off in
+ * parallel instead of awaiting it up front; it's only consumed here after the
+ * gated permission call resolves.
+ */
+export async function restoreFromHandleTrusted(
+  batch: BatchRecord,
+  recordsPromise: Promise<FileRecord[]>,
+): Promise<TrustedRestoreResult> {
+  const handle = batch.dirHandle;
+  if (!handle) return { ok: false, reason: 'No durable folder handle is stored for this session.' };
+
+  let state = (await handle.queryPermission?.({ mode: 'read' })) ?? 'prompt';
+  if (state !== 'granted') {
+    state = (await handle.requestPermission?.({ mode: 'read' })) ?? 'denied';
+  }
+  if (state !== 'granted') {
+    return { ok: false, reason: 'Read permission to the folder was not granted — reselect it instead.' };
+  }
+
+  const records = await recordsPromise;
+  const scanned = await scanDirectoryHandle(handle);
+  const byPath = new Map(scanned.map((f) => [f.relPath, f]));
+
+  const attached = new Map<string, File>();
+  const problems: ReconcileProblem[] = [];
+  for (const rec of records) {
+    const sf = byPath.get(rec.localPath);
+    if (!sf) {
+      problems.push({ localPath: rec.localPath, fileName: rec.fileName, reason: 'not in the selected folder' });
+      continue;
+    }
+    if (sf.size !== rec.size) {
+      problems.push({
+        localPath: rec.localPath,
+        fileName: rec.fileName,
+        reason: `size differs (${sf.size} ≠ ${rec.size})`,
+      });
+      continue;
+    }
+    attached.set(rec.localPath, sf.file);
+  }
+  return { ok: true, attached, problems };
 }
 
 // Hash (and otherwise Inspect) a set of files through the existing worker
@@ -243,7 +327,7 @@ export async function ensureBundle(
       problems.push({ localPath: rec.localPath, fileName: rec.fileName, reason: 'could not be inspected' });
       continue;
     }
-    const captureTimestamp = r.exifNaive ? naiveInZoneToUtcNaive(r.exifNaive, batch.uploadTimeZone) : '';
+    const captureTimestamp = r.exifNaive ? naiveInZoneToUtcIso(r.exifNaive, batch.uploadTimeZone) : '';
     if (!captureTimestamp) {
       problems.push({
         localPath: rec.localPath,

@@ -60,11 +60,9 @@ Then("this browser's recorded upload sessions, file states and metadata are clea
 
 Then('the tool returns to the connection screen ready for the next person', async ({ app }) => {
   await expect(app.connectForm()).toBeVisible();
-  // Nothing of the previous person is left behind — not even the access key,
-  // since the remembered connection is dropped along with the local data.
+  // The secret key is never kept on disk — it always starts blank.
+  // Endpoint and access key may be pre-filled if "Remember me" was checked.
   await expect(app.page.locator('#secretKey')).toHaveValue('');
-  await expect(app.page.locator('#accessKey')).toHaveValue('');
-  await expect(app.page.locator('#endpoint')).toHaveValue('');
 });
 
 Then('the tool states how many resumable uploads would be lost', async ({ app }) => {
@@ -144,12 +142,13 @@ When('the appearance is switched between light and dark', async ({ app }) => {
   await expect(app.page.locator('html')).toHaveClass(/dark/);
 });
 
-Then('the choice survives a page reload in the same browser tab session', async ({ app }) => {
+Then('the choice survives a page reload', async ({ app }) => {
   await app.reopen();
   await expect(app.page.locator('html')).toHaveClass(/dark/);
-  // It lives in sessionStorage, so it is scoped to this tab's session.
-  const stored = await app.page.evaluate(() =>
-    JSON.parse(sessionStorage.getItem('sparcd-uploader-session') ?? '{}'),
-  );
-  expect(stored.state.theme).toBe('dark');
+});
+
+Then("it is kept where the other SPARC'd tools on this machine read it", async ({ app }) => {
+  // One key for every tool on this origin, so walking to another one from the
+  // brand switcher lands in the same appearance.
+  expect(await app.page.evaluate(() => localStorage.getItem('sparcd-theme'))).toBe('dark');
 });
