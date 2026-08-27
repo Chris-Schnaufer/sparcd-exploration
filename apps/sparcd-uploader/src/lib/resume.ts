@@ -124,10 +124,14 @@ export async function restoreFromHandle(
  * IndexedDB read. `recordsPromise` lets the caller kick that load off in
  * parallel instead of awaiting it up front; it's only consumed here after the
  * gated permission call resolves.
+ *
+ * The parameters are the fields this actually reads, not the whole persisted
+ * shapes — the uploader→tagger hand-off restores from its own record and has no
+ * resume session to hand over.
  */
 export async function restoreFromHandleTrusted(
-  batch: BatchRecord,
-  recordsPromise: Promise<FileRecord[]>,
+  batch: Pick<BatchRecord, 'dirHandle'>,
+  recordsPromise: Promise<Pick<FileRecord, 'localPath' | 'fileName' | 'size'>[]>,
 ): Promise<TrustedRestoreResult> {
   const handle = batch.dirHandle;
   if (!handle) return { ok: false, reason: 'No durable folder handle is stored for this session.' };
@@ -364,6 +368,7 @@ export async function ensureBundle(
       remoteKey: r.remoteKey!,
       captureTimestamp: r.captureTimestamp,
       mimeType: r.mimeType,
+      preTags: r.preTags,
     };
   });
 

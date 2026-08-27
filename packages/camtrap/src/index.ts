@@ -625,10 +625,11 @@ export function mergeObservations(
 
 // --- UploadMeta.json delta -------------------------------------------------
 
-/** True when an image counts as "species present" (≥1 positive-count row). An
- *  upload-time placeholder row (`count: undefined`, no species identified) never
- *  counts. */
-function hasSpeciesPresent(observations: { count?: number }[]): boolean {
+/** True when an image counts as "species present" (≥1 positive-count row).
+ *  Placeholder rows (`count: undefined`) never count. Exported as the one
+ *  definition of `imagesWithSpecies`, so producers can't drift from the sync
+ *  delta. */
+export function hasSpeciesPresent(observations: { count?: number }[]): boolean {
   return observations.some((o) => (o.count ?? 0) > 0);
 }
 

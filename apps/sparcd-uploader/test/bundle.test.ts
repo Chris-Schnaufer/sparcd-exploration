@@ -14,6 +14,9 @@ import {
   parseCsvRows,
   serializeCsvRows,
   validateColumnCount,
+  commonNameFromComments,
+  requestedSpeciesFromComments,
+  parseTagMarkers,
   DEPLOY_COLUMN_COUNT,
   MEDIA_COLUMN_COUNT,
   OBS_COLUMN_COUNT,
@@ -30,6 +33,7 @@ import {
 } from '../src/lib/bundle';
 import type { Location } from '../src/lib/locations';
 import type { FileEntry } from '../src/store';
+import type { FlipObservation } from '@sparcd/flip';
 
 const UUID = '8dbd9c43-5c3d-411d-8778-617d4693c69b';
 
@@ -292,5 +296,151 @@ describe('resume: buildBundleFromRecords', () => {
     expect(validateColumnCount(parseCsvRows(b.deploymentsCsv), DEPLOY_COLUMN_COUNT)).toBeNull();
     expect(validateColumnCount(parseCsvRows(b.mediaCsv), MEDIA_COLUMN_COUNT)).toBeNull();
     expect(validateColumnCount(parseCsvRows(b.observationsCsv), OBS_COLUMN_COUNT)).toBeNull();
+  });
+});
+
+// A batch that went through the tagger before it was ever uploaded (the "flip").
+// The images and their identifications have to publish together, and both bundle
+// builders have to produce the same rows for the same tagged file — one is used
+// by a normal run, the other by a run resumed before it reached publish.
+describe('a batch tagged before upload publishes its species', () => {
+  const coyote: FlipObservation = {
+    scientificName: 'Canis latrans',
+    commonName: 'Coyote',
+    count: 2,
+    requestedSpecies: '',
+    freeTags: '',
+  };
+  const ghost: FlipObservation = {
+    scientificName: 'Casper',
+    commonName: 'Ghost',
+    count: 1,
+    requestedSpecies: '',
+    freeTags: '',
+  };
+
+  it('emits one observation row per applied species, with the tag markers', async () => {
+    const b = await build([{ ...ready('a/IMG001.JPG'), preTags: [coyote] }]);
+    const rows = parseObservations(b.observationsCsv);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].scientificName).toBe('Canis latrans');
+    expect(rows[0].count).toBe(2);
+    expect(rows[0].mediaId).toBe(b.items[0].key);
+    expect(rows[0].observationId).toBe(`${b.items[0].key}:0`);
+    expect(rows[0].timestamp).toBe(b.items[0].captureTimestamp);
+    expect(commonNameFromComments(rows[0].tags)).toBe('Coyote');
+    expect(validateColumnCount(parseCsvRows(b.observationsCsv), OBS_COLUMN_COUNT)).toBeNull();
+  });
+
+  it('gives a multi-species image one row each, numbered in apply order', async () => {
+    const puma: FlipObservation = { ...coyote, scientificName: 'Puma concolor', commonName: 'Mountain Lion', count: 1 };
+    const b = await build([{ ...ready('a/IMG001.JPG'), preTags: [coyote, puma] }]);
+    const rows = parseObservations(b.observationsCsv);
+    expect(rows.map((r) => r.scientificName)).toEqual(['Canis latrans', 'Puma concolor']);
+    expect(rows.map((r) => r.observationId)).toEqual([
+      `${b.items[0].key}:0`,
+      `${b.items[0].key}:1`,
+    ]);
+  });
+
+  it('carries a requested species and free-form markers through untouched', async () => {
+    const requested: FlipObservation = {
+      scientificName: 'Canis latrans',
+      commonName: 'Coyote',
+      count: 1,
+      requestedSpecies: 'Ringtail',
+      freeTags: '[NOTE:blurry]',
+    };
+    const b = await build([{ ...ready('a/IMG001.JPG'), preTags: [requested] }]);
+    const [row] = parseObservations(b.observationsCsv);
+    expect(requestedSpeciesFromComments(row.tags)).toBe('Ringtail');
+    expect(parseTagMarkers(row.tags)).toContainEqual({ prefix: 'NOTE', value: 'blurry' });
+  });
+
+  it('writes a blank placeholder row for each untagged file', async () => {
+    const b = await build([
+      { ...ready('a/IMG001.JPG'), preTags: [coyote] },
+      { ...ready('b/IMG002.JPG'), preTags: [] },
+      ready('c/IMG003.JPG'),
+    ]);
+    const rows = parseObservations(b.observationsCsv);
+    expect(rows).toHaveLength(3);
+    expect(rows[0].mediaId).toBe(b.items[0].key);
+    expect(rows[0].observationType).toBe('animal');
+    expect(rows[1].mediaId).toBe(b.items[1].key);
+    expect(rows[1].observationType).toBe('blank');
+    expect(rows[2].mediaId).toBe(b.items[2].key);
+    expect(rows[2].observationType).toBe('blank');
+  });
+
+  it('counts every identified image in imagesWithSpecies — Ghost included, per camtrap', async () => {
+    const b = await build([
+      { ...ready('a/IMG001.JPG'), preTags: [coyote] },
+      { ...ready('b/IMG002.JPG'), preTags: [ghost] },
+      ready('c/IMG003.JPG'),
+    ]);
+    const meta = parseUploadMeta(b.uploadMetaJson);
+    expect(meta.imageCount).toBe(3);
+    expect(meta.imagesWithSpecies).toBe(2);
+  });
+
+  it('still marks an empty frame as tagged in observations.csv', async () => {
+    const b = await build([{ ...ready('a/IMG001.JPG'), preTags: [ghost] }]);
+    const [row] = parseObservations(b.observationsCsv);
+    expect(row.scientificName).toBe('Casper');
+    expect(commonNameFromComments(row.tags)).toBe('Ghost');
+  });
+
+  it('publishes the same rows whether the bundle was built live or from records', async () => {
+    const live = await build([{ ...ready('a/IMG001.JPG'), preTags: [coyote] }]);
+    const item = live.items[0];
+    const resumed = await buildBundleFromRecords({
+      location: SAN15,
+      collectionUuid: UUID,
+      bucket: `sparcd-${UUID}`,
+      uploaderSlug: 'jdoe',
+      description: 'Educational Test — uploader bundle',
+      uploadPath: live.uploadPath,
+      startedAt: new Date(2024, 0, 15, 10, 0, 0),
+      files: [
+        {
+          fileName: item.fileName,
+          size: item.size,
+          sha256: item.sha256,
+          remoteKey: item.key,
+          captureTimestamp: item.captureTimestamp,
+          mimeType: item.mimeType,
+          preTags: [coyote],
+        },
+      ],
+    });
+    expect(resumed.observationsCsv).toBe(live.observationsCsv);
+    expect(parseUploadMeta(resumed.uploadMetaJson).imagesWithSpecies).toBe(1);
+  });
+
+  it('keeps the placeholder row for an untagged file on the resume path', async () => {
+    const b = await buildBundleFromRecords({
+      location: SAN15,
+      collectionUuid: UUID,
+      bucket: `sparcd-${UUID}`,
+      uploaderSlug: 'jdoe',
+      description: 'Educational Test — resumed upload',
+      uploadPath: `Collections/${UUID}/Uploads/2024.01.15.10.00.00_jdoe`,
+      startedAt: new Date(2024, 0, 15, 10, 0, 0),
+      files: [
+        {
+          fileName: 'IMG001.JPG',
+          size: 12,
+          sha256: 'sha-a',
+          remoteKey: `${UUID}-key/IMG001.JPG`,
+          captureTimestamp: '2024-01-10T08:00:00',
+          mimeType: 'image/jpeg',
+        },
+      ],
+    });
+    const rows = parseObservations(b.observationsCsv);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].observationId).toBe('IMG001.JPG');
+    expect(rows[0].scientificName).toBe('');
   });
 });

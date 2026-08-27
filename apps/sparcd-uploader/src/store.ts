@@ -11,6 +11,7 @@ import {
   saveSharedTheme,
   type Theme,
 } from '@sparcd/auth-ui';
+import type { FlipObservation } from '@sparcd/flip';
 import type { ScannedFile } from './lib/scanFiles';
 import type { ProcessResponse } from './lib/processPool';
 import type { FileAccessMode } from './lib/db';
@@ -39,6 +40,10 @@ export type FileEntry = ScannedFile & {
   thumbnail?: Blob;
   mimeType?: string; // worker-authoritative media type
   processError?: string;
+  // Species the tagger applied before this batch was ever uploaded. Carried
+  // opaquely: the uploader displays it read-only and emits it as observation
+  // rows, and never edits it.
+  preTags?: FlipObservation[];
 };
 
 type UploaderState = {
@@ -57,6 +62,9 @@ type UploaderState = {
   // resume access mode so a closed tab can re-read the same bytes.
   dirHandle: FileSystemDirectoryHandle | null;
   fileAccessMode: FileAccessMode;
+  // Set once this batch has been round-tripped through the tagger; it is the
+  // shared record's id, so "Edit tags" re-enters the same tagging session.
+  flipId: string | null;
   uploaderUser: string; // free-text identity, normalized into a slug for keys
   selectedLocationKey: string | null; // chosen deployment location key (Assign)
   selectedBucket: string | null; // selected collection key `${bucket}::${uuid}` (Assign)
@@ -87,6 +95,13 @@ type UploaderState = {
   setScanning: (scanning: boolean) => void;
   setProcessing: (processing: boolean) => void;
   setFiles: (files: ScannedFile[], dirHandle?: FileSystemDirectoryHandle | null) => void;
+  /** Adopt a batch coming back from the tagger, already reattached to real
+   *  Files and already carrying its Inspect results — nothing to re-process. */
+  adoptTaggedBatch: (input: {
+    flipId: string;
+    files: FileEntry[];
+    dirHandle: FileSystemDirectoryHandle | null;
+  }) => void;
   applyProgress: (started: string[], results: ProcessResponse[]) => void;
   revalidate: () => void;
   setThumbnail: (id: string, thumbnail: Blob) => void;
@@ -184,6 +199,7 @@ export const useStore = create<UploaderState>()(
       batchToken: 0,
       dirHandle: null,
       fileAccessMode: 'reselect-required',
+      flipId: null,
       // Defaults to the connected access key (the closest thing to a "login
       // name" this app has) — but only ever as a fill-in for blank; a value the
       // user typed or already had is never overwritten.
@@ -223,6 +239,7 @@ export const useStore = create<UploaderState>()(
           validations: {},
           dirHandle: null,
           fileAccessMode: 'reselect-required',
+          flipId: null,
           selectedLocationKey: null,
           selectedBucket: null,
           uploaderUser: '',
@@ -262,6 +279,24 @@ export const useStore = create<UploaderState>()(
           batchToken: s.batchToken + 1,
           dirHandle,
           fileAccessMode: dirHandle ? 'persistent-handle' : 'reselect-required',
+          flipId: null,
+        }));
+      },
+
+      // Every file arrives `ready` with its hash, capture time, and thumbnail
+      // already known — they were computed before the batch left for the tagger
+      // and rode back in the shared record. `ensureProcessing` finds nothing
+      // queued and idles, so Inspect renders instantly instead of re-hashing.
+      adoptTaggedBatch: ({ flipId, files, dirHandle }) => {
+        invalidateFileIndex();
+        set((s) => ({
+          files,
+          validations: validateBatch(files),
+          step: 'inspect' as const,
+          batchToken: s.batchToken + 1,
+          dirHandle,
+          fileAccessMode: dirHandle ? 'persistent-handle' : 'reselect-required',
+          flipId,
         }));
       },
 
@@ -349,6 +384,7 @@ export const useStore = create<UploaderState>()(
           batchToken: s.batchToken + 1,
           dirHandle: null,
           fileAccessMode: 'reselect-required',
+          flipId: null,
           activeRun: null,
           activeSnap: null,
           activeRunSource: null,
@@ -376,6 +412,7 @@ export const useStore = create<UploaderState>()(
           batchToken: s.batchToken + 1,
           dirHandle: null,
           fileAccessMode: 'reselect-required',
+          flipId: null,
           activeRun: null,
           activeSnap: null,
           activeRunSource: null,
@@ -423,6 +460,7 @@ subscribeSharedConnection((cfg) => {
           validations: {},
           dirHandle: null,
           fileAccessMode: 'reselect-required' as const,
+          flipId: null,
           selectedLocationKey: null,
           selectedBucket: null,
           uploaderUser: '',
