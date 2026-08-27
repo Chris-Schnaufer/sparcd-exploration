@@ -1,77 +1,119 @@
 #cloud-config
-# sparcd-quic-proxy-03: Caddy HTTP/3 front for the JS2 object store (Ceph RGW).
+# sparcd-shard-proxy on a Jetstream2 instance: Caddy fronting the JS2 object
+# store (Ceph RGW) on ports 443/8443/8444/8445, HTTP/3 on every one.
 #
-# Ports 443/8443/8444/8445 all serve the same handler: browsers key
-# connections on host+port, so the uploader stripes its lanes across the
-# ports to escape HTTP/2+3 single-connection coalescing (one congestion
-# window otherwise caps throughput at a single flow's share of the path).
+# The Caddyfile below is a verbatim copy of the canonical
+# apps/sparcd-shard-proxy/Caddyfile — cloud-init has no way to reference a file
+# it is not carrying. Keep the two identical; see this directory's README for
+# the one-line diff that checks it. Deployment-specific values arrive through
+# /etc/caddy/sparcd.env, exactly as they do in compose.yaml.
 #
 # TLS certificates live on an attached volume mounted at /var/lib/caddy, so
-# `openstack server rebuild` (the reliable reconfigure path from CGNAT'd
-# networks — see README) reuses them instead of burning Let's Encrypt's
+# `openstack server rebuild` — the reliable reconfigure path from a CGNAT'd
+# network, see README — reuses them instead of burning Let's Encrypt's
 # 5-per-name-per-week budget. BBR is enabled: it holds per-connection
 # throughput on long lossy paths far better than cubic.
-#
-# Hard-won details (see README.md):
-# - The forwarded Host must byte-match what the client signed (SigV4):
-#   {host} on :443 (clients sign portless), hostport on the extra ports
-#   (clients sign host:port).
-# - Caddy owns CORS: RGW only answers CORS per bucket, so service-level
-#   calls (ListBuckets = collection discovery) die in browsers without this.
-#   header_down strips RGW's per-bucket CORS so headers never double up.
-# - request_buffers 16KiB: h3 requests carry no Content-Length; without
-#   buffering, Caddy forwards bodyless requests to the h1.1 upstream as
-#   Transfer-Encoding: chunked, which RGW rejects with 501 NotImplemented.
-# - The uploader strips the SDK's `?x-id=` query param pre-signing
-#   (packages/s3-safe) — RGW 501s unknown query params.
 write_files:
   - path: /etc/sysctl.d/90-bbr.conf
     permissions: '0644'
     content: |
       net.core.default_qdisc = fq
       net.ipv4.tcp_congestion_control = bbr
+
+  - path: /etc/caddy/sparcd.env
+    permissions: '0644'
+    content: |
+      UPSTREAM=https://js2.jetstream-cloud.org:8001
+      PROXY_DOMAIN=sparcd-quic-proxy-03.bio260073.projects.jetstream-cloud.org
+      SHARD_ADDRESSES=sparcd-quic-proxy-03.bio260073.projects.jetstream-cloud.org:8443, sparcd-quic-proxy-03.bio260073.projects.jetstream-cloud.org:8444, sparcd-quic-proxy-03.bio260073.projects.jetstream-cloud.org:8445
+
+  # The packaged caddy.service reads no environment file of its own.
+  - path: /etc/systemd/system/caddy.service.d/10-sparcd.conf
+    permissions: '0644'
+    content: |
+      [Service]
+      EnvironmentFile=/etc/caddy/sparcd.env
+
   - path: /etc/caddy/Caddyfile.sparcd
     permissions: '0644'
     content: |
-      (s3rgw) {
-        @preflight method OPTIONS
-        handle @preflight {
-          header Access-Control-Allow-Origin "{http.request.header.Origin}"
-          header Access-Control-Allow-Methods "GET, HEAD, PUT, POST, DELETE"
-          header Access-Control-Allow-Headers "authorization, content-type, if-match, if-none-match, range, amz-sdk-invocation-id, amz-sdk-request, x-amz-content-sha256, x-amz-date, x-amz-meta-sha256, x-amz-user-agent, x-amz-checksum-crc32, x-amz-checksum-sha256, x-amz-checksum-mode, x-amz-sdk-checksum-algorithm, x-amz-security-token, x-amz-decoded-content-length, x-amz-trailer"
-          header Access-Control-Max-Age "600"
-          header Vary "Origin"
-          respond "" 204
-        }
-        log
-        handle {
-          header {
-            Access-Control-Allow-Origin "{http.request.header.Origin}"
-            Access-Control-Expose-Headers "ETag, Content-Length, x-amz-meta-sha256, x-amz-request-id, x-amz-version-id"
-            Vary "Origin"
-          }
-          reverse_proxy https://js2.jetstream-cloud.org:8001 {
-            header_up Host {args[0]}
-            request_buffers 16KiB
-            header_down -Access-Control-Allow-Origin
-            header_down -Access-Control-Allow-Methods
-            header_down -Access-Control-Allow-Headers
-            header_down -Access-Control-Expose-Headers
-            header_down -Access-Control-Max-Age
-          }
-        }
+      # The canonical shard-proxy config. One file serves local dev, any VM, and the
+      # Jetstream2 deploy; everything site-specific arrives in the environment.
+      #
+      #   UPSTREAM         scheme://host:port of the S3 endpoint being fronted
+      #                    e.g. https://js2.jetstream-cloud.org:8001
+      #   PROXY_DOMAIN     hostname clients reach this proxy on — the :443 origin
+      #   SHARD_ADDRESSES  the extra origins, comma-separated
+      #                    e.g. "proxy.example.org:8443, proxy.example.org:8444"
+      #
+      # Caddy substitutes {$VAR} textually before parsing, so SHARD_ADDRESSES may
+      # hold as many addresses as the deployment publishes ports for, and the shards
+      # may be subdomains on :443 instead of ports (see README).
+      #
+      # HTTPS and HTTP/3 are automatic: Caddy issues public certificates via ACME for
+      # real hostnames and internal ones for `localhost`, and advertises h3 on every
+      # TLS listener. h3 only reaches clients if the deployment publishes each shard
+      # port over UDP as well as TCP.
+
+      (s3shard) {
+      	# The upstream recomputes the SigV4 signature from the request it receives,
+      	# and Host is one of the signed headers, so the client's Host must arrive
+      	# byte-identical. Browsers omit the port when it is the scheme default, so
+      	# the :443 site passes {host} (portless) and the shard sites pass
+      	# {http.request.hostport} (host:port). Caddy preserves Host by default;
+      	# pinning it here keeps the widely cargo-culted
+      	# `header_up Host {upstream_hostport}` — which silently breaks every
+      	# signature — from creeping in.
+      	@preflight method OPTIONS
+      	handle @preflight {
+      		# The proxy owns CORS. Ceph RGW answers CORS per bucket only, so
+      		# service-level calls (ListBuckets, the uploader's collection
+      		# discovery) are browser-dead without this.
+      		header Access-Control-Allow-Origin "{http.request.header.Origin}"
+      		header Access-Control-Allow-Methods "GET, HEAD, PUT, POST, DELETE"
+      		header Access-Control-Allow-Headers "authorization, content-type, if-match, if-none-match, range, amz-sdk-invocation-id, amz-sdk-request, x-amz-content-sha256, x-amz-date, x-amz-meta-sha256, x-amz-user-agent, x-amz-checksum-crc32, x-amz-checksum-sha256, x-amz-checksum-mode, x-amz-sdk-checksum-algorithm, x-amz-security-token, x-amz-decoded-content-length, x-amz-trailer"
+      		header Access-Control-Max-Age "600"
+      		header Vary "Origin"
+      		respond "" 204
+      	}
+      	log
+      	handle {
+      		header {
+      			Access-Control-Allow-Origin "{http.request.header.Origin}"
+      			Access-Control-Expose-Headers "ETag, Content-Length, x-amz-meta-sha256, x-amz-request-id, x-amz-version-id"
+      			Vary "Origin"
+      		}
+      		reverse_proxy {$UPSTREAM} {
+      			header_up Host {args[0]}
+
+      			# HTTP/3 requests carry no Content-Length. Unbuffered, Caddy
+      			# forwards them to the HTTP/1.1 upstream as
+      			# `Transfer-Encoding: chunked`, which RGW rejects with
+      			# 501 NotImplemented. Buffering lets Caddy set a real length.
+      			request_buffers 16KiB
+
+      			# RGW emits its own per-bucket CORS headers. Dropping them here is
+      			# what keeps the browser from seeing two Access-Control-Allow-Origin
+      			# values and failing the check.
+      			header_down -Access-Control-Allow-Origin
+      			header_down -Access-Control-Allow-Methods
+      			header_down -Access-Control-Allow-Headers
+      			header_down -Access-Control-Expose-Headers
+      			header_down -Access-Control-Max-Age
+      		}
+      	}
       }
-      sparcd-quic-proxy-03.bio260073.projects.jetstream-cloud.org:443 {
-        import s3rgw {host}
+
+      {$PROXY_DOMAIN}:443 {
+      	import s3shard {host}
       }
-      sparcd-quic-proxy-03.bio260073.projects.jetstream-cloud.org:8443,
-      sparcd-quic-proxy-03.bio260073.projects.jetstream-cloud.org:8444,
-      sparcd-quic-proxy-03.bio260073.projects.jetstream-cloud.org:8445 {
-        import s3rgw {http.request.hostport}
+
+      {$SHARD_ADDRESSES} {
+      	import s3shard {http.request.hostport}
       }
 runcmd:
   - sysctl --system
-  # Cert volume before Caddy exists: format only if blank, mount by label.
+  # The cert volume has to exist before Caddy does. Format only if blank.
   - |
     DEV=/dev/vdb; [ -b $DEV ] || DEV=/dev/sdb
     blkid $DEV >/dev/null 2>&1 || mkfs.ext4 -L caddydata $DEV
@@ -86,4 +128,5 @@ runcmd:
   - DEBIAN_FRONTEND=noninteractive apt-get install -y caddy
   - mv /etc/caddy/Caddyfile.sparcd /etc/caddy/Caddyfile
   - chown -R caddy:caddy /var/lib/caddy
+  - systemctl daemon-reload
   - systemctl restart caddy

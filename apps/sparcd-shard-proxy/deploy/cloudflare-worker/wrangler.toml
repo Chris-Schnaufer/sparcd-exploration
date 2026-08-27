@@ -1,0 +1,35 @@
+name = "sparcd-shard-proxy"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+[vars]
+# The S3 endpoint being fronted, with scheme and port.
+UPSTREAM = "https://js2.jetstream-cloud.org:8001"
+S3_REGION = "us-east-1"
+
+# The shard origins. One Worker, several hostnames: browsers open a separate
+# connection per hostname, which is the whole point. Each name needs a DNS
+# record in a zone on this Cloudflare account; `custom_domain = true` makes
+# wrangler create and manage it.
+#
+# Adding a shard is one more block here and one more entry in the client's
+# shard-endpoint list. Nothing else changes.
+[[routes]]
+pattern = "shard1.example.org"
+custom_domain = true
+
+[[routes]]
+pattern = "shard2.example.org"
+custom_domain = true
+
+[[routes]]
+pattern = "shard3.example.org"
+custom_domain = true
+
+[[routes]]
+pattern = "shard4.example.org"
+custom_domain = true
+
+# S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY are secrets, not vars:
+#   npx wrangler secret put S3_ACCESS_KEY_ID
+#   npx wrangler secret put S3_SECRET_ACCESS_KEY
