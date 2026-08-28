@@ -585,3 +585,16 @@ Then('the state is distinguishable by shape and glyph, not by colour alone', asy
   expect(['○', '◔', '◐', '●', '▲', '◇', '✕']).toContain(glyph!.trim());
 });
 
+
+// --- Blank-row upload diff counts (issue #89) --------------------------------
+
+When('a species is applied to the first image', async ({ page }) => {
+  await focusFrame(page, 'IMG001.JPG');
+  await speciesApply(page, 'Canis latrans').click();
+  await expect(gridCell(page, 'IMG001.JPG')).toContainText('Coyote');
+});
+
+Then('the diff counts it as 1 addition and 0 modifications', async ({ page }) => {
+  await expect(summaryCell(page, 'Added')).toHaveText('1Added');
+  await expect(summaryCell(page, 'Changed')).toHaveText('0Changed');
+});

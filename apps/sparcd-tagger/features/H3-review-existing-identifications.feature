@@ -96,3 +96,15 @@ Feature: Review, correct and remove identifications that already exist
     Given an image's identifications were changed in this browser
     Then its tile carries an unsaved-edit marker
     And the marker is cleared for that image once its change has been synced
+
+  @H3
+  Scenario: Uploader-written blank rows are shown as untagged, not as identified images
+    Given an upload with only uploader-written blank rows is open in the tagging workspace
+    Then every image tile is shown as untagged
+    And the list view labels every image "untagged"
+
+  @H3
+  Scenario: A blank-row upload reports nothing to sync before any identifications are made
+    Given an upload with only uploader-written blank rows is open in the tagging workspace
+    When the Sync dialog is opened for a blank-row upload
+    Then the sync reports there is nothing to sync

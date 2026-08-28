@@ -12,7 +12,7 @@ import {
   sectionTab,
   enterFocusView,
 } from './support/world';
-import { BUCKET, PREFIX_A } from './support/data';
+import { BUCKET, PREFIX_A, MEDIA_A } from './support/data';
 import { openSyncDialog, setSyncDryRun, readStore } from './support/flows';
 
 const appliedChip = (page: Page, label: string) =>
@@ -284,4 +284,38 @@ Then('the marker is cleared for that image once its change has been synced', asy
   await expect(page.getByText('Synced — canonical files replaced.')).toBeVisible();
   await page.getByRole('button', { name: 'Close', exact: true }).first().click();
   await expect(gridCell(page, 'IMG002.JPG').locator('[title="unsaved edit"]')).toHaveCount(0);
+});
+
+// --- Blank-row uploads (issue #89) ------------------------------------------
+
+Given('an upload with only uploader-written blank rows is open in the tagging workspace', async ({ page }) => {
+  await openWorkspace(page, 'newuploader');
+  // All images should lack any species text; IMG001.JPG is a reliable canary.
+  await expect(gridCell(page, 'IMG001.JPG')).not.toContainText('Deer');
+  await expect(gridCell(page, 'IMG001.JPG')).not.toContainText('Coyote');
+});
+
+Then('every image tile is shown as untagged', async ({ page }) => {
+  for (const m of MEDIA_A.filter((m) => !m.file.endsWith('.MP4'))) {
+    // A tile with no species shows only its filename — "untagged" is list-view only.
+    // The key assertion is that no species name bleeds through from the blank row.
+    await expect(gridCell(page, m.file)).not.toContainText('×');
+  }
+});
+
+Then('the list view labels every image "untagged"', async ({ page }) => {
+  await page.getByRole('button', { name: '☰ List' }).click();
+  for (const m of MEDIA_A) {
+    await expect(listRow(page, m.file)).toContainText('untagged');
+  }
+});
+
+When('the Sync dialog is opened for a blank-row upload', async ({ page }) => {
+  await openSyncDialog(page);
+});
+
+Then('the sync reports there is nothing to sync', async ({ page }) => {
+  await expect(
+    page.getByText('No local edits to sync — everything matches the canonical files.'),
+  ).toBeVisible();
 });
