@@ -221,10 +221,10 @@ Then(
     const media = Object.fromEntries(writtenCsvRows(app, 'media.csv').map((r) => [r[6], r[0]]));
     const animal = rows.filter((r) => r[5] === 'animal');
     const byName = Object.fromEntries(animal.map((r) => [r[8], r]));
-    expect(byName['Canis latrans'][0]).toBe('IMG_0001.JPG:0');
+    expect(byName['Canis latrans'][0]).toBe('SDCARD/IMG_0001.JPG:0');
     expect(byName['Canis latrans'][3]).toBe(media['IMG_0001.JPG']);
     expect(byName['Canis latrans'][9]).toBe('2');
-    expect(byName['Casper'][0]).toBe('IMG_0002.JPG:0');
+    expect(byName['Casper'][0]).toBe('SDCARD/IMG_0002.JPG:0');
     expect(byName['Casper'][3]).toBe(media['IMG_0002.JPG']);
     expect(byName['Casper'][9]).toBe('1');
   },
