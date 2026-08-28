@@ -131,9 +131,6 @@ export function Upload() {
   // Dismisses the "upload complete" popup — reset whenever a new run (fresh
   // start or resume) begins, so a later run's completion pops it again.
   const [completeDismissed, setCompleteDismissed] = useState(false);
-  // Dry runs write nothing, so leaving mid-run has no real consequence —
-  // only a real run needs the beforeunload guard below.
-  const runningForReal = running && !!snap && !snap.dryRun;
 
   // A resume prepared in History lands here. Read the handoff from the live
   // store and clear it immediately: under StrictMode this effect fires twice,
@@ -159,70 +156,6 @@ export function Upload() {
     setActiveRun(run);
   }, [pendingResume, s3Config, setActiveRun, setActiveSnap]);
 
-  // Hold a screen wake lock while actively uploading, so OS/display idle-sleep
-  // doesn't interrupt it. Best-effort: unsupported browsers (Firefox, as of
-  // this writing) and rejected requests (e.g. low battery) just mean no lock —
-  // never fatal to the upload itself. The lock is auto-released by the browser
-  // whenever the tab is hidden, so it's re-acquired on regaining visibility.
-  //
-  // Caveats — cases this can't prevent: the tab being minimized/backgrounded
-  // (the lock releases the moment it's hidden), the laptop lid closing (a
-  // separate sleep trigger the OS honors regardless of any page's wake lock),
-  // and Firefox (no Wake Lock API support at all, so no lock is ever held
-  // there).
-  useEffect(() => {
-    if (!running || !('wakeLock' in navigator)) return;
-    let lock: WakeLockSentinel | null = null;
-    let cancelled = false;
-    // Incremented on every acquire() call. The resolved sentinel is kept only
-    // if gen still matches — two visibility events arriving before either
-    // request resolves would otherwise orphan the first sentinel.
-    let gen = 0;
-
-    const acquire = () => {
-      const myGen = ++gen;
-      navigator.wakeLock
-        .request('screen')
-        .then((l) => {
-          if (cancelled || myGen !== gen) {
-            void l.release();
-          } else {
-            lock = l;
-          }
-        })
-        .catch(() => {
-          /* not fatal — e.g. low battery, or acquired while hidden */
-        });
-    };
-
-    const onVisibility = () => {
-      if (document.visibilityState !== 'visible') return;
-      void lock?.release();
-      lock = null;
-      acquire();
-    };
-
-    acquire();
-    document.addEventListener('visibilitychange', onVisibility);
-
-    return () => {
-      cancelled = true;
-      document.removeEventListener('visibilitychange', onVisibility);
-      void lock?.release();
-    };
-  }, [running]);
-
-  // Warn on an actual tab close/reload too, not just in-app navigation —
-  // browsers ignore any custom message and show their own generic prompt.
-  useEffect(() => {
-    if (!runningForReal) return;
-    const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = '';
-    };
-    window.addEventListener('beforeunload', onBeforeUnload);
-    return () => window.removeEventListener('beforeunload', onBeforeUnload);
-  }, [runningForReal]);
 
 
   const ready = useMemo(() => files.filter((f) => f.processState === 'ready' && f.sha256), [files]);
