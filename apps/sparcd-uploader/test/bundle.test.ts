@@ -326,7 +326,7 @@ describe('a batch tagged before upload publishes its species', () => {
     expect(rows[0].scientificName).toBe('Canis latrans');
     expect(rows[0].count).toBe(2);
     expect(rows[0].mediaId).toBe(b.items[0].key);
-    expect(rows[0].observationId).toBe('IMG001.JPG:0');
+    expect(rows[0].observationId).toBe('a/IMG001.JPG:0');
     expect(rows[0].timestamp).toBe(b.items[0].captureTimestamp);
     expect(commonNameFromComments(rows[0].tags)).toBe('Coyote');
     expect(validateColumnCount(parseCsvRows(b.observationsCsv), OBS_COLUMN_COUNT)).toBeNull();
@@ -338,8 +338,8 @@ describe('a batch tagged before upload publishes its species', () => {
     const rows = parseObservations(b.observationsCsv);
     expect(rows.map((r) => r.scientificName)).toEqual(['Canis latrans', 'Puma concolor']);
     expect(rows.map((r) => r.observationId)).toEqual([
-      'IMG001.JPG:0',
-      'IMG001.JPG:1',
+      'a/IMG001.JPG:0',
+      'a/IMG001.JPG:1',
     ]);
   });
 
@@ -417,8 +417,8 @@ describe('a batch tagged before upload publishes its species', () => {
     });
     expect(resumed.observationsCsv).toBe(live.observationsCsv);
     expect(parseObservations(resumed.observationsCsv).map((row) => row.observationId)).toEqual([
-      'IMG001.JPG:0',
-      'IMG001.JPG:1',
+      'a/IMG001.JPG:0',
+      'a/IMG001.JPG:1',
     ]);
     expect(parseUploadMeta(resumed.uploadMetaJson).imagesWithSpecies).toBe(1);
   });
