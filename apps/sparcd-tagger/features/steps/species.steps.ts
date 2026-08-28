@@ -81,6 +81,13 @@ Then('each species shows the key bound to it, when it has one', async ({ page })
   await expect(ghostRow(page).locator('kbd')).toHaveText('G');
 });
 
+Then('Ghost appears exactly once as a species from the vocabulary', async ({ page }) => {
+  const rows = page.locator('div.group').filter({ has: page.getByText('Ghost', { exact: true }) });
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText('Casper');
+  await expect(rows.locator('kbd')).toHaveText('G');
+});
+
 // --- Applying ---------------------------------------------------------------
 
 When('a species row is used', async ({ page }) => {
@@ -443,4 +450,3 @@ Then("the collection's stored files are unchanged until a sync is run", async ({
   expect(s3.text(BUCKET, `${PREFIX_A}observations.csv`)).toBe(observationsCsv(PREFIX_A, OBS_A));
   await expect(positionReadout(page)).toBeVisible();
 });
-

@@ -8,7 +8,7 @@ import { localTagImages, tagsFromDrafts } from '../src/lib/localWorkspace';
 import { isVideoImage } from '../src/lib/workspace';
 import { safeReturnUrl, uploaderPath } from '../src/lib/siblings';
 import { DEFAULT_SPECIES } from '../src/lib/defaultSpecies';
-import { GHOST, blankDraft } from '../src/lib/drafts';
+import { blankDraft } from '../src/lib/drafts';
 import type { DraftObservation, DraftRecord } from '../src/lib/db';
 
 const coyote: DraftObservation = {
@@ -112,8 +112,11 @@ describe('the offline species vocabulary', () => {
     expect(coyoteEntry?.commonName).toBe('Coyote');
   });
 
-  it('leaves Ghost out — the species panel has its own built-in row', () => {
-    expect(DEFAULT_SPECIES.some((s) => s.scientificName === GHOST.label)).toBe(false);
+  it('loads Ghost and its shortcut from the registry like every other species', () => {
+    expect(DEFAULT_SPECIES.find((s) => s.scientificName === 'Casper')).toMatchObject({
+      commonName: 'Ghost',
+      keyBinding: 'G',
+    });
   });
 
   it('carries the key bindings the desktop app uses', () => {
