@@ -126,7 +126,7 @@ runcmd:
   - sysctl --system
   # The cert volume has to exist before Caddy does. On a rebuild it is already
   # labelled and nothing is formatted. On a first boot every candidate is
-  # inspected and exactly one must be free of any filesystem signature; zero or
+  # inspected and exactly one must carry no signature at all; zero or
   # several and the boot fails loudly rather than guessing. This runs
   # unattended against whatever OpenStack attached, so guessing destroys data.
   # Set CERT_DEV to a /dev/disk/by-id/virtio-<volume-id-prefix> path to skip
@@ -137,9 +137,12 @@ runcmd:
       BLANK=""
       for DEV in ${CERT_DEV:-/dev/vdb /dev/sdb}; do
         [ -b "$DEV" ] || continue
-        TYPE=$(blkid -o value -s TYPE "$DEV" 2>/dev/null || true)
-        if [ -n "$TYPE" ]; then
-          echo "skipping $DEV: holds $TYPE" >&2
+        # Any signature at all disqualifies it, not just a filesystem: a disk
+        # whose data lives in partitions has no TYPE of its own, so asking for
+        # one would call a full GPT disk blank and format it. Bare `blkid`
+        # exits 0 for a partition table too, and 2 for a genuinely empty device.
+        if INFO=$(blkid "$DEV" 2>/dev/null); then
+          echo "skipping $DEV: holds ${INFO#*: }" >&2
         else
           BLANK="$BLANK $DEV"
         fi
