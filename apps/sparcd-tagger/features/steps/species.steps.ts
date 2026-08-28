@@ -363,14 +363,14 @@ Then('clearing a key removes it for that species', async ({ page }) => {
 
 // --- Keypress count increment (issue #96) -----------------------------------
 
-Given('an image is focused', async ({ page }) => {
-  await focusFrame(page, 'IMG002.JPG');
-});
-
 When('the bound key is pressed three times', async ({ page }) => {
   // 'D' is the vocabulary key binding for Mule Deer (Odocoileus hemionus).
   await page.keyboard.press('d');
   await page.keyboard.press('d');
+  await page.keyboard.press('d');
+});
+
+When('the bound key is pressed once', async ({ page }) => {
   await page.keyboard.press('d');
 });
 
@@ -391,6 +391,33 @@ Then('the image still carries Ghost with a count of one', async ({ page }) => {
   await expect(gridCell(page, 'IMG002.JPG')).toContainText('Ghost');
   await expect(appliedChip(page, 'Ghost')).toHaveCount(1);
   await expect(appliedChip(page, 'Ghost')).not.toContainText('×');
+  await expect
+    .poll(async () => {
+      const drafts = (await readStore(page, 'drafts')) as {
+        mediaPath: string;
+        observations: { scientificName: string; count: number }[];
+      }[];
+      return drafts
+        .find((d) => d.mediaPath.endsWith('IMG002.JPG'))
+        ?.observations.find((o) => o.scientificName === 'Casper')?.count;
+    })
+    .toBe(1);
+});
+
+Then('each selected image increments the species from its own count', async ({ page }) => {
+  await waitForDirtyDrafts(page, 3);
+  const drafts = (await readStore(page, 'drafts')) as {
+    mediaPath: string;
+    observations: { scientificName: string; count: number }[];
+  }[];
+  const count = (file: string, scientificName: string) =>
+    drafts
+      .find((d) => d.mediaPath.endsWith(file))
+      ?.observations.find((o) => o.scientificName === scientificName)?.count;
+  expect(count('IMG001.JPG', 'Odocoileus hemionus')).toBe(3);
+  expect(count('IMG002.JPG', 'Odocoileus hemionus')).toBe(1);
+  expect(count('IMG003.JPG', 'Odocoileus hemionus')).toBe(1);
+  expect(count('IMG003.JPG', 'Casper')).toBeUndefined();
 });
 
 // --- Loupe ------------------------------------------------------------------

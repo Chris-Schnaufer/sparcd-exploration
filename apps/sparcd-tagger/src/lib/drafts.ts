@@ -82,9 +82,10 @@ export function addObservation(obs: DraftObservation[], tag: AppliedTag): DraftO
 /**
  * Adds species at count 1 if absent; increments its count by 1 if already
  * present. Used by keypress paths so repeated presses accumulate. Ghost is
- * never passed here — it keeps the idempotent addObservation behavior.
+ * handled defensively through addObservation so it remains exclusive and one.
  */
 export function incrementObservation(obs: DraftObservation[], tag: AppliedTag): DraftObservation[] {
+  if (tag.scientificName === GHOST.label) return addObservation(obs, { ...tag, count: 1 });
   const withoutGhost = obs.filter((o) => !isGhost(o));
   const existing = withoutGhost.find((o) => o.scientificName === tag.scientificName);
   if (existing) {
@@ -92,16 +93,7 @@ export function incrementObservation(obs: DraftObservation[], tag: AppliedTag): 
       o.scientificName === tag.scientificName ? { ...o, count: o.count + 1 } : o,
     );
   }
-  return [
-    ...withoutGhost,
-    {
-      scientificName: tag.scientificName,
-      commonName: tag.commonName,
-      count: 1,
-      requestedSpecies: tag.requestedSpecies ?? '',
-      freeTags: tag.freeTags ?? '',
-    },
-  ];
+  return addObservation(withoutGhost, { ...tag, count: 1 });
 }
 
 /** Remove exactly the named species, keeping every other (and its order). */

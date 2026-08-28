@@ -96,6 +96,13 @@ Feature: Assign species to images in an upload
     Then the species count on that image is three
 
   @H2
+  Scenario: A species key increments every selected image from its own count
+    Given the species vocabulary carries a key binding for a species
+    And several images are selected
+    When the bound key is pressed once
+    Then each selected image increments the species from its own count
+
+  @H2
   Scenario: Pressing the Ghost key repeatedly does not change its count
     Given an image is focused
     When the Ghost key is pressed multiple times
