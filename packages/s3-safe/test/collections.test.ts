@@ -89,6 +89,30 @@ describe('listCollections', () => {
       description: null,
     });
   });
+
+  // A store can expose a hundred-plus collection buckets. Firing every marker
+  // GET at once just queues them behind the browser's per-origin connection
+  // limit and starves the rest of the page mid-connect.
+  it('keeps at most 16 marker reads in flight', async () => {
+    const buckets = Array.from({ length: 129 }, (_, i) => `sparcd-${String(i).padStart(4, '0')}`);
+    let inFlight = 0;
+    let peak = 0;
+    const client = {
+      async listBuckets() {
+        return buckets;
+      },
+      async getObject() {
+        peak = Math.max(peak, ++inFlight);
+        await Promise.resolve();
+        inFlight--;
+        return new TextEncoder().encode('{"nameProperty":"C"}');
+      },
+    } as unknown as SafeS3Client;
+
+    const result = await listCollections(client);
+    expect(result).toHaveLength(129);
+    expect(peak).toBeLessThanOrEqual(16);
+  });
 });
 
 describe('translateReadError', () => {

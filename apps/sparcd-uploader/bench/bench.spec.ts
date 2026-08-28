@@ -32,12 +32,21 @@ test('uploads the fixed corpus through the real app', async ({ page }) => {
   let lastMediaHeadAt: number | undefined;
   let uploadCompleteAt: number | undefined;
   let uploadPrefix: string | undefined;
-  const requestCounts = { mediaPut: 0, mediaHead: 0, multipartPart: 0, metadataPut: 0 };
+  const requestCounts = { mediaPut: 0, mediaHead: 0, mediaList: 0, multipartPart: 0, metadataPut: 0 };
 
   page.on('request', (request) => {
     if (!request.url().startsWith(MINIO_ORIGIN)) return;
     if (request.method() === 'OPTIONS') return;
     const url = new URL(request.url());
+    const listedPrefix = url.searchParams.get('prefix') ?? '';
+    if (
+      request.method() === 'GET' &&
+      url.searchParams.get('list-type') === '2' &&
+      uploadPrefix !== undefined &&
+      listedPrefix === `${uploadPrefix}/`
+    ) {
+      requestCounts.mediaList++;
+    }
     const key = objectKey(request.url());
     if (!key.startsWith('Collections/')) return;
     const metadata = isMetadata(request.url());
@@ -91,9 +100,6 @@ test('uploads the fixed corpus through the real app', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Upload', exact: true })).toBeVisible();
   const dryRun = page.getByRole('checkbox');
   if (await dryRun.isChecked()) await dryRun.uncheck();
-  const concurrency = page.locator('input[type="range"]');
-  await concurrency.fill('8');
-  await expect(concurrency).toHaveValue('8');
   await page.getByRole('button', { name: 'Start upload' }).click();
   await expect(page.getByRole('button', { name: 'Next batch' })).toBeVisible({ timeout: 120_000 });
   const completedAt = performance.now();
@@ -116,10 +122,11 @@ test('uploads the fixed corpus through the real app', async ({ page }) => {
   expect(media).toHaveLength(362);
   expect(media.reduce((sum, item) => sum + (item.Size ?? 0), 0)).toBe(TOTAL_MEDIA_BYTES);
   expect(metadata).toHaveLength(5);
-  // 360 single PUTs, 2x2 multipart parts, one HEAD per blob, 5 metadata PUTs.
+  // 360 single PUTs, 2x2 multipart parts, one listing page covering all 362
+  // blobs, three spread-out HEAD samples for the digest contract, and 5 metadata PUTs.
   // The request profile is deterministic — any deviation (extra HEADs, retries,
   // a lost multipart path, doubled metadata) is a real regression, on any hardware.
-  expect(requestCounts).toEqual({ mediaPut: 360, mediaHead: 362, multipartPart: 4, metadataPut: 5 });
+  expect(requestCounts).toEqual({ mediaPut: 360, mediaHead: 3, mediaList: 1, multipartPart: 4, metadataPut: 5 });
 
   const clocks = {
     preprocessMs: Math.round(inspectedAt - folderAcceptedAt),

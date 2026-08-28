@@ -5,6 +5,7 @@ import { useStore } from '../store';
 import { Spinner } from '../components/Spinner';
 import { useLocations } from '../lib/useLocations';
 import { useCollections, useCollectionDeployments } from '../lib/useCollections';
+import { clearDiscovery } from '../lib/discoveryCache';
 import { DeploymentPicker } from '../components/DeploymentPicker';
 import { CollectionPicker } from '../components/CollectionPicker';
 import { CaptureTimeEditor } from '../components/CaptureTimeEditor';
@@ -86,9 +87,18 @@ export function Assign() {
   const slug = sanitizeUploaderUser(uploaderUser);
 
   const queryClient = useQueryClient();
-  const refreshCollections = () =>
+  // Refresh means "ask the store again from scratch", so the remembered shape
+  // goes too — but only the part this control refetches. The queries it kicks
+  // off write their own field back on success; clearing the other one would
+  // just leave the next warm connect with half a cache.
+  const refreshCollections = () => {
+    if (s3Config) clearDiscovery(s3Config, 'collections');
     void queryClient.invalidateQueries({ queryKey: ['collections'] });
+  };
   const refreshDeployments = () => {
+    // The settings bucket may have moved; drop the hint so it is re-searched
+    // rather than confirmed from cache.
+    if (s3Config) clearDiscovery(s3Config, 'settingsBucket');
     void queryClient.invalidateQueries({ queryKey: ['locations'] });
     void queryClient.invalidateQueries({ queryKey: ['collectionDeployments'] });
   };
