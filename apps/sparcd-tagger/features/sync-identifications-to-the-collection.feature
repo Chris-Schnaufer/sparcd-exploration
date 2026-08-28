@@ -112,13 +112,6 @@ Feature: Publish local identifications back to the collection
     Given the connected store does not honour conditional replacement
     When a sync is attempted
     Then the sync is refused with an explanation
-
-  @H3
-  Scenario: Tagging an image on a blank-row upload is counted as an addition, not a modification
-    Given an upload with only uploader-written blank rows is open in the tagging workspace
-    When a species is applied to the first image
-    And the Sync dialog is opened
-    Then the diff counts it as 1 addition and 0 modifications
     And the stored files are left untouched
     # Corrected against the app: the pre-change snapshot is written BEFORE the
     # first conditional replacement is attempted, so a refused sync does leave
@@ -126,6 +119,13 @@ Feature: Publish local identifications back to the collection
     # wording ("nothing is written") was wrong. See CORRECTIONS.md.
     # Depends on the S3-compatible backend in use; not reachable against a
     # store that supports conditional writes.
+
+  @H3
+  Scenario: Tagging an image on a blank-row upload is counted as an addition, not a modification
+    Given an upload with only uploader-written blank rows is open in the tagging workspace
+    When a species is applied to the first image
+    And the Sync dialog is opened
+    Then the diff counts it as 1 addition and 0 modifications
 
   @unmapped
   Scenario: The workspace reports its sync state at a glance
