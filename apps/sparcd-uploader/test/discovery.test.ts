@@ -141,4 +141,15 @@ describe('discovery cache', () => {
     store.set('sparcd-uploader-discovery', JSON.stringify({ v: 0, accounts: { x: { at: 1 } } }));
     expect(readDiscovery(CFG)).toBeNull();
   });
+
+  it('clears one named field and leaves the rest of the account warm', () => {
+    writeDiscovery(CFG, { settingsBucket: 'one', collections: [] });
+
+    clearDiscovery(CFG, 'collections');
+    expect(readDiscovery(CFG)?.collections).toBeUndefined();
+    expect(readDiscovery(CFG)?.settingsBucket).toBe('one');
+
+    clearDiscovery(CFG, 'settingsBucket');
+    expect(readDiscovery(CFG)?.settingsBucket).toBeUndefined();
+  });
 });

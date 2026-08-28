@@ -88,17 +88,17 @@ export function Assign() {
 
   const queryClient = useQueryClient();
   // Refresh means "ask the store again from scratch", so the remembered shape
-  // goes too — otherwise a settings bucket that moved would keep being
-  // confirmed by the cached hint instead of re-searched.
-  const reprobe = () => {
-    if (s3Config) clearDiscovery(s3Config);
-  };
+  // goes too — but only the part this control refetches. The queries it kicks
+  // off write their own field back on success; clearing the other one would
+  // just leave the next warm connect with half a cache.
   const refreshCollections = () => {
-    reprobe();
+    if (s3Config) clearDiscovery(s3Config, 'collections');
     void queryClient.invalidateQueries({ queryKey: ['collections'] });
   };
   const refreshDeployments = () => {
-    reprobe();
+    // The settings bucket may have moved; drop the hint so it is re-searched
+    // rather than confirmed from cache.
+    if (s3Config) clearDiscovery(s3Config, 'settingsBucket');
     void queryClient.invalidateQueries({ queryKey: ['locations'] });
     void queryClient.invalidateQueries({ queryKey: ['collectionDeployments'] });
   };
