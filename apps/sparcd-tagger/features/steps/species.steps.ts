@@ -361,6 +361,38 @@ Then('clearing a key removes it for that species', async ({ page }) => {
   await expect(speciesBadge(page, 'Canis latrans')).toHaveCount(0);
 });
 
+// --- Keypress count increment (issue #96) -----------------------------------
+
+Given('an image is focused', async ({ page }) => {
+  await focusFrame(page, 'IMG002.JPG');
+});
+
+When('the bound key is pressed three times', async ({ page }) => {
+  // 'D' is the vocabulary key binding for Mule Deer (Odocoileus hemionus).
+  await page.keyboard.press('d');
+  await page.keyboard.press('d');
+  await page.keyboard.press('d');
+});
+
+Then('the species count on that image is three', async ({ page }) => {
+  await expect(appliedChip(page, 'Mule Deer').locator('input[type="number"]')).toHaveValue('3');
+  await expect(gridCell(page, 'IMG002.JPG')).toContainText('Mule Deer ×3');
+});
+
+When('the Ghost key is pressed multiple times', async ({ page }) => {
+  // 'G' is the vocabulary key binding for Ghost.
+  await page.keyboard.press('g');
+  await page.keyboard.press('g');
+  await page.keyboard.press('g');
+});
+
+Then('the image still carries Ghost with a count of one', async ({ page }) => {
+  // Ghost renders without a count input (it is always exactly one).
+  await expect(gridCell(page, 'IMG002.JPG')).toContainText('Ghost');
+  await expect(appliedChip(page, 'Ghost')).toHaveCount(1);
+  await expect(appliedChip(page, 'Ghost')).not.toContainText('×');
+});
+
 // --- Loupe ------------------------------------------------------------------
 
 const loupe = (page: Page) =>

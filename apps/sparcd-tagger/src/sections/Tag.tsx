@@ -85,6 +85,7 @@ export function Tag() {
   const timeOffset = useDraftStore((s) => s.timeOffset);
   const loadUpload = useDraftStore((s) => s.loadUpload);
   const addSpeciesFn = useDraftStore((s) => s.addSpecies);
+  const incrementSpeciesFn = useDraftStore((s) => s.incrementSpecies);
   const removeSpeciesFn = useDraftStore((s) => s.removeSpecies);
   const setSpeciesCountFn = useDraftStore((s) => s.setSpeciesCount);
   const detagFn = useDraftStore((s) => s.detag);
@@ -309,6 +310,13 @@ export function Tag() {
     if (tag.scientificName) pushRecent(tag.scientificName);
   };
 
+  const applyIncrement = (tag: AppliedTag) => {
+    const targets = targetsOf();
+    if (!targets.length) return;
+    incrementSpeciesFn(ctx, targets, tag);
+    if (tag.scientificName) pushRecent(tag.scientificName);
+  };
+
   // Selection-scoped bulk time shift: each target carries its currently-displayed
   // corrected time so the store can freeze (corrected + delta) into a per-image
   // override. Frames without a capture time have nothing to correct, so skip them.
@@ -393,6 +401,7 @@ export function Tag() {
     setCapturingFor,
     assignKey,
     apply,
+    applyIncrement,
     targetsOf,
     detag: detagFn,
     setQuestionableMany: setQuestionableManyFn,
@@ -1236,6 +1245,7 @@ type HandlerState = {
   setCapturingFor: (v: string | null) => void;
   assignKey: (sci: string, key: string) => void;
   apply: (tag: AppliedTag) => void;
+  applyIncrement: (tag: AppliedTag) => void;
   targetsOf: () => TagTarget[];
   detag: (ctx: UploadCtx, targets: TagTarget[]) => void;
   setQuestionableMany: (ctx: UploadCtx, targets: TagTarget[], value: boolean) => void;
@@ -1420,5 +1430,5 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
   const action = s.keyMap.get(e.key.toLowerCase());
   if (!action || !current) return;
   e.preventDefault();
-  s.apply({ scientificName: action.species.scientificName, commonName: action.species.commonName, count: 1 });
+  s.applyIncrement({ scientificName: action.species.scientificName, commonName: action.species.commonName, count: 1 });
 }

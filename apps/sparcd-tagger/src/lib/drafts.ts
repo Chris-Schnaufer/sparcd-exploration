@@ -79,6 +79,31 @@ export function addObservation(obs: DraftObservation[], tag: AppliedTag): DraftO
   return [...withoutGhost, next];
 }
 
+/**
+ * Adds species at count 1 if absent; increments its count by 1 if already
+ * present. Used by keypress paths so repeated presses accumulate. Ghost is
+ * never passed here — it keeps the idempotent addObservation behavior.
+ */
+export function incrementObservation(obs: DraftObservation[], tag: AppliedTag): DraftObservation[] {
+  const withoutGhost = obs.filter((o) => !isGhost(o));
+  const existing = withoutGhost.find((o) => o.scientificName === tag.scientificName);
+  if (existing) {
+    return withoutGhost.map((o) =>
+      o.scientificName === tag.scientificName ? { ...o, count: o.count + 1 } : o,
+    );
+  }
+  return [
+    ...withoutGhost,
+    {
+      scientificName: tag.scientificName,
+      commonName: tag.commonName,
+      count: 1,
+      requestedSpecies: tag.requestedSpecies ?? '',
+      freeTags: tag.freeTags ?? '',
+    },
+  ];
+}
+
 /** Remove exactly the named species, keeping every other (and its order). */
 export function removeObservation(
   obs: DraftObservation[],
@@ -108,6 +133,8 @@ type DraftState = {
 
   /** Add-only species apply to one focused image OR every target in a selection. */
   addSpecies: (ctx: UploadCtx, targets: TagTarget[], tag: AppliedTag) => void;
+  /** Keypress path: add at count 1 if absent, increment count by 1 if present. */
+  incrementSpecies: (ctx: UploadCtx, targets: TagTarget[], tag: AppliedTag) => void;
   /** Remove ONE species from ONE image (chip ✕). */
   removeSpecies: (
     ctx: UploadCtx,
@@ -260,6 +287,9 @@ export const useDraftStore = create<DraftState>((set, get) => {
 
     addSpecies: (ctx, targets, tag) =>
       mutateMany(ctx, targets, (prev) => ({ observations: addObservation(prev.observations, tag) })),
+
+    incrementSpecies: (ctx, targets, tag) =>
+      mutateMany(ctx, targets, (prev) => ({ observations: incrementObservation(prev.observations, tag) })),
 
     removeSpecies: (ctx, mediaPath, deploymentId, base, sci) =>
       mutateMany(ctx, [{ mediaPath, deploymentId, base }], (prev) => ({
