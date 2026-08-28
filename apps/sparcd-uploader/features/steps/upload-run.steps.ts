@@ -229,6 +229,13 @@ When('the user navigates to the History section', async ({ app }) => {
 
 When('the held file finishes being examined', async ({ app }) => {
   await app.releaseHeldInspect();
+  // Stay on History until the held result has crossed the module-level bridge
+  // and uploaded. Returning sooner could remount Upload before onFilesReady
+  // fires, allowing the old component-scoped bridge to pass this scenario.
+  await expect(
+    app.page.locator('nav[aria-label="Sections"]').getByRole('button', { name: 'History' }),
+  ).toHaveAttribute('aria-current', 'page');
+  await expect.poll(() => app.s3.puts.some((p) => p.key.endsWith('BIG_CLIP.MP4'))).toBe(true);
 });
 
 When('the user returns to the New upload section', async ({ app }) => {

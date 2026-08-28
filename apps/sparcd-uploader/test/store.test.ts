@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ScannedFile } from '../src/lib/scanFiles';
 import type { ProcessResponse } from '../src/lib/processPool';
 import type { FileValidation } from '../src/lib/validation';
@@ -19,6 +19,7 @@ const storage = () => {
   sessionStorage: storage(),
 });
 const { useStore } = await import('../src/store');
+const { forwardReadyToStreamingRun, maybeCloseStreamingQueue } = await import('../src/lib/streamingBridge');
 
 const NAIVE: NaiveDateTime = { year: 2026, month: 7, day: 1, hour: 12, minute: 0, second: 0 };
 
@@ -59,6 +60,90 @@ beforeEach(() => {
     step: 'drop',
     dirHandle: null,
     fileAccessMode: 'reselect-required',
+    activeRun: null,
+    streamingRun: null,
+    streamingQueueClosed: false,
+    activeSnap: null,
+    activeRunSource: null,
+  });
+});
+
+describe('streaming bridge ownership', () => {
+  const streamingRun = () => ({
+    cancel: vi.fn(),
+    done: Promise.resolve(),
+    notifyReady: vi.fn(),
+    close: vi.fn(),
+  });
+
+  it('forwards ready files and closes a complete queue exactly once', () => {
+    useStore.getState().setFiles([scanned('a.jpg')]);
+    useStore.getState().applyProgress([], [success('a.jpg')]);
+    const run = streamingRun();
+    useStore.getState().setActiveRun(run, run);
+
+    forwardReadyToStreamingRun([{ id: 'a.jpg' }]);
+    const files = useStore.getState().files;
+    maybeCloseStreamingQueue(files);
+    maybeCloseStreamingQueue(files);
+
+    expect(run.notifyReady).toHaveBeenCalledWith([expect.objectContaining({ id: 'a.jpg' })]);
+    expect(run.close).toHaveBeenCalledTimes(1);
+    expect(run.close).toHaveBeenCalledWith(files);
+    expect(useStore.getState().streamingQueueClosed).toBe(true);
+  });
+
+  it('atomically drops the old bridge owner when a plain run replaces it or the run is cleared', () => {
+    useStore.getState().setFiles([scanned('a.jpg')]);
+    useStore.getState().applyProgress([], [success('a.jpg')]);
+    const old = streamingRun();
+    const resume = { cancel: vi.fn(), done: Promise.resolve() };
+    useStore.getState().setActiveRun(old, old);
+
+    useStore.getState().setActiveRun(resume);
+    forwardReadyToStreamingRun([{ id: 'a.jpg' }]);
+    maybeCloseStreamingQueue(useStore.getState().files);
+
+    expect(useStore.getState().activeRun).toBe(resume);
+    expect(useStore.getState().streamingRun).toBeNull();
+    expect(old.notifyReady).not.toHaveBeenCalled();
+    expect(old.close).not.toHaveBeenCalled();
+
+    useStore.getState().clearActiveRun();
+    expect(useStore.getState()).toMatchObject({
+      activeRun: null,
+      streamingRun: null,
+      streamingQueueClosed: false,
+    });
+  });
+
+  it('cleans up a settled owner without detaching a newer streaming run', async () => {
+    let finishOld!: () => void;
+    let finishNew!: () => void;
+    const old = {
+      ...streamingRun(),
+      done: new Promise<void>((resolve) => { finishOld = resolve; }),
+    };
+    const replacement = {
+      ...streamingRun(),
+      done: new Promise<void>((resolve) => { finishNew = resolve; }),
+    };
+
+    useStore.getState().setActiveRun(old, old);
+    useStore.getState().setActiveRun(replacement, replacement);
+    finishOld();
+    await old.done;
+    await Promise.resolve();
+    expect(useStore.getState().streamingRun).toBe(replacement);
+
+    finishNew();
+    await replacement.done;
+    await Promise.resolve();
+    expect(useStore.getState()).toMatchObject({
+      activeRun: replacement,
+      streamingRun: null,
+      streamingQueueClosed: false,
+    });
   });
 });
 

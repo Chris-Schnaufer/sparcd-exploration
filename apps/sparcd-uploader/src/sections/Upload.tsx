@@ -15,7 +15,6 @@ import {
 } from '../lib/upload';
 import type { ProcessResponse } from '../lib/processPool';
 import { ensureBundle } from '../lib/resume';
-import { attachStreamingRun, detachStreamingRun } from '../lib/streamingBridge';
 import { Note, RunMonitor } from '../components/RunMonitor';
 import { UploadCompleteDialog } from '../components/UploadCompleteDialog';
 import { MetadataPreview } from '../components/MetadataPreview';
@@ -246,8 +245,10 @@ export function Upload() {
       },
       setActiveSnap,
     );
-    setActiveRun(run);
-    attachStreamingRun(run);
+    setActiveRun(run, run);
+    // If inspection finished before Start was clicked, no later store update
+    // will close the queue. The store owns the run; close it immediately here.
+    useStore.getState().closeStreamingQueue(files);
   };
 
   // The hand-off record exists to get a batch to the tagger and its tags back;
@@ -311,9 +312,6 @@ export function Upload() {
       const finalSession = session.bundle ? session : await loadSession(snap.sessionId);
       if (!finalSession) throw new Error('session record disappeared while resolving it');
 
-      // A resumed run is a plain UploadRun (no notifyReady/close) — stop the
-      // now-finished streaming run's methods from being called again.
-      detachStreamingRun();
       const run = resumeUpload(
         {
           config: s3Config,

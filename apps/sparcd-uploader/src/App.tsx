@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Connection, loadPersistedConnection } from '@sparcd/auth-ui';
 import { useStore } from './store';
+import './lib/streamingBridge';
 import { Chrome } from './components/Chrome';
 import { NewUpload } from './sections/NewUpload';
 import { History } from './sections/History';
