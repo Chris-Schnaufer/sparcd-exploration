@@ -111,6 +111,7 @@ export function Upload() {
   // is ours.
   const snap = useStore((s) => s.activeSnap);
   const activeRun = useStore((s) => s.activeRun);
+  const activeRunReserved = useStore((s) => s.activeRunReserved);
   const beginActiveRun = useStore((s) => s.beginActiveRun);
   const setActiveRun = useStore((s) => s.setActiveRun);
   const setActiveSnap = useStore((s) => s.setActiveSnap);
@@ -121,7 +122,7 @@ export function Upload() {
   const attachedRef = useRef<Map<string, File> | null>(null);
   const running =
     snap?.phase === 'preparing' || snap?.phase === 'blobs' || snap?.phase === 'metadata';
-  const anyRunActive = activeRun !== null;
+  const anyRunActive = activeRunReserved;
   // Dismisses the "upload complete" popup — reset whenever a new run (fresh
   // start or resume) begins, so a later run's completion pops it again.
   const [completeDismissed, setCompleteDismissed] = useState(false);
@@ -138,7 +139,7 @@ export function Upload() {
     setResumeProblems(pending.problems);
     setCompleteDismissed(false);
     attachedRef.current = pending.attached;
-    const generation = beginActiveRun();
+    const generation = pending.generation;
     const run = resumeUpload(
       {
         config: s3Config,
@@ -149,7 +150,7 @@ export function Upload() {
       (next) => setActiveSnap(next, generation),
     );
     setActiveRun(run, generation);
-  }, [pendingResume, s3Config, beginActiveRun, setActiveRun, setActiveSnap]);
+  }, [pendingResume, s3Config, setActiveRun, setActiveSnap]);
 
 
 
@@ -162,6 +163,7 @@ export function Upload() {
     attachedRef.current = null; // this batch's files are the store's again
     setResumeProblems([]);
     const generation = beginActiveRun();
+    if (generation === null) return;
     const run = runStreamingUpload(
       {
         config: s3Config,
@@ -260,6 +262,7 @@ export function Upload() {
       const config = useStore.getState().s3Config;
       if (!config || !connectionIsCurrent()) return;
       const generation = beginActiveRun();
+      if (generation === null) return;
       const run = resumeUpload(
         {
           config,

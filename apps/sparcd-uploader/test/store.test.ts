@@ -81,6 +81,7 @@ beforeEach(() => {
     streamingQueueClosed: false,
     activeSnap: null,
     activeRunGeneration: 0,
+    activeRunReserved: false,
     activeRunSource: null,
     historyResumePreparation: null,
   });
@@ -91,10 +92,10 @@ describe('active run ownership', () => {
     const store = useStore.getState();
     const generation = store.beginActiveRun();
     const cancel = vi.fn();
-    store.setActiveRun({ cancel, done: Promise.resolve() }, generation);
+    store.setActiveRun({ cancel, done: Promise.resolve() }, generation!);
 
     store.cancelActiveRun();
-    store.setActiveSnap(snapshot('stale', 'error'), generation);
+    store.setActiveSnap(snapshot('stale', 'error'), generation!);
 
     expect(cancel).toHaveBeenCalledOnce();
     expect(useStore.getState().activeRun).toBeNull();
@@ -102,17 +103,40 @@ describe('active run ownership', () => {
     expect(useStore.getState().activeRunSource).toBeNull();
   });
 
-  it('does not let an older run overwrite a newer run', () => {
+  it('refuses a second reservation without cancelling or replacing the first', () => {
     const store = useStore.getState();
-    const oldGeneration = store.beginActiveRun();
-    const newGeneration = store.beginActiveRun();
-    const current = snapshot('current', 'blobs');
+    const cancel = vi.fn();
+    const generation = store.beginActiveRun();
+    store.setActiveRun({ cancel, done: Promise.resolve() }, generation!);
 
-    store.setActiveSnap(current, newGeneration);
-    store.setActiveSnap(snapshot('old', 'done'), oldGeneration);
-
-    expect(useStore.getState().activeSnap).toBe(current);
+    expect(store.beginActiveRun()).toBeNull();
+    expect(cancel).not.toHaveBeenCalled();
+    expect(useStore.getState().activeRunReserved).toBe(true);
     expect(useStore.getState().activeRunSource).toBe('upload');
+  });
+
+  it('cancels a runner attached after its reservation was invalidated', () => {
+    const store = useStore.getState();
+    const generation = store.beginActiveRun();
+    const cancel = vi.fn();
+
+    store.cancelActiveRun();
+    store.setActiveRun({ cancel, done: Promise.resolve() }, generation!);
+
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it('releases the reservation but retains a terminal snapshot for display', () => {
+    const store = useStore.getState();
+    const generation = store.beginActiveRun();
+    const done = snapshot('finished', 'done');
+
+    store.setActiveSnap(done, generation!);
+
+    expect(useStore.getState().activeRunReserved).toBe(false);
+    expect(useStore.getState().activeSnap).toBe(done);
+    expect(useStore.getState().activeRunSource).toBe('upload');
+    expect(store.beginActiveRun()).not.toBeNull();
   });
 });
 
@@ -129,7 +153,7 @@ describe('streaming bridge ownership', () => {
     useStore.getState().applyProgress([], [success('a.jpg')]);
     const run = streamingRun();
     const generation = useStore.getState().beginActiveRun();
-    useStore.getState().setActiveRun(run, generation, run);
+    useStore.getState().setActiveRun(run, generation!, run);
 
     forwardReadyToStreamingRun([{ id: 'a.jpg' }]);
     const files = useStore.getState().files;
@@ -148,10 +172,11 @@ describe('streaming bridge ownership', () => {
     const old = streamingRun();
     const resume = { cancel: vi.fn(), done: Promise.resolve() };
     const oldGeneration = useStore.getState().beginActiveRun();
-    useStore.getState().setActiveRun(old, oldGeneration, old);
+    useStore.getState().setActiveRun(old, oldGeneration!, old);
 
+    useStore.getState().setActiveSnap(snapshot('old', 'done'), oldGeneration!);
     const resumeGeneration = useStore.getState().beginActiveRun();
-    useStore.getState().setActiveRun(resume, resumeGeneration);
+    useStore.getState().setActiveRun(resume, resumeGeneration!);
     forwardReadyToStreamingRun([{ id: 'a.jpg' }]);
     maybeCloseStreamingQueue(useStore.getState().files);
 
@@ -181,9 +206,10 @@ describe('streaming bridge ownership', () => {
     };
 
     const oldGeneration = useStore.getState().beginActiveRun();
-    useStore.getState().setActiveRun(old, oldGeneration, old);
+    useStore.getState().setActiveRun(old, oldGeneration!, old);
+    useStore.getState().setActiveSnap(snapshot('old', 'done'), oldGeneration!);
     const replacementGeneration = useStore.getState().beginActiveRun();
-    useStore.getState().setActiveRun(replacement, replacementGeneration, replacement);
+    useStore.getState().setActiveRun(replacement, replacementGeneration!, replacement);
     finishOld();
     await old.done;
     await Promise.resolve();
@@ -212,7 +238,7 @@ describe('store persistence', () => {
     useStore.getState().setUploadConcurrency(16);
     useStore.getState().setFiles([scanned('a.jpg')]);
     const generation = useStore.getState().beginActiveRun();
-    useStore.getState().setActiveSnap({ sessionId: 'session-1' } as never, generation);
+    useStore.getState().setActiveSnap({ sessionId: 'session-1' } as never, generation!);
 
     const persisted = JSON.parse(window.sessionStorage.getItem('sparcd-uploader-session')!).state;
 

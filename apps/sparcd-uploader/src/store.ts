@@ -40,6 +40,7 @@ export type PendingResume = {
   session: LoadedSession;
   attached: Map<string, File>;
   problems: ReconcileProblem[];
+  generation: number;
 };
 
 /** A scanned file plus the results of P1 worker processing. */
@@ -107,6 +108,7 @@ type UploaderState = {
   // because disconnect and the beforeunload guard read it to tell a real run
   // from none.
   activeRunSource: 'upload' | null;
+  activeRunReserved: boolean;
   // Folder recovery/hash verification happens before an UploadRun exists. Keep
   // its lock and progress here so leaving History cannot orphan the work and
   // expose Resume/Discard while the old component continues asynchronously.
@@ -118,7 +120,7 @@ type UploaderState = {
   connect: (config: S3Config, remember: boolean) => void;
   disconnect: () => void;
   setSection: (section: Section) => void;
-  beginActiveRun: () => number;
+  beginActiveRun: () => number | null;
   setActiveRun: (
     run: UploadRun | StreamingUploadRun,
     generation: number,
@@ -186,6 +188,7 @@ function disconnectedState(s: UploaderState): Partial<UploaderState> {
     streamingQueueClosed: false,
     activeSnap: null,
     activeRunGeneration: s.activeRunGeneration + 1,
+    activeRunReserved: false,
     activeRunSource: null,
     historyResumePreparation: null,
   };
@@ -301,6 +304,7 @@ export const useStore = create<UploaderState>()(
       streamingQueueClosed: false,
       activeSnap: null,
       activeRunGeneration: 0,
+      activeRunReserved: false,
       activeRunSource: null,
       historyResumePreparation: null,
 
@@ -325,7 +329,7 @@ export const useStore = create<UploaderState>()(
       },
       setSection: (section) => set({ section }),
       beginActiveRun: () => {
-        const previousRun = get().activeRun;
+        if (get().activeRunReserved) return null;
         const generation = get().activeRunGeneration + 1;
         set({
           activeRun: null,
@@ -333,13 +337,17 @@ export const useStore = create<UploaderState>()(
           streamingQueueClosed: false,
           activeSnap: null,
           activeRunGeneration: generation,
+          activeRunReserved: true,
           activeRunSource: 'upload',
         });
-        previousRun?.cancel();
         return generation;
       },
       setActiveRun: (run, generation, streamingRun) => {
-        if (get().activeRunGeneration !== generation) return;
+        const state = get();
+        if (state.activeRunGeneration !== generation || !state.activeRunReserved) {
+          run.cancel();
+          return;
+        }
         set({
           activeRun: run,
           streamingRun: streamingRun ?? null,
@@ -370,7 +378,19 @@ export const useStore = create<UploaderState>()(
         streamingRun.close(files);
       },
       setActiveSnap: (snap, generation) =>
-        set((s) => (s.activeRunGeneration === generation ? { activeSnap: snap } : {})),
+        set((s) => {
+          if (s.activeRunGeneration !== generation) return {};
+          const terminal = snap.phase === 'done' || snap.phase === 'error' || snap.phase === 'partial';
+          return terminal
+            ? {
+                activeSnap: snap,
+                activeRun: null,
+                streamingRun: null,
+                streamingQueueClosed: false,
+                activeRunReserved: false,
+              }
+            : { activeSnap: snap };
+        }),
       cancelActiveRun: () => {
         const run = get().activeRun;
         set((s) => ({
@@ -379,6 +399,7 @@ export const useStore = create<UploaderState>()(
           streamingQueueClosed: false,
           activeSnap: null,
           activeRunGeneration: s.activeRunGeneration + 1,
+          activeRunReserved: false,
           activeRunSource: null,
         }));
         run?.cancel();
@@ -390,6 +411,7 @@ export const useStore = create<UploaderState>()(
           streamingQueueClosed: false,
           activeSnap: null,
           activeRunGeneration: s.activeRunGeneration + 1,
+          activeRunReserved: false,
           activeRunSource: null,
         })),
       beginHistoryResumePreparation: (sessionId) =>
@@ -543,6 +565,7 @@ export const useStore = create<UploaderState>()(
           streamingQueueClosed: false,
           activeSnap: null,
           activeRunGeneration: s.activeRunGeneration + 1,
+          activeRunReserved: false,
           activeRunSource: null,
           historyResumePreparation: null,
         }));
@@ -577,6 +600,7 @@ export const useStore = create<UploaderState>()(
           streamingQueueClosed: false,
           activeSnap: null,
           activeRunGeneration: s.activeRunGeneration + 1,
+          activeRunReserved: false,
           activeRunSource: null,
           historyResumePreparation: null,
         }));

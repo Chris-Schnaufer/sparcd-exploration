@@ -35,10 +35,12 @@ type Row = { batch: BatchRecord; counts: Record<PersistedFileState, number> };
 
 const stampOf = (prefix: string) => prefix.slice(prefix.lastIndexOf('/') + 1);
 
-function ownsPreparation(sessionId: string, connectionId: number): boolean {
+function ownsPreparation(sessionId: string, connectionId: number, generation: number): boolean {
   const state = useStore.getState();
   return !!state.s3Config &&
     state.connectionId === connectionId &&
+    state.activeRunGeneration === generation &&
+    state.activeRunReserved &&
     state.historyResumePreparation?.sessionId === sessionId;
 }
 
@@ -70,6 +72,9 @@ export function History() {
       ? s.activeSnap.sessionId
       : null,
   );
+  const activeRunReserved = useStore((s) => s.activeRunReserved);
+  const beginActiveRun = useStore((s) => s.beginActiveRun);
+  const clearActiveRun = useStore((s) => s.clearActiveRun);
   const preparation = useStore((s) => s.historyResumePreparation);
   const beginPreparation = useStore((s) => s.beginHistoryResumePreparation);
   const setPreparationProgress = useStore((s) => s.setHistoryResumeProgress);
@@ -115,8 +120,9 @@ export function History() {
       attached: Map<string, File>,
       probs: ReconcileProblem[],
       expectedConnectionId: number,
+      generation: number,
     ) => {
-      if (!ownsPreparation(session.batch.id, expectedConnectionId)) return;
+      if (!ownsPreparation(session.batch.id, expectedConnectionId, generation)) return;
       const missingRequired = session.files.filter((f) => f.state !== 'done' && !attached.has(f.localPath));
       if (missingRequired.length > 0) {
         setProblems([
@@ -136,8 +142,8 @@ export function History() {
       }
       setProblems([]);
       setMessage(null);
-      if (!ownsPreparation(session.batch.id, expectedConnectionId)) return;
-      setPendingResume({ session, attached, problems: probs });
+      if (!ownsPreparation(session.batch.id, expectedConnectionId, generation)) return;
+      setPendingResume({ session, attached, problems: probs, generation });
       clearPreparation(session.batch.id);
       setSection('new');
       setStep('upload');
@@ -157,10 +163,11 @@ export function History() {
       probs: ReconcileProblem[],
       resolved: Map<string, ProcessResponse>,
       expectedConnectionId: number,
+      generation: number,
     ) => {
-      if (!ownsPreparation(batch.id, expectedConnectionId)) return;
+      if (!ownsPreparation(batch.id, expectedConnectionId, generation)) return;
       const result = await ensureBundle(batch, session, resolved);
-      if (!ownsPreparation(batch.id, expectedConnectionId)) return;
+      if (!ownsPreparation(batch.id, expectedConnectionId, generation)) return;
       if (!result.ok) {
         setProblems([...probs, ...result.problems]);
         setMessage(
@@ -169,12 +176,12 @@ export function History() {
         return;
       }
       const finalSession = session.bundle ? session : await loadSession(batch.id);
-      if (!ownsPreparation(batch.id, expectedConnectionId)) return;
+      if (!ownsPreparation(batch.id, expectedConnectionId, generation)) return;
       if (!finalSession) {
         setMessage('Session record is missing.');
         return;
       }
-      launch(finalSession, attached, probs, expectedConnectionId);
+      launch(finalSession, attached, probs, expectedConnectionId, generation);
     },
     [launch],
   );
@@ -183,6 +190,11 @@ export function History() {
     async (batch: BatchRecord) => {
       setProblems([]);
       const expectedConnectionId = useStore.getState().connectionId;
+      const generation = beginActiveRun();
+      if (generation === null) {
+        setMessage('Another upload is already active. Finish or cancel it before resuming this batch.');
+        return;
+      }
       beginPreparation(batch.id);
       try {
         if (!s3Config) {
@@ -209,9 +221,9 @@ export function History() {
             sessionPromise.then((s) => s?.files ?? []),
             onProgress,
           );
-          if (!ownsPreparation(batch.id, expectedConnectionId)) return;
+          if (!ownsPreparation(batch.id, expectedConnectionId, generation)) return;
           const session = await sessionPromise;
-          if (!ownsPreparation(batch.id, expectedConnectionId)) return;
+          if (!ownsPreparation(batch.id, expectedConnectionId, generation)) return;
           if (!session) {
             setMessage('Session record is missing.');
             return;
@@ -224,6 +236,7 @@ export function History() {
               restore.problems,
               restore.resolved,
               expectedConnectionId,
+              generation,
             );
             return;
           }
@@ -234,37 +247,47 @@ export function History() {
         // Reselect path.
         if (supportsDirectoryHandle) {
           const picked = await reselectFolder();
-          if (!ownsPreparation(batch.id, expectedConnectionId)) return;
+          if (!ownsPreparation(batch.id, expectedConnectionId, generation)) return;
           if (!picked) return; // user dismissed
           const session = await sessionPromise;
-          if (!ownsPreparation(batch.id, expectedConnectionId)) return;
+          if (!ownsPreparation(batch.id, expectedConnectionId, generation)) return;
           if (!session) {
             setMessage('Session record is missing.');
             return;
           }
           const { attached, problems: probs, resolved } = await reconcileReselect(session.files, picked.scanned, onProgress);
-          if (!ownsPreparation(batch.id, expectedConnectionId)) return;
+          if (!ownsPreparation(batch.id, expectedConnectionId, generation)) return;
           // Opportunistically upgrade the session to a durable handle for next time.
           if (picked.handle) {
             await updateBatch(batch.id, { dirHandle: picked.handle, fileAccessMode: 'persistent-handle' });
-            if (!ownsPreparation(batch.id, expectedConnectionId)) return;
+            if (!ownsPreparation(batch.id, expectedConnectionId, generation)) return;
           }
-          await launchWithBundle(batch, session, attached, probs, resolved, expectedConnectionId);
+          await launchWithBundle(batch, session, attached, probs, resolved, expectedConnectionId, generation);
         } else {
           // No durable picker — fall back to a transient <input webkitdirectory>.
           // Release the lock before clicking: on Firefox/Safari a cancelled picker
           // fires no change event, so onReselectInput never runs. onReselectInput
           // re-acquires the lock itself when files actually arrive.
           clearPreparation(batch.id);
+          clearActiveRun();
           setPickerOpen(true);
           pendingReselect.current = batch;
           reselectRef.current?.click();
         }
       } finally {
         clearPreparation(batch.id);
+        const state = useStore.getState();
+        if (
+          state.activeRunGeneration === generation &&
+          state.activeRunReserved &&
+          !state.activeRun &&
+          state.pendingResume?.generation !== generation
+        ) {
+          clearActiveRun();
+        }
       }
     },
-    [s3Config, launchWithBundle, beginPreparation, setPreparationProgress, clearPreparation],
+    [s3Config, launchWithBundle, beginActiveRun, beginPreparation, setPreparationProgress, clearPreparation, clearActiveRun],
   );
 
   const onReselectInput = useCallback(
@@ -274,10 +297,15 @@ export function History() {
       pendingReselect.current = null;
       if (!batch || !list || list.length === 0) return;
       const expectedConnectionId = useStore.getState().connectionId;
+      const generation = beginActiveRun();
+      if (generation === null) {
+        setMessage('Another upload is already active. Finish or cancel it before resuming this batch.');
+        return;
+      }
       beginPreparation(batch.id);
       try {
         const session = await loadSession(batch.id);
-        if (!ownsPreparation(batch.id, expectedConnectionId)) return;
+        if (!ownsPreparation(batch.id, expectedConnectionId, generation)) return;
         if (!session) {
           setMessage('Session record is missing.');
           return;
@@ -285,13 +313,22 @@ export function History() {
         const { attached, problems: probs, resolved } = await reconcileReselect(session.files, scanFileList(list), (done, total) =>
           setPreparationProgress(batch.id, done, total),
         );
-        if (!ownsPreparation(batch.id, expectedConnectionId)) return;
-        await launchWithBundle(batch, session, attached, probs, resolved, expectedConnectionId);
+        if (!ownsPreparation(batch.id, expectedConnectionId, generation)) return;
+        await launchWithBundle(batch, session, attached, probs, resolved, expectedConnectionId, generation);
       } finally {
         clearPreparation(batch.id);
+        const state = useStore.getState();
+        if (
+          state.activeRunGeneration === generation &&
+          state.activeRunReserved &&
+          !state.activeRun &&
+          state.pendingResume?.generation !== generation
+        ) {
+          clearActiveRun();
+        }
       }
     },
-    [launchWithBundle, beginPreparation, setPreparationProgress, clearPreparation],
+    [launchWithBundle, beginActiveRun, beginPreparation, setPreparationProgress, clearPreparation, clearActiveRun],
   );
 
   const discard = useCallback(
@@ -417,11 +454,11 @@ export function History() {
               <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-1">
                 {!batch.completedAt && (
                   <button
-                    disabled={running || preparation !== null || pickerOpen}
+                    disabled={activeRunReserved || preparation !== null || pickerOpen}
                     title={!online ? "You're offline" : undefined}
                     onClick={() => void beginResume(batch)}
                     className={`bg-ink text-paper border border-ink min-h-[44px] sm:min-h-0 px-4 sm:px-3 py-1 text-[13px] font-body font-[600] hover:opacity-90 ${
-                      running || preparation !== null || pickerOpen ? 'opacity-40 cursor-not-allowed' : ''
+                      activeRunReserved || preparation !== null || pickerOpen ? 'opacity-40 cursor-not-allowed' : ''
                     }`}
                   >
                     {isPreparing ? 'Verifying…' : 'Resume'}
