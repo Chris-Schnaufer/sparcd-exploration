@@ -9,3 +9,5 @@ playwright-report
 blob-report
 scratch
 .features-gen
+bench/.fixtures/
+bench/results/

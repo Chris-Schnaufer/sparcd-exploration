@@ -37,6 +37,6 @@ export default defineConfig({
   // features/.features-gen/, which match Vitest's default `*.spec.js` glob —
   // keep the unit suite out of them.
   test: {
-    exclude: ['**/node_modules/**', '**/dist/**', 'features/.features-gen/**'],
+    exclude: ['**/node_modules/**', '**/dist/**', 'features/.features-gen/**', 'bench/**'],
   },
 } as UserConfig & { test: InlineConfig });
