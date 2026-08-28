@@ -326,7 +326,7 @@ describe('a batch tagged before upload publishes its species', () => {
     expect(rows[0].scientificName).toBe('Canis latrans');
     expect(rows[0].count).toBe(2);
     expect(rows[0].mediaId).toBe(b.items[0].key);
-    expect(rows[0].observationId).toBe(`${b.items[0].key}:0`);
+    expect(rows[0].observationId).toBe('a/IMG001.JPG:0');
     expect(rows[0].timestamp).toBe(b.items[0].captureTimestamp);
     expect(commonNameFromComments(rows[0].tags)).toBe('Coyote');
     expect(validateColumnCount(parseCsvRows(b.observationsCsv), OBS_COLUMN_COUNT)).toBeNull();
@@ -338,8 +338,8 @@ describe('a batch tagged before upload publishes its species', () => {
     const rows = parseObservations(b.observationsCsv);
     expect(rows.map((r) => r.scientificName)).toEqual(['Canis latrans', 'Puma concolor']);
     expect(rows.map((r) => r.observationId)).toEqual([
-      `${b.items[0].key}:0`,
-      `${b.items[0].key}:1`,
+      'a/IMG001.JPG:0',
+      'a/IMG001.JPG:1',
     ]);
   });
 
@@ -391,8 +391,9 @@ describe('a batch tagged before upload publishes its species', () => {
     expect(commonNameFromComments(row.tags)).toBe('Ghost');
   });
 
-  it('publishes the same rows whether the bundle was built live or from records', async () => {
-    const live = await build([{ ...ready('a/IMG001.JPG'), preTags: [coyote] }]);
+  it('publishes the same filename-indexed rows whether the bundle was built live or from records', async () => {
+    const puma: FlipObservation = { ...coyote, scientificName: 'Puma concolor', commonName: 'Mountain Lion', count: 1 };
+    const live = await build([{ ...ready('a/IMG001.JPG'), preTags: [coyote, puma] }]);
     const item = live.items[0];
     const resumed = await buildBundleFromRecords({
       location: SAN15,
@@ -410,11 +411,15 @@ describe('a batch tagged before upload publishes its species', () => {
           remoteKey: item.key,
           captureTimestamp: item.captureTimestamp,
           mimeType: item.mimeType,
-          preTags: [coyote],
+          preTags: [coyote, puma],
         },
       ],
     });
     expect(resumed.observationsCsv).toBe(live.observationsCsv);
+    expect(parseObservations(resumed.observationsCsv).map((row) => row.observationId)).toEqual([
+      'a/IMG001.JPG:0',
+      'a/IMG001.JPG:1',
+    ]);
     expect(parseUploadMeta(resumed.uploadMetaJson).imagesWithSpecies).toBe(1);
   });
 

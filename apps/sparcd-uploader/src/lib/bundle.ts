@@ -81,6 +81,7 @@ const hasSpecies = (preTags: FlipObservation[] | undefined): boolean =>
 function observationRowsFor(
   file: {
     mediaId: string;
+    objectName: string;
     deploymentId: string;
     timestamp: string;
     preTags?: FlipObservation[];
@@ -90,7 +91,7 @@ function observationRowsFor(
   const preTags = file.preTags ?? [];
   if (preTags.length === 0) return untagged();
   return preTags.map((o, i) => ({
-    observationId: defaultObservationId(file.mediaId, i),
+    observationId: defaultObservationId(file.objectName, i),
     mediaId: file.mediaId,
     deploymentId: file.deploymentId,
     timestamp: file.timestamp,
@@ -268,6 +269,7 @@ export async function buildBundle(input: BuildInput): Promise<BundlePreview> {
     observationRowsFor(
       {
         mediaId: it.key,
+        objectName: it.objectName,
         deploymentId: deployment.deploymentId,
         timestamp: it.captureTimestamp ?? '',
         preTags: it.preTags,
@@ -401,6 +403,7 @@ export async function buildBundleFromRecords(input: {
     observationRowsFor(
       {
         mediaId: f.remoteKey,
+        objectName: f.remoteKey.slice(uploadPath.length + 1),
         deploymentId: deployment.deploymentId,
         timestamp: f.captureTimestamp ?? '',
         preTags: f.preTags,
