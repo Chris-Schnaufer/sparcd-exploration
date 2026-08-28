@@ -42,7 +42,8 @@ test('uploads the fixed corpus through the real app', async ({ page }) => {
     if (
       request.method() === 'GET' &&
       url.searchParams.get('list-type') === '2' &&
-      listedPrefix.startsWith('Collections/')
+      uploadPrefix !== undefined &&
+      listedPrefix === `${uploadPrefix}/`
     ) {
       requestCounts.mediaList++;
     }
