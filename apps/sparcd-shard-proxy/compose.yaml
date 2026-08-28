@@ -1,0 +1,39 @@
+# The server deployment: any host with Docker, a public hostname, and the
+# shard ports open. Settings come from a `.env` beside this file — copy
+# `.env.example`. Certificates live in a named volume so restarts and image
+# upgrades reuse them instead of spending Let's Encrypt's 5-per-name-per-week
+# issuance budget.
+#
+#   docker compose up -d
+#
+# Adding a fifth shard means a port pair here and an address in SHARD_ADDRESSES.
+
+name: sparcd-shard-proxy
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      UPSTREAM: ${UPSTREAM:?set UPSTREAM in .env}
+      PROXY_DOMAIN: ${PROXY_DOMAIN:?set PROXY_DOMAIN in .env}
+      SHARD_ADDRESSES: ${SHARD_ADDRESSES:?set SHARD_ADDRESSES in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    # Every shard is published twice: TCP carries HTTP/2, UDP carries HTTP/3.
+    # Without the UDP half, Caddy advertises h3 and no client can use it.
+    ports:
+      - "443:443/tcp"
+      - "443:443/udp"
+      - "8443:8443/tcp"
+      - "8443:8443/udp"
+      - "8444:8444/tcp"
+      - "8444:8444/udp"
+      - "8445:8445/tcp"
+      - "8445:8445/udp"
+
+volumes:
+  caddy_data:
+  caddy_config:

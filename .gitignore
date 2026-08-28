@@ -18,7 +18,12 @@ __pycache__/
 # Marimo
 __marimo__/
 
+# The Cloudflare Worker recipe is a standalone npm project, deployed by
+# wrangler rather than built by the workspace.
+apps/sparcd-shard-proxy/deploy/cloudflare-worker/package-lock.json
+
 # Secrets
+.dev.vars
 .env
 .env.local
 .env.*.local

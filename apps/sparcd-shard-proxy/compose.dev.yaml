@@ -1,0 +1,62 @@
+# A self-contained proof, no cloud resources: MinIO as the S3 upstream and the
+# canonical Caddyfile in front of it on four localhost shard origins. Caddy
+# issues internal certificates automatically for `localhost`, which is why the
+# smoke test needs --insecure against this stack.
+#
+#   docker compose -f compose.dev.yaml up -d --wait
+#   S3_ACCESS_KEY_ID=smokekey S3_SECRET_ACCESS_KEY=smokesecret \
+#     node smoke.mjs --base https://localhost --ports 8443,8444,8445,8446 \
+#       --bucket smoke-test --insecure
+#   docker compose -f compose.dev.yaml down -v
+#
+# The shards here are all non-default ports, so they exercise the host:port
+# branch of the Host passthrough. The portless :443 branch belongs to a real
+# deployment; compose.yaml publishes it.
+
+name: sparcd-shard-proxy-dev
+
+services:
+  minio:
+    image: minio/minio:latest
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: smokekey
+      MINIO_ROOT_PASSWORD: smokesecret
+    # Published so the Cloudflare Worker recipe can point `wrangler dev` at a
+    # real upstream without cloud resources. Caddy reaches MinIO over the
+    # compose network and does not need this. Loopback only — this stack ships
+    # its root credentials in the file above, so nothing here is fit to be
+    # reachable from the network.
+    ports:
+      - "127.0.0.1:9000:9000"
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    entrypoint: >
+      sh -c "until mc alias set dev http://minio:9000 smokekey smokesecret; do sleep 1; done;
+             mc mb -p dev/smoke-test"
+
+  caddy:
+    image: caddy:2-alpine
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      UPSTREAM: http://minio:9000
+      PROXY_DOMAIN: localhost
+      SHARD_ADDRESSES: "localhost:8443, localhost:8444, localhost:8445, localhost:8446"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    # Loopback only: the shards answer for `localhost` and hold an internal CA's
+    # certificate, so they are meaningless off this machine.
+    ports:
+      - "127.0.0.1:8443:8443/tcp"
+      - "127.0.0.1:8443:8443/udp"
+      - "127.0.0.1:8444:8444/tcp"
+      - "127.0.0.1:8444:8444/udp"
+      - "127.0.0.1:8445:8445/tcp"
+      - "127.0.0.1:8445:8445/udp"
+      - "127.0.0.1:8446:8446/tcp"
+      - "127.0.0.1:8446:8446/udp"
