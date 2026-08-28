@@ -1430,5 +1430,8 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
   const action = s.keyMap.get(e.key.toLowerCase());
   if (!action || !current) return;
   e.preventDefault();
+  // e.repeat fires while a key is held — ignore it so each intentional press
+  // counts as exactly one increment.
+  if (e.repeat) return;
   s.applyIncrement({ scientificName: action.species.scientificName, commonName: action.species.commonName, count: 1 });
 }
