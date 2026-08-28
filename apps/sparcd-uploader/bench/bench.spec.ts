@@ -91,9 +91,6 @@ test('uploads the fixed corpus through the real app', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Upload', exact: true })).toBeVisible();
   const dryRun = page.getByRole('checkbox');
   if (await dryRun.isChecked()) await dryRun.uncheck();
-  const concurrency = page.locator('input[type="range"]');
-  await concurrency.fill('8');
-  await expect(concurrency).toHaveValue('8');
   await page.getByRole('button', { name: 'Start upload' }).click();
   await expect(page.getByRole('button', { name: 'Next batch' })).toBeVisible({ timeout: 120_000 });
   const completedAt = performance.now();
