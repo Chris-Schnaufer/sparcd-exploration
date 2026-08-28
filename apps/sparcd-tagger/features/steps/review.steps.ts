@@ -11,6 +11,8 @@ import {
   speciesApply,
   sectionTab,
   enterFocusView,
+  selectCollection,
+  openUpload,
 } from './support/world';
 import { BUCKET, PREFIX_A, MEDIA_A } from './support/data';
 import { openSyncDialog, setSyncDryRun, readStore } from './support/flows';
@@ -289,8 +291,12 @@ Then('the marker is cleared for that image once its change has been synced', asy
 // --- Blank-row uploads (issue #89) ------------------------------------------
 
 Given('an upload with only uploader-written blank rows is open in the tagging workspace', async ({ page }) => {
-  await openWorkspace(page, 'newuploader');
-  // All images should lack any species text; IMG001.JPG is a reliable canary.
+  // Navigate to Browse explicitly — the H3 background may have already opened
+  // a different workspace, and openAppConnected skips reconnection in that state,
+  // leaving selectCollection unable to surface the upload list heading.
+  await sectionTab(page, 'Browse').click();
+  await selectCollection(page);
+  await openUpload(page, 'newuploader');
   await expect(gridCell(page, 'IMG001.JPG')).not.toContainText('Deer');
   await expect(gridCell(page, 'IMG001.JPG')).not.toContainText('Coyote');
 });
