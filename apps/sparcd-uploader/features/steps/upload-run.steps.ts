@@ -214,6 +214,38 @@ Then('the tool reports how many files are still being examined', async ({ app })
   await expect(app.page.getByText(/still being inspected/)).toHaveCount(0);
 });
 
+// --- streaming survives navigation -----------------------------------------
+
+Given('a streaming run has started with one file still being examined', async ({ app }) => {
+  await app.holdInspect('BIG_CLIP.MP4');
+  await app.rescanFromUploadStep();
+  await app.dryRunCheckbox().uncheck();
+  await app.startRun();
+});
+
+When('the user navigates to the History section', async ({ app }) => {
+  await app.gotoSection('History');
+});
+
+When('the held file finishes being examined', async ({ app }) => {
+  await app.releaseHeldInspect();
+  // Stay on History until the held result has crossed the module-level bridge
+  // and uploaded. Returning sooner could remount Upload before onFilesReady
+  // fires, allowing the old component-scoped bridge to pass this scenario.
+  await expect(
+    app.page.locator('nav[aria-label="Sections"]').getByRole('button', { name: 'History' }),
+  ).toHaveAttribute('aria-current', 'page');
+  await expect.poll(() => app.s3.puts.some((p) => p.key.endsWith('BIG_CLIP.MP4'))).toBe(true);
+});
+
+When('the user returns to the New upload section', async ({ app }) => {
+  await app.gotoSection('New upload');
+});
+
+Then('the run completes successfully', async ({ app }) => {
+  await app.waitForRunPhase('done');
+});
+
 // --- publish ordering ------------------------------------------------------
 
 Given('a real upload is running', async ({ app }) => {

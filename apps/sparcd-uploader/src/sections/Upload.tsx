@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { OfflineBanner, useOnline } from '@sparcd/auth-ui';
 import { deleteFlipRecord } from '@sparcd/flip';
-import { useStore, type FileEntry } from '../store';
+import { useStore } from '../store';
 import { useLocations } from '../lib/useLocations';
 import { useCollections } from '../lib/useCollections';
 import { sanitizeUploaderUser } from '../lib/normalize';
@@ -12,12 +12,9 @@ import {
   resumeUpload,
   runStreamingUpload,
   type ConcurrencyControl,
-  type StreamingUploadRun,
 } from '../lib/upload';
-import { onFilesReady } from '../lib/processing';
 import type { ProcessResponse } from '../lib/processPool';
 import { ensureBundle } from '../lib/resume';
-import { captureTimeComplete, processingComplete } from '../lib/validation';
 import { Note, RunMonitor } from '../components/RunMonitor';
 import { UploadCompleteDialog } from '../components/UploadCompleteDialog';
 import { MetadataPreview } from '../components/MetadataPreview';
@@ -118,11 +115,6 @@ export function Upload() {
   const setActiveSnap = useStore((s) => s.setActiveSnap);
   const clearActiveRun = useStore((s) => s.clearActiveRun);
   const [resumeProblems, setResumeProblems] = useState<ReconcileProblem[]>([]);
-  // Set only while the current run is a streamed one (started via `start()`,
-  // not a resume) — `notifyReady`/`close` don't exist on a plain `UploadRun`.
-  const streamingRef = useRef<StreamingUploadRun | null>(null);
-  // Guards `close()` firing more than once per run.
-  const closedRef = useRef(false);
   // Files reattached by a History handoff; the store's batch is empty then, so
   // Retry has to reuse this map instead of rebuilding one from `files`.
   const attachedRef = useRef<Map<string, File> | null>(null);
@@ -228,24 +220,8 @@ export function Upload() {
   const ready = useMemo(() => files.filter((f) => f.processState === 'ready' && f.sha256), [files]);
   const stillInspecting = files.length - ready.length;
 
-  // Shared by the reactive effect below and by `start()` itself — a batch
-  // that finishes Inspect before Start is even clicked (easy for a small or
-  // fast batch) would otherwise never trigger this: `streamingRef.current`
-  // is set via a plain ref mutation, which doesn't cause the `[files]`
-  // effect to re-run, and `files` never changes again once nothing's left
-  // to process. Checking again right after the run is created closes that
-  // gap without waiting on a store change that may never come.
-  const maybeCloseQueue = (currentFiles: FileEntry[]) => {
-    if (!streamingRef.current || closedRef.current) return;
-    if (processingComplete(currentFiles) && captureTimeComplete(currentFiles)) {
-      closedRef.current = true;
-      streamingRef.current.close(currentFiles);
-    }
-  };
-
   const start = () => {
     if (!s3Config || !location || !collection || !slug) return;
-    closedRef.current = false;
     setCompleteDismissed(false);
     attachedRef.current = null; // this batch's files are the store's again
     setResumeProblems([]);
@@ -269,24 +245,11 @@ export function Upload() {
       },
       setActiveSnap,
     );
-    setActiveRun(run);
-    streamingRef.current = run;
-    maybeCloseQueue(files);
+    setActiveRun(run, run);
+    // If inspection finished before Start was clicked, no later store update
+    // will close the queue. The store owns the run; close it immediately here.
+    useStore.getState().closeStreamingQueue(files);
   };
-
-  // Feed newly-inspected files into the live streaming run as Inspect finds
-  // them — processing.ts keeps running in the background regardless of which
-  // step is on screen, so this is the only bridge needed between it and a
-  // run that started before the batch finished processing.
-  useEffect(() => {
-    return onFilesReady((results) => {
-      if (!streamingRef.current) return;
-      const ids = new Set(results.map((r) => r.id));
-      const current = useStore.getState().files;
-      const arrived = current.filter((f) => ids.has(f.id) && f.processState === 'ready' && f.sha256);
-      if (arrived.length > 0) streamingRef.current.notifyReady(arrived);
-    });
-  }, []);
 
   // The hand-off record exists to get a batch to the tagger and its tags back;
   // once those tags are published it is dead weight holding paths, hashes,
@@ -297,16 +260,6 @@ export function Upload() {
     if (!flipId || snap?.phase !== 'done' || snap.dryRun) return;
     void deleteFlipRecord(flipId);
   }, [flipId, snap?.phase, snap?.dryRun]);
-
-  // Close the run's queue the moment the batch is fully known — every file
-  // processed, and (the same integrity gate Assign used to enforce up front)
-  // every ready file has a capture time. If processing finishes but a file
-  // still lacks a capture time, this simply doesn't fire yet: the render
-  // below already lets the user fix it inline, and this effect re-fires
-  // (closedRef is per-run, not per-render) once they do.
-  useEffect(() => {
-    maybeCloseQueue(files);
-  }, [files]);
 
   const retryPending = useRef(false);
   const [retryError, setRetryError] = useState<string | null>(null);
@@ -359,9 +312,6 @@ export function Upload() {
       const finalSession = session.bundle ? session : await loadSession(snap.sessionId);
       if (!finalSession) throw new Error('session record disappeared while resolving it');
 
-      // A resumed run is a plain UploadRun (no notifyReady/close) — stop the
-      // now-finished streaming run's methods from being called again.
-      streamingRef.current = null;
       const run = resumeUpload(
         {
           config: s3Config,

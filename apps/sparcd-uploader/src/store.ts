@@ -17,7 +17,13 @@ import type { ProcessResponse } from './lib/processPool';
 import type { FileAccessMode, LoadedSession } from './lib/db';
 import type { ReconcileProblem } from './lib/resume';
 import type { UploadRun, StreamingUploadRun, UploadSnapshot } from './lib/upload';
-import { validateBatch, validateFile, type FileValidation } from './lib/validation';
+import {
+  captureTimeComplete,
+  processingComplete,
+  validateBatch,
+  validateFile,
+  type FileValidation,
+} from './lib/validation';
 import { clearClientCache } from './lib/s3';
 import { localTimeZone, type NaiveDateTime } from './lib/exifTime';
 import type { ElevationUnit } from './lib/coords';
@@ -88,6 +94,10 @@ type UploaderState = {
   // beforeunload can reach it without depending on whichever component started
   // it, and so section navigation stops rendering a run rather than ending it.
   activeRun: UploadRun | StreamingUploadRun | null;
+  // Streaming-only bridge ownership lives beside activeRun so installing a
+  // resume/plain run cannot leave Inspect results targeting the prior run.
+  streamingRun: StreamingUploadRun | null;
+  streamingQueueClosed: boolean;
   activeSnap: UploadSnapshot | null;
   // Always 'upload': History prepares a resume and hands it to the wizard's
   // Upload step, which is the one surface that runs anything. Kept as a field
@@ -98,7 +108,8 @@ type UploaderState = {
   connect: (config: S3Config, remember: boolean) => void;
   disconnect: () => void;
   setSection: (section: Section) => void;
-  setActiveRun: (run: UploadRun | StreamingUploadRun) => void;
+  setActiveRun: (run: UploadRun | StreamingUploadRun, streamingRun?: StreamingUploadRun) => void;
+  closeStreamingQueue: (files: FileEntry[]) => void;
   setActiveSnap: (snap: UploadSnapshot | null) => void;
   clearActiveRun: () => void;
   toggleTheme: () => void;
@@ -228,6 +239,8 @@ export const useStore = create<UploaderState>()(
       uploadConcurrency: 8,
       pendingResume: null,
       activeRun: null,
+      streamingRun: null,
+      streamingQueueClosed: false,
       activeSnap: null,
       activeRunSource: null,
 
@@ -262,14 +275,49 @@ export const useStore = create<UploaderState>()(
           uploaderUser: '',
           uploadTimeZone: localTimeZone(),
           activeRun: null,
+          streamingRun: null,
+          streamingQueueClosed: false,
           activeSnap: null,
           activeRunSource: null,
         }));
       },
       setSection: (section) => set({ section }),
-      setActiveRun: (run) => set({ activeRun: run, activeRunSource: 'upload' }),
+      setActiveRun: (run, streamingRun) => {
+        set({
+          activeRun: run,
+          streamingRun: streamingRun ?? null,
+          streamingQueueClosed: false,
+          activeRunSource: 'upload',
+        });
+        if (streamingRun) {
+          const releaseBridge = () => {
+            // A replacement may have started before this run settled. Only
+            // its own completion may release the bridge ownership.
+            if (get().streamingRun === streamingRun) {
+              set({ streamingRun: null, streamingQueueClosed: false });
+            }
+          };
+          void streamingRun.done.then(releaseBridge, releaseBridge);
+        }
+      },
+      closeStreamingQueue: (files) => {
+        const { streamingRun, streamingQueueClosed } = get();
+        if (!streamingRun || streamingQueueClosed) return;
+        if (!processingComplete(files) || !captureTimeComplete(files)) return;
+        // Latch before invoking close(): its queue can settle synchronously and
+        // publish another store update, which must not close the run twice.
+        set({ streamingQueueClosed: true });
+        streamingRun.close(files);
+      },
       setActiveSnap: (snap) => set({ activeSnap: snap }),
-      clearActiveRun: () => set({ activeRun: null, activeSnap: null, activeRunSource: null }),
+      clearActiveRun: () =>
+        set({
+          activeRun: null,
+          streamingRun: null,
+          streamingQueueClosed: false,
+          activeSnap: null,
+          activeRunSource: null,
+        }),
       toggleTheme: () =>
         set((s) => {
           const theme: Theme = s.theme === 'light' ? 'dark' : 'light';
@@ -403,6 +451,8 @@ export const useStore = create<UploaderState>()(
           fileAccessMode: 'reselect-required',
           flipId: null,
           activeRun: null,
+          streamingRun: null,
+          streamingQueueClosed: false,
           activeSnap: null,
           activeRunSource: null,
         }));
@@ -433,6 +483,8 @@ export const useStore = create<UploaderState>()(
           fileAccessMode: 'reselect-required',
           flipId: null,
           activeRun: null,
+          streamingRun: null,
+          streamingQueueClosed: false,
           activeSnap: null,
           activeRunSource: null,
         }));

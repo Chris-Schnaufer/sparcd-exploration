@@ -64,6 +64,14 @@ Feature: Upload and publish a batch
     And each remaining file starts as soon as its own examination finishes
     And the tool reports how many files are still being examined
 
+  @F1
+  Scenario: A run that started mid-inspection completes even after the user navigates to another section
+    Given a streaming run has started with one file still being examined
+    When the user navigates to the History section
+    And the held file finishes being examined
+    And the user returns to the New upload section
+    Then the run completes successfully
+
   @F1 @F3
   Scenario: The upload is only published once every file has landed
     Given a real upload is running
