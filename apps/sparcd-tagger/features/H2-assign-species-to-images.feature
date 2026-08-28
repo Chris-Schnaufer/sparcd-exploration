@@ -22,6 +22,7 @@ Feature: Assign species to images in an upload
     Then every species in the vocabulary is listed with its common and scientific name
     And each species shows its reference image where one exists
     And each species shows the key bound to it, when it has one
+    And Ghost appears exactly once as a species from the vocabulary
 
   @H2
   Scenario: Clicking a species identifies the focused image
