@@ -7,9 +7,11 @@ import { useCollections } from '../lib/useCollections';
 import { sanitizeUploaderUser } from '../lib/normalize';
 import { formatBytes } from '../lib/scanFiles';
 import { loadSession } from '../lib/db';
+import type { ReconcileProblem } from '../lib/resume';
 import {
   resumeUpload,
   runStreamingUpload,
+  type ConcurrencyControl,
   type StreamingUploadRun,
 } from '../lib/upload';
 import { onFilesReady } from '../lib/processing';
@@ -23,6 +25,51 @@ import { CaptureTimeEditor } from '../components/CaptureTimeEditor';
 
 const sectionLabel = 'font-[600] text-[11px] tracking-[0.16em] uppercase text-inkSoft mb-2';
 
+// Read the mode and the manual value at call time, not at render time: the
+// getter is what lets a mid-run slider change reach the lane pool.
+const concurrencyControl = (): ConcurrencyControl =>
+  useStore.getState().concurrencyMode === 'manual'
+    ? { mode: 'manual', get: () => useStore.getState().uploadConcurrency }
+    : { mode: 'adaptive' };
+
+// What "adaptive" means, on demand — the explanation only matters the first time
+// someone wonders, so it stays behind the 'i' rather than sitting in the layout.
+function AdaptiveInfo() {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLSpanElement>(null);
+
+  // Close on outside click.
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: PointerEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('pointerdown', onDoc);
+    return () => document.removeEventListener('pointerdown', onDoc);
+  }, [open]);
+
+  return (
+    <span ref={rootRef} className="relative inline-flex">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-label="About adaptive concurrency"
+        className="shrink-0 min-w-11 min-h-11 sm:min-w-5 sm:min-h-5 grid place-items-center border border-rule text-inkSoft hover:text-ink hover:border-ink [@media(hover:none)]:text-ink [@media(hover:none)]:border-ink text-[11px] font-mono focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+      >
+        i
+      </button>
+      {open && (
+        <span className="absolute left-0 top-full z-10 mt-1 block w-[min(22rem,calc(100vw-2.5rem))] border border-rule bg-panel px-3 py-2 font-body text-[12px] leading-[1.5] text-inkSoft">
+          Adaptive probes different lane counts against measured throughput and keeps whichever is
+          fastest. The lane count it has settled on shows here while a run is in flight. To pin a
+          fixed number instead, switch to manual in Settings.
+        </span>
+      )}
+    </span>
+  );
+}
+
 export function Upload() {
   const s3Config = useStore((s) => s.s3Config);
   const connectionId = useStore((s) => s.connectionId);
@@ -35,12 +82,14 @@ export function Upload() {
   const selectedBucket = useStore((s) => s.selectedBucket);
   const dryRun = useStore((s) => s.dryRun);
   const setDryRun = useStore((s) => s.setDryRun);
+  const concurrencyMode = useStore((s) => s.concurrencyMode);
   const concurrency = useStore((s) => s.uploadConcurrency);
   const setConcurrency = useStore((s) => s.setUploadConcurrency);
   const nextBatch = useStore((s) => s.nextBatch);
   const flipId = useStore((s) => s.flipId);
   const fileAccessMode = useStore((s) => s.fileAccessMode);
   const dirHandle = useStore((s) => s.dirHandle);
+  const pendingResume = useStore((s) => s.pendingResume);
 
   const { data: locData } = useLocations(s3Config, connectionId);
   const collections = useCollections(s3Config, connectionId);
@@ -60,25 +109,55 @@ export function Upload() {
   const [previewOpen, setPreviewOpen] = useState(false);
 
   // Run and snapshot live in the store so they survive section navigation —
-  // unmounting this component stops rendering the run, not running it. Filter
-  // activeSnap by source so History resume snapshots don't appear here.
-  const snap = useStore((s) => s.activeRunSource === 'upload' ? s.activeSnap : null);
+  // unmounting this component stops rendering the run, not running it. This is
+  // the only step that runs anything, resumes included, so every snapshot here
+  // is ours.
+  const snap = useStore((s) => s.activeSnap);
   const activeRun = useStore((s) => s.activeRun);
   const setActiveRun = useStore((s) => s.setActiveRun);
   const setActiveSnap = useStore((s) => s.setActiveSnap);
   const clearActiveRun = useStore((s) => s.clearActiveRun);
+  const [resumeProblems, setResumeProblems] = useState<ReconcileProblem[]>([]);
   // Set only while the current run is a streamed one (started via `start()`,
   // not a resume) — `notifyReady`/`close` don't exist on a plain `UploadRun`.
   const streamingRef = useRef<StreamingUploadRun | null>(null);
   // Guards `close()` firing more than once per run.
   const closedRef = useRef(false);
-  const running = snap?.phase === 'blobs' || snap?.phase === 'metadata';
+  // Files reattached by a History handoff; the store's batch is empty then, so
+  // Retry has to reuse this map instead of rebuilding one from `files`.
+  const attachedRef = useRef<Map<string, File> | null>(null);
+  const running =
+    snap?.phase === 'preparing' || snap?.phase === 'blobs' || snap?.phase === 'metadata';
   // Dismisses the "upload complete" popup — reset whenever a new run (fresh
   // start or resume) begins, so a later run's completion pops it again.
   const [completeDismissed, setCompleteDismissed] = useState(false);
   // Dry runs write nothing, so leaving mid-run has no real consequence —
   // only a real run needs the beforeunload guard below.
   const runningForReal = running && !!snap && !snap.dryRun;
+
+  // A resume prepared in History lands here. Read the handoff from the live
+  // store and clear it immediately: under StrictMode this effect fires twice,
+  // and the second pass must find nothing or it starts a duplicate run. The run
+  // goes into the store like any other, so leaving this step only stops
+  // rendering it.
+  useEffect(() => {
+    const pending = useStore.getState().pendingResume;
+    if (!pending || !s3Config) return;
+    useStore.getState().setPendingResume(null);
+    setResumeProblems(pending.problems);
+    setCompleteDismissed(false);
+    attachedRef.current = pending.attached;
+    const run = resumeUpload(
+      {
+        config: s3Config,
+        session: pending.session,
+        attached: pending.attached,
+        concurrency: concurrencyControl(),
+      },
+      setActiveSnap,
+    );
+    setActiveRun(run);
+  }, [pendingResume, s3Config, setActiveRun, setActiveSnap]);
 
   // Hold a screen wake lock while actively uploading, so OS/display idle-sleep
   // doesn't interrupt it. Best-effort: unsupported browsers (Firefox, as of
@@ -168,11 +247,13 @@ export function Upload() {
     if (!s3Config || !location || !collection || !slug) return;
     closedRef.current = false;
     setCompleteDismissed(false);
+    attachedRef.current = null; // this batch's files are the store's again
+    setResumeProblems([]);
     const run = runStreamingUpload(
       {
         config: s3Config,
         dryRun: effectiveDryRun,
-        concurrency,
+        concurrency: concurrencyControl(),
         uploaderUser,
         fileAccessMode,
         dirHandle,
@@ -188,7 +269,7 @@ export function Upload() {
       },
       setActiveSnap,
     );
-    setActiveRun(run, 'upload');
+    setActiveRun(run);
     streamingRef.current = run;
     maybeCloseQueue(files);
   };
@@ -242,7 +323,7 @@ export function Upload() {
       // and the guard must unlatch or Retry is dead until a reload.
       const session = await loadSession(snap.sessionId);
       if (!session) throw new Error('no saved record for this session');
-      const attached = new Map(files.map((f) => [f.relPath, f.file]));
+      const attached = attachedRef.current ?? new Map(files.map((f) => [f.relPath, f.file]));
 
       // A run that hit the systemic-failure abort (e.g. many concurrent
       // blobs failing at once when the network drops) never reaches the
@@ -281,8 +362,16 @@ export function Upload() {
       // A resumed run is a plain UploadRun (no notifyReady/close) — stop the
       // now-finished streaming run's methods from being called again.
       streamingRef.current = null;
-      const run = resumeUpload({ config: s3Config, session: finalSession, attached, concurrency }, setActiveSnap);
-      setActiveRun(run, 'upload');
+      const run = resumeUpload(
+        {
+          config: s3Config,
+          session: finalSession,
+          attached,
+          concurrency: concurrencyControl(),
+        },
+        setActiveSnap,
+      );
+      setActiveRun(run);
     } catch (e) {
       setRetryError(
         `Couldn't resume this upload (${e instanceof Error ? e.message : String(e)}). Retry again; if it keeps failing, go Back and start the upload over.`,
@@ -290,7 +379,7 @@ export function Upload() {
     } finally {
       retryPending.current = false;
     }
-  }, [snap, s3Config, files, concurrency]);
+  }, [snap, s3Config, files]);
 
   // Self-heal after an interruption the user might not notice — a run that
   // landed on 'partial' (some files failed after exhausting their own
@@ -320,7 +409,9 @@ export function Upload() {
     };
   }, [snap, retryFailed]);
 
-  if (!location || !collection || !slug) {
+  // A resumed run replays a persisted bundle and needs nothing from Assign, so
+  // these guards stand down once a run is in flight or handed off.
+  if ((!location || !collection || !slug) && !snap && !pendingResume) {
     return (
       <div className="max-w-2xl mx-auto space-y-4">
         <Note
@@ -348,34 +439,39 @@ export function Upload() {
   return (
     <div className="max-w-2xl mx-auto space-y-7">
       <OfflineBanner message="You're offline — the dry run still works, but a real upload won't until your connection is back." />
-      {/* Run configuration */}
+      {/* Run configuration. A resume handed off from History replays a persisted
+          bundle with no Assign state behind it, so the options collapse away. */}
       <section className="space-y-3">
         <h2 className={sectionLabel}>Upload</h2>
-        <p className="font-body text-[13px] text-inkSoft">
-          {ready.length} file{ready.length === 1 ? '' : 's'} ready
-          {stillInspecting > 0 && ` (${stillInspecting} still being inspected)`} ·{' '}
-          {formatBytes(ready.reduce((n, f) => n + f.size, 0))} →{' '}
-          <span className="font-mono text-ink break-all">
-            {collection.bucket}/Collections/{collection.uuid}/Uploads/
-          </span>
-        </p>
+        {collection && (
+          <>
+            <p className="font-body text-[13px] text-inkSoft">
+              {ready.length} file{ready.length === 1 ? '' : 's'} ready
+              {stillInspecting > 0 && ` (${stillInspecting} still being inspected)`} ·{' '}
+              {formatBytes(ready.reduce((n, f) => n + f.size, 0))} →{' '}
+              <span className="font-mono text-ink break-all">
+                {collection.bucket}/Collections/{collection.uuid}/Uploads/
+              </span>
+            </p>
 
-        <label className="flex items-center gap-2.5 font-body text-[14px] text-ink">
-          <input
-            type="checkbox"
-            checked={effectiveDryRun}
-            disabled={running}
-            onChange={(e) => setDryRun(e.target.checked)}
-            className="accent-accent"
-          />
-          Test the upload, nothing is written
-        </label>
+            <label className="flex items-center gap-2.5 font-body text-[14px] text-ink">
+              <input
+                type="checkbox"
+                checked={effectiveDryRun}
+                disabled={running}
+                onChange={(e) => setDryRun(e.target.checked)}
+                className="accent-accent"
+              />
+              Test the upload, nothing is written
+            </label>
 
-        {!effectiveDryRun && (
-          <Note
-            tone="warn"
-            message={`If not testing the upload and it fails right away, that's usually a setup issue on the storage side, not something you did wrong. Contact your administrator and give them this collection ID: ${collection.uuid}.`}
-          />
+            {!effectiveDryRun && (
+              <Note
+                tone="warn"
+                message={`If not testing the upload and it fails right away, that's usually a setup issue on the storage side, not something you did wrong. Contact your administrator and give them this collection ID: ${collection.uuid}.`}
+              />
+            )}
+          </>
         )}
 
         {stillInspecting > 0 && (
@@ -385,53 +481,92 @@ export function Upload() {
           />
         )}
 
-        <div className="space-y-2">
-          <h2 className={sectionLabel}>Preview</h2>
-          {previewOpen ? (
-            <div className="space-y-2">
+        {location && collection && slug && (
+          <div className="space-y-2">
+            <h2 className={sectionLabel}>Preview</h2>
+            {previewOpen ? (
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => setPreviewOpen(false)}
+                  className="font-body text-[12px] text-inkSoft hover:text-ink underline underline-offset-4 decoration-rule focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                >
+                  Hide preview
+                </button>
+                <MetadataPreview
+                  location={location}
+                  collectionUuid={collection.uuid}
+                  bucket={collection.bucket}
+                  uploaderSlug={slug}
+                  description={description}
+                  timeZone={uploadTimeZone}
+                  files={files}
+                />
+              </div>
+            ) : (
               <button
                 type="button"
-                onClick={() => setPreviewOpen(false)}
-                className="font-body text-[12px] text-inkSoft hover:text-ink underline underline-offset-4 decoration-rule focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                onClick={() => setPreviewOpen(true)}
+                className="w-full border border-rule bg-paper px-3 py-2.5 text-left font-body text-[13px] text-inkSoft hover:text-ink hover:border-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1"
               >
-                Hide preview
+                Click to preview the generated bundle files (UploadMeta.json, deployments/media/observations CSVs)…
               </button>
-              <MetadataPreview
-                location={location}
-                collectionUuid={collection.uuid}
-                bucket={collection.bucket}
-                uploaderSlug={slug}
-                description={description}
-                timeZone={uploadTimeZone}
-                files={files}
-              />
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setPreviewOpen(true)}
-              className="w-full border border-rule bg-paper px-3 py-2.5 text-left font-body text-[13px] text-inkSoft hover:text-ink hover:border-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1"
-            >
-              Click to preview the generated bundle files (UploadMeta.json, deployments/media/observations CSVs)…
-            </button>
-          )}
-        </div>
+            )}
+          </div>
+        )}
 
 
-        <div className="flex items-center gap-3">
-          <label className="font-body text-[13px] text-inkSoft w-28">Concurrency</label>
-          <input
-            type="range"
-            min={4}
-            max={16}
-            value={concurrency}
-            disabled={running}
-            onChange={(e) => setConcurrency(Number(e.target.value))}
-            className="flex-1 accent-accent"
-          />
-          <span className="font-mono text-[13px] text-ink w-8 text-right">{concurrency}</span>
-        </div>
+        {/* Concurrency sits outside the config gate: a resume handed off from
+            History has no Assign state behind it but still runs lanes. */}
+        {(collection || snap || pendingResume) && (
+          <div className="space-y-1.5">
+            {concurrencyMode === 'adaptive' ? (
+              <div className="flex items-center gap-3">
+                <span className="font-body text-[13px] text-inkSoft w-28">Concurrency</span>
+                <span className="flex items-center gap-2 font-mono text-[13px] text-ink">
+                  adaptive
+                  <AdaptiveInfo />
+                  {running && snap?.lanes ? <span>· {snap.lanes} lanes</span> : null}
+                </span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3">
+                <label className="font-body text-[13px] text-inkSoft w-28">Concurrency</label>
+                <input
+                  type="range"
+                  min={4}
+                  max={32}
+                  value={concurrency}
+                  onChange={(e) => setConcurrency(Number(e.target.value))}
+                  className="flex-1 accent-accent"
+                />
+                <span className="font-mono text-[13px] text-ink w-8 text-right">{concurrency}</span>
+              </div>
+            )}
+            {concurrencyMode === 'manual' && (
+              <p className="font-body text-[12px] text-inkMute">
+                Changes apply immediately, mid-run. Switch to adaptive tuning in Settings.
+              </p>
+            )}
+          </div>
+        )}
       </section>
+
+      {resumeProblems.length > 0 && (
+        <div className="border border-warn/40 bg-paper px-3 py-2.5 space-y-1">
+          <p className="font-body text-[13px] text-warn">
+            {resumeProblems.length} file{resumeProblems.length === 1 ? '' : 's'} could not be
+            reconciled and will be skipped:
+          </p>
+          <ul className="font-mono text-[11px] text-inkSoft max-h-32 overflow-auto">
+            {resumeProblems.slice(0, 50).map((p) => (
+              <li key={p.localPath} className="truncate" title={`${p.localPath} — ${p.reason}`}>
+                {p.fileName} — {p.reason}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {needsCaptureTime && (
         <section className="space-y-2">

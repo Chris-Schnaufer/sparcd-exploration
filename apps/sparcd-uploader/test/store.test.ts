@@ -62,6 +62,35 @@ beforeEach(() => {
   });
 });
 
+describe('store persistence', () => {
+  it('persists wizard prefs and never the in-flight batch', () => {
+    useStore.getState().setUploaderUser('Ada Lovelace');
+    useStore.getState().setUploadDescription('Sky Island transect');
+    useStore.getState().setSelectedBucket('bucket::uuid');
+    useStore.getState().setSelectedLocationKey('loc-7');
+    useStore.getState().setUploadTimeZone('America/Phoenix');
+    useStore.getState().setDryRun(false);
+    useStore.getState().setConcurrencyMode('manual');
+    useStore.getState().setUploadConcurrency(16);
+    useStore.getState().setFiles([scanned('a.jpg')]);
+    useStore.getState().setActiveSnap({ sessionId: 'session-1' } as never);
+
+    const persisted = JSON.parse(window.sessionStorage.getItem('sparcd-uploader-session')!).state;
+
+    expect(persisted).toEqual({
+      elevationUnit: 'meters',
+      uploaderUser: 'Ada Lovelace',
+      uploadDescription: 'Sky Island transect',
+      selectedBucket: 'bucket::uuid',
+      selectedLocationKey: 'loc-7',
+      uploadTimeZone: 'America/Phoenix',
+      dryRun: false,
+      concurrencyMode: 'manual',
+      uploadConcurrency: 16,
+    });
+  });
+});
+
 describe('store applyProgress', () => {
   it('marks started ids processing and leaves queued others untouched', () => {
     useStore.getState().setFiles([scanned('a.jpg'), scanned('b.jpg'), scanned('c.jpg')]);

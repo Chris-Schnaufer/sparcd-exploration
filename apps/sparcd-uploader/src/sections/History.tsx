@@ -1,8 +1,9 @@
 // Past and in-flight upload sessions, read from the Dexie resume store (P5).
 // Completed batches are a record; open batches (no completedAt) offer Resume —
 // which restores local file access (durable handle or reselect-and-reconcile)
-// and replays the persisted bundle, skipping done blobs and re-uploading the
-// rest. Discard drops the local session row only; it never touches remote state.
+// and then hands the prepared session to the wizard's Upload step, which owns
+// the run UI. Discard drops the local session row only; it never touches remote
+// state.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { OfflineBanner, useOnline } from '@sparcd/auth-ui';
@@ -27,8 +28,7 @@ import {
 } from '../lib/resume';
 import { scanFileList, supportsDirectoryHandle } from '../lib/scanFiles';
 import type { ProcessResponse } from '../lib/processPool';
-import { resumeUpload } from '../lib/upload';
-import { Note, RunMonitor } from '../components/RunMonitor';
+import { Note } from '../components/RunMonitor';
 import { PublishedUploads } from '../components/PublishedUploads';
 
 type Row = { batch: BatchRecord; counts: Record<PersistedFileState, number> };
@@ -50,24 +50,26 @@ function Badge({ batch }: { batch: BatchRecord }) {
 
 export function History() {
   const s3Config = useStore((s) => s.s3Config);
-  const concurrency = useStore((s) => s.uploadConcurrency);
-
-  // Run and snapshot live in the store so they survive section navigation.
-  // Filter activeSnap by source so New-Upload snapshots don't appear here.
-  const snap = useStore((s) => s.activeRunSource === 'history' ? s.activeSnap : null);
-  const setActiveRun = useStore((s) => s.setActiveRun);
-  const setActiveSnap = useStore((s) => s.setActiveSnap);
-  const clearActiveRun = useStore((s) => s.clearActiveRun);
+  const setPendingResume = useStore((s) => s.setPendingResume);
+  const setSection = useStore((s) => s.setSection);
+  const setStep = useStore((s) => s.setStep);
+  // The Upload step owns every run, resumes included, so a run in flight is
+  // simply the store's active snapshot. Its session id is what keeps a running
+  // batch from being resumed twice or discarded out from under itself.
+  const runningSessionId = useStore((s) =>
+    s.activeSnap && (s.activeSnap.phase === 'preparing' || s.activeSnap.phase === 'blobs' || s.activeSnap.phase === 'metadata')
+      ? s.activeSnap.sessionId
+      : null,
+  );
 
   const [rows, setRows] = useState<Row[] | null>(null);
-  const [active, setActive] = useState<string | null>(null); // sessionId being resumed
   const [message, setMessage] = useState<string | null>(null);
   const [problems, setProblems] = useState<ReconcileProblem[]>([]);
   // Re-verifying a large batch's content hashes before resume can take real
   // time with otherwise no visible feedback — surfaced in that batch's own
-  // tile so it doesn't look like Resume is just doing nothing. `active`
-  // isn't set yet during this phase (only once launch() actually starts the
-  // run), so track which batch verification is for separately.
+  // tile so it doesn't look like Resume is just doing nothing. It also latches
+  // the button: it is set synchronously, before the first await, so a
+  // double-click can't prepare the same batch twice.
   const [verifyingBatchId, setVerifyingBatchId] = useState<string | null>(null);
   const [verifyProgress, setVerifyProgress] = useState<{ done: number; total: number } | null>(null);
   // True while the fallback <input> picker is open. Separate from verifyingBatchId
@@ -99,17 +101,10 @@ export function History() {
     return () => input.removeEventListener('cancel', onCancel);
   }, [pickerOpen]);
 
-
-  const running = snap?.phase === 'blobs' || snap?.phase === 'metadata';
   const online = useOnline();
 
   const launch = useCallback(
-    async (
-      batch: BatchRecord,
-      session: LoadedSession,
-      attached: Map<string, File>,
-      probs: ReconcileProblem[],
-    ) => {
+    (session: LoadedSession, attached: Map<string, File>, probs: ReconcileProblem[]) => {
       setVerifyingBatchId(null);
       setVerifyProgress(null);
       const missingRequired = session.files.filter((f) => f.state !== 'done' && !attached.has(f.localPath));
@@ -129,19 +124,15 @@ export function History() {
         );
         return;
       }
-      setProblems(probs);
-      setActive(batch.id);
+      setProblems([]);
       setMessage(null);
-      const run = resumeUpload(
-        { config: s3Config!, session, attached, concurrency },
-        (s) => {
-          setActiveSnap(s);
-          if (s.phase === 'done' || s.phase === 'error') void refresh();
-        },
-      );
-      setActiveRun(run, 'history');
+      // The wizard's Upload step owns the run UI, so hand the prepared session
+      // over and jump there rather than running a second monitor here.
+      setPendingResume({ session, attached, problems: probs });
+      setSection('new');
+      setStep('upload');
     },
-    [s3Config, concurrency, refresh],
+    [setPendingResume, setSection, setStep],
   );
 
   // If this session was interrupted before it ever reached publish
@@ -173,7 +164,7 @@ export function History() {
         setMessage('Session record is missing.');
         return;
       }
-      await launch(batch, finalSession, attached, probs);
+      launch(finalSession, attached, probs);
     },
     [launch],
   );
@@ -181,7 +172,6 @@ export function History() {
   const beginResume = useCallback(
     async (batch: BatchRecord) => {
       setProblems([]);
-      setActiveSnap(null);
       setVerifyingBatchId(batch.id);
       setVerifyProgress(null);
       try {
@@ -283,15 +273,10 @@ export function History() {
 
   const discard = useCallback(
     async (sessionId: string) => {
-      if (active === sessionId) {
-        useStore.getState().activeRun?.cancel();
-        setActive(null);
-        clearActiveRun();
-      }
       await discardSession(sessionId);
       await refresh();
     },
-    [active, clearActiveRun, refresh],
+    [refresh],
   );
 
   if (rows === null) {
@@ -316,6 +301,8 @@ export function History() {
       </div>
     );
   }
+
+  const busy = verifyingBatchId !== null || pickerOpen || runningSessionId !== null;
 
   return (
     <div className="px-6 py-6 max-w-2xl mx-auto space-y-5">
@@ -356,39 +343,10 @@ export function History() {
         </div>
       )}
 
-      {active && snap && (
-        <div className="space-y-3 border border-rule bg-panel p-4">
-          <div className="flex items-center justify-between">
-            <p className="font-body text-[13px] text-inkSoft">
-              Resuming <span className="font-mono text-ink">{stampOf(snap.uploadPath ?? '')}</span>
-            </p>
-            {running ? (
-              <button
-                onClick={() => useStore.getState().activeRun?.cancel()}
-                className="border border-warn text-warn px-3 py-1 text-[13px] font-body hover:bg-paperHover"
-              >
-                Cancel
-              </button>
-            ) : (
-              <button
-                onClick={() => {
-                  setActive(null);
-                  clearActiveRun();
-                }}
-                className="border border-ink text-ink px-3 py-1 text-[13px] font-body hover:bg-paperHover"
-              >
-                Dismiss
-              </button>
-            )}
-          </div>
-          <RunMonitor snap={snap} />
-        </div>
-      )}
-
       <ul className="space-y-3">
         {rows.map(({ batch, counts }) => {
-          const isActive = active === batch.id;
           const isVerifying = verifyingBatchId === batch.id && !!verifyProgress;
+          const isRunning = runningSessionId === batch.id;
           const total = batch.totalFiles;
           return (
             <li key={batch.id} className="border border-ruleSoft bg-panel px-4 py-3 space-y-2">
@@ -427,20 +385,23 @@ export function History() {
               <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-1">
                 {!batch.completedAt && (
                   <button
-                    disabled={running || verifyingBatchId !== null || pickerOpen}
+                    disabled={busy}
                     title={!online ? "You're offline" : undefined}
                     onClick={() => void beginResume(batch)}
                     className={`bg-ink text-paper border border-ink min-h-[44px] sm:min-h-0 px-4 sm:px-3 py-1 text-[13px] font-body font-[600] hover:opacity-90 ${
-                      running || verifyingBatchId !== null || pickerOpen ? 'opacity-40 cursor-not-allowed' : ''
+                      busy ? 'opacity-40 cursor-not-allowed' : ''
                     }`}
                   >
-                    {verifyingBatchId === batch.id ? 'Verifying…' : isActive ? 'Resuming…' : 'Resume'}
+                    {verifyingBatchId === batch.id ? 'Verifying…' : 'Resume'}
                   </button>
                 )}
                 <button
-                  disabled={running && isActive}
+                  disabled={isRunning}
+                  title={isRunning ? 'This upload is currently running' : undefined}
                   onClick={() => void discard(batch.id)}
-                  className="border border-ink text-ink min-h-[44px] sm:min-h-0 px-4 sm:px-3 py-1 text-[13px] font-body hover:bg-paperHover"
+                  className={`border border-ink text-ink min-h-[44px] sm:min-h-0 px-4 sm:px-3 py-1 text-[13px] font-body hover:bg-paperHover ${
+                    isRunning ? 'opacity-40 cursor-not-allowed' : ''
+                  }`}
                 >
                   Discard
                 </button>

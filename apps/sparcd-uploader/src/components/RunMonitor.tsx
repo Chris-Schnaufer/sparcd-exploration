@@ -1,19 +1,20 @@
-// Live view of an upload run, shared by the New-upload Upload step and the
-// History resume flow. Driven entirely by an `UploadSnapshot`, so both callers
-// render identical progress, byte counts, and the streaming PUT log.
+// Live view of an upload run, rendered by the New-upload Upload step for both
+// fresh runs and resumes handed off from History. Driven entirely by an
+// `UploadSnapshot`: progress, byte counts, and the streaming PUT log.
 
 import { useEffect, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { formatBytes } from '../lib/scanFiles';
 import type { FileState, UploadSnapshot } from '../lib/upload';
 
+// Skipped is a satisfied state (verified already uploaded), not a warning —
+// only failed earns the warn color.
 const STATE_DOT: Record<FileState, string> = {
   inspecting: 'bg-inkMute',
   pending: 'bg-ruleSoft',
   uploading: 'bg-accent',
-  verifying: 'bg-accent',
   done: 'bg-ok',
-  skipped: 'bg-warn',
+  skipped: 'bg-inkMute',
   failed: 'bg-warn',
 };
 
@@ -21,6 +22,7 @@ const ROW = 40;
 
 const PHASE_LABEL: Record<UploadSnapshot['phase'], string> = {
   idle: 'idle',
+  preparing: 'preparing',
   blobs: 'uploading',
   metadata: 'publishing',
   partial: 'partial',
@@ -108,13 +110,122 @@ function ProgressList({ snap }: { snap: UploadSnapshot }) {
                 />
               </span>
               <span className="col-start-3 row-start-2 sm:col-start-4 sm:row-start-1 font-mono text-[11px] text-inkSoft text-right">
-                {f.state === 'uploading' || f.state === 'verifying' ? `${Math.round(pct)}%` : f.state}
+                {f.state === 'uploading' ? `${Math.round(pct)}%` : f.state}
               </span>
             </div>
           );
         })}
       </div>
     </div>
+  );
+}
+
+function fmtDuration(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  return `${h > 0 ? `${h}:${String(m).padStart(2, '0')}` : m}:${String(sec).padStart(2, '0')}`;
+}
+
+const fmtRate = (bytesPerSec: number): string =>
+  `${formatBytes(bytesPerSec)}/s (${(bytesPerSec * 8 / 1e6).toFixed(bytesPerSec * 8 < 10e6 ? 1 : 0)} Mbps)`;
+
+// ETA reads best coarse: second-precision at hours-out just spins digits.
+function fmtEta(ms: number): string {
+  const s = ms / 1000;
+  if (s < 90) return `~${Math.max(5, Math.round(s / 5) * 5)}s left`;
+  const m = s / 60;
+  if (m < 90) return `~${Math.round(m)} min left`;
+  return `~${Math.floor(m / 60)}h ${Math.round((m % 60) / 5) * 5}m left`;
+}
+
+// Files ≤ 8 MiB report bytes only on completion (no streaming progress from
+// fetch), so the byte counter moves in whole-file steps. A ~20 s window keeps
+// the rate honest across those jumps.
+const RATE_WINDOW_MS = 20_000;
+
+/**
+ * Live speed / elapsed / ETA for a wet run. Rate comes from a rolling window of
+ * (time, transferred bytes) samples taken on every snapshot emit; a 1 s ticker
+ * keeps elapsed and ETA counting between emits, so the estimate is always
+ * current — a stall shows up as a sinking rate and a growing ETA, not a frozen
+ * number. Skipped bytes are excluded from the rate: a resume credits them
+ * instantly, which would read as a burst of speed nobody transferred. ETA still
+ * measures the whole remainder — skipped files are already complete, so
+ * remaining-to-transfer over transfer-rate is the honest estimate.
+ */
+function Telemetry({ snap }: { snap: UploadSnapshot }) {
+  const samples = useRef<{ t: number; b: number }[]>([]);
+  const startedAt = useRef<number | null>(null);
+  const finishedAt = useRef<number | null>(null);
+  const [, force] = useState(0);
+
+  const running = snap.phase === 'blobs' || snap.phase === 'metadata';
+  const settled = snap.phase === 'done' || snap.phase === 'partial' || snap.phase === 'error';
+  const transferred = snap.uploadedBytes - snap.skippedBytes;
+
+  // New session → fresh clock and window.
+  useEffect(() => {
+    samples.current = [];
+    startedAt.current = null;
+    finishedAt.current = null;
+  }, [snap.sessionId]);
+
+  useEffect(() => {
+    if (running && startedAt.current === null) {
+      startedAt.current = Date.now();
+      finishedAt.current = null;
+    }
+    if (settled && startedAt.current !== null && finishedAt.current === null) {
+      finishedAt.current = Date.now();
+      force((n) => n + 1);
+    }
+  }, [running, settled]);
+
+  // Sample the byte counter on every snapshot emit.
+  useEffect(() => {
+    if (!running) return;
+    const now = Date.now();
+    samples.current.push({ t: now, b: transferred });
+    const cutoff = now - RATE_WINDOW_MS;
+    while (samples.current.length > 2 && samples.current[1].t < cutoff) samples.current.shift();
+  }, [snap.version, running, transferred]);
+
+  useEffect(() => {
+    if (!running) return;
+    const id = setInterval(() => force((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, [running]);
+
+  if (snap.dryRun || startedAt.current === null) return null;
+
+  const now = finishedAt.current ?? Date.now();
+  const elapsedMs = now - startedAt.current;
+  const avgRate = elapsedMs > 500 ? transferred / (elapsedMs / 1000) : 0;
+
+  if (settled) {
+    return (
+      <p className="font-mono text-[12px] text-inkSoft">
+        {formatBytes(transferred)} in {fmtDuration(elapsedMs)}
+        {avgRate > 0 && <> · avg {fmtRate(avgRate)}</>}
+      </p>
+    );
+  }
+
+  const oldest = samples.current.find((s) => s.t >= now - RATE_WINDOW_MS) ?? samples.current[0];
+  const windowSec = oldest ? (now - oldest.t) / 1000 : 0;
+  const rate = oldest && windowSec > 0.5 ? (transferred - oldest.b) / windowSec : 0;
+  const remaining = Math.max(0, snap.totalBytes - snap.uploadedBytes);
+  const etaMs = rate > 0 ? (remaining / rate) * 1000 : null;
+
+  return (
+    <p className="flex flex-wrap gap-x-4 gap-y-0.5 font-mono text-[12px] text-inkSoft">
+      <span>{rate > 0 ? fmtRate(rate) : 'measuring…'}</span>
+      <span>elapsed {fmtDuration(elapsedMs)}</span>
+      {snap.lanes ? <span>· {snap.lanes} lanes</span> : null}
+      <span className="text-ink">{etaMs !== null ? fmtEta(etaMs) : 'estimating…'}</span>
+    </p>
   );
 }
 
@@ -175,10 +286,17 @@ export function RunMonitor({ snap }: { snap: UploadSnapshot }) {
               <span className="font-mono text-inkMute">{counts.inspecting}</span> inspecting
             </>
           ) : null}
+          {counts.uploading ? (
+            <>
+              {' · '}
+              <span className="font-mono text-accent">{counts.uploading}</span>{' '}
+              in flight
+            </>
+          ) : null}
           {counts.skipped ? (
             <>
               {' · '}
-              <span className="font-mono text-warn">{counts.skipped}</span> skipped
+              <span className="font-mono text-inkSoft">{counts.skipped}</span> skipped
             </>
           ) : null}
           {counts.failed ? (
@@ -199,6 +317,8 @@ export function RunMonitor({ snap }: { snap: UploadSnapshot }) {
           style={{ width: `${snap.phase === 'done' ? 100 : pct}%` }}
         />
       </div>
+
+      <Telemetry snap={snap} />
 
       {snap.phase === 'done' && (
         <Note

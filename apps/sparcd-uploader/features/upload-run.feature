@@ -44,14 +44,17 @@ Feature: Upload and publish a batch
     And each stored object's path is the one recorded for it in the media table
 
   @F1
-  Scenario: Each stored object is verified after it is written
+  Scenario: Every stored object is confirmed once the batch is written
     When a file has been uploaded
-    Then the tool re-reads the stored object's size and recorded fingerprint
-    And a mismatch is treated as a failure of that file, not as a success
-    # A mismatch is retried like any other transient failure. The retry then
-    # re-PUTs a key the first attempt already stored, so the append-only guard
-    # rejects it and the run stops there rather than working through the retry
-    # budget — the file is never counted as done either way.
+    Then the tool lists the upload folder and confirms every object is stored at its recorded size
+    And a few of the stored objects are re-read to confirm storage kept their recorded fingerprint
+    And an object the listing contradicts is treated as a failure of that file, not as a success
+    # One listing pass per thousand objects rather than a re-read per file: at
+    # long-haul latency the extra round trip per file dominated a small upload,
+    # and the listing answers the question that matters — is every object there,
+    # at the size the metadata claims for it. A listing can't show the recorded
+    # fingerprint, so a handful of objects are re-read for it — losing it is a
+    # property of the path, not of one object.
 
   @unmapped
   Scenario: Uploading begins before the whole batch has finished being examined
@@ -106,11 +109,13 @@ Feature: Upload and publish a batch
   @unmapped
   Scenario: The number of files uploaded at once can be tuned
     Given the upload has not been started
-    Then the number of parallel uploads can be set between 4 and 16
-    And it defaults to 8
-    And it cannot be changed while a run is in progress
-    # The setting lives on the Upload step, not in Settings, and is not
-    # remembered across page loads.
+    Then the number of parallel uploads is chosen automatically by default
+    And it can be pinned to a number between 4 and 32
+    And a pinned number defaults to 8
+    And a pinned number can be changed while a run is in progress
+    # Choosing automatic or pinned is a Settings choice, remembered for the
+    # rest of the browser session. Once pinned, the slider also appears on the
+    # Upload step and stays live while a run is going.
 
   @unmapped
   Scenario: A momentary failure is retried before the file is given up on

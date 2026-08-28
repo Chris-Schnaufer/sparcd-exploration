@@ -14,7 +14,8 @@ import {
 import type { FlipObservation } from '@sparcd/flip';
 import type { ScannedFile } from './lib/scanFiles';
 import type { ProcessResponse } from './lib/processPool';
-import type { FileAccessMode } from './lib/db';
+import type { FileAccessMode, LoadedSession } from './lib/db';
+import type { ReconcileProblem } from './lib/resume';
 import type { UploadRun, StreamingUploadRun, UploadSnapshot } from './lib/upload';
 import { validateBatch, validateFile, type FileValidation } from './lib/validation';
 import { clearClientCache } from './lib/s3';
@@ -25,7 +26,15 @@ export type { ElevationUnit };
 export type Section = 'new' | 'history' | 'settings';
 export type WizardStep = 'drop' | 'inspect' | 'assign' | 'upload';
 export type { Theme };
+export type ConcurrencyMode = 'adaptive' | 'manual';
 export type ProcessState = 'queued' | 'processing' | 'ready' | 'error';
+
+/** A resume prepared in History, handed off to the wizard's Upload step to run. */
+export type PendingResume = {
+  session: LoadedSession;
+  attached: Map<string, File>;
+  problems: ReconcileProblem[];
+};
 
 /** A scanned file plus the results of P1 worker processing. */
 export type FileEntry = ScannedFile & {
@@ -71,22 +80,25 @@ type UploaderState = {
   uploadDescription: string; // free-text description for UploadMeta
   uploadTimeZone: string; // IANA zone EXIF naive times are interpreted in; default = browser zone
   dryRun: boolean; // off by default; when on, logs PUTs and writes nothing
-  uploadConcurrency: number; // parallel blob lanes, 4–16
-  // Active upload run (fresh or resume from either Upload or History) and its
-  // latest snapshot. Components subscribe to activeSnap for display; the run
-  // lives here so disconnect() and App-level beforeunload can reach it without
-  // depending on whichever component started it.
+  concurrencyMode: ConcurrencyMode; // adaptive tunes lanes during the run; manual pins them
+  uploadConcurrency: number; // manual lane count, 4–32
+  pendingResume: PendingResume | null; // prepared in History, consumed by the Upload step
+  // Active upload run and its latest snapshot. Components subscribe to
+  // activeSnap for display; the run lives here so disconnect() and App-level
+  // beforeunload can reach it without depending on whichever component started
+  // it, and so section navigation stops rendering a run rather than ending it.
   activeRun: UploadRun | StreamingUploadRun | null;
   activeSnap: UploadSnapshot | null;
-  // 'upload' = run started from the New-Upload wizard; 'history' = resume from
-  // History. Upload.tsx and History.tsx each filter activeSnap by source so they
-  // only render progress that belongs to them.
-  activeRunSource: 'upload' | 'history' | null;
+  // Always 'upload': History prepares a resume and hands it to the wizard's
+  // Upload step, which is the one surface that runs anything. Kept as a field
+  // because disconnect and the beforeunload guard read it to tell a real run
+  // from none.
+  activeRunSource: 'upload' | null;
 
   connect: (config: S3Config, remember: boolean) => void;
   disconnect: () => void;
   setSection: (section: Section) => void;
-  setActiveRun: (run: UploadRun | StreamingUploadRun, source: 'upload' | 'history') => void;
+  setActiveRun: (run: UploadRun | StreamingUploadRun) => void;
   setActiveSnap: (snap: UploadSnapshot | null) => void;
   clearActiveRun: () => void;
   toggleTheme: () => void;
@@ -114,7 +126,9 @@ type UploaderState = {
   setUploadDescription: (value: string) => void;
   setUploadTimeZone: (value: string) => void;
   setDryRun: (value: boolean) => void;
+  setConcurrencyMode: (value: ConcurrencyMode) => void;
   setUploadConcurrency: (value: number) => void;
+  setPendingResume: (value: PendingResume | null) => void;
   nextBatch: () => void;
 };
 
@@ -180,10 +194,11 @@ export const useStore = create<UploaderState>()(
   // sessionStorage session, so switching tools or reloading keeps the user in;
   // failing that, a sibling tab's live relay (`subscribeSharedConnection`)
   // supplies one within a message round-trip of mount, and otherwise the user
-  // enters the secret. Zustand's own persist here covers only cheap UI prefs
-  // (elevationUnit and the Assign strings below — the theme lives in the
-  // shared home every SPARC'd tool reads); the in-flight batch (files,
-  // handles, validations) is excluded too.
+  // enters the secret. Zustand's own persist here covers cheap UI prefs
+  // (elevationUnit — the theme lives in the shared home every SPARC'd tool
+  // reads) plus the wizard's typed inputs and run options, so a reload doesn't
+  // make a researcher retype the form; the in-flight batch (files, handles,
+  // validations, step) is excluded too — it can't survive a reload anyway.
   persist(
     (set, get) => ({
       s3Config: initialSession,
@@ -209,7 +224,9 @@ export const useStore = create<UploaderState>()(
       uploadDescription: '',
       uploadTimeZone: localTimeZone(),
       dryRun: false,
+      concurrencyMode: 'adaptive',
       uploadConcurrency: 8,
+      pendingResume: null,
       activeRun: null,
       activeSnap: null,
       activeRunSource: null,
@@ -250,7 +267,7 @@ export const useStore = create<UploaderState>()(
         }));
       },
       setSection: (section) => set({ section }),
-      setActiveRun: (run, source) => set({ activeRun: run, activeRunSource: source }),
+      setActiveRun: (run) => set({ activeRun: run, activeRunSource: 'upload' }),
       setActiveSnap: (snap) => set({ activeSnap: snap }),
       clearActiveRun: () => set({ activeRun: null, activeSnap: null, activeRunSource: null }),
       toggleTheme: () =>
@@ -398,7 +415,9 @@ export const useStore = create<UploaderState>()(
       setUploadDescription: (value) => set({ uploadDescription: value }),
       setUploadTimeZone: (value) => set({ uploadTimeZone: value }),
       setDryRun: (value) => set({ dryRun: value }),
+      setConcurrencyMode: (value) => set({ concurrencyMode: value }),
       setUploadConcurrency: (value) => set({ uploadConcurrency: value }),
+      setPendingResume: (value) => set({ pendingResume: value }),
 
       // Start a fresh batch after a completed upload, keeping the deployment,
       // uploader, target collection, and description so a researcher can chain
@@ -428,7 +447,8 @@ export const useStore = create<UploaderState>()(
       // batches with exactly this in mind; this just makes that survive a
       // reload too. A stale selectedLocationKey/selectedBucket from a
       // different connection is harmless: Assign already clears/reselects
-      // either one when it doesn't match the connected backend's data.
+      // either one when it doesn't match the connected backend's data. The run
+      // options ride along for the same reason.
       partialize: (s) => ({
         elevationUnit: s.elevationUnit,
         uploaderUser: s.uploaderUser,
@@ -436,6 +456,9 @@ export const useStore = create<UploaderState>()(
         selectedBucket: s.selectedBucket,
         uploadDescription: s.uploadDescription,
         uploadTimeZone: s.uploadTimeZone,
+        dryRun: s.dryRun,
+        concurrencyMode: s.concurrencyMode,
+        uploadConcurrency: s.uploadConcurrency,
       }),
     },
   ),

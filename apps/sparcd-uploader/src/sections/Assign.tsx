@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { OfflineBanner, useOnline } from '@sparcd/auth-ui';
 import { useStore } from '../store';
+import { Spinner } from '../components/Spinner';
 import { useLocations } from '../lib/useLocations';
 import { useCollections, useCollectionDeployments } from '../lib/useCollections';
 import { DeploymentPicker } from '../components/DeploymentPicker';
@@ -13,6 +15,35 @@ import { captureTimeComplete } from '../lib/validation';
 
 const sectionLabel =
   'font-[600] text-[11px] tracking-[0.16em] uppercase text-inkSoft mb-2';
+
+/** Section heading with a refresh control that re-pulls the backing S3 data,
+ *  bypassing the query cache — for when the registry or a collection's
+ *  deployments changed server-side mid-session. */
+function RefreshableLabel({
+  label,
+  onRefresh,
+  refreshing,
+}: {
+  label: string;
+  onRefresh: () => void;
+  refreshing: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between mb-2">
+      <h2 className="font-[600] text-[11px] tracking-[0.16em] uppercase text-inkSoft">{label}</h2>
+      <button
+        type="button"
+        onClick={onRefresh}
+        disabled={refreshing}
+        aria-label={`Refresh ${label.toLowerCase()} from S3`}
+        title="Re-pull from S3"
+        className="grid place-items-center min-w-6 min-h-6 border border-rule font-mono text-[12px] text-inkSoft hover:text-ink hover:border-ink focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+      >
+        {refreshing ? <Spinner /> : <span aria-hidden>↻</span>}
+      </button>
+    </div>
+  );
+}
 
 function LocationsState({ message, tone }: { message: string; tone: 'mute' | 'warn' }) {
   return (
@@ -43,9 +74,24 @@ export function Assign() {
   const elevationUnit = useStore((s) => s.elevationUnit);
   const files = useStore((s) => s.files);
 
-  const { data, isLoading, isError, error, refetch: refetchLocations } = useLocations(s3Config, connectionId);
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    isFetching,
+    refetch: refetchLocations,
+  } = useLocations(s3Config, connectionId);
   const collections = useCollections(s3Config, connectionId);
   const slug = sanitizeUploaderUser(uploaderUser);
+
+  const queryClient = useQueryClient();
+  const refreshCollections = () =>
+    void queryClient.invalidateQueries({ queryKey: ['collections'] });
+  const refreshDeployments = () => {
+    void queryClient.invalidateQueries({ queryKey: ['locations'] });
+    void queryClient.invalidateQueries({ queryKey: ['collectionDeployments'] });
+  };
 
   // Preselect the first collection the connected credentials can read.
   useEffect(() => {
@@ -142,7 +188,11 @@ export function Assign() {
     <div className="max-w-2xl mx-auto space-y-8">
       <OfflineBanner message="You're offline — locations and collections won't load until your connection is back." />
       <section>
-        <h2 className={sectionLabel}>Target collection</h2>
+        <RefreshableLabel
+          label="Target collection"
+          onRefresh={refreshCollections}
+          refreshing={collections.isFetching}
+        />
         {collections.isLoading && <LocationsState tone="mute" message="Discovering collections…" />}
         {collections.isError && (
           <LocationsState
@@ -177,7 +227,11 @@ export function Assign() {
       </section>
 
       <section>
-        <h2 className={sectionLabel}>Deployment</h2>
+        <RefreshableLabel
+          label="Deployment"
+          onRefresh={refreshDeployments}
+          refreshing={isFetching || deployments.isFetching}
+        />
         {(isLoading || (collection && deployments.isLoading)) && (
           <LocationsState tone="mute" message="Loading this collection's deployments…" />
         )}

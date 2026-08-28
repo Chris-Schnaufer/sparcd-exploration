@@ -11,6 +11,10 @@ export function Settings() {
   const setSection = useStore((s) => s.setSection);
   const uploaderUser = useStore((s) => s.uploaderUser);
   const setUploaderUser = useStore((s) => s.setUploaderUser);
+  const concurrencyMode = useStore((s) => s.concurrencyMode);
+  const setConcurrencyMode = useStore((s) => s.setConcurrencyMode);
+  const concurrency = useStore((s) => s.uploadConcurrency);
+  const setConcurrency = useStore((s) => s.setUploadConcurrency);
   const slug = sanitizeUploaderUser(uploaderUser);
 
   // Logout clears all local data so the next user gets a clean app. Guard it:
@@ -79,6 +83,44 @@ export function Settings() {
               .
             </span>
           </label>
+          <div className="block">
+            <span className="block font-body text-[13px] text-inkSoft mb-1.5">
+              Upload concurrency
+            </span>
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+              {(['adaptive', 'manual'] as const).map((mode) => (
+                <label key={mode} className="flex items-center gap-2.5 font-body text-[14px] text-ink">
+                  <input
+                    type="radio"
+                    name="concurrency-mode"
+                    checked={concurrencyMode === mode}
+                    onChange={() => setConcurrencyMode(mode)}
+                    className="accent-accent"
+                  />
+                  {mode === 'adaptive' ? 'Adaptive (default)' : 'Manual'}
+                </label>
+              ))}
+            </div>
+            {concurrencyMode === 'manual' && (
+              <div className="flex items-center gap-3 mt-3">
+                <label className="font-body text-[13px] text-inkSoft w-28">Parallel lanes</label>
+                <input
+                  type="range"
+                  min={4}
+                  max={32}
+                  value={concurrency}
+                  onChange={(e) => setConcurrency(Number(e.target.value))}
+                  className="flex-1 accent-accent"
+                />
+                <span className="font-mono text-[13px] text-ink w-8 text-right">{concurrency}</span>
+              </div>
+            )}
+            <span className="block font-body text-[12px] text-inkMute mt-1.5">
+              Adaptive measures throughput during a run and raises or lowers the number of parallel
+              uploads to find the fastest setting for this connection. Manual pins it; the slider
+              stays live during a run.
+            </span>
+          </div>
         </div>
       </section>
 
