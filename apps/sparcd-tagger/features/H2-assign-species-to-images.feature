@@ -92,15 +92,29 @@ Feature: Assign species to images in an upload
   Scenario: A key belongs to only one species
     Given a key is already assigned to one species
     When the same key is assigned to a different species
+    Then an unmistakable duplicate-key warning identifies the existing assignment
+    And neither binding changes before reassignment is confirmed
+    When the duplicate key reassignment is confirmed
     Then the new species takes the key
     And the previous species is left without one
+
+  @H2
+  Scenario: A duplicate vocabulary key can be kept with its existing species
+    Given the species vocabulary carries a key binding for a species
+    When its key is assigned to a different species
+    Then an unmistakable duplicate-key warning identifies the existing assignment
+    And keyboard focus remains inside the duplicate-key warning
+    When the duplicate key warning is cancelled with Escape
+    Then the vocabulary key remains with its original species
 
   @H2
   Scenario: Key assignments survive across sessions on this machine
     Given keys have been assigned locally
     When the tagger is reopened later in the same browser
     Then those key assignments are still in effect
-    And clearing a key removes it for that species
+    When the key is cleared for that species
+    Then its local and vocabulary keys no longer apply it
+    And the cleared key remains absent after reopening the tagger
 
   @H2
   Scenario: A species reference image can be enlarged before deciding

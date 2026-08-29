@@ -10,7 +10,7 @@
 // `KeyboardEvent.key` character so the global handler stays a cheap lookup.
 
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { createJSONStorage, persist } from 'zustand/middleware';
 
 /** Normalize a Java KeyCode string (or a raw char) to the lowercase
  *  `KeyboardEvent.key` it should match. Returns null when unbindable. */
@@ -24,10 +24,37 @@ export function normalizeJavaKeyCode(code: string | null | undefined): string | 
   return null;
 }
 
+export type KeyOverrides = Record<string, string | null>;
+
+export function withAssignedKey(
+  overrides: KeyOverrides,
+  scientificName: string,
+  key: string,
+  displacedScientificNames: string[] = [],
+): KeyOverrides {
+  const next = { ...overrides };
+  for (const displaced of displacedScientificNames) {
+    if (displaced !== scientificName) next[displaced] = null;
+  }
+  next[scientificName] = key;
+  return next;
+}
+
+export function withClearedKey(
+  overrides: KeyOverrides,
+  scientificName: string,
+): KeyOverrides {
+  return { ...overrides, [scientificName]: null };
+}
+
 type KeyBindingState = {
-  /** scientificName → normalized key char. Local overrides only. */
-  overrides: Record<string, string>;
-  assignKey: (scientificName: string, key: string) => void;
+  /** Missing → vocabulary default; string → local key; null → explicitly unbound. */
+  overrides: KeyOverrides;
+  assignKey: (
+    scientificName: string,
+    key: string,
+    displacedScientificNames?: string[],
+  ) => void;
   clearKey: (scientificName: string) => void;
 };
 
@@ -36,23 +63,22 @@ export const useKeyBindings = create<KeyBindingState>()(
   persist(
     (set) => ({
       overrides: {},
-      assignKey: (scientificName, key) =>
-        set((s) => {
-          const next = { ...s.overrides };
-          // A key is unique across species: steal it from whoever held it.
-          for (const [sci, k] of Object.entries(next)) if (k === key) delete next[sci];
-          next[scientificName] = key;
-          return { overrides: next };
-        }),
+      assignKey: (scientificName, key, displacedScientificNames = []) =>
+        set((s) => ({
+          overrides: withAssignedKey(
+            s.overrides,
+            scientificName,
+            key,
+            displacedScientificNames,
+          ),
+        })),
       clearKey: (scientificName) =>
-        set((s) => {
-          if (!(scientificName in s.overrides)) return s;
-          const next = { ...s.overrides };
-          delete next[scientificName];
-          return { overrides: next };
-        }),
+        set((s) => ({ overrides: withClearedKey(s.overrides, scientificName) })),
     }),
-    { name: 'sparcd-tagger-keybindings' },
+    {
+      name: 'sparcd-tagger-keybindings',
+      storage: createJSONStorage(() => globalThis.localStorage),
+    },
   ),
 );
 
@@ -60,7 +86,24 @@ export const useKeyBindings = create<KeyBindingState>()(
 export function effectiveKey(
   scientificName: string,
   jsonKeyBinding: string | null,
-  overrides: Record<string, string>,
+  overrides: KeyOverrides,
 ): string | null {
-  return overrides[scientificName] ?? normalizeJavaKeyCode(jsonKeyBinding);
+  return Object.prototype.hasOwnProperty.call(overrides, scientificName)
+    ? overrides[scientificName]
+    : normalizeJavaKeyCode(jsonKeyBinding);
+}
+
+export function conflictingKeyOwners(
+  species: readonly { scientificName: string; keyBinding: string | null }[],
+  targetScientificName: string,
+  key: string,
+  overrides: KeyOverrides,
+): string[] {
+  return species
+    .filter(
+      (candidate) =>
+        candidate.scientificName !== targetScientificName &&
+        effectiveKey(candidate.scientificName, candidate.keyBinding, overrides) === key,
+    )
+    .map((candidate) => candidate.scientificName);
 }
