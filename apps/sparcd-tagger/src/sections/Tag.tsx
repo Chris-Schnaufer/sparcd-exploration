@@ -40,7 +40,7 @@ import {
   activeKeyProfile,
   conflictingKeyOwners,
   effectiveKey,
-  normalizeEventKey,
+  normalizeBindableEventKey,
   useKeyBindings,
 } from '../lib/keys';
 import { useLocalBatch, saveLocalTags } from '../lib/localBatch';
@@ -1477,8 +1477,8 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
       s.setCapturingFor(null);
       return;
     }
-    const key = normalizeEventKey(e.key);
-    if (key && !e.metaKey && !e.ctrlKey) {
+    const key = normalizeBindableEventKey(e);
+    if (key) {
       e.preventDefault();
       s.captureKey(s.capturingFor, key);
       s.setCapturingFor(null);
@@ -1521,8 +1521,8 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
   // single-character shortcuts. This makes every alphanumeric and symbol key
   // usable; assigning j/k/x/? intentionally displaces that app shortcut.
   const current = s.list[s.focus];
-  const printableKey = normalizeEventKey(e.key);
-  const speciesAction = !e.metaKey && !e.ctrlKey && printableKey
+  const printableKey = !e.shiftKey ? normalizeBindableEventKey(e) : null;
+  const speciesAction = printableKey
     ? s.keyMap.get(printableKey)
     : undefined;
   if (speciesAction && current) {

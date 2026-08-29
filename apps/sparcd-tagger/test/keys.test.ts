@@ -6,6 +6,7 @@ import {
   conflictingKeyOwners,
   diffSpecies,
   effectiveKey,
+  normalizeBindableEventKey,
   normalizeEventKey,
   normalizeJavaKeyCode,
 } from '../src/lib/keys';
@@ -51,6 +52,26 @@ describe('normalizeEventKey', () => {
   it('rejects whitespace and named control keys', () => {
     expect(normalizeEventKey(' ')).toBeNull();
     expect(normalizeEventKey('Enter')).toBeNull();
+  });
+});
+
+describe('normalizeBindableEventKey', () => {
+  const event = (key: string, modifiers = {}) => ({
+    key,
+    altKey: false,
+    ctrlKey: false,
+    metaKey: false,
+    ...modifiers,
+  });
+
+  it('rejects Alt/Option, Control, and Meta modified printable keys', () => {
+    expect(normalizeBindableEventKey(event('j', { altKey: true }))).toBeNull();
+    expect(normalizeBindableEventKey(event('j', { ctrlKey: true }))).toBeNull();
+    expect(normalizeBindableEventKey(event('j', { metaKey: true }))).toBeNull();
+  });
+
+  it('preserves symbols produced with Shift', () => {
+    expect(normalizeBindableEventKey(event('!'))).toBe('!');
   });
 });
 

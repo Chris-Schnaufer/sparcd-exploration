@@ -335,6 +335,35 @@ Then('the keyboard shortcut reference is not opened', async ({ page }) => {
   await expect(page.getByRole('dialog', { name: 'Keyboard shortcuts' })).toHaveCount(0);
 });
 
+When('an Alt-modified printable key is pressed while assigning a species key', async ({ page }) => {
+  await speciesAssignKey(page, 'Pecari tajacu').click();
+  await page.keyboard.press('Alt+j');
+});
+
+Then('key capture remains active and no key is assigned', async ({ page }) => {
+  await expect(speciesRow(page, 'Pecari tajacu')).toContainText('press a key…');
+  await expect(speciesBadge(page, 'Pecari tajacu')).toHaveCount(0);
+});
+
+When('a Shift-produced symbol is assigned to the species', async ({ page }) => {
+  await page.keyboard.press('!');
+  await expect(speciesBadge(page, 'Pecari tajacu')).toHaveText('!');
+});
+
+When('that binding is pressed with Alt or Option', async ({ page }) => {
+  await page.evaluate(() => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '!', altKey: true, bubbles: true }));
+  });
+});
+
+Then('the species is not recorded on the image', async ({ page }) => {
+  await expect(gridCell(page, 'IMG002.JPG')).not.toContainText('Javelina');
+});
+
+When('that binding is pressed without Alt or Option', async ({ page }) => {
+  await page.keyboard.press('!');
+});
+
 Given('the species vocabulary carries a key binding for a species', async ({ page }) => {
   await expect(speciesBadge(page, 'Odocoileus hemionus')).toHaveText('D');
 });

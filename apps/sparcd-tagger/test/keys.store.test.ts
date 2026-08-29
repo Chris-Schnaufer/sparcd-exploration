@@ -20,9 +20,10 @@ Object.defineProperty(globalThis, 'localStorage', {
 });
 
 let useKeyBindings: KeyStore;
+let rehydrateKeyBindings: typeof import('../src/lib/keys').rehydrateKeyBindings;
 
 beforeAll(async () => {
-  ({ useKeyBindings } = await import('../src/lib/keys'));
+  ({ useKeyBindings, rehydrateKeyBindings } = await import('../src/lib/keys'));
 });
 
 const original = [
@@ -75,7 +76,7 @@ describe('per-user keybinding profiles', () => {
     profile = useKeyBindings.getState().profiles['server\u0000alice'];
     expect(profile.pendingSpeciesChange).toBeUndefined();
     expect(profile.acceptedSpecies).toEqual(changed);
-    expect(profile.overrides.removed).toBeUndefined();
+    expect(profile.overrides.removed).toBeNull();
   });
 
   it('distinguishes an accepted empty vocabulary from an uninitialized profile', () => {
@@ -94,12 +95,18 @@ describe('per-user keybinding profiles', () => {
       state: { profiles: Record<string, { overrides: Record<string, string | null> }> };
       version: number;
     };
-    stored.state.profiles['server\u0000alice'].overrides.a = '#';
+    stored.state.profiles['server\u0000alice'].overrides.b = '#';
     localStorage.setItem('sparcd-tagger-keybindings', JSON.stringify(stored));
 
-    await useKeyBindings.persist.rehydrate();
+    rehydrateKeyBindings();
 
     expect(useKeyBindings.getState().activeProfileId).toBe('server\u0000alice');
-    expect(useKeyBindings.getState().profiles['server\u0000alice'].overrides.a).toBe('#');
+    expect(useKeyBindings.getState().profiles['server\u0000alice'].overrides).toMatchObject({
+      a: '?',
+      b: '#',
+    });
+    expect(JSON.parse(localStorage.getItem('sparcd-tagger-keybindings')!).state.profiles[
+      'server\u0000alice'
+    ].overrides).toMatchObject({ a: '?', b: '#' });
   });
 });

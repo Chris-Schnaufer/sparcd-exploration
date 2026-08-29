@@ -4,6 +4,13 @@ import {
   speciesKeyProfileId,
   stageSpeciesProfile,
 } from '../src/lib/speciesKeyProfiles';
+import {
+  KEYBINDING_STORAGE_KEY,
+  mergeAndWriteRevisionedProfiles,
+  readRevisionedProfiles,
+  type Revision,
+  type RevisionedKeyProfiles,
+} from '@sparcd/auth-ui';
 
 function memoryStorage(): Storage {
   const values = new Map<string, string>();
@@ -62,7 +69,46 @@ describe('uploader species-keybinding preflight', () => {
         >;
       };
     };
-    expect(acknowledged.state.profiles[profileId].overrides.removed).toBeUndefined();
+    expect(acknowledged.state.profiles[profileId].overrides.removed).toBeNull();
     expect(acknowledged.state.profiles[profileId].pendingSpeciesChange).toBeUndefined();
+  });
+
+  it('merges different species written from concurrent stale profile snapshots', () => {
+    const storage = memoryStorage();
+    const profileId = speciesKeyProfileId('server', 'alice');
+    const revision = (at: number, writer: string): Revision => ({ at, sequence: 1, writer });
+    const staleWriter = (
+      scientificName: string,
+      key: string | null,
+      at: number,
+      writer: string,
+    ): RevisionedKeyProfiles => ({
+      [profileId]: {
+        overrides: { [scientificName]: key },
+        overrideRevisions: { [scientificName]: revision(at, writer) },
+      },
+    });
+
+    mergeAndWriteRevisionedProfiles(storage, staleWriter('a', 'a', 1, 'tab-a'));
+    mergeAndWriteRevisionedProfiles(storage, staleWriter('b', 'b', 1, 'tab-b'));
+
+    expect(readRevisionedProfiles(storage)[profileId].overrides).toEqual({ a: 'a', b: 'b' });
+  });
+
+  it('keeps a newer removal tombstone when a stale writer restores an old assignment', () => {
+    const storage = memoryStorage();
+    const profileId = speciesKeyProfileId('server', 'alice');
+    const profiles = (key: string | null, at: number, writer: string): RevisionedKeyProfiles => ({
+      [profileId]: {
+        overrides: { removed: key },
+        overrideRevisions: { removed: { at, sequence: 1, writer } },
+      },
+    });
+
+    mergeAndWriteRevisionedProfiles(storage, profiles(null, 2, 'uploader'));
+    mergeAndWriteRevisionedProfiles(storage, profiles('!', 1, 'stale-tagger'));
+
+    expect(readRevisionedProfiles(storage)[profileId].overrides.removed).toBeNull();
+    expect(storage.getItem(KEYBINDING_STORAGE_KEY)).toContain('"version":3');
   });
 });

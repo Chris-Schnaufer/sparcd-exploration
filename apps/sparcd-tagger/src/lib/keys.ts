@@ -1,36 +1,25 @@
-// Per-user, persistent species keybindings. Profiles are scoped by the
-// connected endpoint + access key (the stable, non-secret identity available
-// at initial access). Missing override → vocabulary default; string → local
-// binding; null → explicitly unbound. The legacy '' sentinel is still read as
-// cleared so the issue #99 prototype and PR #138 remain data-compatible.
-
 import { create } from 'zustand';
-import { createJSONStorage, persist } from 'zustand/middleware';
+import {
+  KEYBINDING_STORAGE_KEY,
+  emptyRevisionedProfile,
+  keyProfileId,
+  mergeAndWriteRevisionedProfiles,
+  mergeRevisionedProfiles,
+  nextKeyProfileRevision,
+  readRevisionedProfiles,
+  type RevisionedKeyProfile,
+  type RevisionedKeyProfiles,
+  type SpeciesDiff,
+  type SpeciesKeyConfig,
+} from '@sparcd/auth-ui';
 
 export type KeyOverrides = Record<string, string | null>;
-
-export type SpeciesKeyConfig = {
-  scientificName: string;
-  commonName: string;
-  keyBinding: string | null;
-};
-
-export type SpeciesDiff = {
-  added: SpeciesKeyConfig[];
-  removed: SpeciesKeyConfig[];
-  modified: { before: SpeciesKeyConfig; after: SpeciesKeyConfig }[];
-};
-
-type PendingSpeciesChange = { next: SpeciesKeyConfig[]; diff: SpeciesDiff };
-
-export type KeyProfile = {
-  overrides: KeyOverrides;
-  acceptedSpecies?: SpeciesKeyConfig[];
-  pendingSpeciesChange?: PendingSpeciesChange;
-};
+export type KeyProfile = RevisionedKeyProfile;
+export type { SpeciesDiff, SpeciesKeyConfig };
+export { keyProfileId };
 
 type KeyBindingState = {
-  profiles: Record<string, KeyProfile>;
+  profiles: RevisionedKeyProfiles;
   activeProfileId: string | null;
   activateProfile: (profileId: string) => void;
   assignKey: (
@@ -45,12 +34,6 @@ type KeyBindingState = {
 
 const LEGACY_PROFILE = '__legacy__';
 
-export function keyProfileId(endpoint: string, accessKey: string): string {
-  return `${endpoint.trim()}\u0000${accessKey.trim()}`;
-}
-
-/** Normalize a Java KeyCode string (or a raw printable key) to the value used
- * by KeyboardEvent.key. Printable symbols are valid bindings. */
 export function normalizeJavaKeyCode(code: string | null | undefined): string | null {
   if (!code) return null;
   const trimmed = code.trim();
@@ -77,6 +60,12 @@ export function normalizeJavaKeyCode(code: string | null | undefined): string | 
 
 export function normalizeEventKey(key: string): string | null {
   return [...key].length === 1 && !/^\s$/u.test(key) ? key.toLocaleLowerCase() : null;
+}
+
+export function normalizeBindableEventKey(
+  event: Pick<KeyboardEvent, 'key' | 'altKey' | 'ctrlKey' | 'metaKey'>,
+): string | null {
+  return event.altKey || event.ctrlKey || event.metaKey ? null : normalizeEventKey(event.key);
 }
 
 export function effectiveKey(
@@ -127,10 +116,10 @@ export function diffSpecies(
 
 function normalizedSpecies(species: readonly SpeciesKeyConfig[]): SpeciesKeyConfig[] {
   return species
-    .map((entry) => ({
-      scientificName: entry.scientificName,
-      commonName: entry.commonName,
-      keyBinding: entry.keyBinding,
+    .map(({ scientificName, commonName, keyBinding }) => ({
+      scientificName,
+      commonName,
+      keyBinding,
     }))
     .sort((a, b) => a.scientificName.localeCompare(b.scientificName));
 }
@@ -139,136 +128,146 @@ function hasDiff(diff: SpeciesDiff): boolean {
   return !!(diff.added.length || diff.removed.length || diff.modified.length);
 }
 
-function currentProfile(state: KeyBindingState): KeyProfile | null {
-  return state.activeProfileId ? state.profiles[state.activeProfileId] ?? null : null;
+function storedProfiles(): RevisionedKeyProfiles {
+  return typeof localStorage === 'undefined' ? {} : readRevisionedProfiles(localStorage);
 }
 
-function updateCurrentProfile(
+function latestProfiles(local: RevisionedKeyProfiles): RevisionedKeyProfiles {
+  return mergeRevisionedProfiles(local, storedProfiles());
+}
+
+function commitProfiles(profiles: RevisionedKeyProfiles): RevisionedKeyProfiles {
+  return typeof localStorage === 'undefined'
+    ? profiles
+    : mergeAndWriteRevisionedProfiles(localStorage, profiles);
+}
+
+function updateActiveProfile(
   state: KeyBindingState,
-  update: (profile: KeyProfile) => KeyProfile,
+  update: (profile: RevisionedKeyProfile) => RevisionedKeyProfile,
 ): Partial<KeyBindingState> {
   if (!state.activeProfileId) return {};
-  const profile = state.profiles[state.activeProfileId] ?? { overrides: {} };
+  const profiles = latestProfiles(state.profiles);
+  const profile = profiles[state.activeProfileId] ?? emptyRevisionedProfile();
   return {
-    profiles: { ...state.profiles, [state.activeProfileId]: update(profile) },
+    profiles: commitProfiles({
+      ...profiles,
+      [state.activeProfileId]: update(profile),
+    }),
   };
 }
 
-export const useKeyBindings = create<KeyBindingState>()(
-  persist(
-    (set) => ({
-      profiles: {},
-      activeProfileId: null,
-      activateProfile: (profileId) =>
-        set((state) => {
-          if (state.activeProfileId === profileId) return state;
-          let profiles = state.profiles;
-          if (!profiles[profileId]) {
-            const legacy = profiles[LEGACY_PROFILE];
-            profiles = { ...profiles, [profileId]: legacy ?? { overrides: {} } };
-            if (legacy) {
-              profiles = { ...profiles };
-              delete profiles[LEGACY_PROFILE];
-            }
-          }
-          return { profiles, activeProfileId: profileId };
-        }),
-      assignKey: (scientificName, key, displacedScientificNames = []) =>
-        set((state) =>
-          updateCurrentProfile(state, (profile) => {
-            const overrides = { ...profile.overrides };
-            for (const displaced of displacedScientificNames) {
-              if (displaced !== scientificName) overrides[displaced] = null;
-            }
-            overrides[scientificName] = key;
-            return { ...profile, overrides };
-          }),
-        ),
-      clearKey: (scientificName) =>
-        set((state) =>
-          updateCurrentProfile(state, (profile) => ({
-            ...profile,
-            overrides: { ...profile.overrides, [scientificName]: null },
-          })),
-        ),
-      stageSpecies: (current) =>
-        set((state) =>
-          updateCurrentProfile(state, (profile) => {
-            const next = normalizedSpecies(current);
-            if (!profile.acceptedSpecies) return { ...profile, acceptedSpecies: next };
-            if (
-              profile.pendingSpeciesChange &&
-              JSON.stringify(profile.pendingSpeciesChange.next) === JSON.stringify(next)
-            ) {
-              return profile;
-            }
-            const diff = diffSpecies(profile.acceptedSpecies, next);
-            return hasDiff(diff)
-              ? { ...profile, pendingSpeciesChange: { next, diff } }
-              : { ...profile, pendingSpeciesChange: undefined };
-          }),
-        ),
-      acknowledgeSpeciesChange: () =>
-        set((state) =>
-          updateCurrentProfile(state, (profile) => {
-            const pending = profile.pendingSpeciesChange;
-            if (!pending) return profile;
-            const overrides = { ...profile.overrides };
-            for (const removed of pending.diff.removed) delete overrides[removed.scientificName];
-            return {
-              overrides,
-              acceptedSpecies: pending.next,
-              pendingSpeciesChange: undefined,
-            };
-          }),
-        ),
+export const useKeyBindings = create<KeyBindingState>()((set) => ({
+  profiles: storedProfiles(),
+  activeProfileId: null,
+  activateProfile: (profileId) =>
+    set((state) => {
+      if (state.activeProfileId === profileId) return state;
+      let profiles = latestProfiles(state.profiles);
+      if (!profiles[profileId]) {
+        const legacy = Object.keys(profiles).some((id) => id !== LEGACY_PROFILE)
+          ? undefined
+          : profiles[LEGACY_PROFILE];
+        profiles = { ...profiles, [profileId]: legacy ?? emptyRevisionedProfile() };
+        profiles = commitProfiles(profiles);
+      }
+      return { profiles, activeProfileId: profileId };
     }),
-    {
-      name: 'sparcd-tagger-keybindings',
-      version: 2,
-      storage: createJSONStorage(() => globalThis.localStorage),
-      partialize: (state) => ({ profiles: state.profiles }),
-      merge: (persisted, current) => ({
-        ...current,
-        ...((persisted as Partial<KeyBindingState>) ?? {}),
-        activeProfileId: current.activeProfileId,
+  assignKey: (scientificName, key, displacedScientificNames = []) =>
+    set((state) =>
+      updateActiveProfile(state, (profile) => {
+        const overrides = { ...profile.overrides };
+        const overrideRevisions = { ...profile.overrideRevisions };
+        for (const displaced of displacedScientificNames) {
+          if (displaced === scientificName) continue;
+          overrides[displaced] = null;
+          overrideRevisions[displaced] = nextKeyProfileRevision(
+            profile.overrideRevisions[displaced],
+          );
+        }
+        overrides[scientificName] = key;
+        overrideRevisions[scientificName] = nextKeyProfileRevision(
+          profile.overrideRevisions[scientificName],
+        );
+        return { ...profile, overrides, overrideRevisions };
       }),
-      migrate: (persisted: unknown) => {
-        const prior = persisted as {
-          profiles?: Record<string, KeyProfile>;
-          overrides?: Record<string, string | null>;
-          knownSpecies?: string[];
-        };
-        if (prior.profiles) return { profiles: prior.profiles };
-        const acceptedSpecies = prior.knownSpecies?.map((scientificName) => ({
-          scientificName,
-          commonName: scientificName,
-          keyBinding: null,
-        }));
+    ),
+  clearKey: (scientificName) =>
+    set((state) =>
+      updateActiveProfile(state, (profile) => ({
+        ...profile,
+        overrides: { ...profile.overrides, [scientificName]: null },
+        overrideRevisions: {
+          ...profile.overrideRevisions,
+          [scientificName]: nextKeyProfileRevision(profile.overrideRevisions[scientificName]),
+        },
+      })),
+    ),
+  stageSpecies: (current) =>
+    set((state) =>
+      updateActiveProfile(state, (profile) => {
+        const next = normalizedSpecies(current);
+        if (!profile.acceptedSpecies) {
+          return {
+            ...profile,
+            acceptedSpecies: next,
+            acceptedRevision: nextKeyProfileRevision(profile.acceptedRevision),
+          };
+        }
+        if (
+          profile.pendingSpeciesChange &&
+          JSON.stringify(profile.pendingSpeciesChange.next) === JSON.stringify(next)
+        ) {
+          return profile;
+        }
+        const diff = diffSpecies(profile.acceptedSpecies, next);
         return {
-          profiles: {
-            [LEGACY_PROFILE]: {
-              overrides: Object.fromEntries(
-                Object.entries(prior.overrides ?? {}).map(([name, key]) => [
-                  name,
-                  key === '' ? null : key,
-                ]),
-              ),
-              acceptedSpecies,
-            },
-          },
+          ...profile,
+          pendingSpeciesChange: hasDiff(diff) ? { next, diff } : undefined,
+          pendingRevision: nextKeyProfileRevision(profile.pendingRevision),
         };
-      },
-    },
-  ),
-);
+      }),
+    ),
+  acknowledgeSpeciesChange: () =>
+    set((state) =>
+      updateActiveProfile(state, (profile) => {
+        const pending = profile.pendingSpeciesChange;
+        if (!pending) return profile;
+        const overrides = { ...profile.overrides };
+        const overrideRevisions = { ...profile.overrideRevisions };
+        for (const removed of pending.diff.removed) {
+          overrides[removed.scientificName] = null;
+          overrideRevisions[removed.scientificName] = nextKeyProfileRevision(
+            profile.overrideRevisions[removed.scientificName],
+          );
+        }
+        return {
+          ...profile,
+          overrides,
+          overrideRevisions,
+          acceptedSpecies: pending.next,
+          acceptedRevision: nextKeyProfileRevision(profile.acceptedRevision),
+          pendingSpeciesChange: undefined,
+          pendingRevision: nextKeyProfileRevision(profile.pendingRevision),
+        };
+      }),
+    ),
+}));
 
 export function activeKeyProfile(state: KeyBindingState): KeyProfile {
-  return currentProfile(state) ?? { overrides: {} };
+  return state.activeProfileId
+    ? state.profiles[state.activeProfileId] ?? emptyRevisionedProfile()
+    : emptyRevisionedProfile();
+}
+
+export function rehydrateKeyBindings(): void {
+  useKeyBindings.setState((state) => ({
+    profiles: commitProfiles(mergeRevisionedProfiles(state.profiles, storedProfiles())),
+  }));
 }
 
 if (typeof window !== 'undefined') {
   window.addEventListener('storage', (event) => {
-    if (event.key === 'sparcd-tagger-keybindings') void useKeyBindings.persist.rehydrate();
+    if (event.key === KEYBINDING_STORAGE_KEY) rehydrateKeyBindings();
   });
 }

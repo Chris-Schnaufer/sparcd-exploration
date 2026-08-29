@@ -105,6 +105,17 @@ Feature: Assign species to images in an upload
       | 7   |
 
   @H2
+  Scenario: Alt or Option modified keys remain available to the browser
+    Given an image is focused
+    When an Alt-modified printable key is pressed while assigning a species key
+    Then key capture remains active and no key is assigned
+    When a Shift-produced symbol is assigned to the species
+    And that binding is pressed with Alt or Option
+    Then the species is not recorded on the image
+    When that binding is pressed without Alt or Option
+    Then that species is recorded on the image
+
+  @H2
   Scenario: Keys already bound in the desktop app work without re-assignment
     Given the species vocabulary carries a key binding for a species
     Then that key applies the species without any local assignment
