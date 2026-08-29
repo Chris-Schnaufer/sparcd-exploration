@@ -30,6 +30,13 @@ export const other = (name: string, content = 'not media'): FileSpec => ({
   bytes: textFile(content),
 });
 
+/** Two JPEGs with the same filename under different subfolders — used to verify
+ *  that blank-row observation IDs are path-scoped and therefore unique. */
+export const sameNameSubfolderBatch = (): FileSpec[] => [
+  jpegAt('cam1/IMG_0001.JPG', '2026:07:01 12:00:00', 'cam1-img1'),
+  jpegAt('cam2/IMG_0001.JPG', '2026:07:01 12:00:00', 'cam2-img1'),
+];
+
 /** Three timestamped JPEGs — the default "a folder of media" batch. */
 export const standardBatch = (): FileSpec[] => [
   jpegAt('IMG_0001.JPG', '2026:07:01 12:00:00'),
