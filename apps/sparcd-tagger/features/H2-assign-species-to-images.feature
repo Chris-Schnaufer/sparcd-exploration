@@ -89,16 +89,20 @@ Feature: Assign species to images in an upload
     And the assigned key is shown on the species row
 
   @H2
-  Scenario Outline: Former navigation keys and their shifted forms can be assigned to species
+  Scenario Outline: Printable bindings, including former shortcuts, take precedence
     Given an image is focused
     When "<key>" is assigned to a species and pressed
     Then that species is recorded on the image
+    And the keyboard shortcut reference is not opened
 
     Examples:
       | key |
+      | ?   |
+      | !   |
       | j   |
       | k   |
       | x   |
+      | 7   |
 
   @H2
   Scenario: Keys already bound in the desktop app work without re-assignment
@@ -153,6 +157,15 @@ Feature: Assign species to images in an upload
     When the key is cleared for that species
     Then its local and vocabulary keys no longer apply it
     And the cleared key remains absent after reopening the tagger
+
+  @H2
+  Scenario: Server vocabulary changes require durable acknowledgement
+    Given the saved user profile contains an older species configuration
+    When the tagger is reopened with the current server vocabulary
+    Then a blocking message lists added, removed and updated species
+    And reopening again does not bypass the required acknowledgement
+    When the vocabulary change is acknowledged
+    Then removed-species bindings are pruned and the message stays acknowledged
 
   @H2
   Scenario: A species reference image can be enlarged before deciding

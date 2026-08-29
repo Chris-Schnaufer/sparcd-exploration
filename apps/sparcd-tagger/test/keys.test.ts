@@ -3,11 +3,11 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  normalizeJavaKeyCode,
-  effectiveKey,
-  withAssignedKey,
-  withClearedKey,
   conflictingKeyOwners,
+  diffSpecies,
+  effectiveKey,
+  normalizeEventKey,
+  normalizeJavaKeyCode,
 } from '../src/lib/keys';
 
 describe('normalizeJavaKeyCode', () => {
@@ -20,10 +20,37 @@ describe('normalizeJavaKeyCode', () => {
     expect(normalizeJavaKeyCode('NUMPAD7')).toBe('7');
   });
 
+  it('maps raw and Java-named symbol keys', () => {
+    expect(normalizeJavaKeyCode('?')).toBe('?');
+    expect(normalizeJavaKeyCode('SLASH')).toBe('/');
+    expect(normalizeJavaKeyCode('SEMICOLON')).toBe(';');
+    expect(normalizeJavaKeyCode('OPEN_BRACKET')).toBe('[');
+    expect(normalizeJavaKeyCode('BACK_SLASH')).toBe('\\');
+  });
+
   it('returns null for empty / unbindable codes', () => {
     expect(normalizeJavaKeyCode(null)).toBeNull();
     expect(normalizeJavaKeyCode('')).toBeNull();
     expect(normalizeJavaKeyCode('ENTER')).toBeNull();
+  });
+});
+
+describe('normalizeEventKey', () => {
+  it('accepts alphanumeric, shifted punctuation, and Unicode symbols', () => {
+    expect(normalizeEventKey('A')).toBe('a');
+    expect(normalizeEventKey('7')).toBe('7');
+    expect(normalizeEventKey('?')).toBe('?');
+    expect(normalizeEventKey('§')).toBe('§');
+  });
+
+  it('accepts every printable ASCII alphanumeric and symbol key except whitespace', () => {
+    const printable = Array.from({ length: 94 }, (_, index) => String.fromCharCode(index + 33));
+    for (const key of printable) expect(normalizeEventKey(key)).not.toBeNull();
+  });
+
+  it('rejects whitespace and named control keys', () => {
+    expect(normalizeEventKey(' ')).toBeNull();
+    expect(normalizeEventKey('Enter')).toBeNull();
   });
 });
 
@@ -40,53 +67,38 @@ describe('effectiveKey', () => {
     expect(effectiveKey('Canis latrans', null, {})).toBeNull();
   });
 
-  it('honors an explicit unbinding instead of falling back to species.json', () => {
+  it('honors both null and legacy empty-string tombstones', () => {
     expect(effectiveKey('Canis latrans', 'C', { 'Canis latrans': null })).toBeNull();
+    expect(effectiveKey('Canis latrans', 'C', { 'Canis latrans': '' })).toBeNull();
   });
 });
 
-describe('key override transitions', () => {
-  it('records a persistent tombstone when a key is cleared', () => {
-    expect(withClearedKey({ 'Canis latrans': 'q' }, 'Canis latrans')).toEqual({
-      'Canis latrans': null,
-    });
-  });
-
-  it('atomically assigns a key and unbinds every displaced owner', () => {
-    expect(
-      withAssignedKey({}, 'Pecari tajacu', 'd', [
-        'Odocoileus hemionus',
-        'Canis latrans',
-      ]),
-    ).toEqual({
-      'Odocoileus hemionus': null,
-      'Canis latrans': null,
-      'Pecari tajacu': 'd',
-    });
-  });
-
-  it('finds duplicate owners across vocabulary and local bindings', () => {
-    const species = [
-      { scientificName: 'default owner', keyBinding: 'D' },
-      { scientificName: 'local owner', keyBinding: null },
-      { scientificName: 'target', keyBinding: null },
+describe('species configuration reconciliation', () => {
+  it('detects additions, removals, and modified defaults', () => {
+    const before = [
+      { scientificName: 'a', commonName: 'Alpha', keyBinding: 'A' },
+      { scientificName: 'b', commonName: 'Beta', keyBinding: 'B' },
     ];
-    expect(
-      conflictingKeyOwners(species, 'target', 'd', {
-        'local owner': 'd',
-      }),
-    ).toEqual(['default owner', 'local owner']);
+    const after = [
+      { scientificName: 'a', commonName: 'Alpha renamed', keyBinding: '?' },
+      { scientificName: 'c', commonName: 'Gamma', keyBinding: 'C' },
+    ];
+    const diff = diffSpecies(before, after);
+    expect(diff.added.map((entry) => entry.scientificName)).toEqual(['c']);
+    expect(diff.removed.map((entry) => entry.scientificName)).toEqual(['b']);
+    expect(diff.modified.map((entry) => entry.after.scientificName)).toEqual(['a']);
   });
 
-  it('does not report explicitly cleared vocabulary bindings as conflicts', () => {
+  it('finds duplicate owners across defaults and overrides but ignores tombstones', () => {
     const species = [
-      { scientificName: 'former owner', keyBinding: 'D' },
-      { scientificName: 'target', keyBinding: null },
+      { scientificName: 'a', commonName: 'Alpha', keyBinding: 'D' },
+      { scientificName: 'b', commonName: 'Beta', keyBinding: null },
+      { scientificName: 'c', commonName: 'Gamma', keyBinding: 'D' },
+      { scientificName: 'target', commonName: 'Target', keyBinding: null },
     ];
-    expect(
-      conflictingKeyOwners(species, 'target', 'd', {
-        'former owner': null,
-      }),
-    ).toEqual([]);
+    expect(conflictingKeyOwners(species, 'target', 'd', { b: 'd', c: null })).toEqual([
+      'a',
+      'b',
+    ]);
   });
 });

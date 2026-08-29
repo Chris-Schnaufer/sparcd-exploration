@@ -1,28 +1,35 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 
 type Props = {
   added: string[];
   removed: string[];
+  modified: string[];
   onAcknowledge: () => void;
 };
 
-export function SpeciesChangedModal({ added, removed, onAcknowledge }: Props) {
+export function SpeciesChangedModal({ added, removed, modified, onAcknowledge }: Props) {
+  const acknowledgeRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
+    const previousFocus = document.activeElement as HTMLElement | null;
+    acknowledgeRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Enter' || e.key === 'Escape') {
-        e.stopPropagation();
-        onAcknowledge();
-      }
+      e.stopPropagation();
+      if (e.key !== 'Tab') return;
+      e.preventDefault();
+      acknowledgeRef.current?.focus();
     };
     window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
-  }, [onAcknowledge]);
+    return () => {
+      window.removeEventListener('keydown', onKey, true);
+      previousFocus?.focus();
+    };
+  }, []);
 
   return createPortal(
     <div
       className="fixed inset-0 z-50 grid place-items-center bg-ink/40 p-6"
-      role="dialog"
+      role="alertdialog"
       aria-modal="true"
       aria-label="Species vocabulary has changed"
     >
@@ -64,16 +71,30 @@ export function SpeciesChangedModal({ added, removed, onAcknowledge }: Props) {
               </ul>
             </section>
           )}
+          {modified.length > 0 && (
+            <section>
+              <div className="text-[11px] font-[600] tracking-[0.12em] uppercase text-inkSoft mb-1.5">
+                Updated ({modified.length})
+              </div>
+              <ul className="space-y-0.5">
+                {modified.map((s) => (
+                  <li key={s} className="text-[13px] font-mono text-ink">
+                    ~ {s}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
         </div>
 
         <div className="px-5 py-3 border-t border-rule flex justify-end">
           <button
+            ref={acknowledgeRef}
             type="button"
-            autoFocus
             onClick={onAcknowledge}
             className="text-[13px] font-mono border border-ink px-4 py-1.5 text-ink hover:bg-panelHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
           >
-            OK
+            I understand
           </button>
         </div>
       </div>

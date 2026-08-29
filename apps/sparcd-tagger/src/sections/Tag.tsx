@@ -17,7 +17,7 @@ import { TimeShiftModal } from '../components/TimeShiftModal';
 import { BulkTimeShiftModal } from '../components/BulkTimeShiftModal';
 import { PerImageTime } from '../components/PerImageTime';
 import { SpeciesLoupe } from '../components/SpeciesLoupe';
-import { SpeciesChangedModal } from '../components/SpeciesChangedModal';
+import { KeyConflictDialog } from '../components/KeyConflictDialog';
 import { ImageAdjustments } from '../components/ImageAdjustments';
 import { cssFilter, NEUTRAL, type Adjustments } from '../lib/adjustments';
 import { Overview, type PickMods, type ViewKind } from '../components/Overview';
@@ -36,7 +36,13 @@ import {
   type BulkTimeTarget,
   type UploadCtx,
 } from '../lib/drafts';
-import { useKeyBindings, effectiveKey, conflictingKeyOwners } from '../lib/keys';
+import {
+  activeKeyProfile,
+  conflictingKeyOwners,
+  effectiveKey,
+  normalizeEventKey,
+  useKeyBindings,
+} from '../lib/keys';
 import { useLocalBatch, saveLocalTags } from '../lib/localBatch';
 import { localTagImages } from '../lib/localWorkspace';
 import { DEFAULT_SPECIES } from '../lib/defaultSpecies';
@@ -285,18 +291,10 @@ export function Tag() {
     }
   }, [pendingSnapshots, clearPendingSnapshots]);
 
-  const { overrides, assignKey, clearKey, syncSpecies } = useKeyBindings();
+  const overrides = useKeyBindings((state) => activeKeyProfile(state).overrides);
+  const assignKey = useKeyBindings((state) => state.assignKey);
+  const clearKey = useKeyBindings((state) => state.clearKey);
   const speciesList = localRecord ? DEFAULT_SPECIES : species.data?.species ?? [];
-
-  const [speciesDiff, setSpeciesDiff] = useState<{ added: string[]; removed: string[] } | null>(null);
-
-  // On each species load, sync the snapshot and surface any vocabulary change.
-  useEffect(() => {
-    if (!species.data) return;
-    const sorted = species.data.species.map((s) => s.scientificName).sort();
-    const diff = syncSpecies(sorted);
-    if (diff && (diff.added.length || diff.removed.length)) setSpeciesDiff(diff);
-  }, [species.data, syncSpecies]);
 
   const bindingFor = (sci: string): string | null => {
     const k = effectiveKey(sci, speciesJsonKey(speciesList, sci), overrides);
@@ -314,18 +312,14 @@ export function Tag() {
   }, [speciesList, overrides]);
 
   const captureKey = (scientificName: string, key: string) => {
-    const species = speciesList.find((candidate) => candidate.scientificName === scientificName);
-    if (!species) return;
-    const conflictingNames = new Set(
-      conflictingKeyOwners(speciesList, scientificName, key, overrides),
-    );
-    const conflicts = speciesList.filter((candidate) =>
-      conflictingNames.has(candidate.scientificName),
-    );
+    const target = speciesList.find((candidate) => candidate.scientificName === scientificName);
+    if (!target) return;
+    const owners = new Set(conflictingKeyOwners(speciesList, scientificName, key, overrides));
+    const conflicts = speciesList.filter((candidate) => owners.has(candidate.scientificName));
     if (conflicts.length) {
       setPendingKeyConflict({
         scientificName,
-        commonName: species.commonName,
+        commonName: target.commonName,
         key,
         conflicts,
       });
@@ -339,7 +333,7 @@ export function Tag() {
     assignKey(
       pendingKeyConflict.scientificName,
       pendingKeyConflict.key,
-      pendingKeyConflict.conflicts.map((species) => species.scientificName),
+      pendingKeyConflict.conflicts.map((owner) => owner.scientificName),
     );
     setPendingKeyConflict(null);
   };
@@ -508,8 +502,7 @@ export function Tag() {
       showSync ||
       showSnapshots ||
       showTimeShift ||
-      pendingKeyConflict !== null ||
-      !!speciesDiff,
+      pendingKeyConflict !== null,
   };
 
   useEffect(() => {
@@ -885,16 +878,11 @@ export function Tag() {
       {zoomSpecies && <SpeciesLoupe species={zoomSpecies} onClose={closeLoupe} />}
       {pendingKeyConflict && (
         <KeyConflictDialog
-          conflict={pendingKeyConflict}
+          keyName={pendingKeyConflict.key}
+          targetName={pendingKeyConflict.commonName}
+          ownerNames={pendingKeyConflict.conflicts.map((owner) => owner.commonName)}
           onConfirm={confirmKeyReassignment}
           onCancel={() => setPendingKeyConflict(null)}
-        />
-      )}
-      {speciesDiff && (
-        <SpeciesChangedModal
-          added={speciesDiff.added}
-          removed={speciesDiff.removed}
-          onAcknowledge={() => setSpeciesDiff(null)}
         />
       )}
     </div>
@@ -1329,85 +1317,6 @@ function Lightbox({
   );
 }
 
-function KeyConflictDialog({
-  conflict,
-  onConfirm,
-  onCancel,
-}: {
-  conflict: PendingKeyConflict;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  const cancelRef = useRef<HTMLButtonElement>(null);
-  const confirmRef = useRef<HTMLButtonElement>(null);
-  const onCancelRef = useRef(onCancel);
-  onCancelRef.current = onCancel;
-  const owners = conflict.conflicts.map((species) => species.commonName).join(', ');
-
-  useEffect(() => {
-    const previousFocus = document.activeElement as HTMLElement | null;
-    confirmRef.current?.focus();
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        onCancelRef.current();
-      } else if (event.key === 'Tab') {
-        event.preventDefault();
-        const movingFromConfirm = document.activeElement === confirmRef.current;
-        if (movingFromConfirm) cancelRef.current?.focus();
-        else confirmRef.current?.focus();
-      }
-    };
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      previousFocus?.focus();
-    };
-  }, []);
-
-  return createPortal(
-    <div className="fixed inset-0 z-50 grid place-items-center bg-ink/70 p-4">
-      <div
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="key-conflict-title"
-        aria-describedby="key-conflict-description"
-        className="w-full max-w-md border-2 border-warn bg-paper p-5 shadow-xl"
-      >
-        <h2 id="key-conflict-title" className="font-display text-[20px] font-[600] text-ink">
-          Key already assigned
-        </h2>
-        <p id="key-conflict-description" className="mt-3 text-[14px] text-ink">
-          <kbd className="border border-ink px-1.5 font-mono uppercase">{conflict.key}</kbd> is
-          already assigned to {owners}. Reassign it to {conflict.commonName}?
-        </p>
-        <p className="mt-2 text-[13px] text-warn">
-          Reassigning will clear the existing {conflict.conflicts.length === 1 ? 'binding' : 'bindings'}.
-        </p>
-        <div className="mt-5 flex justify-end gap-2">
-          <button
-            ref={cancelRef}
-            type="button"
-            onClick={onCancel}
-            className="min-h-11 border border-rule px-4 text-[13px] text-ink hover:border-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-          >
-            Cancel
-          </button>
-          <button
-            ref={confirmRef}
-            type="button"
-            onClick={onConfirm}
-            className="min-h-11 border border-warn bg-warn px-4 text-[13px] font-[600] text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-          >
-            Reassign key
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body,
-  );
-}
-
 function ZoomControls({
   onIn,
   onOut,
@@ -1568,9 +1477,10 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
       s.setCapturingFor(null);
       return;
     }
-    if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    const key = normalizeEventKey(e.key);
+    if (key && !e.metaKey && !e.ctrlKey) {
       e.preventDefault();
-      s.captureKey(s.capturingFor, e.key.toLowerCase());
+      s.captureKey(s.capturingFor, key);
       s.setCapturingFor(null);
     }
     return;
@@ -1607,6 +1517,25 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
     return;
   }
 
+  // User-assigned printable species keys take precedence over built-in
+  // single-character shortcuts. This makes every alphanumeric and symbol key
+  // usable; assigning j/k/x/? intentionally displaces that app shortcut.
+  const current = s.list[s.focus];
+  const printableKey = normalizeEventKey(e.key);
+  const speciesAction = !e.metaKey && !e.ctrlKey && printableKey
+    ? s.keyMap.get(printableKey)
+    : undefined;
+  if (speciesAction && current) {
+    e.preventDefault();
+    if (e.repeat) return;
+    s.applyIncrement({
+      scientificName: speciesAction.species.scientificName,
+      commonName: speciesAction.species.commonName,
+      count: 1,
+    });
+    return;
+  }
+
   // `?` toggles the cheatsheet (it arrives as Shift+/, so handle before the
   // Shift/modifier guards below).
   if (e.key === '?') {
@@ -1631,7 +1560,6 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
   }
   if (e.altKey) return;
 
-  const current = s.list[s.focus];
   switch (e.key) {
     case 'ArrowDown':
       e.preventDefault();
@@ -1671,12 +1599,4 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
       if (s.selected.size) s.setSelected(new Set());
       return;
   }
-
-  const action = s.keyMap.get(e.key.toLowerCase());
-  if (!action || !current) return;
-  e.preventDefault();
-  // e.repeat fires while a key is held — ignore it so each intentional press
-  // counts as exactly one increment.
-  if (e.repeat) return;
-  s.applyIncrement({ scientificName: action.species.scientificName, commonName: action.species.commonName, count: 1 });
 }
