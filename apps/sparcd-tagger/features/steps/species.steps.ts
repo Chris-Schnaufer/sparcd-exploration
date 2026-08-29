@@ -7,6 +7,7 @@ import {
   connect,
   selectCollection,
   openUpload,
+  enterFocusView,
   focusFrame,
   gridCell,
   speciesRow,
@@ -549,6 +550,31 @@ Then('the workspace states that the upload has no taggable images', async ({ pag
 Then('no species panel is offered', async ({ page }) => {
   await expect(page.getByLabel('Filter species')).toHaveCount(0);
   await expect(page.locator('div.group')).toHaveCount(0);
+});
+
+// --- Drag and drop ----------------------------------------------------------
+
+const focusDropZone = (page: Page) => page.getByTestId('focus-drop-zone');
+
+When('a species tile is dragged onto the image area in the Focus view', async ({ page }) => {
+  await enterFocusView(page);
+  await speciesRow(page, 'Canis latrans').dragTo(focusDropZone(page));
+});
+
+When('that species tile is dragged onto the image area in the Focus view', async ({ page }) => {
+  await enterFocusView(page);
+  await speciesRow(page, 'Odocoileus hemionus').dragTo(focusDropZone(page));
+});
+
+When('the Ghost tile is dragged onto the image area in the Focus view', async ({ page }) => {
+  await enterFocusView(page);
+  await ghostRow(page).dragTo(focusDropZone(page));
+});
+
+Then("that species' count is incremented by one", async ({ page }) => {
+  await expandApplied(page);
+  // IMG001 carries Mule Deer at count 2 in the fixture; one drag increments to 3.
+  await expect(appliedChip(page, 'Mule Deer').locator('input[type="number"]')).toHaveValue('3');
 });
 
 // --- Local holding ----------------------------------------------------------

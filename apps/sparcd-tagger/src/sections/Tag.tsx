@@ -800,6 +800,7 @@ export function Tag() {
               onPrev={() => gotoImage(focus - 1)}
               onNext={() => gotoImage(focus + 1)}
               onToggleQuestionable={toggleQuestionable}
+              onDropSpecies={applyIncrement}
             />
             <SpeciesPanel {...speciesPanelProps()} />
           </div>
@@ -909,6 +910,7 @@ function FocusPane({
   onPrev,
   onNext,
   onToggleQuestionable,
+  onDropSpecies,
 }: {
   current: TagImage | undefined;
   eff: Effective | null;
@@ -922,6 +924,7 @@ function FocusPane({
   onPrev: () => void;
   onNext: () => void;
   onToggleQuestionable: () => void;
+  onDropSpecies: (tag: AppliedTag) => void;
 }) {
   // View-only display adjustments live here so they reset to neutral when the
   // user leaves Focus (this component unmounts) and stay sticky while paging
@@ -931,9 +934,33 @@ function FocusPane({
   const isVideo = !!current && isVideoImage(current);
   const showAdjust = !!current && !isVideo;
 
+  const [isDragOver, setIsDragOver] = useState(false);
+
   return (
     <div className="flex flex-col min-h-[55svh] lg:min-h-0 bg-paper">
-      <div className="relative flex-1 min-h-0 grid place-items-center p-4 overflow-hidden">
+      <div
+        className={`relative flex-1 min-h-0 grid place-items-center p-4 overflow-hidden${isDragOver ? ' ring-2 ring-inset ring-accent' : ''}`}
+        data-testid="focus-drop-zone"
+        onDragOver={(e) => {
+          if (!e.dataTransfer.types.includes('application/x-sparcd-species')) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'copy';
+          setIsDragOver(true);
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setIsDragOver(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setIsDragOver(false);
+          const raw = e.dataTransfer.getData('application/x-sparcd-species');
+          if (!raw) return;
+          try {
+            const tag = JSON.parse(raw) as { scientificName: string; commonName: string };
+            onDropSpecies({ scientificName: tag.scientificName, commonName: tag.commonName, count: 1 });
+          } catch {}
+        }}
+      >
         {current && (
           <FocusImage
             objectKey={current.key}

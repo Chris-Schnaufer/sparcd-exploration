@@ -96,6 +96,7 @@ export function SpeciesPanel(props: SpeciesPanelProps) {
             onStartCapture={() => props.onStartCapture(s.scientificName)}
             onClearKey={props.bindingFor(s.scientificName) ? () => props.onClearKey(s.scientificName) : undefined}
             onZoom={props.onZoom ? () => props.onZoom!(s) : undefined}
+            dragData={{ scientificName: s.scientificName, commonName: s.commonName }}
           />
         ))}
 
@@ -132,6 +133,7 @@ type RowProps = {
   onStartCapture?: () => void;
   onClearKey?: () => void;
   onZoom?: () => void; // present only for animal rows that have a reference image
+  dragData?: { scientificName: string; commonName: string }; // present → row is draggable
 };
 
 function Row(p: RowProps) {
@@ -140,6 +142,18 @@ function Row(p: RowProps) {
       className={`group relative flex items-center gap-3 px-3 py-2 border-b border-ruleSoft ${
         p.applied ? 'bg-mark' : 'hover:bg-panelHover'
       }`}
+      draggable={!!p.dragData}
+      onDragStart={
+        p.dragData
+          ? (e) => {
+              e.dataTransfer.setData(
+                'application/x-sparcd-species',
+                JSON.stringify(p.dragData),
+              );
+              e.dataTransfer.effectAllowed = 'copy';
+            }
+          : undefined
+      }
     >
       {/* Loupe: a sibling of the apply button (never nested — button-in-button is
           invalid and would fire apply), overlaid on the thumbnail's top-left and

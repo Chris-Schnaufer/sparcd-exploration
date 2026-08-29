@@ -161,6 +161,26 @@ Feature: Assign species to images in an upload
     # upload with no taggable images never renders the panel. See CORRECTIONS.md.
 
   @H2
+  Scenario: Dragging a species tile onto the focused image adds it at count one
+    Given an image is focused
+    When a species tile is dragged onto the image area in the Focus view
+    Then that species is recorded on the focused image with a count of one
+    And the image's tile shows the species instead of "untagged"
+
+  @H2
+  Scenario: Dragging a species already on the image increments its count
+    Given the focused image already carries one species
+    When that species tile is dragged onto the image area in the Focus view
+    Then that species' count is incremented by one
+
+  @H2
+  Scenario: Dragging the Ghost tile onto an image replaces its species with Ghost
+    Given the focused image already carries one species
+    When the Ghost tile is dragged onto the image area in the Focus view
+    Then the image is recorded as an empty or false-trigger frame
+    And any real species previously on that image is removed
+
+  @H2
   Scenario: New identifications are held locally until they are synced
     When species are applied to images
     Then the identifications are kept in this browser
