@@ -276,7 +276,7 @@ export async function buildBundle(input: BuildInput): Promise<BundlePreview> {
       },
       () => [
         {
-          observationId: it.fileName,
+          observationId: defaultObservationId(it.objectName, 0),
           mediaId: it.key,
           deploymentId: deployment.deploymentId,
           timestamp: it.captureTimestamp ?? '',
@@ -410,7 +410,7 @@ export async function buildBundleFromRecords(input: {
       },
       () => [
         {
-          observationId: f.fileName,
+          observationId: defaultObservationId(f.remoteKey.slice(uploadPath.length + 1), 0),
           mediaId: f.remoteKey,
           deploymentId: deployment.deploymentId,
           timestamp: f.captureTimestamp ?? '',
