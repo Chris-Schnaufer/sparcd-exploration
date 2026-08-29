@@ -1,6 +1,6 @@
 import { Given, When, Then, expect } from './fixtures';
 import type { App } from './app';
-import { manyJpegs, publishableBatch, sameNameSubfolderBatch, slowPublishableBatch, standardBatch } from './batches';
+import { FOLDER, manyJpegs, publishableBatch, sameNameSubfolderBatch, slowPublishableBatch, standardBatch } from './batches';
 import { rescanFromUpload, writtenCsvRows } from './helpers';
 import { BUCKET_A, COLLECTION_A_NAME, UUID_A } from './fixtures-data';
 
@@ -370,8 +370,8 @@ Then(
     const ids = obsRows.map((r) => r[0]);
     expect(new Set(ids).size).toBe(2);
     for (const id of ids) expect(id).toMatch(/:0$/);
-    expect(ids).toContain('cam1/IMG_0001.JPG:0');
-    expect(ids).toContain('cam2/IMG_0001.JPG:0');
+    expect(ids).toContain(`${FOLDER}/cam1/IMG_0001.JPG:0`);
+    expect(ids).toContain(`${FOLDER}/cam2/IMG_0001.JPG:0`);
   },
 );
 
