@@ -17,6 +17,7 @@ import { TimeShiftModal } from '../components/TimeShiftModal';
 import { BulkTimeShiftModal } from '../components/BulkTimeShiftModal';
 import { PerImageTime } from '../components/PerImageTime';
 import { SpeciesLoupe } from '../components/SpeciesLoupe';
+import { SpeciesChangedModal } from '../components/SpeciesChangedModal';
 import { ImageAdjustments } from '../components/ImageAdjustments';
 import { cssFilter, NEUTRAL, type Adjustments } from '../lib/adjustments';
 import { Overview, type PickMods, type ViewKind } from '../components/Overview';
@@ -284,8 +285,18 @@ export function Tag() {
     }
   }, [pendingSnapshots, clearPendingSnapshots]);
 
-  const { overrides, assignKey, clearKey } = useKeyBindings();
+  const { overrides, assignKey, clearKey, syncSpecies } = useKeyBindings();
   const speciesList = localRecord ? DEFAULT_SPECIES : species.data?.species ?? [];
+
+  const [speciesDiff, setSpeciesDiff] = useState<{ added: string[]; removed: string[] } | null>(null);
+
+  // On each species load, sync the snapshot and surface any vocabulary change.
+  useEffect(() => {
+    if (!species.data) return;
+    const sorted = species.data.species.map((s) => s.scientificName).sort();
+    const diff = syncSpecies(sorted);
+    if (diff && (diff.added.length || diff.removed.length)) setSpeciesDiff(diff);
+  }, [species.data, syncSpecies]);
 
   const bindingFor = (sci: string): string | null => {
     const k = effectiveKey(sci, speciesJsonKey(speciesList, sci), overrides);
@@ -497,7 +508,8 @@ export function Tag() {
       showSync ||
       showSnapshots ||
       showTimeShift ||
-      pendingKeyConflict !== null,
+      pendingKeyConflict !== null ||
+      !!speciesDiff,
   };
 
   useEffect(() => {
@@ -876,6 +888,13 @@ export function Tag() {
           conflict={pendingKeyConflict}
           onConfirm={confirmKeyReassignment}
           onCancel={() => setPendingKeyConflict(null)}
+        />
+      )}
+      {speciesDiff && (
+        <SpeciesChangedModal
+          added={speciesDiff.added}
+          removed={speciesDiff.removed}
+          onAcknowledge={() => setSpeciesDiff(null)}
         />
       )}
     </div>

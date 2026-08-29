@@ -25,6 +25,7 @@ export function normalizeJavaKeyCode(code: string | null | undefined): string | 
 }
 
 export type KeyOverrides = Record<string, string | null>;
+export type SpeciesDiff = { added: string[]; removed: string[] };
 
 export function withAssignedKey(
   overrides: KeyOverrides,
@@ -55,14 +56,23 @@ type KeyBindingState = {
     key: string,
     displacedScientificNames?: string[],
   ) => void;
+  /** Sorted snapshot of scientificNames from the last-seen server species list.
+   *  Empty on first load (no prior session). */
+  knownSpecies: string[];
   clearKey: (scientificName: string) => void;
+  /** Compare `current` (sorted scientificNames from species.json) to the stored
+   *  snapshot. Prunes overrides for removed species, updates the snapshot, and
+   *  returns the diff. Returns `null` when the snapshot was empty (first load,
+   *  no meaningful "change" to surface). */
+  syncSpecies: (current: string[]) => SpeciesDiff | null;
 };
 
-/** Local, persistent per-species key overrides. */
+/** Local, persistent per-species key overrides and species-change snapshot. */
 export const useKeyBindings = create<KeyBindingState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       overrides: {},
+      knownSpecies: [],
       assignKey: (scientificName, key, displacedScientificNames = []) =>
         set((s) => ({
           overrides: withAssignedKey(
@@ -74,6 +84,24 @@ export const useKeyBindings = create<KeyBindingState>()(
         })),
       clearKey: (scientificName) =>
         set((s) => ({ overrides: withClearedKey(s.overrides, scientificName) })),
+      syncSpecies: (current) => {
+        const known = get().knownSpecies;
+        if (!known.length) {
+          set({ knownSpecies: [...current].sort() });
+          return null;
+        }
+        const knownSet = new Set(known);
+        const currentSet = new Set(current);
+        const added = current.filter((s) => !knownSet.has(s));
+        const removed = known.filter((s) => !currentSet.has(s));
+        if (!added.length && !removed.length) return { added: [], removed: [] };
+        set((s) => {
+          const next = { ...s.overrides };
+          for (const sci of removed) next[sci] = null;
+          return { overrides: next, knownSpecies: [...current].sort() };
+        });
+        return { added, removed };
+      },
     }),
     {
       name: 'sparcd-tagger-keybindings',
@@ -82,7 +110,7 @@ export const useKeyBindings = create<KeyBindingState>()(
   ),
 );
 
-/** Resolve the effective key for a species: local override, else species.json. */
+/** Resolve the effective key for a species: local override (unless cleared), else species.json. */
 export function effectiveKey(
   scientificName: string,
   jsonKeyBinding: string | null,
