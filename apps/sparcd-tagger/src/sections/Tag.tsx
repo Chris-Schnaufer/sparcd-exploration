@@ -26,6 +26,7 @@ import { rangeSet, toggleIndex, burstIndexSet } from '../lib/selection';
 import { effectiveOf, type Effective } from '../lib/effective';
 import { sortIndices, type SortField, type SortDir } from '../lib/sortImages';
 import { findFilenameMatches } from '../lib/imageSearch';
+import { parseSpeciesDrag, SPECIES_DRAG_TYPE } from '../lib/speciesDrag';
 import {
   useDraftStore,
   dirtyCount,
@@ -358,9 +359,21 @@ export function Tag() {
   };
 
   const applyIncrement = (tag: AppliedTag) => {
-    const targets = targetsOf();
-    if (!targets.length) return;
-    incrementSpeciesFn(ctx, targets, tag);
+    // A drop is spatial: it updates the focused image under the drop zone,
+    // even if a multi-image selection still exists. Panel clicks remain the
+    // explicit selection-scoped bulk action.
+    if (!current) return;
+    incrementSpeciesFn(
+      ctx,
+      [
+        {
+          mediaPath: current.key,
+          deploymentId: current.deploymentId,
+          base: { observations: current.baseObservations },
+        },
+      ],
+      tag,
+    );
     if (tag.scientificName) pushRecent(tag.scientificName);
   };
 
@@ -942,7 +955,7 @@ function FocusPane({
         className={`relative flex-1 min-h-0 grid place-items-center p-4 overflow-hidden${isDragOver ? ' ring-2 ring-inset ring-accent' : ''}`}
         data-testid="focus-drop-zone"
         onDragOver={(e) => {
-          if (!e.dataTransfer.types.includes('application/x-sparcd-species')) return;
+          if (!e.dataTransfer.types.includes(SPECIES_DRAG_TYPE)) return;
           e.preventDefault();
           e.dataTransfer.dropEffect = 'copy';
           setIsDragOver(true);
@@ -953,12 +966,8 @@ function FocusPane({
         onDrop={(e) => {
           e.preventDefault();
           setIsDragOver(false);
-          const raw = e.dataTransfer.getData('application/x-sparcd-species');
-          if (!raw) return;
-          try {
-            const tag = JSON.parse(raw) as { scientificName: string; commonName: string };
-            onDropSpecies({ scientificName: tag.scientificName, commonName: tag.commonName, count: 1 });
-          } catch {}
+          const tag = parseSpeciesDrag(e.dataTransfer.getData(SPECIES_DRAG_TYPE));
+          if (tag) onDropSpecies(tag);
         }}
       >
         {current && (

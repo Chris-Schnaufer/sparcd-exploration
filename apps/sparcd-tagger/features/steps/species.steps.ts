@@ -559,22 +559,41 @@ const focusDropZone = (page: Page) => page.getByTestId('focus-drop-zone');
 When('a species tile is dragged onto the image area in the Focus view', async ({ page }) => {
   await enterFocusView(page);
   await speciesRow(page, 'Canis latrans').dragTo(focusDropZone(page));
+  await page.getByRole('button', { name: 'Overview', exact: true }).click();
 });
 
 When('that species tile is dragged onto the image area in the Focus view', async ({ page }) => {
   await enterFocusView(page);
   await speciesRow(page, 'Odocoileus hemionus').dragTo(focusDropZone(page));
+  await page.getByRole('button', { name: 'Overview', exact: true }).click();
 });
 
 When('the Ghost tile is dragged onto the image area in the Focus view', async ({ page }) => {
   await enterFocusView(page);
   await ghostRow(page).dragTo(focusDropZone(page));
+  await page.getByRole('button', { name: 'Overview', exact: true }).click();
 });
 
 Then("that species' count is incremented by one", async ({ page }) => {
   await expandApplied(page);
   // IMG001 carries Mule Deer at count 2 in the fixture; one drag increments to 3.
   await expect(appliedChip(page, 'Mule Deer').locator('input[type="number"]')).toHaveValue('3');
+});
+
+Then('only the focused image receives the dropped species', async ({ page }) => {
+  await waitForDirtyDrafts(page, 1);
+  const drafts = (await readStore(page, 'drafts')) as {
+    mediaPath: string;
+    observations: { scientificName: string; count: number }[];
+  }[];
+  const withCoyote = drafts.filter((d) =>
+    d.observations.some((o) => o.scientificName === 'Canis latrans'),
+  );
+  expect(withCoyote).toHaveLength(1);
+  expect(withCoyote[0].mediaPath).toMatch(/IMG003\.JPG$/);
+  expect(
+    withCoyote[0].observations.find((o) => o.scientificName === 'Canis latrans')?.count,
+  ).toBe(1);
 });
 
 // --- Local holding ----------------------------------------------------------

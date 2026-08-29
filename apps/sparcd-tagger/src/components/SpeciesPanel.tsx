@@ -2,6 +2,8 @@ import { useMemo, type ReactNode, type RefObject } from 'react';
 import Fuse from 'fuse.js';
 import type { Species } from '../lib/species';
 import type { AppliedTag } from '../lib/drafts';
+import { encodeSpeciesDrag, SPECIES_DRAG_TYPE } from '../lib/speciesDrag';
+
 // The species selector. Persistent, scrollable, browsable — not only a
 // type-to-filter popover — because volunteers scan to recognize a species.
 // Each row carries an example thumbnail, common + scientific name, and its
@@ -146,10 +148,7 @@ function Row(p: RowProps) {
       onDragStart={
         p.dragData
           ? (e) => {
-              e.dataTransfer.setData(
-                'application/x-sparcd-species',
-                JSON.stringify(p.dragData),
-              );
+              e.dataTransfer.setData(SPECIES_DRAG_TYPE, encodeSpeciesDrag(p.dragData!));
               e.dataTransfer.effectAllowed = 'copy';
             }
           : undefined

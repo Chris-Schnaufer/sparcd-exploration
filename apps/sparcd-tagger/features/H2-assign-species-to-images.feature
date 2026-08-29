@@ -174,6 +174,12 @@ Feature: Assign species to images in an upload
     Then that species' count is incremented by one
 
   @H2
+  Scenario: Dropping on the focused image does not apply to the current selection
+    Given several images are selected
+    When a species tile is dragged onto the image area in the Focus view
+    Then only the focused image receives the dropped species
+
+  @H2
   Scenario: Dragging the Ghost tile onto an image replaces its species with Ghost
     Given the focused image already carries one species
     When the Ghost tile is dragged onto the image area in the Focus view
