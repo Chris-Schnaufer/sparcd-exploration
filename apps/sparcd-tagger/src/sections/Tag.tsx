@@ -11,6 +11,7 @@ import { AppliedSpecies } from '../components/AppliedSpecies';
 import { Cheatsheet } from '../components/Cheatsheet';
 import { SyncDialog } from '../components/SyncDialog';
 import { SnapshotsDialog } from '../components/SnapshotsDialog';
+import { DiscardConfirmDialog } from '../components/DiscardConfirmDialog';
 import { TimeShiftModal } from '../components/TimeShiftModal';
 import { BulkTimeShiftModal } from '../components/BulkTimeShiftModal';
 import { PerImageTime } from '../components/PerImageTime';
@@ -111,6 +112,7 @@ export function Tag() {
   const [showCheatsheet, setShowCheatsheet] = useState(false);
   const [showSync, setShowSync] = useState(false);
   const [showSnapshots, setShowSnapshots] = useState(false);
+  const [showDiscard, setShowDiscard] = useState(false);
   const [showTimeShift, setShowTimeShift] = useState(false);
   // Snapshot the bulk targets + preview anchor once when the modal opens — both
   // derive from the SAME corrected baseline, so the before→after preview always
@@ -443,6 +445,15 @@ export function Tag() {
   const eff = current ? effectiveOf(current, draft) : null;
   const currentBase = current ? { observations: current.baseObservations } : undefined;
   const nDirty = dirtyCount(drafts);
+  const dirtyRecords = useMemo(() => Object.values(drafts).filter((r) => r.dirty), [drafts]);
+  const discardTitle = useMemo(() => {
+    const speciesSet = new Set(dirtyRecords.flatMap((r) => r.observations.map((o) => o.scientificName)));
+    const nTimestamps = dirtyRecords.filter((r) => r.timeOverride).length;
+    const parts = [`${nDirty} image${nDirty !== 1 ? 's' : ''}`];
+    if (speciesSet.size) parts.push(`${speciesSet.size} species`);
+    if (nTimestamps) parts.push(`${nTimestamps} timestamp${nTimestamps !== 1 ? 's' : ''}`);
+    return `Discard changes: ${parts.join(', ')}`;
+  }, [dirtyRecords, nDirty]);
   const hasUploadShift = offsetActive(timeOffset);
   const correctedTs = current
     ? correctedTimestamp(current.baseTimestamp, timeOffset, draft?.timeOverride ?? null)
@@ -610,11 +621,9 @@ export function Tag() {
           </button>
           {nDirty > 0 && (
             <button
-              onClick={() => {
-                if (confirm(`Discard ${nDirty} local edit(s) for this upload?`)) void discardUpload(ctx);
-              }}
+              onClick={() => setShowDiscard(true)}
               className="text-[11px] font-mono text-inkMute hover:text-warn underline decoration-dotted"
-              title="Discard local changes for this upload"
+              title={discardTitle}
             >
               {nDirty} unsaved · discard
             </button>
@@ -715,6 +724,13 @@ export function Tag() {
       </div>
 
       {showCheatsheet && <Cheatsheet onClose={() => setShowCheatsheet(false)} />}
+      {showDiscard && (
+        <DiscardConfirmDialog
+          dirtyRecords={dirtyRecords}
+          onConfirm={() => void discardUpload(ctx)}
+          onClose={() => setShowDiscard(false)}
+        />
+      )}
       {showSync && (
         <SyncDialog ctx={ctx} images={list} drafts={drafts} onClose={() => setShowSync(false)} />
       )}
