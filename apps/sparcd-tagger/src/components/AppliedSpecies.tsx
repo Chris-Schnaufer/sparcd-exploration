@@ -33,36 +33,30 @@ export function AppliedSpecies(props: AppliedSpeciesProps) {
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      {multi && !expanded ? (
+      {multi && (
         <button
-          onClick={() => setExpanded(true)}
-          className="inline-flex items-center gap-1.5 px-2 py-1 text-[12px] border border-rule text-inkSoft hover:text-ink hover:border-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-          title="Show all applied species"
+          onClick={() => setExpanded(!expanded)}
+          aria-expanded={expanded}
+          className="min-w-11 min-h-11 md:min-w-0 md:min-h-0 grid place-items-center text-[20px] leading-none text-inkSoft hover:text-ink focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+          title={expanded ? 'Collapse applied species' : 'Show all applied species'}
+          aria-label={expanded ? 'Collapse applied species' : 'Show all applied species'}
         >
-          <span aria-hidden>▸</span>
-          {summary} <span className="text-inkMute">+{obs.length - 1} more</span>
+          {expanded ? '▾' : '▸'}
         </button>
+      )}
+      {multi && !expanded ? (
+        <span className="inline-flex items-center gap-1.5 px-2 py-1 text-[12px] border border-rule text-inkSoft">
+          {summary} <span className="text-inkMute">+{obs.length - 1} more</span>
+        </span>
       ) : (
-        <>
-          {multi && (
-            <button
-              onClick={() => setExpanded(false)}
-              className="px-1.5 py-1 text-[12px] text-inkMute hover:text-ink focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
-              title="Collapse"
-              aria-label="Collapse applied species"
-            >
-              ▾
-            </button>
-          )}
-          {obs.map((o) => (
-            <Chip
-              key={o.scientificName}
-              obs={o}
-              onSetCount={(n) => props.onSetCount(o.scientificName, n)}
-              onRemove={() => props.onRemove(o.scientificName)}
-            />
-          ))}
-        </>
+        obs.map((o) => (
+          <Chip
+            key={o.scientificName}
+            obs={o}
+            onSetCount={(n) => props.onSetCount(o.scientificName, n)}
+            onRemove={() => props.onRemove(o.scientificName)}
+          />
+        ))
       )}
 
       <button
