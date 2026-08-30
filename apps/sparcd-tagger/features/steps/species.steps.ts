@@ -65,6 +65,10 @@ Then(
   },
 );
 
+Then('the species list is headed "Available species"', async ({ page }) => {
+  await expect(page.getByText('Available species', { exact: true })).toBeVisible();
+});
+
 Then('each species shows its reference image where one exists', async ({ page }) => {
   for (const s of VOCAB) {
     await expect(speciesRow(page, s.scientific).locator('img')).toHaveAttribute(
