@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useMemo, type ReactNode } from 'react';
 import { useStore } from '../store';
 import { useLocalBatch } from '../lib/localBatch';
 import { useSpecies } from '../lib/queries';
@@ -49,13 +49,17 @@ export function SpeciesKeyBindingGate({ children }: { children: ReactNode }) {
       ? activeKeyProfile(state).pendingSpeciesChange
       : undefined,
   );
-  const currentSpecies = cfg
-    ? species.data
-      ? keyConfig(species.data.species)
-      : null
-    : localRecord
-      ? keyConfig(DEFAULT_SPECIES)
-      : null;
+  const currentSpecies = useMemo(
+    () =>
+      cfg
+        ? species.data
+          ? keyConfig(species.data.species)
+          : null
+        : localRecord
+          ? keyConfig(DEFAULT_SPECIES)
+          : null,
+    [cfg, localRecord, species.data],
+  );
 
   useEffect(() => {
     if (profileId) activateProfile(profileId);

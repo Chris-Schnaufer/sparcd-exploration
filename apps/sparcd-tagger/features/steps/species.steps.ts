@@ -564,20 +564,27 @@ Given('the saved user profile contains an older species configuration', async ({
           string,
           {
             overrides: Record<string, string | null>;
+            overrideRevisions: Record<string, { at: number; sequence: number; writer: string }>;
             acceptedSpecies?: { scientificName: string; commonName: string; keyBinding: string | null }[];
+            acceptedRevision?: { at: number; sequence: number; writer: string };
             pendingSpeciesChange?: unknown;
+            pendingRevision?: { at: number; sequence: number; writer: string };
           }
         >;
       };
       version: number;
     };
-    const profile = Object.values(stored.state.profiles)[0];
+    const profile = Object.entries(stored.state.profiles).find(([id]) => id !== '__legacy__')![1];
+    const revision = { at: Date.now() + 1, sequence: 1, writer: 'bdd-fixture' };
     profile.overrides['Former species'] = '!';
+    profile.overrideRevisions['Former species'] = revision;
     profile.acceptedSpecies = [
       { scientificName: 'Odocoileus hemionus', commonName: 'Old Deer Name', keyBinding: 'M' },
       { scientificName: 'Former species', commonName: 'Former Species', keyBinding: 'F' },
     ];
+    profile.acceptedRevision = revision;
     delete profile.pendingSpeciesChange;
+    profile.pendingRevision = revision;
     localStorage.setItem(key, JSON.stringify(stored));
   });
 });
@@ -585,6 +592,9 @@ Given('the saved user profile contains an older species configuration', async ({
 When('the tagger is reopened with the current server vocabulary', async ({ page }) => {
   await page.reload();
   await connect(page);
+  await expect(
+    page.getByRole('alertdialog', { name: 'Species vocabulary has changed' }),
+  ).toBeVisible();
 });
 
 const speciesChangedDialog = (page: Page) =>
@@ -615,7 +625,7 @@ Then('removed-species bindings are pruned and the message stays acknowledged', a
     };
     return Object.values(stored.state.profiles)[0].overrides['Former species'];
   });
-  expect(removed).toBeUndefined();
+  expect(removed).toBeNull();
   await page.reload();
   await connect(page);
   await expect(speciesChangedDialog(page)).toHaveCount(0);

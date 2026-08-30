@@ -44,6 +44,20 @@ describe('uploader species-keybinding preflight', () => {
     );
   });
 
+  it('removes the one-time legacy profile after a scoped profile claims it', () => {
+    const storage = memoryStorage();
+    storage.setItem(
+      KEYBINDING_STORAGE_KEY,
+      JSON.stringify({ state: { overrides: { a: '!' } }, version: 1 }),
+    );
+
+    stageSpeciesProfile(storage, speciesKeyProfileId('server', 'alice'), before);
+
+    const profiles = readRevisionedProfiles(storage);
+    expect(profiles.__legacy__).toBeUndefined();
+    expect(profiles[speciesKeyProfileId('server', 'alice')].overrides.a).toBe('!');
+  });
+
   it('keeps changes pending until acknowledgement and then prunes removed overrides', () => {
     const storage = memoryStorage();
     const profileId = speciesKeyProfileId('server', 'alice');

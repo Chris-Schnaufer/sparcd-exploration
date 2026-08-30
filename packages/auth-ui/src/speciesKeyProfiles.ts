@@ -129,6 +129,12 @@ export function mergeRevisionedProfiles(
   for (const profileId of new Set([...Object.keys(a), ...Object.keys(b)])) {
     merged[profileId] = mergeRevisionedProfile(a[profileId], b[profileId]);
   }
+  // The unscoped profile exists only long enough to migrate pre-profile data.
+  // Once any endpoint/user profile has claimed it, never let a stale tab bring
+  // it back or make tests/callers accidentally select it as an active profile.
+  if (Object.keys(merged).some((profileId) => profileId !== '__legacy__')) {
+    delete merged.__legacy__;
+  }
   return merged;
 }
 
