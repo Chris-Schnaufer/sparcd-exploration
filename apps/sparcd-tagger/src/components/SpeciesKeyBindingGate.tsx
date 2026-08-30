@@ -1,4 +1,4 @@
-import { useEffect, useMemo, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { useStore } from '../store';
 import { useLocalBatch } from '../lib/localBatch';
 import { useSpecies } from '../lib/queries';
@@ -30,6 +30,11 @@ function keyConfig(
 export function SpeciesKeyBindingGate({ children }: { children: ReactNode }) {
   const cfg = useStore((state) => state.s3Config);
   const connectionId = useStore((state) => state.connectionId);
+  // Capture the connectionId at mount. A connectionId equal to the mount value
+  // means the session was restored from localStorage (no explicit login this
+  // session) — species staging is skipped. Staging only fires when the user
+  // explicitly connects, bumping connectionId above the baseline.
+  const loginBaselineRef = useRef(connectionId);
   const localRecord = useLocalBatch((state) => (state.status === 'ready' ? state.record : null));
   const species = useSpecies(cfg, connectionId);
   const activeProfileId = useKeyBindings((state) => state.activeProfileId);
@@ -66,8 +71,9 @@ export function SpeciesKeyBindingGate({ children }: { children: ReactNode }) {
   }, [activateProfile, profileId]);
 
   useEffect(() => {
+    if (connectionId === loginBaselineRef.current) return;
     if (profileId === activeProfileId && currentSpecies) stageSpecies(currentSpecies);
-  }, [activeProfileId, currentSpecies, profileId, stageSpecies]);
+  }, [activeProfileId, connectionId, currentSpecies, profileId, stageSpecies]);
 
   return (
     <>

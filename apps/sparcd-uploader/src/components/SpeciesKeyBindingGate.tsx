@@ -16,12 +16,14 @@ type Diff = {
 
 export function SpeciesKeyBindingGate({ children }: { children: ReactNode }) {
   const cfg = useStore((state) => state.s3Config);
+  const connectionId = useStore((state) => state.connectionId);
+  const loginBaselineRef = useRef(connectionId);
   const [diff, setDiff] = useState<Diff | null>(null);
   const profileId = cfg ? speciesKeyProfileId(cfg.endpoint, cfg.accessKey) : null;
 
   useEffect(() => {
     let cancelled = false;
-    if (!cfg || !profileId) return;
+    if (!cfg || !profileId || connectionId === loginBaselineRef.current) return;
     void fetchSpeciesKeyConfig(cfg).then(
       (species) => {
         if (!cancelled) setDiff(stageSpeciesProfile(localStorage, profileId, species));
@@ -34,7 +36,7 @@ export function SpeciesKeyBindingGate({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [cfg, profileId]);
+  }, [cfg, connectionId, profileId]);
 
   const acknowledge = () => {
     if (!profileId) return;
