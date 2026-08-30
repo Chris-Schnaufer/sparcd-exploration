@@ -79,10 +79,10 @@ Then('a species recorded as a free-text request is marked as requested', async (
 
 Then('several species collapse to a summary that can be expanded', async ({ page }) => {
   await page.getByRole('button', { name: 'Collapse applied species' }).click();
-  const summary = page.locator('button[title="Show all applied species"]');
+  const summary = page.locator('[data-testid="applied-species-summary"]');
   await expect(summary).toBeVisible();
   await expect(summary).toContainText('+1 more');
-  await summary.click();
+  await page.locator('button[title="Show all applied species"]').click();
   await expect(appliedChip(page, 'Coyote')).toBeVisible();
 });
 

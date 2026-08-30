@@ -45,7 +45,7 @@ export function AppliedSpecies(props: AppliedSpeciesProps) {
         </button>
       )}
       {multi && !expanded ? (
-        <span className="inline-flex items-center gap-1.5 px-2 py-1 text-[12px] border border-rule text-inkSoft">
+        <span data-testid="applied-species-summary" className="inline-flex items-center gap-1.5 px-2 py-1 text-[12px] border border-rule text-inkSoft">
           {summary} <span className="text-inkMute">+{obs.length - 1} more</span>
         </span>
       ) : (
