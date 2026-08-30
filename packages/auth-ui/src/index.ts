@@ -28,9 +28,11 @@ export {
   mergeRevisionedProfile,
   mergeRevisionedProfiles,
   nextKeyProfileRevision,
+  pendingRevisionedSpeciesProfile,
   parseRevisionedProfiles,
   readRevisionedProfiles,
   serializeRevisionedProfiles,
+  shouldReconcileSpeciesProfile,
   stageRevisionedSpeciesProfile,
 } from './speciesKeyProfiles';
 export type {

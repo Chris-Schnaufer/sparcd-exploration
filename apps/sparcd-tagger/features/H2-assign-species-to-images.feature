@@ -172,7 +172,9 @@ Feature: Assign species to images in an upload
   @H2
   Scenario: Server vocabulary changes require durable acknowledgement
     Given the saved user profile contains an older species configuration
-    When the tagger is reopened with the current server vocabulary
+    When the tagger is refreshed with its restored session
+    Then no vocabulary reconciliation is performed
+    When the user explicitly logs in with the current server vocabulary
     Then a blocking message lists added, removed and updated species
     And reopening again does not bypass the required acknowledgement
     When the vocabulary change is acknowledged

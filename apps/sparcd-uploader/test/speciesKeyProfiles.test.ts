@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   acknowledgeSpeciesProfile,
+  pendingSpeciesProfile,
+  shouldReconcileSpeciesProfile,
   speciesKeyProfileId,
   stageSpeciesProfile,
 } from '../src/lib/speciesKeyProfiles';
@@ -38,6 +40,10 @@ const after = [
 ];
 
 describe('uploader species-keybinding preflight', () => {
+  it('checks only after login, not when restoring a session on refresh', () => {
+    expect(shouldReconcileSpeciesProfile(0)).toBe(false);
+    expect(shouldReconcileSpeciesProfile(1)).toBe(true);
+  });
   it('uses the same endpoint/user profile identity as the tagger', () => {
     expect(speciesKeyProfileId(' https://s3.example ', ' alice ')).toBe(
       'https://s3.example\u0000alice',
@@ -73,6 +79,7 @@ describe('uploader species-keybinding preflight', () => {
     expect(diff.added[0].scientificName).toBe('added');
     expect(diff.removed[0].scientificName).toBe('removed');
     expect(diff.modified[0].after.commonName).toBe('Alpha updated');
+    expect(pendingSpeciesProfile(storage, profileId)).toEqual(diff);
 
     acknowledgeSpeciesProfile(storage, profileId);
     const acknowledged = JSON.parse(storage.getItem('sparcd-tagger-keybindings')!) as {

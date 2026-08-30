@@ -589,8 +589,27 @@ Given('the saved user profile contains an older species configuration', async ({
   });
 });
 
-When('the tagger is reopened with the current server vocabulary', async ({ page }) => {
+When('the tagger is refreshed with its restored session', async ({ page }) => {
   await page.reload();
+  await connect(page);
+});
+
+Then('no vocabulary reconciliation is performed', async ({ page }) => {
+  await expect(speciesChangedDialog(page)).toHaveCount(0);
+  const pending = await page.evaluate(() => {
+    const stored = JSON.parse(localStorage.getItem('sparcd-tagger-keybindings')!) as {
+      state: { profiles: Record<string, { pendingSpeciesChange?: unknown }> };
+    };
+    return Object.values(stored.state.profiles)[0].pendingSpeciesChange;
+  });
+  expect(pending).toBeUndefined();
+});
+
+When('the user explicitly logs in with the current server vocabulary', async ({ page }) => {
+  await page.evaluate(() => sessionStorage.clear());
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Connect' })).toBeVisible();
+  await expect(speciesChangedDialog(page)).toHaveCount(0);
   await connect(page);
   await expect(
     page.getByRole('alertdialog', { name: 'Species vocabulary has changed' }),
