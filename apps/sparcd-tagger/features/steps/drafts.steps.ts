@@ -173,8 +173,8 @@ Given('an upload holds unsaved local edits', async ({ page }) => {
 });
 
 When('discarding them is chosen and confirmed', async ({ page }) => {
-  page.once('dialog', (d) => d.accept());
   await page.getByText(/1 unsaved · discard/).click();
+  await page.getByRole('button', { name: 'Discard', exact: true }).click();
   await expect(page.getByText(/unsaved · discard/)).toHaveCount(0);
 });
 
@@ -198,22 +198,28 @@ When('discarding local edits is chosen', async ({ page, scratch }) => {
   await focusFrame(page, 'IMG005.JPG');
   await speciesApply(page, 'Pecari tajacu').click();
   await waitForDirtyDrafts(page, 2);
-  const messages: string[] = [];
-  page.once('dialog', async (d) => {
-    messages.push(d.message());
-    await d.dismiss();
-  });
-  await page.getByText(/2 unsaved · discard/).click();
-  scratch.confirmMessages = messages;
+  const btn = page.getByText(/2 unsaved · discard/);
+  scratch.discardTitle = await btn.getAttribute('title');
+  await btn.click();
+  await expect(page.getByRole('dialog', { name: 'Confirm discard' })).toBeVisible();
 });
 
-Then('the number of edits about to be discarded is stated', async ({ scratch }) => {
-  await expect
-    .poll(() => (scratch.confirmMessages as string[]).join(' '))
-    .toContain('Discard 2 local edit(s)');
+Then('the discard button names the images and species that will be lost', async ({ scratch }) => {
+  const title = scratch.discardTitle as string;
+  expect(title).toMatch(/2 images/);
+  expect(title).toMatch(/species/);
+});
+
+Then('a modal lists each image with its pending changes', async ({ page }) => {
+  const dialog = page.getByRole('dialog', { name: 'Confirm discard' });
+  await expect(dialog.getByText('IMG002.JPG')).toBeVisible();
+  await expect(dialog.getByText('IMG005.JPG')).toBeVisible();
+  await expect(dialog.getByText(/Coyote/)).toBeVisible();
+  await expect(dialog.getByText(/Javelina/)).toBeVisible();
 });
 
 Then('nothing is discarded unless the action is confirmed', async ({ page }) => {
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(page.getByText(/2 unsaved · discard/)).toBeVisible();
   expect((await readStore(page, 'drafts')).length).toBe(2);
 });

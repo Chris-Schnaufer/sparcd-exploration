@@ -56,7 +56,8 @@ Feature: Keep tagging work safe in the browser until it is synced
   @unmapped
   Scenario: Discarding always asks first
     When discarding local edits is chosen
-    Then the number of edits about to be discarded is stated
+    Then the discard button names the images and species that will be lost
+    And a modal lists each image with its pending changes
     And nothing is discarded unless the action is confirmed
 
   @unmapped
