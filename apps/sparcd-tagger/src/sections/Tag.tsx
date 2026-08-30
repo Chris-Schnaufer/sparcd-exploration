@@ -733,7 +733,7 @@ export function Tag() {
       {showDiscard && (
         <DiscardConfirmDialog
           summaries={discardSummaries}
-          onConfirm={() => void discardUpload(ctx)}
+          onConfirm={() => discardUpload(ctx)}
           onClose={() => setShowDiscard(false)}
         />
       )}
