@@ -314,6 +314,15 @@ export const useDraftStore = create<DraftState>((set, get) => {
     },
 
     discardUpload: async (ctx) => {
+      // A draft edited moments before discard may still have a debounced put
+      // queued. Cancel those writes before deleting or they can resurrect the
+      // discarded rows after the dialog closes.
+      for (const rec of Object.values(get().drafts)) {
+        if (rec.bucket !== ctx.bucket || rec.uploadPrefix !== ctx.uploadPrefix) continue;
+        const timer = pending.get(rec.id);
+        if (timer) clearTimeout(timer);
+        pending.delete(rec.id);
+      }
       await discardUploadDrafts(ctx.bucket, ctx.uploadPrefix);
       if (get().loadedKey === uploadId(ctx.bucket, ctx.uploadPrefix)) set({ drafts: {} });
     },

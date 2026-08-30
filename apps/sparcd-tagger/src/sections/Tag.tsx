@@ -12,6 +12,7 @@ import { Cheatsheet } from '../components/Cheatsheet';
 import { SyncDialog } from '../components/SyncDialog';
 import { SnapshotsDialog } from '../components/SnapshotsDialog';
 import { DiscardConfirmDialog } from '../components/DiscardConfirmDialog';
+import { buildDiscardSummaries } from '../lib/discardSummary';
 import { TimeShiftModal } from '../components/TimeShiftModal';
 import { BulkTimeShiftModal } from '../components/BulkTimeShiftModal';
 import { PerImageTime } from '../components/PerImageTime';
@@ -408,7 +409,8 @@ export function Tag() {
     filter,
     view,
     setView,
-    isModalOpen: () => modalOpenRef.current || showSync || showSnapshots || showTimeShift,
+    isModalOpen: () =>
+      modalOpenRef.current || showDiscard || showSync || showSnapshots || showTimeShift,
   };
 
   useEffect(() => {
@@ -445,15 +447,19 @@ export function Tag() {
   const eff = current ? effectiveOf(current, draft) : null;
   const currentBase = current ? { observations: current.baseObservations } : undefined;
   const nDirty = dirtyCount(drafts);
-  const dirtyRecords = useMemo(() => Object.values(drafts).filter((r) => r.dirty), [drafts]);
-  const discardTitle = useMemo(() => {
-    const speciesSet = new Set(dirtyRecords.flatMap((r) => r.observations.map((o) => o.scientificName)));
-    const nTimestamps = dirtyRecords.filter((r) => r.timeOverride).length;
-    const parts = [`${nDirty} image${nDirty !== 1 ? 's' : ''}`];
-    if (speciesSet.size) parts.push(`${speciesSet.size} species`);
-    if (nTimestamps) parts.push(`${nTimestamps} timestamp${nTimestamps !== 1 ? 's' : ''}`);
-    return `Discard changes: ${parts.join(', ')}`;
-  }, [dirtyRecords, nDirty]);
+  const dirtyRecords = Object.values(drafts).filter((r) => r.dirty);
+  const discardSummaries = buildDiscardSummaries(
+    dirtyRecords,
+    list.map((image) => ({
+      ...image,
+      restoredTimestamp: correctedTimestamp(image.baseTimestamp, timeOffset, null),
+    })),
+  );
+  const discardDetails = discardSummaries.map(
+    (summary) =>
+      `${summary.displayName}: ${summary.changes.map((change) => change.label).join(', ') || 'local draft record'}`,
+  );
+  const discardTitle = `Discard ${nDirty} image${nDirty !== 1 ? 's' : ''}: ${discardDetails.join('; ')}`;
   const hasUploadShift = offsetActive(timeOffset);
   const correctedTs = current
     ? correctedTimestamp(current.baseTimestamp, timeOffset, draft?.timeOverride ?? null)
@@ -726,7 +732,7 @@ export function Tag() {
       {showCheatsheet && <Cheatsheet onClose={() => setShowCheatsheet(false)} />}
       {showDiscard && (
         <DiscardConfirmDialog
-          dirtyRecords={dirtyRecords}
+          summaries={discardSummaries}
           onConfirm={() => void discardUpload(ctx)}
           onClose={() => setShowDiscard(false)}
         />

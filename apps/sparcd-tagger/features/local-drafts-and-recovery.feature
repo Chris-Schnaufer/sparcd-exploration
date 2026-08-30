@@ -58,7 +58,13 @@ Feature: Keep tagging work safe in the browser until it is synced
     When discarding local edits is chosen
     Then the discard button names the images and species that will be lost
     And a modal lists each image with its pending changes
+    And the safe cancel action receives focus and focus stays in the modal
     And nothing is discarded unless the action is confirmed
+
+  @unmapped
+  Scenario: The discard dialog can be dismissed from the keyboard
+    When discarding local edits is chosen
+    Then Escape closes the discard dialog, restores focus, and keeps every edit
 
   @unmapped
   Scenario: The version being edited against is pinned while edits are outstanding
