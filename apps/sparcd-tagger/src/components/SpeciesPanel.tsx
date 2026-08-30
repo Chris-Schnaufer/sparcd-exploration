@@ -27,6 +27,8 @@ export type SpeciesPanelProps = {
   disabled: boolean; // no image focused
   headerSlot?: ReactNode; // the compact applied-species strip, under the filter
   onZoom?: (species: Species) => void; // open the enlarged reference image
+  selectedSpecies: string | null;
+  onSelectSpecies: (scientificName: string) => void;
 };
 
 export function SpeciesPanel(props: SpeciesPanelProps) {
@@ -93,7 +95,9 @@ export function SpeciesPanel(props: SpeciesPanelProps) {
             badge={props.bindingFor(s.scientificName)}
             capturing={props.capturingFor === s.scientificName}
             applied={props.appliedSet.has(s.scientificName)}
+            selected={props.selectedSpecies === s.scientificName}
             disabled={props.disabled}
+            onSelect={() => props.onSelectSpecies(s.scientificName)}
             onApply={() => props.onApply({ scientificName: s.scientificName, commonName: s.commonName, count: 1 })}
             onStartCapture={() => props.onStartCapture(s.scientificName)}
             onClearKey={props.bindingFor(s.scientificName) ? () => props.onClearKey(s.scientificName) : undefined}
@@ -130,8 +134,10 @@ type RowProps = {
   badge?: string | null;
   capturing?: boolean;
   applied?: boolean; // already on the focused image → ✓, clicking is a NO-OP add
+  selected?: boolean;
   disabled: boolean;
   onApply: () => void;
+  onSelect?: () => void;
   onStartCapture?: () => void;
   onClearKey?: () => void;
   onZoom?: () => void; // present only for animal rows that have a reference image
@@ -142,7 +148,7 @@ function Row(p: RowProps) {
   return (
     <div
       className={`group relative flex items-center gap-3 px-3 py-2 border-b border-ruleSoft ${
-        p.applied ? 'bg-mark' : 'hover:bg-panelHover'
+        p.selected ? 'bg-mark ring-2 ring-inset ring-accent' : 'hover:bg-panelHover'
       }`}
       draggable={!!p.dragData}
       onDragStart={
@@ -174,10 +180,11 @@ function Row(p: RowProps) {
         </button>
       )}
       <button
-        onClick={p.onApply}
+        onClick={p.onSelect ?? p.onApply}
         disabled={p.disabled}
         className="flex items-center gap-3 flex-1 min-w-0 text-left disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent -outline-offset-2"
-        title={p.disabled ? 'Focus an image first' : p.applied ? `${p.common} already applied` : `Apply ${p.common}`}
+        title={p.disabled ? 'Focus an image first' : p.onSelect ? `Select ${p.common}` : `Apply ${p.common}`}
+        aria-pressed={p.onSelect ? !!p.selected : undefined}
       >
         {p.iconUrl ? (
           <img
@@ -210,6 +217,17 @@ function Row(p: RowProps) {
           <span className="text-[11px] font-mono text-accent animate-pulse">press a key…</span>
         ) : (
           <>
+            {p.onSelect && (
+              <button
+                onClick={p.onApply}
+                disabled={p.disabled}
+                className="inline-flex items-center justify-center min-w-11 min-h-11 md:min-w-7 md:min-h-7 text-base font-mono text-accent hover:bg-paperHover disabled:text-inkMute disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+                title={p.applied ? `${p.common} already applied` : `Apply ${p.common}`}
+                aria-label={p.applied ? `${p.common} already applied` : `Apply ${p.common}`}
+              >
+                +
+              </button>
+            )}
             {p.onStartCapture && (
               <button
                 onClick={p.onStartCapture}

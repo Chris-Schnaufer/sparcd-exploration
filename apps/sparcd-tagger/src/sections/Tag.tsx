@@ -335,6 +335,7 @@ export function Tag() {
 
   const pushRecent = (sci: string) =>
     setRecent((r) => [sci, ...r.filter((x) => x !== sci)].slice(0, RECENT_LIMIT));
+  const [selectedSpecies, setSelectedSpecies] = useState<string | null>(null);
 
   // Operations target the selection when one exists, else the focused image.
   const targetsOf = (): TagTarget[] => {
@@ -358,24 +359,27 @@ export function Tag() {
     if (tag.scientificName) pushRecent(tag.scientificName);
   };
 
-  const applyIncrement = (tag: AppliedTag) => {
+  const applyIncrementAt = (index: number, tag: AppliedTag) => {
     // A drop is spatial: it updates the focused image under the drop zone,
-    // even if a multi-image selection still exists. Panel clicks remain the
-    // explicit selection-scoped bulk action.
-    if (!current) return;
+    // even if a multi-image selection still exists. The panel's explicit add
+    // control remains the selection-scoped bulk action.
+    const image = list[index];
+    if (!image) return;
     incrementSpeciesFn(
       ctx,
       [
         {
-          mediaPath: current.key,
-          deploymentId: current.deploymentId,
-          base: { observations: current.baseObservations },
+          mediaPath: image.key,
+          deploymentId: image.deploymentId,
+          base: { observations: image.baseObservations },
         },
       ],
       tag,
     );
     if (tag.scientificName) pushRecent(tag.scientificName);
   };
+
+  const applyIncrement = (tag: AppliedTag) => applyIncrementAt(focus, tag);
 
   // Selection-scoped bulk time shift: each target carries its currently-displayed
   // corrected time so the store can freeze (corrected + delta) into a per-image
@@ -775,6 +779,7 @@ export function Tag() {
                   onPick={pick}
                   onSelectBurst={selectBurst}
                   onDrill={drill}
+                  onDropSpecies={applyIncrementAt}
                 />
               </div>
             </div>
@@ -868,6 +873,8 @@ export function Tag() {
       species: speciesList,
       onApply: apply,
       onZoom: openLoupe,
+      selectedSpecies,
+      onSelectSpecies: setSelectedSpecies,
       filter,
       onFilterChange: setFilter,
       filterRef,

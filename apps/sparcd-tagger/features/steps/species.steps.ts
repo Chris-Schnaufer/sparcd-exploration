@@ -11,6 +11,7 @@ import {
   focusFrame,
   gridCell,
   speciesRow,
+  speciesTile,
   speciesApply,
   speciesFilter,
   speciesLoupeButton,
@@ -95,8 +96,24 @@ Then('Ghost appears exactly once as a species from the vocabulary', async ({ pag
 
 // --- Applying ---------------------------------------------------------------
 
-When('a species row is used', async ({ page }) => {
-  await speciesApply(page, 'Canis latrans').click();
+When('a species tile is selected', async ({ page }) => {
+  await speciesTile(page, 'Canis latrans').click();
+});
+
+Then('that species tile remains highlighted', async ({ page }) => {
+  await expect(speciesTile(page, 'Canis latrans')).toHaveAttribute('aria-pressed', 'true');
+  await expect(speciesRow(page, 'Canis latrans')).toHaveClass(/ring-accent/);
+});
+
+Then('selecting the species has not changed the focused image', async ({ page }) => {
+  await expect(appliedChip(page, 'Coyote')).toHaveCount(0);
+  const drafts = (await readStore(page, 'drafts')) as {
+    observations: { scientificName: string }[];
+  }[];
+  expect(
+    drafts.some((d) => d.observations.some((o) => o.scientificName === 'Canis latrans')),
+  ).toBe(false);
+  await expect(page.getByText(/unsaved · discard/)).toHaveCount(0);
 });
 
 Then('that species is recorded on the focused image with a count of one', async ({ page }) => {
@@ -572,6 +589,25 @@ When('the Ghost tile is dragged onto the image area in the Focus view', async ({
   await enterFocusView(page);
   await ghostRow(page).dragTo(focusDropZone(page));
   await page.getByRole('button', { name: 'Overview', exact: true }).click();
+});
+
+When('a species tile is dragged onto a different image tile in Overview', async ({ page }) => {
+  await speciesRow(page, 'Canis latrans').dragTo(gridCell(page, 'IMG005.JPG'));
+});
+
+Then('only the Overview image under the drop receives the species', async ({ page }) => {
+  await waitForDirtyDrafts(page, 1);
+  const drafts = (await readStore(page, 'drafts')) as {
+    mediaPath: string;
+    observations: { scientificName: string; count: number }[];
+  }[];
+  const withCoyote = drafts.filter((d) =>
+    d.observations.some((o) => o.scientificName === 'Canis latrans'),
+  );
+  expect(withCoyote).toHaveLength(1);
+  expect(withCoyote[0].mediaPath).toMatch(/IMG005\.JPG$/);
+  expect(withCoyote[0].observations.find((o) => o.scientificName === 'Canis latrans')?.count).toBe(1);
+  await expect(gridCell(page, 'IMG005.JPG')).toContainText('Coyote');
 });
 
 Then("that species' count is incremented by one", async ({ page }) => {
