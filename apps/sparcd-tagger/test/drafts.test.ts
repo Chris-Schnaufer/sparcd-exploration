@@ -5,6 +5,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   addObservation,
+  incrementObservation,
   removeObservation,
   setObservationCount,
   blankDraft,
@@ -54,6 +55,47 @@ describe('addObservation', () => {
   it('floors count to ≥1', () => {
     const next = addObservation([], tag('Canis latrans', 0));
     expect(next[0].count).toBe(1);
+  });
+});
+
+describe('incrementObservation', () => {
+  it('adds an absent species at one and preserves its metadata', () => {
+    const next = incrementObservation([], {
+      ...tag('Canis latrans', 9, 'Coyote'),
+      requestedSpecies: 'Prairie wolf',
+      freeTags: '[NOTE:blurred]',
+    });
+    expect(next).toEqual([
+      expect.objectContaining({
+        scientificName: 'Canis latrans',
+        count: 1,
+        requestedSpecies: 'Prairie wolf',
+        freeTags: '[NOTE:blurred]',
+      }),
+    ]);
+  });
+
+  it('increments an existing species and preserves every other observation', () => {
+    const next = incrementObservation(
+      [obs('Odocoileus hemionus', 2, 'Mule Deer'), obs('Canis latrans', 4, 'Coyote')],
+      tag('Odocoileus hemionus', 1, 'Mule Deer'),
+    );
+    expect(next.map((o) => [o.scientificName, o.count])).toEqual([
+      ['Odocoileus hemionus', 3],
+      ['Canis latrans', 4],
+    ]);
+  });
+
+  it('clears Ghost when a real species is incremented', () => {
+    expect(
+      incrementObservation([obs(GHOST.label, 1, GHOST.commonName)], tag('Canis latrans')),
+    ).toEqual([expect.objectContaining({ scientificName: 'Canis latrans', count: 1 })]);
+  });
+
+  it('keeps Ghost at exactly one and mutually exclusive when called defensively', () => {
+    expect(
+      incrementObservation([obs('Canis latrans', 3)], tag(GHOST.label, 9, GHOST.commonName)),
+    ).toEqual([expect.objectContaining({ scientificName: GHOST.label, count: 1 })]);
   });
 });
 
@@ -144,6 +186,22 @@ describe('draft store — add-only over a base multi-species image', () => {
     const d = useDraftStore.getState().drafts;
     expect(d[PATH].observations.map((o) => o.scientificName)).toContain('Lynx rufus');
     expect(d[P2].observations.map((o) => o.scientificName)).toEqual(['Lynx rufus']);
+  });
+
+  it('incrementSpecies increments each selection target from its own current count', () => {
+    const P2 = 'p/IMG002.JPG';
+    const targets = [
+      target({ observations: [obs('Odocoileus hemionus', 2, 'Mule Deer')] }),
+      { mediaPath: P2, deploymentId: DEP, base: { observations: [] } },
+    ];
+    useDraftStore.getState().incrementSpecies(
+      CTX,
+      targets,
+      tag('Odocoileus hemionus', 1, 'Mule Deer'),
+    );
+    const d = useDraftStore.getState().drafts;
+    expect(d[PATH].observations[0].count).toBe(3);
+    expect(d[P2].observations[0].count).toBe(1);
   });
 
   it('applying Ghost via the store clears real species', () => {

@@ -361,6 +361,65 @@ Then('clearing a key removes it for that species', async ({ page }) => {
   await expect(speciesBadge(page, 'Canis latrans')).toHaveCount(0);
 });
 
+// --- Keypress count increment (issue #96) -----------------------------------
+
+When('the bound key is pressed three times', async ({ page }) => {
+  // 'D' is the vocabulary key binding for Mule Deer (Odocoileus hemionus).
+  await page.keyboard.press('d');
+  await page.keyboard.press('d');
+  await page.keyboard.press('d');
+});
+
+When('the bound key is pressed once', async ({ page }) => {
+  await page.keyboard.press('d');
+});
+
+Then('the species count on that image is three', async ({ page }) => {
+  await expect(appliedChip(page, 'Mule Deer').locator('input[type="number"]')).toHaveValue('3');
+  await expect(gridCell(page, 'IMG002.JPG')).toContainText('Mule Deer ×3');
+});
+
+When('the Ghost key is pressed multiple times', async ({ page }) => {
+  // 'G' is the vocabulary key binding for Ghost.
+  await page.keyboard.press('g');
+  await page.keyboard.press('g');
+  await page.keyboard.press('g');
+});
+
+Then('the image still carries Ghost with a count of one', async ({ page }) => {
+  // Ghost renders without a count input (it is always exactly one).
+  await expect(gridCell(page, 'IMG002.JPG')).toContainText('Ghost');
+  await expect(appliedChip(page, 'Ghost')).toHaveCount(1);
+  await expect(appliedChip(page, 'Ghost')).not.toContainText('×');
+  await expect
+    .poll(async () => {
+      const drafts = (await readStore(page, 'drafts')) as {
+        mediaPath: string;
+        observations: { scientificName: string; count: number }[];
+      }[];
+      return drafts
+        .find((d) => d.mediaPath.endsWith('IMG002.JPG'))
+        ?.observations.find((o) => o.scientificName === 'Casper')?.count;
+    })
+    .toBe(1);
+});
+
+Then('each selected image increments the species from its own count', async ({ page }) => {
+  await waitForDirtyDrafts(page, 3);
+  const drafts = (await readStore(page, 'drafts')) as {
+    mediaPath: string;
+    observations: { scientificName: string; count: number }[];
+  }[];
+  const count = (file: string, scientificName: string) =>
+    drafts
+      .find((d) => d.mediaPath.endsWith(file))
+      ?.observations.find((o) => o.scientificName === scientificName)?.count;
+  expect(count('IMG001.JPG', 'Odocoileus hemionus')).toBe(3);
+  expect(count('IMG002.JPG', 'Odocoileus hemionus')).toBe(1);
+  expect(count('IMG003.JPG', 'Odocoileus hemionus')).toBe(1);
+  expect(count('IMG003.JPG', 'Casper')).toBeUndefined();
+});
+
 // --- Loupe ------------------------------------------------------------------
 
 const loupe = (page: Page) =>
