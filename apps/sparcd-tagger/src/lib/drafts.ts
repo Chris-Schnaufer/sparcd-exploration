@@ -188,15 +188,25 @@ type DraftState = {
 // Per-record debounce so a burst of keystrokes coalesces into one Dexie write.
 const SAVE_DEBOUNCE_MS = 200;
 const pending = new Map<string, ReturnType<typeof setTimeout>>();
+const activeDiscards = new Map<string, Promise<void>>();
 
 function scheduleSave(record: DraftRecord): void {
   const existing = pending.get(record.id);
   if (existing) clearTimeout(existing);
   pending.set(
     record.id,
-    setTimeout(() => {
+    setTimeout(async () => {
       pending.delete(record.id);
-      void db.drafts.put(record);
+      const barrier = activeDiscards.get(uploadId(record.bucket, record.uploadPrefix));
+      if (barrier) {
+        try {
+          await barrier;
+        } catch {
+          // A failed discard leaves its rows intact; this newer edit still
+          // needs to persist after the failed operation settles.
+        }
+      }
+      await db.drafts.put(record);
     }, SAVE_DEBOUNCE_MS),
   );
 }
@@ -336,8 +346,52 @@ export const useDraftStore = create<DraftState>((set, get) => {
     },
 
     discardUpload: async (ctx) => {
-      await discardUploadDrafts(ctx.bucket, ctx.uploadPrefix);
-      if (get().loadedKey === uploadId(ctx.bucket, ctx.uploadPrefix)) set({ drafts: {} });
+      const key = uploadId(ctx.bucket, ctx.uploadPrefix);
+      const existing = activeDiscards.get(key);
+      if (existing) return existing;
+
+      const operation = (async () => {
+        const snapshot = new Map(
+          Object.entries(get().drafts).filter(
+            ([, rec]) => rec.bucket === ctx.bucket && rec.uploadPrefix === ctx.uploadPrefix,
+          ),
+        );
+        for (const rec of snapshot.values()) {
+          const timer = pending.get(rec.id);
+          if (timer) clearTimeout(timer);
+          pending.delete(rec.id);
+        }
+
+        try {
+          await discardUploadDrafts(ctx.bucket, ctx.uploadPrefix);
+        } catch (error) {
+          // Timers for the snapshot were cancelled before deletion. If deletion
+          // fails, requeue any snapshot record that is still the current version
+          // so a very recent edit is not lost on reload.
+          const current = get().drafts;
+          for (const [path, discarded] of snapshot) {
+            if (current[path] === discarded) scheduleSave(discarded);
+          }
+          throw error;
+        }
+        if (get().loadedKey !== key) return;
+        set((state) => {
+          const next = { ...state.drafts };
+          for (const [path, discarded] of snapshot) {
+            // A concurrent edit replaces the record object. Preserve it and let
+            // its save (which waits on this operation) persist after deletion.
+            if (next[path] === discarded) delete next[path];
+          }
+          return { drafts: next };
+        });
+      })();
+
+      activeDiscards.set(key, operation);
+      try {
+        await operation;
+      } finally {
+        if (activeDiscards.get(key) === operation) activeDiscards.delete(key);
+      }
     },
 
     markUploadSynced: async (ctx, mediaPaths) => {

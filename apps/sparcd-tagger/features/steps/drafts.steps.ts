@@ -173,8 +173,8 @@ Given('an upload holds unsaved local edits', async ({ page }) => {
 });
 
 When('discarding them is chosen and confirmed', async ({ page }) => {
-  page.once('dialog', (d) => d.accept());
   await page.getByText(/1 unsaved · discard/).click();
+  await page.getByRole('button', { name: 'Discard', exact: true }).click();
   await expect(page.getByText(/unsaved · discard/)).toHaveCount(0);
 });
 
@@ -198,23 +198,51 @@ When('discarding local edits is chosen', async ({ page, scratch }) => {
   await focusFrame(page, 'IMG005.JPG');
   await speciesApply(page, 'Pecari tajacu').click();
   await waitForDirtyDrafts(page, 2);
-  const messages: string[] = [];
-  page.once('dialog', async (d) => {
-    messages.push(d.message());
-    await d.dismiss();
-  });
-  await page.getByText(/2 unsaved · discard/).click();
-  scratch.confirmMessages = messages;
+  const btn = page.getByText(/2 unsaved · discard/);
+  scratch.discardTitle = await btn.getAttribute('title');
+  await btn.click();
+  await expect(page.getByRole('dialog', { name: 'Discard local changes?' })).toBeVisible();
 });
 
-Then('the number of edits about to be discarded is stated', async ({ scratch }) => {
-  await expect
-    .poll(() => (scratch.confirmMessages as string[]).join(' '))
-    .toContain('Discard 2 local edit(s)');
+Then('the discard button names the images and species that will be lost', async ({ scratch }) => {
+  const title = scratch.discardTitle as string;
+  expect(title).toContain('IMG002.JPG: Added Coyote');
+  expect(title).toContain('IMG005.JPG: Added Javelina');
+});
+
+Then('a modal lists each image with its pending changes', async ({ page }) => {
+  const dialog = page.getByRole('dialog', { name: 'Discard local changes?' });
+  await expect(dialog.getByText('IMG002.JPG')).toBeVisible();
+  await expect(dialog.getByText('IMG005.JPG')).toBeVisible();
+  await expect(dialog.getByText('• Added Coyote')).toBeVisible();
+  await expect(dialog.getByText('• Added Javelina')).toBeVisible();
+});
+
+Then('the safe cancel action receives focus and focus stays in the modal', async ({ page }) => {
+  const dialog = page.getByRole('dialog', { name: 'Discard local changes?' });
+  const cancel = dialog.getByRole('button', { name: 'Cancel', exact: true });
+  const discard = dialog.getByRole('button', { name: 'Discard', exact: true });
+  const close = dialog.getByRole('button', { name: 'Close', exact: true });
+  await expect(cancel).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(discard).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(close).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(discard).toBeFocused();
 });
 
 Then('nothing is discarded unless the action is confirmed', async ({ page }) => {
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(page.getByText(/2 unsaved · discard/)).toBeVisible();
+  expect((await readStore(page, 'drafts')).length).toBe(2);
+});
+
+Then('Escape closes the discard dialog, restores focus, and keeps every edit', async ({ page }) => {
+  const trigger = page.getByText(/2 unsaved · discard/);
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog', { name: 'Discard local changes?' })).toHaveCount(0);
+  await expect(trigger).toBeFocused();
   expect((await readStore(page, 'drafts')).length).toBe(2);
 });
 
@@ -271,4 +299,3 @@ Given('no upload in this browser holds unsaved edits', async ({ page }) => {
 Then('it states that there are no unsaved local edits', async ({ page }) => {
   await expect(page.getByText('No unsaved local edits. Everything here is clean.')).toBeVisible();
 });
-

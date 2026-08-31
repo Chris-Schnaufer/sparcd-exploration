@@ -11,6 +11,8 @@ import { AppliedSpecies } from '../components/AppliedSpecies';
 import { Cheatsheet } from '../components/Cheatsheet';
 import { SyncDialog } from '../components/SyncDialog';
 import { SnapshotsDialog } from '../components/SnapshotsDialog';
+import { DiscardConfirmDialog } from '../components/DiscardConfirmDialog';
+import { buildDiscardSummaries } from '../lib/discardSummary';
 import { TimeShiftModal } from '../components/TimeShiftModal';
 import { BulkTimeShiftModal } from '../components/BulkTimeShiftModal';
 import { PerImageTime } from '../components/PerImageTime';
@@ -120,6 +122,7 @@ export function Tag() {
   const [showCheatsheet, setShowCheatsheet] = useState(false);
   const [showSync, setShowSync] = useState(false);
   const [showSnapshots, setShowSnapshots] = useState(false);
+  const [showDiscard, setShowDiscard] = useState(false);
   const [showTimeShift, setShowTimeShift] = useState(false);
   // Snapshot the bulk targets + preview anchor once when the modal opens — both
   // derive from the SAME corrected baseline, so the before→after preview always
@@ -452,6 +455,7 @@ export function Tag() {
     setView,
     isModalOpen: () =>
       modalOpenRef.current ||
+      showDiscard ||
       showSync ||
       showSnapshots ||
       showTimeShift ||
@@ -492,6 +496,19 @@ export function Tag() {
   const eff = current ? effectiveOf(current, draft) : null;
   const currentBase = current ? { observations: current.baseObservations } : undefined;
   const nDirty = dirtyCount(drafts);
+  const dirtyRecords = Object.values(drafts).filter((r) => r.dirty);
+  const discardSummaries = buildDiscardSummaries(
+    dirtyRecords,
+    list.map((image) => ({
+      ...image,
+      restoredTimestamp: correctedTimestamp(image.baseTimestamp, timeOffset, null),
+    })),
+  );
+  const discardDetails = discardSummaries.map(
+    (summary) =>
+      `${summary.displayName}: ${summary.changes.map((change) => change.label).join(', ') || 'local draft record'}`,
+  );
+  const discardTitle = `Discard ${nDirty} image${nDirty !== 1 ? 's' : ''}: ${discardDetails.join('; ')}`;
   const hasUploadShift = offsetActive(timeOffset);
   const correctedTs = current
     ? correctedTimestamp(current.baseTimestamp, timeOffset, draft?.timeOverride ?? null)
@@ -659,11 +676,9 @@ export function Tag() {
           </button>
           {nDirty > 0 && (
             <button
-              onClick={() => {
-                if (confirm(`Discard ${nDirty} local edit(s) for this upload?`)) void discardUpload(ctx);
-              }}
+              onClick={() => setShowDiscard(true)}
               className="text-[11px] font-mono text-inkMute hover:text-warn underline decoration-dotted"
-              title="Discard local changes for this upload"
+              title={discardTitle}
             >
               {nDirty} unsaved · discard
             </button>
@@ -764,6 +779,13 @@ export function Tag() {
       </div>
 
       {showCheatsheet && <Cheatsheet onClose={() => setShowCheatsheet(false)} />}
+      {showDiscard && (
+        <DiscardConfirmDialog
+          summaries={discardSummaries}
+          onConfirm={() => discardUpload(ctx)}
+          onClose={() => setShowDiscard(false)}
+        />
+      )}
       {showSync && (
         <SyncDialog ctx={ctx} images={list} drafts={drafts} onClose={() => setShowSync(false)} />
       )}
