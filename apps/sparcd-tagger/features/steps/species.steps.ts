@@ -502,6 +502,10 @@ Then('each selected image increments the species from its own count', async ({ p
   expect(count('IMG002.JPG', 'Odocoileus hemionus')).toBe(1);
   expect(count('IMG003.JPG', 'Odocoileus hemionus')).toBe(1);
   expect(count('IMG003.JPG', 'Casper')).toBeUndefined();
+  // Keyboard application is selection-scoped, but must not spill onto an
+  // unselected image as the spatial drag/drop paths deliberately do not.
+  expect(count('IMG005.JPG', 'Odocoileus hemionus')).toBeUndefined();
+  await expect(gridCell(page, 'IMG005.JPG')).not.toContainText('Mule Deer');
 });
 
 // --- Loupe ------------------------------------------------------------------
@@ -596,6 +600,7 @@ When('a species tile is dragged onto a different image tile in Overview', async 
 });
 
 Then('only the Overview image under the drop receives the species', async ({ page }) => {
+  await expect(positionReadout(page)).toHaveText('3 selected');
   await waitForDirtyDrafts(page, 1);
   const drafts = (await readStore(page, 'drafts')) as {
     mediaPath: string;
@@ -617,6 +622,7 @@ Then("that species' count is incremented by one", async ({ page }) => {
 });
 
 Then('only the focused image receives the dropped species', async ({ page }) => {
+  await expect(positionReadout(page)).toHaveText('3 selected');
   await waitForDirtyDrafts(page, 1);
   const drafts = (await readStore(page, 'drafts')) as {
     mediaPath: string;

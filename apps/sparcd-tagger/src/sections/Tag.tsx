@@ -360,9 +360,8 @@ export function Tag() {
   };
 
   const applyIncrementAt = (index: number, tag: AppliedTag) => {
-    // A drop is spatial: it updates the focused image under the drop zone,
-    // even if a multi-image selection still exists. The panel's explicit add
-    // control remains the selection-scoped bulk action.
+    // A drop is spatial: it updates only the image under the drop zone, even
+    // if a multi-image selection still exists.
     const image = list[index];
     if (!image) return;
     incrementSpeciesFn(
@@ -379,7 +378,14 @@ export function Tag() {
     if (tag.scientificName) pushRecent(tag.scientificName);
   };
 
-  const applyIncrement = (tag: AppliedTag) => applyIncrementAt(focus, tag);
+  const applyIncrement = (tag: AppliedTag) => {
+    // Keyboard bindings are selection-scoped, like the panel's explicit add
+    // control. Keep this separate from spatial drag/drop targeting.
+    const targets = targetsOf();
+    if (!targets.length) return;
+    incrementSpeciesFn(ctx, targets, tag);
+    if (tag.scientificName) pushRecent(tag.scientificName);
+  };
 
   // Selection-scoped bulk time shift: each target carries its currently-displayed
   // corrected time so the store can freeze (corrected + delta) into a per-image
@@ -818,7 +824,7 @@ export function Tag() {
               onPrev={() => gotoImage(focus - 1)}
               onNext={() => gotoImage(focus + 1)}
               onToggleQuestionable={toggleQuestionable}
-              onDropSpecies={applyIncrement}
+              onDropSpecies={(tag) => applyIncrementAt(focus, tag)}
             />
             <SpeciesPanel {...speciesPanelProps()} />
           </div>
