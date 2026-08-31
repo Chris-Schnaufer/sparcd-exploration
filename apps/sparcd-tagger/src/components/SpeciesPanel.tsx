@@ -20,7 +20,7 @@ export type SpeciesPanelProps = {
   onClearKey: (scientificName: string) => void;
   recent: string[]; // scientificNames, most-recent first
   appliedSet: Set<string>; // scientificNames applied on the focused image (✓ + add-only NO-OP)
-  hasFocus: boolean; // an image is focused → "Add another" framing
+  hasFocus: boolean; // an image is focused
   selectionCount: number; // >0 → applying a species hits the whole selection
   disabled: boolean; // no image focused
   headerSlot?: ReactNode; // the compact applied-species strip, under the filter
@@ -76,8 +76,8 @@ export function SpeciesPanel(props: SpeciesPanelProps) {
           aria-label="Filter species"
         />
         {props.headerSlot}
-        {props.hasFocus && props.appliedSet.size > 0 && (
-          <p className="text-[11px] font-body tracking-[0.12em] uppercase text-inkSoft">Add another</p>
+        {props.hasFocus && (
+          <p className="text-[11px] font-body tracking-[0.12em] uppercase text-inkSoft">Available species</p>
         )}
       </div>
 

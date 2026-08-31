@@ -25,6 +25,11 @@ Feature: Assign species to images in an upload
     And Ghost appears exactly once as a species from the vocabulary
 
   @H2
+  Scenario: The species list is labelled "Available species" when an image is focused
+    Given an image is focused
+    Then the species list is headed "Available species"
+
+  @H2
   Scenario: Clicking a species identifies the focused image
     Given an image is focused
     When a species row is used
