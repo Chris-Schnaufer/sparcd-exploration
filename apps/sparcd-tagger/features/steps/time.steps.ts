@@ -127,6 +127,33 @@ Then('the images show their original capture times again', async ({ page }) => {
   await expect(page.getByText('shifted')).toHaveCount(0);
 });
 
+// --- Single-frame shift -----------------------------------------------------
+
+Given('a single image is focused with no selection', async ({ page }) => {
+  await focusFrame(page, 'IMG001.JPG');
+  await expect(positionReadout(page)).not.toContainText('selected');
+});
+
+When("the focused frame's time shift is applied", async ({ page }) => {
+  await page.getByRole('button', { name: 'Shift this frame' }).click();
+  await expect(selectionShiftModal(page)).toBeVisible();
+  await bump(selectionShiftModal(page), 'Hour', 2);
+  await selectionShiftModal(page).getByRole('button', { name: /^Apply to 1 selected/ }).click();
+  await expect(selectionShiftModal(page)).toHaveCount(0);
+});
+
+Then('only that frame moves by the offset', async ({ page }) => {
+  await openFocus(page);
+  await expect.poll(async () => shownTime(page)).toBe('2024-01-10T10:00:00');
+});
+
+Then('the unselected frames are unchanged', async ({ page }) => {
+  await listRow(page, 'IMG002.JPG').click();
+  await expect.poll(async () => shownTime(page)).toBe('2024-01-10T08:00:30');
+  await listRow(page, 'IMG005.JPG').click();
+  await expect.poll(async () => shownTime(page)).toBe('2024-01-11T06:00:30');
+});
+
 // --- Selection-scoped shift -------------------------------------------------
 
 When("the selection's time shift is applied", async ({ page }) => {

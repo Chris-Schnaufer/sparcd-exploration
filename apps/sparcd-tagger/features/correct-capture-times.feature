@@ -33,6 +33,13 @@ Feature: Correct capture times on an upload whose camera clock was wrong
     Then the images show their original capture times again
 
   @unmapped
+  Scenario: A single focused frame can be shifted with no selection needed
+    Given a single image is focused with no selection
+    When the focused frame's time shift is applied
+    Then only that frame moves by the offset
+    And the unselected frames are unchanged
+
+  @unmapped
   Scenario: Only the selected frames can be shifted when one camera was wrong
     Given several images are selected
     When the selection's time shift is applied

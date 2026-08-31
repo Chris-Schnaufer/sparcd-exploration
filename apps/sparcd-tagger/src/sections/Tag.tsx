@@ -313,8 +313,7 @@ export function Tag() {
   // corrected time so the store can freeze (corrected + delta) into a per-image
   // override. Frames without a capture time have nothing to correct, so skip them.
   const bulkTimeTargets = () =>
-    [...selected]
-      .map((i) => list[i])
+    (selected.size > 0 ? [...selected].map((i) => list[i]) : current ? [current] : [])
       .filter((img) => img && img.baseTimestamp)
       .map((img) => ({
         mediaPath: img.key,
@@ -510,16 +509,21 @@ export function Tag() {
           {hasUploadShift ? `clock ${formatOffsetDelta(timeOffset)}` : 'Time shift'}
         </button>
 
-        {/* Shift only the selected frames — e.g. one mis-set camera in a mixed
-            upload. Stored as per-image corrections, so it stacks on the offset. */}
-        {selected.size > 0 && (
+        {/* Shift only the selected frames (or the focused frame when nothing is
+            selected) — e.g. one mis-set camera in a mixed upload. Stored as
+            per-image corrections, so it stacks on the upload offset. */}
+        {!!current && (
           <button
             onClick={openBulkTime}
             className="inline-flex items-center gap-1.5 text-[11.5px] font-mono px-2 py-1 border border-rule text-inkSoft hover:text-ink hover:border-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-            title={`Shift the ${selected.size} selected frame(s) by a signed offset`}
+            title={
+              selected.size > 0
+                ? `Shift the ${selected.size} selected frame(s) by a signed offset`
+                : 'Shift this frame by a signed offset'
+            }
           >
             <span aria-hidden>◷</span>
-            Shift selection
+            {selected.size > 0 ? 'Shift selection' : 'Shift this frame'}
           </button>
         )}
 
