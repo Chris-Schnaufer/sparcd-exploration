@@ -93,6 +93,7 @@ export type UploadSnapshot = {
   log: LogLine[];
   uploadPath?: string;
   bucket: string;
+  collectionUuid: string;
   metadataBundleSha256?: string;
   lanes?: number; // live blob-lane target, so the UI can show what adaptive settled on
   error?: string;
@@ -247,6 +248,7 @@ type PlanItem = {
 type RunPlan = {
   sessionId: string;
   bucket: string;
+  collectionUuid: string;
   uploadPath: string;
   totalBytes: number;
   metadataBundleSha256: string;
@@ -425,6 +427,7 @@ function makeRunner(
     totalBytes: 0,
     log: [],
     bucket: '',
+    collectionUuid: '',
   };
 
   let lastEmit = 0;
@@ -733,6 +736,7 @@ function makeRunner(
     abort = new AbortController(); // fresh signal per attempt
     snap.sessionId = plan.sessionId;
     snap.bucket = plan.bucket;
+    snap.collectionUuid = plan.collectionUuid;
     snap.uploadPath = plan.uploadPath;
     snap.metadataBundleSha256 = plan.metadataBundleSha256;
     snap.totalBytes = plan.totalBytes;
@@ -882,6 +886,7 @@ function makeRunner(
     seed: {
       sessionId: string;
       bucket: string;
+      collectionUuid: string;
       uploadPath: string;
       totalBytes: number; // the FULL batch's total, known from the scan — not grown incrementally
       initialFiles: FileProgress[]; // placeholder ('inspecting') or real ('pending') entry per known file
@@ -893,6 +898,7 @@ function makeRunner(
     activeQueue = queue;
     snap.sessionId = seed.sessionId;
     snap.bucket = seed.bucket;
+    snap.collectionUuid = seed.collectionUuid;
     snap.uploadPath = seed.uploadPath;
     snap.totalBytes = seed.totalBytes;
     snap.files = seed.initialFiles;
@@ -1086,6 +1092,7 @@ export function runStreamingUpload(
   });
   const sessionId = crypto.randomUUID();
   runner.snap.sessionId = sessionId;
+  runner.snap.collectionUuid = build.collectionUuid;
   // Surface the prep work — freezing every object key and opening the resume
   // ledger is real work at thousands of files, and a silent gap reads as a
   // hang. `runStreaming` flips straight to 'blobs' once the lanes start.
@@ -1178,6 +1185,7 @@ export function runStreamingUpload(
         {
           sessionId,
           bucket: build.bucket,
+          collectionUuid: build.collectionUuid,
           uploadPath: naming.uploadPath,
           totalBytes: build.files.reduce((n, f) => n + f.size, 0),
           initialFiles,
@@ -1307,6 +1315,7 @@ export function resumeUpload(
     dryRun: false,
   });
   runner.snap.sessionId = batch.id;
+  runner.snap.collectionUuid = batch.collectionUuid;
 
   if (!bundle) {
     const done = (async () => {
@@ -1360,6 +1369,7 @@ export function resumeUpload(
   const plan: RunPlan = {
     sessionId: batch.id,
     bucket: batch.targetBucket,
+    collectionUuid: batch.collectionUuid,
     uploadPath: batch.uploadPrefix,
     totalBytes: processedFiles.reduce((n, f) => n + f.size, 0),
     metadataBundleSha256: bundle.metadataBundleSha256,

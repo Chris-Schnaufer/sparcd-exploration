@@ -569,6 +569,7 @@ describe('upload runs continue past per-file blob failures', () => {
     const snap = await collect(run, () => last);
 
     expect(snap.phase).toBe('done');
+    expect(snap.collectionUuid).toBe('collection');
     expect(snap.files.filter((f) => f.state === 'skipped')).toHaveLength(2);
     expect(snap.skippedBytes).toBe(session.files[0].size + session.files[1].size);
     expect(snap.uploadedBytes).toBe(session.files.reduce((n, f) => n + f.size, 0));
@@ -656,6 +657,7 @@ describe('streamed runs upload as files individually become ready', () => {
     const snap = await collect(run, () => last);
 
     expect(snap.phase).toBe('done');
+    expect(snap.collectionUuid).toBe('collection');
     expect(client.writeImmutableStream).toHaveBeenCalledTimes(2);
     expect(mocks.attachBundle).toHaveBeenCalledTimes(1);
     expect(mocks.markBatchComplete).toHaveBeenCalledTimes(1);
