@@ -63,7 +63,7 @@ export function normalizeEventKey(key: string): string | null {
 }
 
 export function normalizeBindableEventKey(
-  event: Pick<KeyboardEvent, 'key' | 'altKey' | 'ctrlKey' | 'metaKey'>,
+  event: Pick<KeyboardEvent, 'key' | 'altKey' | 'ctrlKey' | 'metaKey' | 'shiftKey'>,
 ): string | null {
   return event.altKey || event.ctrlKey || event.metaKey ? null : normalizeEventKey(event.key);
 }

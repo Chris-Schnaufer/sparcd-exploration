@@ -116,6 +116,19 @@ Feature: Assign species to images in an upload
     Then that species is recorded on the image
 
   @H2
+  Scenario: Alphabetic bindings are case insensitive
+    Given an image is focused
+    When a lowercase alphabetic key is assigned to a species
+    And the uppercase form of that binding is pressed
+    Then that species is recorded on the image
+
+  @H2
+  Scenario: An unassigned printable shortcut retains its built-in behavior
+    Given an image is focused
+    When the unassigned keyboard-help shortcut is pressed
+    Then the keyboard shortcut reference is opened
+
+  @H2
   Scenario: Keys already bound in the desktop app work without re-assignment
     Given the species vocabulary carries a key binding for a species
     Then that key applies the species without any local assignment

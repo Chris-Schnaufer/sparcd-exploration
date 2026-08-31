@@ -73,6 +73,7 @@ describe('normalizeBindableEventKey', () => {
     altKey: false,
     ctrlKey: false,
     metaKey: false,
+    shiftKey: false,
     ...modifiers,
   });
 
@@ -82,8 +83,10 @@ describe('normalizeBindableEventKey', () => {
     expect(normalizeBindableEventKey(event('j', { metaKey: true }))).toBeNull();
   });
 
-  it('preserves symbols produced with Shift', () => {
-    expect(normalizeBindableEventKey(event('!'))).toBe('!');
+  it('preserves Shift-produced symbols and normalizes alphabetic case', () => {
+    expect(normalizeBindableEventKey(event('!', { shiftKey: true }))).toBe('!');
+    expect(normalizeBindableEventKey(event('A', { shiftKey: true }))).toBe('a');
+    expect(normalizeBindableEventKey(event('a'))).toBe('a');
   });
 });
 

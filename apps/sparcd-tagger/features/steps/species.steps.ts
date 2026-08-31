@@ -346,7 +346,7 @@ Then('key capture remains active and no key is assigned', async ({ page }) => {
 });
 
 When('a Shift-produced symbol is assigned to the species', async ({ page }) => {
-  await page.keyboard.press('!');
+  await page.keyboard.press('Shift+Digit1');
   await expect(speciesBadge(page, 'Pecari tajacu')).toHaveText('!');
 });
 
@@ -361,7 +361,25 @@ Then('the species is not recorded on the image', async ({ page }) => {
 });
 
 When('that binding is pressed without Alt or Option', async ({ page }) => {
-  await page.keyboard.press('!');
+  await page.keyboard.press('Shift+Digit1');
+});
+
+When('a lowercase alphabetic key is assigned to a species', async ({ page }) => {
+  await speciesAssignKey(page, 'Pecari tajacu').click();
+  await page.keyboard.press('v');
+  await expect(speciesBadge(page, 'Pecari tajacu')).toHaveText('V');
+});
+
+When('the uppercase form of that binding is pressed', async ({ page }) => {
+  await page.keyboard.press('Shift+V');
+});
+
+When('the unassigned keyboard-help shortcut is pressed', async ({ page }) => {
+  await page.keyboard.press('Shift+Slash');
+});
+
+Then('the keyboard shortcut reference is opened', async ({ page }) => {
+  await expect(page.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeVisible();
 });
 
 Given('the species vocabulary carries a key binding for a species', async ({ page }) => {

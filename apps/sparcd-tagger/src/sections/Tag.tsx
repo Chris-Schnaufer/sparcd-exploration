@@ -1521,7 +1521,7 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
   // single-character shortcuts. This makes every alphanumeric and symbol key
   // usable; assigning j/k/x/? intentionally displaces that app shortcut.
   const current = s.list[s.focus];
-  const printableKey = !e.shiftKey ? normalizeBindableEventKey(e) : null;
+  const printableKey = normalizeBindableEventKey(e);
   const speciesAction = printableKey
     ? s.keyMap.get(printableKey)
     : undefined;

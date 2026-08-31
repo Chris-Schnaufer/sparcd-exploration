@@ -109,4 +109,38 @@ describe('per-user keybinding profiles', () => {
       'server\u0000alice'
     ].overrides).toMatchObject({ a: '?', b: '#' });
   });
+
+  it('merges a concurrent stale-tab assignment during full store rehydration', () => {
+    const profileId = 'server\u0000alice';
+    useKeyBindings.getState().activateProfile(profileId);
+    const staleTab = JSON.parse(localStorage.getItem('sparcd-tagger-keybindings')!) as {
+      state: {
+        profiles: Record<
+          string,
+          {
+            overrides: Record<string, string | null>;
+            overrideRevisions: Record<string, { at: number; sequence: number; writer: string }>;
+          }
+        >;
+      };
+      version: number;
+    };
+
+    useKeyBindings.getState().assignKey('a', 'a');
+    staleTab.state.profiles[profileId].overrides.b = 'b';
+    staleTab.state.profiles[profileId].overrideRevisions.b = {
+      at: Date.now() + 1,
+      sequence: 1,
+      writer: 'stale-tab',
+    };
+    localStorage.setItem('sparcd-tagger-keybindings', JSON.stringify(staleTab));
+
+    rehydrateKeyBindings();
+
+    expect(useKeyBindings.getState().profiles[profileId].overrides).toMatchObject({ a: 'a', b: 'b' });
+    const persisted = JSON.parse(localStorage.getItem('sparcd-tagger-keybindings')!) as {
+      state: { profiles: Record<string, { overrides: Record<string, string | null> }> };
+    };
+    expect(persisted.state.profiles[profileId].overrides).toMatchObject({ a: 'a', b: 'b' });
+  });
 });
