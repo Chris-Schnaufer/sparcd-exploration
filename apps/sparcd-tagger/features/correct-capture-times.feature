@@ -40,6 +40,24 @@ Feature: Correct capture times on an upload whose camera clock was wrong
     And the unselected frames are unchanged
 
   @unmapped
+  Scenario: A frame without a capture time cannot be shifted
+    Given a timestamp-less image is focused with no selection
+    Then its focused-frame shift is unavailable with an explanation
+
+  @unmapped
+  Scenario: A focused-frame shift composes with corrections already shown
+    Given a whole-upload shift is in effect
+    And a single image is focused with no selection
+    When the focused frame is shifted twice by one hour
+    Then its final time includes the upload shift and both frame shifts
+
+  @unmapped
+  Scenario: A selection containing exactly one frame can be shifted
+    Given exactly one image is selected
+    When that one-frame selection is shifted
+    Then exactly that selected image receives a time override
+
+  @unmapped
   Scenario: Only the selected frames can be shifted when one camera was wrong
     Given several images are selected
     When the selection's time shift is applied

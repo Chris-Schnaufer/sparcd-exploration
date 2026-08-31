@@ -132,6 +132,21 @@ describe('draft store — add-only over a base multi-species image', () => {
     expect(d.dirty).toBe(true);
   });
 
+  it('applies a composed offset to exactly one target and preserves its base species', () => {
+    useDraftStore.getState().applyTimeOffsetToSelection(
+      CTX,
+      [{ ...target(), currentCorrected: '2024-01-10T10:00:00.000Z' }],
+      { years: 0, months: 0, days: 0, hours: 1, minutes: 15, seconds: 0 },
+    );
+    const drafts = useDraftStore.getState().drafts;
+    expect(Object.keys(drafts)).toEqual([PATH]);
+    expect(drafts[PATH].timeOverride).toBe('2024-01-10T11:15:00.000Z');
+    expect(drafts[PATH].observations.map((o) => o.scientificName)).toEqual([
+      'Odocoileus hemionus',
+      'Canis latrans',
+    ]);
+  });
+
   it('detag clears all observations', () => {
     useDraftStore.getState().detag(CTX, [target()]);
     expect(useDraftStore.getState().drafts[PATH].observations).toEqual([]);

@@ -1,5 +1,5 @@
-// Selection-scoped time-shift modal. Applies a signed y/mo/d/h/m/s delta to ONLY
-// the currently-selected images, relative to the time they show now. It does NOT
+// Scoped time-shift modal. Applies a signed y/mo/d/h/m/s delta to a snapshotted
+// selection or one focused frame, relative to the time each shows now. It does NOT
 // introduce a new correction input: on apply, each selected image's new absolute
 // corrected timestamp is frozen into its per-image `timeOverride`, so resolution
 // and sync stay byte-identical to a hand-edited per-image override. The preview
@@ -24,17 +24,23 @@ const FIELDS: { key: Field; label: string }[] = [
 
 export function BulkTimeShiftModal({
   count,
+  requestedCount,
+  scope,
   anchorTimestamp,
   onApply,
   onClose,
 }: {
   count: number;
-  anchorTimestamp: string; // earliest-selected base time, the preview anchor
+  requestedCount: number;
+  scope: 'focused-frame' | 'selection';
+  anchorTimestamp: string; // earliest applicable current time, the preview anchor
   onApply: (delta: TimeOffsetRecord) => void;
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState<TimeOffsetRecord>(ZERO_OFFSET_RECORD);
   const active = offsetActive(draft);
+  const focused = scope === 'focused-frame';
+  const skipped = requestedCount - count;
   const corrected = anchorTimestamp ? shiftTimestamp(anchorTimestamp, draft) : '';
 
   const bump = (key: Field, by: number) => setDraft((d) => ({ ...d, [key]: d[key] + by }));
@@ -51,14 +57,16 @@ export function BulkTimeShiftModal({
       onClick={onClose}
       role="dialog"
       aria-modal="true"
-      aria-label="Time shift selection"
+      aria-label={focused ? 'Time shift this frame' : 'Time shift selection'}
     >
       <div
         className="w-full max-w-[680px] max-h-[90dvh] overflow-y-auto bg-paper border border-rule shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-rule px-5 py-3">
-          <h2 className="font-display text-[18px] font-[600] text-ink">Time shift · selection</h2>
+          <h2 className="font-display text-[18px] font-[600] text-ink">
+            Time shift · {focused ? 'this frame' : 'selection'}
+          </h2>
           <button
             onClick={onClose}
             className="w-11 h-11 grid place-items-center md:w-7 md:h-7 border border-rule text-inkSoft hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
@@ -70,8 +78,14 @@ export function BulkTimeShiftModal({
 
         <div className="p-5">
           <p className="text-[13px] text-inkSoft font-body max-w-[600px] mb-4">
-            Offset only the{' '}
-            <strong className="text-ink">{count.toLocaleString()} selected frame{count === 1 ? '' : 's'}</strong>{' '}
+            Offset only{' '}
+            <strong className="text-ink">
+              {focused
+                ? 'this frame'
+                : skipped > 0
+                  ? `${count.toLocaleString()} of ${requestedCount.toLocaleString()} selected frames`
+                  : `${count.toLocaleString()} selected frame${count === 1 ? '' : 's'}`}
+            </strong>{' '}
             — e.g. one camera in a mixed upload was on the wrong clock. The shift is applied relative
             to each frame's current time and stored as a{' '}
             <strong className="text-ink">per-image correction</strong>; it stacks on top of any
@@ -98,7 +112,7 @@ export function BulkTimeShiftModal({
           <div className="mt-5 border border-rule bg-panel px-4 py-3">
             <div className="flex items-center justify-between mb-2">
               <span className="font-body text-[11px] font-[600] tracking-[0.16em] uppercase text-inkSoft">
-                Preview · earliest selected
+                Preview · {focused ? 'this frame' : 'earliest selected'}
               </span>
               <span
                 className={`font-mono text-[11.5px] font-[600] ${active ? 'text-accent' : 'text-inkMute'}`}
@@ -125,14 +139,12 @@ export function BulkTimeShiftModal({
                 </div>
               </div>
             ) : (
-              <div className="font-mono text-[13px] text-inkMute">
-                No timestamped frame in the selection to preview.
-              </div>
+              <div className="font-mono text-[13px] text-inkMute">No timestamped frame to preview.</div>
             )}
           </div>
 
           <p className="mt-3 font-mono text-[11.5px] text-inkSoft">
-            <span className="text-inkMute">note</span> Frames without a capture time are skipped.
+            {skipped > 0 && <><span className="text-inkMute">note</span> {skipped.toLocaleString()} selected frame{skipped === 1 ? '' : 's'} without a capture time {skipped === 1 ? 'is' : 'are'} skipped. </>}
             Clear a frame's correction from its Focus view.
           </p>
         </div>
@@ -150,7 +162,9 @@ export function BulkTimeShiftModal({
             disabled={!active}
             className="text-[13px] border border-ink bg-ink text-paper px-3 py-1.5 hover:bg-inkSoft disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
           >
-            Apply to {count.toLocaleString()} selected frame{count === 1 ? '' : 's'} →
+            {focused
+              ? 'Apply to this frame →'
+              : `Apply to ${count.toLocaleString()} selected frame${count === 1 ? '' : 's'} →`}
           </button>
         </div>
       </div>
