@@ -237,7 +237,7 @@ describe('cancellation during metadata publication', () => {
     let last: UploadSnapshot | null = null;
 
     const run = resumeUpload(
-      { config: CONFIG, session, attached: new Map(), concurrency: 1 },
+      { config: CONFIG, session, attached: new Map(), concurrency: manual(1) },
       (snap) => {
         last = snap;
       },
@@ -263,7 +263,7 @@ describe('cancellation during metadata publication', () => {
       {
         config: CONFIG,
         dryRun: false,
-        concurrency: 1,
+        concurrency: manual(1),
         uploaderUser: 'user',
         fileAccessMode: 'reselect-required',
         build: {
