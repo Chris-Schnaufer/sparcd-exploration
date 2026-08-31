@@ -99,10 +99,11 @@ type UploaderState = {
   streamingRun: StreamingUploadRun | null;
   streamingQueueClosed: boolean;
   activeSnap: UploadSnapshot | null;
-  // 'upload' = run started from the New-Upload wizard; 'history' = resume from
-  // History. Upload.tsx and History.tsx each filter activeSnap by source so they
-  // only render progress that belongs to them.
-  activeRunSource: 'upload' | 'history' | null;
+  // Always 'upload': History prepares a resume and hands it to the wizard's
+  // Upload step, which is the one surface that runs anything. Kept as a field
+  // because disconnect and the beforeunload guard read it to tell a real run
+  // from none.
+  activeRunSource: 'upload' | null;
   // Folder recovery/hash verification happens before an UploadRun exists. Keep
   // its lock and progress here so leaving History cannot orphan the work and
   // expose Resume/Discard while the old component continues asynchronously.

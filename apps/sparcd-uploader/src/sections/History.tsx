@@ -1,8 +1,9 @@
 // Past and in-flight upload sessions, read from the Dexie resume store (P5).
 // Completed batches are a record; open batches (no completedAt) offer Resume —
 // which restores local file access (durable handle or reselect-and-reconcile)
-// and replays the persisted bundle, skipping done blobs and re-uploading the
-// rest. Discard drops the local session row only; it never touches remote state.
+// and then hands the prepared session to the wizard's Upload step, which owns
+// the run UI. Discard drops the local session row only; it never touches remote
+// state.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { OfflineBanner, useOnline } from '@sparcd/auth-ui';
@@ -27,8 +28,7 @@ import {
 } from '../lib/resume';
 import { scanFileList, supportsDirectoryHandle } from '../lib/scanFiles';
 import type { ProcessResponse } from '../lib/processPool';
-import { resumeUpload } from '../lib/upload';
-import { Note, RunMonitor } from '../components/RunMonitor';
+import { Note } from '../components/RunMonitor';
 import { PublishedUploads } from '../components/PublishedUploads';
 
 type Row = { batch: BatchRecord; counts: Record<PersistedFileState, number> };
@@ -50,18 +50,19 @@ function Badge({ batch }: { batch: BatchRecord }) {
 
 export function History() {
   const s3Config = useStore((s) => s.s3Config);
-  const concurrency = useStore((s) => s.uploadConcurrency);
-
-  // Run and snapshot live in the store so they survive section navigation.
-  // Only render History's own monitor, but use the unfiltered snapshot below
-  // to protect a ledger belonging to a run started in New Upload too.
-  const activeSnap = useStore((s) => s.activeSnap);
-  const snap = useStore((s) => s.activeRunSource === 'history' ? s.activeSnap : null);
-  const setActiveRun = useStore((s) => s.setActiveRun);
-  const setActiveSnap = useStore((s) => s.setActiveSnap);
-  const clearActiveRun = useStore((s) => s.clearActiveRun);
-
-  const activeSessionId = activeSnap?.sessionId ?? null;
+  const setPendingResume = useStore((s) => s.setPendingResume);
+  const setSection = useStore((s) => s.setSection);
+  const setStep = useStore((s) => s.setStep);
+  // Upload owns fresh and resumed runs. History only needs the live session id
+  // to keep that session's local ledger protected while the run is active.
+  const activeSessionId = useStore((s) =>
+    s.activeSnap &&
+    (s.activeSnap.phase === 'preparing' ||
+      s.activeSnap.phase === 'blobs' ||
+      s.activeSnap.phase === 'metadata')
+      ? s.activeSnap.sessionId
+      : null,
+  );
   const preparation = useStore((s) => s.historyResumePreparation);
   const beginPreparation = useStore((s) => s.beginHistoryResumePreparation);
   const setPreparationProgress = useStore((s) => s.setHistoryResumeProgress);
@@ -98,17 +99,11 @@ export function History() {
     input.addEventListener('cancel', onCancel);
     return () => input.removeEventListener('cancel', onCancel);
   }, [pickerOpen]);
-
-
-  const running = activeSnap?.phase === 'blobs' || activeSnap?.phase === 'metadata';
+  const running = activeSessionId !== null;
   const online = useOnline();
 
   const launch = useCallback(
-    async (
-      session: LoadedSession,
-      attached: Map<string, File>,
-      probs: ReconcileProblem[],
-    ) => {
+    (session: LoadedSession, attached: Map<string, File>, probs: ReconcileProblem[]) => {
       clearPreparation(session.batch.id);
       const missingRequired = session.files.filter((f) => f.state !== 'done' && !attached.has(f.localPath));
       if (missingRequired.length > 0) {
@@ -127,18 +122,13 @@ export function History() {
         );
         return;
       }
-      setProblems(probs);
+      setProblems([]);
       setMessage(null);
-      const run = resumeUpload(
-        { config: s3Config!, session, attached, concurrency },
-        (s) => {
-          setActiveSnap(s);
-          if (s.phase === 'done' || s.phase === 'error') void refresh();
-        },
-      );
-      setActiveRun(run, 'history');
+      setPendingResume({ session, attached, problems: probs });
+      setSection('new');
+      setStep('upload');
     },
-    [s3Config, concurrency, refresh, clearPreparation],
+    [clearPreparation, setPendingResume, setSection, setStep],
   );
 
   // If this session was interrupted before it ever reached publish
@@ -166,7 +156,7 @@ export function History() {
         setMessage('Session record is missing.');
         return;
       }
-      await launch(finalSession, attached, probs);
+      launch(finalSession, attached, probs);
     },
     [launch],
   );
@@ -174,7 +164,6 @@ export function History() {
   const beginResume = useCallback(
     async (batch: BatchRecord) => {
       setProblems([]);
-      setActiveSnap(null);
       beginPreparation(batch.id);
       try {
         if (!s3Config) {
@@ -274,18 +263,18 @@ export function History() {
     async (sessionId: string) => {
       const state = useStore.getState();
       const matchingSnap = state.activeSnap?.sessionId === sessionId ? state.activeSnap : null;
-      const matchingRunIsLive = matchingSnap?.phase === 'blobs' || matchingSnap?.phase === 'metadata';
+      const matchingRunIsLive =
+        matchingSnap?.phase === 'preparing' ||
+        matchingSnap?.phase === 'blobs' ||
+        matchingSnap?.phase === 'metadata';
       const preparationIsLive = state.historyResumePreparation?.sessionId === sessionId;
       // The button is disabled for both cases, but enforce the invariant here
       // too so a stale render or programmatic click can never delete a live ledger.
       if (matchingRunIsLive || preparationIsLive) return;
-      if (matchingSnap) {
-        clearActiveRun();
-      }
       await discardSession(sessionId);
       await refresh();
     },
-    [clearActiveRun, refresh],
+    [refresh],
   );
 
   if (rows === null) {
@@ -350,38 +339,9 @@ export function History() {
         </div>
       )}
 
-      {activeSessionId && snap && (
-        <div className="space-y-3 border border-rule bg-panel p-4">
-          <div className="flex items-center justify-between">
-            <p className="font-body text-[13px] text-inkSoft">
-              Resuming <span className="font-mono text-ink">{stampOf(snap.uploadPath ?? '')}</span>
-            </p>
-            {running ? (
-              <button
-                onClick={() => useStore.getState().activeRun?.cancel()}
-                className="border border-warn text-warn px-3 py-1 text-[13px] font-body hover:bg-paperHover"
-              >
-                Cancel
-              </button>
-            ) : (
-              <button
-                onClick={() => {
-                  clearActiveRun();
-                }}
-                className="border border-ink text-ink px-3 py-1 text-[13px] font-body hover:bg-paperHover"
-              >
-                Dismiss
-              </button>
-            )}
-          </div>
-          <RunMonitor snap={snap} />
-        </div>
-      )}
-
       <ul className="space-y-3">
         {rows.map(({ batch, counts }) => {
           const isActive = activeSessionId === batch.id;
-          const isHistoryActive = snap?.sessionId === batch.id;
           const isPreparing = preparation?.sessionId === batch.id;
           const verifyProgress = isPreparing ? preparation.progress : null;
           const total = batch.totalFiles;
@@ -429,7 +389,7 @@ export function History() {
                       running || preparation !== null || pickerOpen ? 'opacity-40 cursor-not-allowed' : ''
                     }`}
                   >
-                    {isPreparing ? 'Verifying…' : isHistoryActive ? 'Resuming…' : 'Resume'}
+                    {isPreparing ? 'Verifying…' : 'Resume'}
                   </button>
                 )}
                 <button

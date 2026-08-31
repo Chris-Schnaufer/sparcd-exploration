@@ -173,7 +173,6 @@ describe('store persistence', () => {
       dryRun: false,
       concurrencyMode: 'manual',
       uploadConcurrency: 16,
-      historyResumePreparation: null,
     });
   });
 });

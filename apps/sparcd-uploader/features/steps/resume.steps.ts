@@ -469,15 +469,16 @@ When('the user leaves History and returns while the resume is running', async ({
   await app.gotoSection('History');
 });
 
-Then('the live resume is still visible and can be cancelled', async ({ app }) => {
-  await expect(app.page.getByText(/^Resuming \d/)).toBeVisible();
-  await expect(app.page.getByRole('button', { name: 'Cancel' })).toBeVisible();
-  await expect(app.page.getByRole('button', { name: 'Resuming…' })).toBeDisabled();
-});
-
-Then('its local session cannot be discarded', async ({ app }) => {
+Then('the resumed session cannot be resumed or discarded', async ({ app }) => {
+  await expect(app.page.getByRole('button', { name: 'Resume' }).first()).toBeDisabled();
   await expect(app.page.getByRole('button', { name: 'Discard' }).first()).toBeDisabled();
   expect(await app.readBatchRecords()).toHaveLength(1);
+});
+
+Then('the resume remains visible and cancellable on the Upload step', async ({ app }) => {
+  await app.gotoSection('New upload');
+  await expect(app.runPhase()).toHaveText('uploading');
+  await expect(app.page.getByRole('button', { name: 'Cancel' })).toBeVisible();
   await app.page.getByRole('button', { name: 'Cancel' }).click();
   await expect(app.page.getByText('cancelled').first()).toBeVisible();
 });
