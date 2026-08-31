@@ -11,8 +11,10 @@ import {
   speciesApply,
   sectionTab,
   enterFocusView,
+  selectCollection,
+  openUpload,
 } from './support/world';
-import { BUCKET, PREFIX_A } from './support/data';
+import { BUCKET, PREFIX_A, MEDIA_A } from './support/data';
 import { openSyncDialog, setSyncDryRun, readStore } from './support/flows';
 
 const appliedChip = (page: Page, label: string) =>
@@ -79,10 +81,10 @@ Then('a species recorded as a free-text request is marked as requested', async (
 
 Then('several species collapse to a summary that can be expanded', async ({ page }) => {
   await page.getByRole('button', { name: 'Collapse applied species' }).click();
-  const summary = page.locator('button[title="Show all applied species"]');
+  const summary = page.locator('[data-testid="applied-species-summary"]');
   await expect(summary).toBeVisible();
   await expect(summary).toContainText('+1 more');
-  await summary.click();
+  await page.locator('button[title="Show all applied species"]').click();
   await expect(appliedChip(page, 'Coyote')).toBeVisible();
 });
 
@@ -284,4 +286,42 @@ Then('the marker is cleared for that image once its change has been synced', asy
   await expect(page.getByText('Synced — canonical files replaced.')).toBeVisible();
   await page.getByRole('button', { name: 'Close', exact: true }).first().click();
   await expect(gridCell(page, 'IMG002.JPG').locator('[title="unsaved edit"]')).toHaveCount(0);
+});
+
+// --- Blank-row uploads (issue #89) ------------------------------------------
+
+Given('an upload with only uploader-written blank rows is open in the tagging workspace', async ({ page }) => {
+  // Navigate to Browse explicitly — the H3 background may have already opened
+  // a different workspace, and openAppConnected skips reconnection in that state,
+  // leaving selectCollection unable to surface the upload list heading.
+  await sectionTab(page, 'Browse').click();
+  await selectCollection(page);
+  await openUpload(page, 'newuploader');
+  await expect(gridCell(page, 'IMG001.JPG')).not.toContainText('Deer');
+  await expect(gridCell(page, 'IMG001.JPG')).not.toContainText('Coyote');
+});
+
+Then('every image tile is shown as untagged', async ({ page }) => {
+  for (const m of MEDIA_A.filter((m) => !m.file.endsWith('.MP4'))) {
+    // A tile with no species shows only its filename — "untagged" is list-view only.
+    // The key assertion is that no species name bleeds through from the blank row.
+    await expect(gridCell(page, m.file)).not.toContainText('×');
+  }
+});
+
+Then('the list view labels every image "untagged"', async ({ page }) => {
+  await page.getByRole('button', { name: '☰ List' }).click();
+  for (const m of MEDIA_A) {
+    await expect(listRow(page, m.file)).toContainText('untagged');
+  }
+});
+
+When('the Sync dialog is opened for a blank-row upload', async ({ page }) => {
+  await openSyncDialog(page);
+});
+
+Then('the sync reports there is nothing to sync', async ({ page }) => {
+  await expect(
+    page.getByText('No local edits to sync — everything matches the canonical files.'),
+  ).toBeVisible();
 });

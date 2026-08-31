@@ -79,6 +79,23 @@ export function addObservation(obs: DraftObservation[], tag: AppliedTag): DraftO
   return [...withoutGhost, next];
 }
 
+/**
+ * Adds species at count 1 if absent; increments its count by 1 if already
+ * present. Used by keypress paths so repeated presses accumulate. Ghost is
+ * handled defensively through addObservation so it remains exclusive and one.
+ */
+export function incrementObservation(obs: DraftObservation[], tag: AppliedTag): DraftObservation[] {
+  if (tag.scientificName === GHOST.label) return addObservation(obs, { ...tag, count: 1 });
+  const withoutGhost = obs.filter((o) => !isGhost(o));
+  const existing = withoutGhost.find((o) => o.scientificName === tag.scientificName);
+  if (existing) {
+    return withoutGhost.map((o) =>
+      o.scientificName === tag.scientificName ? { ...o, count: o.count + 1 } : o,
+    );
+  }
+  return addObservation(withoutGhost, { ...tag, count: 1 });
+}
+
 /** Remove exactly the named species, keeping every other (and its order). */
 export function removeObservation(
   obs: DraftObservation[],
@@ -108,6 +125,8 @@ type DraftState = {
 
   /** Add-only species apply to one focused image OR every target in a selection. */
   addSpecies: (ctx: UploadCtx, targets: TagTarget[], tag: AppliedTag) => void;
+  /** Keypress path: add at count 1 if absent, increment count by 1 if present. */
+  incrementSpecies: (ctx: UploadCtx, targets: TagTarget[], tag: AppliedTag) => void;
   /** Remove ONE species from ONE image (chip ✕). */
   removeSpecies: (
     ctx: UploadCtx,
@@ -270,6 +289,9 @@ export const useDraftStore = create<DraftState>((set, get) => {
 
     addSpecies: (ctx, targets, tag) =>
       mutateMany(ctx, targets, (prev) => ({ observations: addObservation(prev.observations, tag) })),
+
+    incrementSpecies: (ctx, targets, tag) =>
+      mutateMany(ctx, targets, (prev) => ({ observations: incrementObservation(prev.observations, tag) })),
 
     removeSpecies: (ctx, mediaPath, deploymentId, base, sci) =>
       mutateMany(ctx, [{ mediaPath, deploymentId, base }], (prev) => ({

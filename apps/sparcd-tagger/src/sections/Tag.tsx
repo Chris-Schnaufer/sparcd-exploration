@@ -34,7 +34,7 @@ import {
   type BulkTimeTarget,
   type UploadCtx,
 } from '../lib/drafts';
-import { useKeyBindings, effectiveKey, normalizeJavaKeyCode } from '../lib/keys';
+import { useKeyBindings, effectiveKey, conflictingKeyOwners } from '../lib/keys';
 import { useLocalBatch, saveLocalTags } from '../lib/localBatch';
 import { localTagImages } from '../lib/localWorkspace';
 import { DEFAULT_SPECIES } from '../lib/defaultSpecies';
@@ -46,6 +46,13 @@ const RECENT_LIMIT = 12;
 const EMPTY: TagImage[] = []; // stable ref so memos don't churn before data loads
 
 type View = 'overview' | 'focus';
+
+type PendingKeyConflict = {
+  scientificName: string;
+  commonName: string;
+  key: string;
+  conflicts: Species[];
+};
 
 export function Tag() {
   const cfg = useStore((s) => s.s3Config);
@@ -87,6 +94,7 @@ export function Tag() {
   const timeOffset = useDraftStore((s) => s.timeOffset);
   const loadUpload = useDraftStore((s) => s.loadUpload);
   const addSpeciesFn = useDraftStore((s) => s.addSpecies);
+  const incrementSpeciesFn = useDraftStore((s) => s.incrementSpecies);
   const removeSpeciesFn = useDraftStore((s) => s.removeSpecies);
   const setSpeciesCountFn = useDraftStore((s) => s.setSpeciesCount);
   const detagFn = useDraftStore((s) => s.detag);
@@ -109,6 +117,7 @@ export function Tag() {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [filter, setFilter] = useState('');
   const [capturingFor, setCapturingFor] = useState<string | null>(null);
+  const [pendingKeyConflict, setPendingKeyConflict] = useState<PendingKeyConflict | null>(null);
   const [recent, setRecent] = useState<string[]>([]);
   const [showCheatsheet, setShowCheatsheet] = useState(false);
   const [showSync, setShowSync] = useState(false);
@@ -277,15 +286,42 @@ export function Tag() {
   const keyMap = useMemo(() => {
     const m = new Map<string, { kind: 'species'; species: Species }>();
     for (const s of speciesList) {
-      const k = normalizeJavaKeyCode(s.keyBinding);
-      if (k) m.set(k, { kind: 'species', species: s });
-    }
-    for (const s of speciesList) {
-      const ov = overrides[s.scientificName];
-      if (ov) m.set(ov, { kind: 'species', species: s });
+      const key = effectiveKey(s.scientificName, s.keyBinding, overrides);
+      if (key) m.set(key, { kind: 'species', species: s });
     }
     return m;
   }, [speciesList, overrides]);
+
+  const captureKey = (scientificName: string, key: string) => {
+    const species = speciesList.find((candidate) => candidate.scientificName === scientificName);
+    if (!species) return;
+    const conflictingNames = new Set(
+      conflictingKeyOwners(speciesList, scientificName, key, overrides),
+    );
+    const conflicts = speciesList.filter((candidate) =>
+      conflictingNames.has(candidate.scientificName),
+    );
+    if (conflicts.length) {
+      setPendingKeyConflict({
+        scientificName,
+        commonName: species.commonName,
+        key,
+        conflicts,
+      });
+      return;
+    }
+    assignKey(scientificName, key);
+  };
+
+  const confirmKeyReassignment = () => {
+    if (!pendingKeyConflict) return;
+    assignKey(
+      pendingKeyConflict.scientificName,
+      pendingKeyConflict.key,
+      pendingKeyConflict.conflicts.map((species) => species.scientificName),
+    );
+    setPendingKeyConflict(null);
+  };
 
   const pushRecent = (sci: string) =>
     setRecent((r) => [sci, ...r.filter((x) => x !== sci)].slice(0, RECENT_LIMIT));
@@ -309,6 +345,13 @@ export function Tag() {
     const targets = targetsOf();
     if (!targets.length) return;
     addSpeciesFn(ctx, targets, tag);
+    if (tag.scientificName) pushRecent(tag.scientificName);
+  };
+
+  const applyIncrement = (tag: AppliedTag) => {
+    const targets = targetsOf();
+    if (!targets.length) return;
+    incrementSpeciesFn(ctx, targets, tag);
     if (tag.scientificName) pushRecent(tag.scientificName);
   };
 
@@ -394,8 +437,9 @@ export function Tag() {
     keyMap,
     capturingFor,
     setCapturingFor,
-    assignKey,
+    captureKey,
     apply,
+    applyIncrement,
     targetsOf,
     detag: detagFn,
     setQuestionableMany: setQuestionableManyFn,
@@ -410,7 +454,12 @@ export function Tag() {
     view,
     setView,
     isModalOpen: () =>
-      modalOpenRef.current || showDiscard || showSync || showSnapshots || showTimeShift,
+      modalOpenRef.current ||
+      showDiscard ||
+      showSync ||
+      showSnapshots ||
+      showTimeShift ||
+      pendingKeyConflict !== null,
   };
 
   useEffect(() => {
@@ -759,6 +808,13 @@ export function Tag() {
         />
       )}
       {zoomSpecies && <SpeciesLoupe species={zoomSpecies} onClose={closeLoupe} />}
+      {pendingKeyConflict && (
+        <KeyConflictDialog
+          conflict={pendingKeyConflict}
+          onConfirm={confirmKeyReassignment}
+          onCancel={() => setPendingKeyConflict(null)}
+        />
+      )}
     </div>
   );
 
@@ -1167,6 +1223,85 @@ function Lightbox({
   );
 }
 
+function KeyConflictDialog({
+  conflict,
+  onConfirm,
+  onCancel,
+}: {
+  conflict: PendingKeyConflict;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const confirmRef = useRef<HTMLButtonElement>(null);
+  const onCancelRef = useRef(onCancel);
+  onCancelRef.current = onCancel;
+  const owners = conflict.conflicts.map((species) => species.commonName).join(', ');
+
+  useEffect(() => {
+    const previousFocus = document.activeElement as HTMLElement | null;
+    confirmRef.current?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onCancelRef.current();
+      } else if (event.key === 'Tab') {
+        event.preventDefault();
+        const movingFromConfirm = document.activeElement === confirmRef.current;
+        if (movingFromConfirm) cancelRef.current?.focus();
+        else confirmRef.current?.focus();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      previousFocus?.focus();
+    };
+  }, []);
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 grid place-items-center bg-ink/70 p-4">
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="key-conflict-title"
+        aria-describedby="key-conflict-description"
+        className="w-full max-w-md border-2 border-warn bg-paper p-5 shadow-xl"
+      >
+        <h2 id="key-conflict-title" className="font-display text-[20px] font-[600] text-ink">
+          Key already assigned
+        </h2>
+        <p id="key-conflict-description" className="mt-3 text-[14px] text-ink">
+          <kbd className="border border-ink px-1.5 font-mono uppercase">{conflict.key}</kbd> is
+          already assigned to {owners}. Reassign it to {conflict.commonName}?
+        </p>
+        <p className="mt-2 text-[13px] text-warn">
+          Reassigning will clear the existing {conflict.conflicts.length === 1 ? 'binding' : 'bindings'}.
+        </p>
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            ref={cancelRef}
+            type="button"
+            onClick={onCancel}
+            className="min-h-11 border border-rule px-4 text-[13px] text-ink hover:border-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+          >
+            Cancel
+          </button>
+          <button
+            ref={confirmRef}
+            type="button"
+            onClick={onConfirm}
+            className="min-h-11 border border-warn bg-warn px-4 text-[13px] font-[600] text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+          >
+            Reassign key
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 function ZoomControls({
   onIn,
   onOut,
@@ -1256,8 +1391,9 @@ type HandlerState = {
   keyMap: Map<string, { kind: 'species'; species: Species }>;
   capturingFor: string | null;
   setCapturingFor: (v: string | null) => void;
-  assignKey: (sci: string, key: string) => void;
+  captureKey: (sci: string, key: string) => void;
   apply: (tag: AppliedTag) => void;
+  applyIncrement: (tag: AppliedTag) => void;
   targetsOf: () => TagTarget[];
   detag: (ctx: UploadCtx, targets: TagTarget[]) => void;
   setQuestionableMany: (ctx: UploadCtx, targets: TagTarget[], value: boolean) => void;
@@ -1328,7 +1464,7 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
     }
     if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
       e.preventDefault();
-      s.assignKey(s.capturingFor, e.key.toLowerCase());
+      s.captureKey(s.capturingFor, e.key.toLowerCase());
       s.setCapturingFor(null);
     }
     return;
@@ -1442,5 +1578,8 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
   const action = s.keyMap.get(e.key.toLowerCase());
   if (!action || !current) return;
   e.preventDefault();
-  s.apply({ scientificName: action.species.scientificName, commonName: action.species.commonName, count: 1 });
+  // e.repeat fires while a key is held — ignore it so each intentional press
+  // counts as exactly one increment.
+  if (e.repeat) return;
+  s.applyIncrement({ scientificName: action.species.scientificName, commonName: action.species.commonName, count: 1 });
 }

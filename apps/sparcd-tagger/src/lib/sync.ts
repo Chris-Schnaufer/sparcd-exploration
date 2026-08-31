@@ -24,6 +24,7 @@ import {
   serializeUploadMeta,
   javaEditStamp,
   correctedTimestamp,
+  hasSpeciesPresent,
   type MediaEdit,
   type TimeOffset,
 } from '@sparcd/camtrap';
@@ -123,7 +124,7 @@ export function buildSyncPlan(
     if (timeChanged) summary.timeCorrections++;
 
     if (tagChanged) {
-      const wasTagged = img.baseObservations.length > 0;
+      const wasTagged = hasSpeciesPresent(img.baseObservations);
       const nowTagged = obs.length > 0;
       if (!wasTagged && nowTagged) summary.additions++;
       else if (wasTagged && !nowTagged) summary.removals++;

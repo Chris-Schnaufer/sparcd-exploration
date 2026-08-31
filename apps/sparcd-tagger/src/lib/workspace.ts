@@ -66,7 +66,7 @@ export function buildTagImages(bundle: CanonicalBundle): TagImage[] {
       fileName: m.fileName || (m.mediaId.split('/').pop() ?? m.mediaId),
       deploymentId: m.deploymentId,
       baseTimestamp: m.timestamp,
-      baseObservations: (obsByMedia.get(m.mediaId) ?? []).map((o) => ({
+      baseObservations: (obsByMedia.get(m.mediaId) ?? []).filter((o) => o.observationType === 'animal').map((o) => ({
         scientificName: o.scientificName,
         commonName: commonNameFromComments(o.tags) ?? '',
         count: o.count ?? 0, // parseObservations always yields a real number; 0 is the type-safe fallback

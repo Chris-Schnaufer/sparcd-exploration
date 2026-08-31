@@ -65,6 +65,10 @@ Then(
   },
 );
 
+Then('the species list is headed "Available species"', async ({ page }) => {
+  await expect(page.getByText('Available species', { exact: true })).toBeVisible();
+});
+
 Then('each species shows its reference image where one exists', async ({ page }) => {
   for (const s of VOCAB) {
     await expect(speciesRow(page, s.scientific).locator('img')).toHaveAttribute(
@@ -325,6 +329,26 @@ When('the same key is assigned to a different species', async ({ page }) => {
   await page.keyboard.press('z');
 });
 
+const keyConflictDialog = (page: Page) =>
+  page.getByRole('alertdialog', { name: 'Key already assigned' });
+
+Then(
+  'an unmistakable duplicate-key warning identifies the existing assignment',
+  async ({ page }) => {
+    await expect(keyConflictDialog(page)).toBeVisible();
+    await expect(keyConflictDialog(page)).toContainText(/already assigned to (Coyote|Mule Deer)/);
+  },
+);
+
+Then('neither binding changes before reassignment is confirmed', async ({ page }) => {
+  await expect(speciesBadge(page, 'Canis latrans')).toHaveText('Z');
+  await expect(speciesBadge(page, 'Pecari tajacu')).toHaveCount(0);
+});
+
+When('the duplicate key reassignment is confirmed', async ({ page }) => {
+  await keyConflictDialog(page).getByRole('button', { name: 'Reassign key' }).click();
+});
+
 Then('the new species takes the key', async ({ page }) => {
   await expect(speciesBadge(page, 'Pecari tajacu')).toHaveText('Z');
   await focusFrame(page, 'IMG002.JPG');
@@ -336,10 +360,37 @@ Then('the previous species is left without one', async ({ page }) => {
   await expect(speciesBadge(page, 'Canis latrans')).toHaveCount(0);
 });
 
+When('its key is assigned to a different species', async ({ page }) => {
+  await speciesAssignKey(page, 'Pecari tajacu').click();
+  await page.keyboard.press('d');
+});
+
+Then('keyboard focus remains inside the duplicate-key warning', async ({ page }) => {
+  const dialog = keyConflictDialog(page);
+  await expect(dialog.getByRole('button', { name: 'Reassign key' })).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(dialog.getByRole('button', { name: 'Reassign key' })).toBeFocused();
+});
+
+When('the duplicate key warning is cancelled with Escape', async ({ page }) => {
+  await page.keyboard.press('Escape');
+  await expect(keyConflictDialog(page)).toHaveCount(0);
+});
+
+Then('the vocabulary key remains with its original species', async ({ page }) => {
+  await expect(speciesBadge(page, 'Odocoileus hemionus')).toHaveText('D');
+  await expect(speciesBadge(page, 'Pecari tajacu')).toHaveCount(0);
+  await focusFrame(page, 'IMG002.JPG');
+  await page.keyboard.press('d');
+  await expect(gridCell(page, 'IMG002.JPG')).toContainText('Mule Deer');
+});
+
 Given('keys have been assigned locally', async ({ page }) => {
-  await speciesAssignKey(page, 'Canis latrans').click();
+  await speciesAssignKey(page, 'Odocoileus hemionus').click();
   await page.keyboard.press('q');
-  await expect(speciesBadge(page, 'Canis latrans')).toHaveText('Q');
+  await expect(speciesBadge(page, 'Odocoileus hemionus')).toHaveText('Q');
 });
 
 When('the tagger is reopened later in the same browser', async ({ page }) => {
@@ -350,15 +401,89 @@ When('the tagger is reopened later in the same browser', async ({ page }) => {
 });
 
 Then('those key assignments are still in effect', async ({ page }) => {
-  await expect(speciesBadge(page, 'Canis latrans')).toHaveText('Q');
+  await expect(speciesBadge(page, 'Odocoileus hemionus')).toHaveText('Q');
   await focusFrame(page, 'IMG002.JPG');
   await page.keyboard.press('q');
-  await expect(gridCell(page, 'IMG002.JPG')).toContainText('Coyote');
+  await expect(gridCell(page, 'IMG002.JPG')).toContainText('Mule Deer');
 });
 
-Then('clearing a key removes it for that species', async ({ page }) => {
-  await speciesClearKey(page, 'Canis latrans').click();
-  await expect(speciesBadge(page, 'Canis latrans')).toHaveCount(0);
+When('the key is cleared for that species', async ({ page }) => {
+  await speciesClearKey(page, 'Odocoileus hemionus').click();
+  await expect(speciesBadge(page, 'Odocoileus hemionus')).toHaveCount(0);
+});
+
+Then('its local and vocabulary keys no longer apply it', async ({ page }) => {
+  await focusFrame(page, 'IMG005.JPG');
+  await page.keyboard.press('q');
+  await page.keyboard.press('d');
+  await expect(gridCell(page, 'IMG005.JPG')).not.toContainText('Mule Deer');
+});
+
+Then('the cleared key remains absent after reopening the tagger', async ({ page }) => {
+  await page.reload();
+  await connect(page);
+  await selectCollection(page);
+  await openUpload(page);
+  await expect(speciesBadge(page, 'Odocoileus hemionus')).toHaveCount(0);
+});
+
+// --- Keypress count increment (issue #96) -----------------------------------
+
+When('the bound key is pressed three times', async ({ page }) => {
+  // 'D' is the vocabulary key binding for Mule Deer (Odocoileus hemionus).
+  await page.keyboard.press('d');
+  await page.keyboard.press('d');
+  await page.keyboard.press('d');
+});
+
+When('the bound key is pressed once', async ({ page }) => {
+  await page.keyboard.press('d');
+});
+
+Then('the species count on that image is three', async ({ page }) => {
+  await expect(appliedChip(page, 'Mule Deer').locator('input[type="number"]')).toHaveValue('3');
+  await expect(gridCell(page, 'IMG002.JPG')).toContainText('Mule Deer ×3');
+});
+
+When('the Ghost key is pressed multiple times', async ({ page }) => {
+  // 'G' is the vocabulary key binding for Ghost.
+  await page.keyboard.press('g');
+  await page.keyboard.press('g');
+  await page.keyboard.press('g');
+});
+
+Then('the image still carries Ghost with a count of one', async ({ page }) => {
+  // Ghost renders without a count input (it is always exactly one).
+  await expect(gridCell(page, 'IMG002.JPG')).toContainText('Ghost');
+  await expect(appliedChip(page, 'Ghost')).toHaveCount(1);
+  await expect(appliedChip(page, 'Ghost')).not.toContainText('×');
+  await expect
+    .poll(async () => {
+      const drafts = (await readStore(page, 'drafts')) as {
+        mediaPath: string;
+        observations: { scientificName: string; count: number }[];
+      }[];
+      return drafts
+        .find((d) => d.mediaPath.endsWith('IMG002.JPG'))
+        ?.observations.find((o) => o.scientificName === 'Casper')?.count;
+    })
+    .toBe(1);
+});
+
+Then('each selected image increments the species from its own count', async ({ page }) => {
+  await waitForDirtyDrafts(page, 3);
+  const drafts = (await readStore(page, 'drafts')) as {
+    mediaPath: string;
+    observations: { scientificName: string; count: number }[];
+  }[];
+  const count = (file: string, scientificName: string) =>
+    drafts
+      .find((d) => d.mediaPath.endsWith(file))
+      ?.observations.find((o) => o.scientificName === scientificName)?.count;
+  expect(count('IMG001.JPG', 'Odocoileus hemionus')).toBe(3);
+  expect(count('IMG002.JPG', 'Odocoileus hemionus')).toBe(1);
+  expect(count('IMG003.JPG', 'Odocoileus hemionus')).toBe(1);
+  expect(count('IMG003.JPG', 'Casper')).toBeUndefined();
 });
 
 // --- Loupe ------------------------------------------------------------------

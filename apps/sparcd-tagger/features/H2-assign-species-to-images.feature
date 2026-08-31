@@ -25,6 +25,11 @@ Feature: Assign species to images in an upload
     And Ghost appears exactly once as a species from the vocabulary
 
   @H2
+  Scenario: The species list is labelled "Available species" when an image is focused
+    Given an image is focused
+    Then the species list is headed "Available species"
+
+  @H2
   Scenario: Clicking a species identifies the focused image
     Given an image is focused
     When a species row is used
@@ -89,18 +94,52 @@ Feature: Assign species to images in an upload
     And a locally assigned key replaces it for that species
 
   @H2
+  Scenario: Pressing a species key repeatedly increments the count each time
+    Given the species vocabulary carries a key binding for a species
+    And an image is focused
+    When the bound key is pressed three times
+    Then the species count on that image is three
+
+  @H2
+  Scenario: A species key increments every selected image from its own count
+    Given the species vocabulary carries a key binding for a species
+    And several images are selected
+    When the bound key is pressed once
+    Then each selected image increments the species from its own count
+
+  @H2
+  Scenario: Pressing the Ghost key repeatedly does not change its count
+    Given an image is focused
+    When the Ghost key is pressed multiple times
+    Then the image still carries Ghost with a count of one
+
+  @H2
   Scenario: A key belongs to only one species
     Given a key is already assigned to one species
     When the same key is assigned to a different species
+    Then an unmistakable duplicate-key warning identifies the existing assignment
+    And neither binding changes before reassignment is confirmed
+    When the duplicate key reassignment is confirmed
     Then the new species takes the key
     And the previous species is left without one
+
+  @H2
+  Scenario: A duplicate vocabulary key can be kept with its existing species
+    Given the species vocabulary carries a key binding for a species
+    When its key is assigned to a different species
+    Then an unmistakable duplicate-key warning identifies the existing assignment
+    And keyboard focus remains inside the duplicate-key warning
+    When the duplicate key warning is cancelled with Escape
+    Then the vocabulary key remains with its original species
 
   @H2
   Scenario: Key assignments survive across sessions on this machine
     Given keys have been assigned locally
     When the tagger is reopened later in the same browser
     Then those key assignments are still in effect
-    And clearing a key removes it for that species
+    When the key is cleared for that species
+    Then its local and vocabulary keys no longer apply it
+    And the cleared key remains absent after reopening the tagger
 
   @H2
   Scenario: A species reference image can be enlarged before deciding
