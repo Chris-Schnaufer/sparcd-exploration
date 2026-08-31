@@ -42,6 +42,48 @@ export function App() {
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [runningForReal]);
 
+  // Hold a screen wake lock while a real run is in flight. Lives here (not in
+  // Upload) so it survives the user navigating away mid-upload. The lock is
+  // auto-released by the browser on tab hide, so it's re-acquired on regaining
+  // visibility. Generation counter guards against orphaned sentinels when two
+  // visibility events fire before either acquire() resolves.
+  useEffect(() => {
+    if (!runningForReal || !('wakeLock' in navigator)) return;
+    let lock: WakeLockSentinel | null = null;
+    let cancelled = false;
+    let gen = 0;
+
+    const acquire = () => {
+      const myGen = ++gen;
+      navigator.wakeLock
+        .request('screen')
+        .then((l) => {
+          if (cancelled || myGen !== gen) {
+            void l.release();
+          } else {
+            lock = l;
+          }
+        })
+        .catch(() => {});
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState !== 'visible') return;
+      void lock?.release();
+      lock = null;
+      acquire();
+    };
+
+    acquire();
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVisibility);
+      void lock?.release();
+    };
+  }, [runningForReal]);
+
   if (!s3Config) {
     return (
       <Connection toolName="Uploader" initialConfig={connectPrefill} onConnect={connect} />
