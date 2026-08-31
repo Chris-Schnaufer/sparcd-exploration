@@ -46,20 +46,35 @@ Given('the upload has not been started', async ({ app }) => {
 });
 
 Then(
-  'the status indicator reads "ready" and its hover text says no upload is in progress',
+  'the ready status explains itself on hover and keyboard focus',
   async ({ app }) => {
     const pill = app.page.getByRole('status');
+    const tooltip = app.page.locator('[role="tooltip"]');
     await expect(pill).toContainText('ready');
-    await expect(pill).toHaveAttribute('title', 'No upload in progress');
+    await expect(pill).toHaveAttribute('aria-describedby', await tooltip.getAttribute('id'));
+    await pill.hover();
+    await expect(tooltip).toBeVisible();
+    await expect(tooltip).toHaveText(
+      'Ready to start an upload; no upload is currently in progress',
+    );
+    await app.page.mouse.move(0, 0);
+    await pill.focus();
+    await expect(tooltip).toBeVisible();
   },
 );
 
 Then(
-  'the status indicator reads "complete" and its hover text confirms the upload succeeded',
+  'the complete status explains itself on hover and keyboard focus',
   async ({ app }) => {
     const pill = app.page.getByRole('status');
+    const tooltip = app.page.locator('[role="tooltip"]');
     await expect(pill).toContainText('complete');
-    await expect(pill).toHaveAttribute('title', 'Upload complete');
+    await pill.hover();
+    await expect(tooltip).toBeVisible();
+    await expect(tooltip).toHaveText('Upload complete');
+    await app.page.mouse.move(0, 0);
+    await pill.focus();
+    await expect(tooltip).toBeVisible();
   },
 );
 

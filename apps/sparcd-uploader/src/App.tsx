@@ -6,6 +6,7 @@ import { Chrome } from './components/Chrome';
 import { NewUpload } from './sections/NewUpload';
 import { History } from './sections/History';
 import { Settings } from './sections/Settings';
+import { uploadStateOf } from './lib/uploadState';
 
 // Dev-only, non-secret prefill (endpoint only). Secrets are never prefilled.
 const devEndpoint = import.meta.env.VITE_SPARCD_S3_ENDPOINT as string | undefined;
@@ -49,7 +50,7 @@ export function App() {
   }
 
   return (
-    <Chrome uploadState="ready">
+    <Chrome uploadState={uploadStateOf(activeSnap)}>
       {section === 'new' && <NewUpload />}
       {section === 'history' && <History />}
       {section === 'settings' && <Settings />}
