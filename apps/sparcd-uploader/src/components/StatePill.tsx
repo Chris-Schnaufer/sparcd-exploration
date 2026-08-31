@@ -59,7 +59,7 @@ export function StatePill({ state }: { state: UploadState }) {
       <span
         id={tooltipId}
         role="tooltip"
-        className="pointer-events-none invisible absolute right-0 top-full z-50 mt-2 w-72 border border-rule bg-ink px-3 py-2 font-body text-[12px] leading-snug text-paper opacity-0 shadow-lg transition-opacity group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
+        className="pointer-events-none invisible absolute right-0 top-full z-50 mt-2 w-[min(18rem,calc(100vw-2.5rem))] border border-rule bg-ink px-3 py-2 font-body text-[12px] leading-snug text-paper opacity-0 shadow-lg transition-opacity group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
       >
         {c.description}
       </span>
