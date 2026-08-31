@@ -519,7 +519,7 @@ export function Upload() {
       {snap?.phase === 'done' && !snap.dryRun && !completeDismissed && (
         <UploadCompleteDialog
           doneCount={snap.files.filter((f) => f.state === 'done').length}
-          skippedCount={snap.files.filter((f) => f.state === 'skipped').length}
+          collectionId={collection?.uuid ?? ''}
           onClose={() => setCompleteDismissed(true)}
         />
       )}

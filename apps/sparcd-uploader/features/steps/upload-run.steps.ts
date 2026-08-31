@@ -78,6 +78,17 @@ Then(
   },
 );
 
+Then('the completion dialog states the file count and collection ID', async ({ app }) => {
+  const dialog = app.page.getByRole('dialog', { name: 'Upload complete' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText(`Published 4 files to ${UUID_A}`);
+});
+
+Then('dismissing it closes the dialog', async ({ app }) => {
+  await app.page.getByRole('button', { name: 'OK' }).click();
+  await expect(app.page.getByRole('dialog', { name: 'Upload complete' })).toHaveCount(0);
+});
+
 Then('dry run is switched off by default', async ({ app }) => {
   await expect(app.dryRunCheckbox()).not.toBeChecked();
   await expect(app.page.getByRole('button', { name: 'Start upload' })).toBeVisible();
