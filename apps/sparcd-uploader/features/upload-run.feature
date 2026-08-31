@@ -18,6 +18,13 @@ Feature: Upload and publish a batch
     # explicitly about background examination or cancelling an in-flight write.
 
   @unmapped
+  Scenario: The status indicator in the title bar explains its state on hover and focus
+    Given the upload has not been started
+    Then the ready status explains itself on hover and keyboard focus
+    When a real upload is started and completes
+    Then the complete status explains itself on hover and keyboard focus
+
+  @unmapped
   Scenario: A real upload is offered by default; a dry run is opt-in
     Given the upload has not been started
     Then dry run is switched off by default
