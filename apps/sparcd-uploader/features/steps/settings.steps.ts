@@ -43,9 +43,9 @@ Given('there are unfinished uploads recorded on this machine', async ({ app }) =
   expect(batches[0].completedAt).toBeUndefined();
 });
 
-When('"Disconnect \\/ edit" is chosen', async ({ app }) => {
+When('"Disconnect" is chosen', async ({ app }) => {
   await app.gotoSection('Settings');
-  await app.page.getByRole('button', { name: 'Disconnect / edit' }).click();
+  await app.page.getByRole('button', { name: 'Disconnect', exact: true }).click();
 });
 
 Then('the connection is ended', async ({ app }) => {
