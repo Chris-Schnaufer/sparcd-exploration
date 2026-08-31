@@ -12,7 +12,7 @@ import {
   positionReadout,
 } from './support/world';
 import { BUCKET, PREFIX_A, MEDIA_A, mediaCsv } from './support/data';
-import { openSyncDialog, setSyncDryRun, readStore } from './support/flows';
+import { openSyncDialog, setSyncDryRun, readStore, waitForDirtyDrafts } from './support/flows';
 
 const timeShiftButton = (page: Page) =>
   page.locator('button[title$="by a signed offset"], button[title^="Upload time shift is active"]').first();
@@ -22,6 +22,9 @@ const uploadShiftModal = (page: Page) =>
 
 const selectionShiftModal = (page: Page) =>
   page.locator('div[role="dialog"][aria-label="Time shift selection"]');
+
+const frameShiftModal = (page: Page) =>
+  page.locator('div[role="dialog"][aria-label="Time shift this frame"]');
 
 const perImageTime = (page: Page) => page.locator('span.font-mono.font-\\[600\\]').first();
 
@@ -127,6 +130,102 @@ Then('the images show their original capture times again', async ({ page }) => {
   await expect(page.getByText('shifted')).toHaveCount(0);
 });
 
+// --- Single-frame shift -----------------------------------------------------
+
+Given('a single image is focused with no selection', async ({ page }) => {
+  await focusFrame(page, 'IMG001.JPG');
+  await expect(positionReadout(page)).not.toContainText('selected');
+});
+
+When("the focused frame's time shift is applied", async ({ page }) => {
+  await page.getByRole('button', { name: 'Shift this frame' }).click();
+  await expect(frameShiftModal(page)).toContainText('Time shift · this frame');
+  await expect(frameShiftModal(page)).toContainText('Preview · this frame');
+  await bump(frameShiftModal(page), 'Hour', 2);
+  await frameShiftModal(page).getByRole('button', { name: 'Apply to this frame →' }).click();
+  await expect(frameShiftModal(page)).toHaveCount(0);
+});
+
+Then('only that frame moves by the offset', async ({ page }) => {
+  await waitForDirtyDrafts(page, 1);
+  const drafts = (await readStore(page, 'drafts')) as {
+    mediaPath: string;
+    timeOverride: string | null;
+    observations: { scientificName: string }[];
+  }[];
+  expect(drafts).toHaveLength(1);
+  expect(drafts[0].mediaPath).toMatch(/IMG001\.JPG$/);
+  expect(drafts[0].timeOverride).toBe('2024-01-10T10:00:00.000Z');
+  expect(drafts[0].observations.map((o) => o.scientificName)).toEqual([
+    'Odocoileus hemionus',
+  ]);
+  await openFocus(page);
+  await expect.poll(async () => shownTime(page)).toBe('2024-01-10T10:00:00');
+});
+
+Given('a timestamp-less image is focused with no selection', async ({ page }) => {
+  await focusFrame(page, 'VID001.MP4');
+  await expect(positionReadout(page)).not.toContainText('selected');
+});
+
+Then('its focused-frame shift is unavailable with an explanation', async ({ page }) => {
+  const button = page.getByRole('button', { name: 'Shift this frame' });
+  await expect(button).toHaveAttribute('aria-disabled', 'true');
+  await expect(button).toHaveAttribute('title', 'This frame has no capture time to shift');
+  await expect(page.locator('#scoped-time-unavailable')).toHaveText(
+    'This frame has no capture time to shift',
+  );
+});
+
+When('the focused frame is shifted twice by one hour', async ({ page }) => {
+  for (let i = 0; i < 2; i++) {
+    await page.getByRole('button', { name: 'Shift this frame' }).click();
+    await bump(frameShiftModal(page), 'Hour', 1);
+    await frameShiftModal(page).getByRole('button', { name: 'Apply to this frame →' }).click();
+  }
+});
+
+Then('its final time includes the upload shift and both frame shifts', async ({ page }) => {
+  await openFocus(page);
+  await expect.poll(async () => shownTime(page)).toBe('2024-01-10T12:00:00');
+  await waitForDirtyDrafts(page, 1);
+  const drafts = (await readStore(page, 'drafts')) as { timeOverride: string | null }[];
+  expect(drafts).toHaveLength(1);
+  expect(drafts[0].timeOverride).toBe('2024-01-10T12:00:00.000Z');
+});
+
+Given('exactly one image is selected', async ({ page }) => {
+  await focusFrame(page, 'IMG001.JPG');
+  await gridCell(page, 'IMG002.JPG').click({ modifiers: ['Meta'] });
+  await gridCell(page, 'IMG001.JPG').click({ modifiers: ['Meta'] });
+  await expect(positionReadout(page)).toHaveText('1 selected');
+});
+
+When('that one-frame selection is shifted', async ({ page }) => {
+  await page.getByRole('button', { name: 'Shift selection' }).click();
+  await expect(selectionShiftModal(page)).toContainText('1 selected frame');
+  await bump(selectionShiftModal(page), 'Hour', 1);
+  await selectionShiftModal(page).getByRole('button', { name: 'Apply to 1 selected frame →' }).click();
+});
+
+Then('exactly that selected image receives a time override', async ({ page }) => {
+  await waitForDirtyDrafts(page, 1);
+  const drafts = (await readStore(page, 'drafts')) as {
+    mediaPath: string;
+    timeOverride: string | null;
+  }[];
+  expect(drafts).toHaveLength(1);
+  expect(drafts[0].mediaPath).toMatch(/IMG002\.JPG$/);
+  expect(drafts[0].timeOverride).toBe('2024-01-10T09:00:30.000Z');
+});
+
+Then('the unselected frames are unchanged', async ({ page }) => {
+  await listRow(page, 'IMG002.JPG').click();
+  await expect.poll(async () => shownTime(page)).toBe('2024-01-10T08:00:30');
+  await listRow(page, 'IMG005.JPG').click();
+  await expect.poll(async () => shownTime(page)).toBe('2024-01-11T06:00:30');
+});
+
 // --- Selection-scoped shift -------------------------------------------------
 
 When("the selection's time shift is applied", async ({ page }) => {
@@ -207,9 +306,9 @@ Then('the dialog states that they are', async ({ page }) => {
   await gridCell(page, 'VID001.MP4').click({ modifiers: ['Shift'] });
   await page.getByRole('button', { name: 'Shift selection' }).click();
   await expect(selectionShiftModal(page)).toContainText(
-    'Frames without a capture time are skipped.',
+    '1 selected frame without a capture time is skipped.',
   );
-  await expect(selectionShiftModal(page)).toContainText('1 selected frame');
+  await expect(selectionShiftModal(page)).toContainText('1 of 2 selected frames');
   await selectionShiftModal(page).getByRole('button', { name: 'Cancel' }).click();
 });
 
