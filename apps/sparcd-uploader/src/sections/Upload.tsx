@@ -438,7 +438,6 @@ export function Upload() {
                   min={4}
                   max={32}
                   value={concurrency}
-                  disabled={anyRunActive}
                   onChange={(e) => setConcurrency(Number(e.target.value))}
                   className="flex-1 accent-accent"
                 />

@@ -483,12 +483,12 @@ Then('a pinned number can be changed while a run is in progress', async ({ app }
   await app.dryRunCheckbox().uncheck();
   await app.startRun();
   await expect(app.runPhase()).toHaveText('uploading');
+  await expect(app.dryRunCheckbox()).toBeDisabled();
   // The lane pool re-reads the setting on every pull, so the slider stays live
   // — unlike the run options, which are locked once bytes are moving.
   await expect(app.laneSlider()).toBeEnabled();
   await app.laneSlider().fill('6');
   await expect(app.laneSlider()).toHaveValue('6');
-  await expect(app.dryRunCheckbox()).toBeDisabled();
   await app.waitForRunPhase('done', 120_000);
 });
 
