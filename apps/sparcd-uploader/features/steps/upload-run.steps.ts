@@ -145,6 +145,12 @@ When('a real upload is started and completes', async ({ app }) => {
   await app.waitForRunPhase('done');
 });
 
+When('a real upload completes without dismissing its confirmation', async ({ app }) => {
+  await app.dryRunCheckbox().uncheck();
+  await app.startRun();
+  await expect(app.runPhase()).toHaveText('done', { timeout: 60_000 });
+});
+
 Then(
   'every media file of the batch is stored under a single upload folder in the chosen collection',
   async ({ app }) => {

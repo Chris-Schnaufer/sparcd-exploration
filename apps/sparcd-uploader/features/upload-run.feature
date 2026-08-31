@@ -52,7 +52,7 @@ Feature: Upload and publish a batch
 
   @unmapped
   Scenario: The completion dialog reports how many files were published and to which collection
-    When a real upload is started and completes
+    When a real upload completes without dismissing its confirmation
     Then the completion dialog states the file count and collection ID
     And dismissing it closes the dialog
 
