@@ -109,7 +109,7 @@ describe('uploader bundle is valid v016 Camtrap data', () => {
     const b = await build([ready('a/IMG001.JPG', { exifNaive: naive({ hour: 8 }) })]);
     const rows = parseObservations(b.observationsCsv);
     expect(rows).toHaveLength(1);
-    expect(rows[0].observationId).toBe('IMG001.JPG');
+    expect(rows[0].observationId).toBe('a/IMG001.JPG:0');
     expect(rows[0].scientificName).toBe('');
     expect(rows[0].tags).toBe('');
     expect(rows[0].count).toBe(0); // blank column reads back as 0
@@ -262,11 +262,12 @@ describe('resume: naming reconstructed from persisted records', () => {
 });
 
 describe('resume: buildBundleFromRecords', () => {
+  const UPLOAD_PATH = `Collections/${UUID}/Uploads/2024.01.15.10.00.00_jdoe`;
   const record = (over: Partial<ResolvedFileRecord> = {}): ResolvedFileRecord => ({
     fileName: 'IMG001.JPG',
     size: 12,
     sha256: 'sha-a',
-    remoteKey: `${UUID}-key/IMG001.JPG`,
+    remoteKey: `${UPLOAD_PATH}/IMG001.JPG`,
     captureTimestamp: '2024-01-10T08:00:00',
     mimeType: 'image/jpeg',
     ...over,
@@ -279,13 +280,13 @@ describe('resume: buildBundleFromRecords', () => {
       bucket: `sparcd-${UUID}`,
       uploaderSlug: 'jdoe',
       description: 'Educational Test — resumed upload',
-      uploadPath: `Collections/${UUID}/Uploads/2024.01.15.10.00.00_jdoe`,
+      uploadPath: UPLOAD_PATH,
       startedAt: new Date(2024, 0, 15, 10, 0, 0),
       files: [record()],
     });
     const observations = parseObservations(b.observationsCsv);
     expect(observations).toHaveLength(1);
-    expect(observations[0].observationId).toBe('IMG001.JPG');
+    expect(observations[0].observationId).toBe('IMG001.JPG:0');
     expect(observations[0].mediaId).toBe(record().remoteKey);
     expect(observations[0].scientificName).toBe('');
     const media = parseMedia(b.mediaCsv);
@@ -424,20 +425,21 @@ describe('a batch tagged before upload publishes its species', () => {
   });
 
   it('keeps the placeholder row for an untagged file on the resume path', async () => {
+    const resumePath = `Collections/${UUID}/Uploads/2024.01.15.10.00.00_jdoe`;
     const b = await buildBundleFromRecords({
       location: SAN15,
       collectionUuid: UUID,
       bucket: `sparcd-${UUID}`,
       uploaderSlug: 'jdoe',
       description: 'Educational Test — resumed upload',
-      uploadPath: `Collections/${UUID}/Uploads/2024.01.15.10.00.00_jdoe`,
+      uploadPath: resumePath,
       startedAt: new Date(2024, 0, 15, 10, 0, 0),
       files: [
         {
           fileName: 'IMG001.JPG',
           size: 12,
           sha256: 'sha-a',
-          remoteKey: `${UUID}-key/IMG001.JPG`,
+          remoteKey: `${resumePath}/IMG001.JPG`,
           captureTimestamp: '2024-01-10T08:00:00',
           mimeType: 'image/jpeg',
         },
@@ -445,7 +447,7 @@ describe('a batch tagged before upload publishes its species', () => {
     });
     const rows = parseObservations(b.observationsCsv);
     expect(rows).toHaveLength(1);
-    expect(rows[0].observationId).toBe('IMG001.JPG');
+    expect(rows[0].observationId).toBe('IMG001.JPG:0');
     expect(rows[0].scientificName).toBe('');
   });
 });

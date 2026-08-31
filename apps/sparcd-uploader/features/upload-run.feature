@@ -101,8 +101,15 @@ Feature: Upload and publish a batch
     When a batch is published
     Then a placeholder observations table is written alongside the media table
     And the upload metadata records that none of its images carry a species
+    And each blank row's observation ID is the path-relative filename followed by ":0"
     # The uploader has no tagging surface at all; every upload it makes is
     # untagged by construction.
+
+  @A1
+  Scenario: Two untagged files with the same name in different subfolders get distinct observation IDs
+    Given a batch contains two files with the same filename under different subfolders
+    When a batch is published
+    Then each file's blank row carries a distinct path-scoped observation ID
 
   @unmapped
   Scenario: Progress is reported per file and for the batch as a whole

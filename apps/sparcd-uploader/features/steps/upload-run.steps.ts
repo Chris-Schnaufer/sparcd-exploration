@@ -1,6 +1,6 @@
 import { Given, When, Then, expect } from './fixtures';
 import type { App } from './app';
-import { manyJpegs, publishableBatch, slowPublishableBatch, standardBatch } from './batches';
+import { FOLDER, manyJpegs, publishableBatch, sameNameSubfolderBatch, slowPublishableBatch, standardBatch } from './batches';
 import { rescanFromUpload, writtenCsvRows } from './helpers';
 import { BUCKET_A, COLLECTION_A_NAME, UUID_A } from './fixtures-data';
 
@@ -346,6 +346,34 @@ Then('the upload metadata records that none of its images carry a species', asyn
   expect(meta.imagesWithSpecies).toBe(0);
   expect(meta.imageCount).toBe(4);
 });
+
+Then(
+  "each blank row's observation ID is the path-relative filename followed by \":0\"",
+  async ({ app }) => {
+    const obsRows = writtenCsvRows(app, 'observations.csv');
+    for (const row of obsRows) expect(row[0]).toMatch(/.+:0$/);
+  },
+);
+
+Given(
+  'a batch contains two files with the same filename under different subfolders',
+  async ({ app }) => {
+    await rescanFromUpload(app, sameNameSubfolderBatch());
+  },
+);
+
+Then(
+  "each file's blank row carries a distinct path-scoped observation ID",
+  async ({ app }) => {
+    const obsRows = writtenCsvRows(app, 'observations.csv');
+    expect(obsRows).toHaveLength(2);
+    const ids = obsRows.map((r) => r[0]);
+    expect(new Set(ids).size).toBe(2);
+    for (const id of ids) expect(id).toMatch(/:0$/);
+    expect(ids).toContain(`${FOLDER}/cam1/IMG_0001.JPG:0`);
+    expect(ids).toContain(`${FOLDER}/cam2/IMG_0001.JPG:0`);
+  },
+);
 
 // --- progress reporting ----------------------------------------------------
 
