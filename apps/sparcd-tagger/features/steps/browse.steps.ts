@@ -205,13 +205,13 @@ Then(
 
 Then('the header states how many uploads, images and tagged images it holds', async ({ page }) => {
   const header = page.locator('main p').filter({ hasText: /uploads?\b/ }).first();
-  await expect(header).toContainText('2 uploads');
-  await expect(header).toContainText('8 images');
+  await expect(header).toContainText('3 uploads');
+  await expect(header).toContainText('14 images');
   await expect(header).toContainText('5 tagged');
 });
 
 Then('it states how many images are still to go', async ({ page }) => {
-  await expect(page.locator('main p').filter({ hasText: 'to go' }).first()).toContainText('3 to go');
+  await expect(page.locator('main p').filter({ hasText: 'to go' }).first()).toContainText('9 to go');
 });
 
 Then('it indicates while tallies are still being counted', async ({ page, s3 }) => {

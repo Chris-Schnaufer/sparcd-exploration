@@ -18,8 +18,10 @@ export const SETTINGS_BUCKET = 'sparcd-settings-test';
 
 export const STAMP_A = '2024.01.15.10.00.00_priortagger';
 export const STAMP_B = '2023.06.01.09.30.00_fielduser';
+export const STAMP_C = '2025.03.10.14.00.00_newuploader';
 export const PREFIX_A = `Collections/${UUID}/Uploads/${STAMP_A}/`;
 export const PREFIX_B = `Collections/${UUID}/Uploads/${STAMP_B}/`;
+export const PREFIX_C = `Collections/${UUID}/Uploads/${STAMP_C}/`;
 
 export const DEPLOYMENT = `${UUID}:SAN15`;
 export const LOCATION_NAME = 'San Pedro 15';
@@ -166,6 +168,22 @@ export function observationsCsv(prefix: string, specs: ObsSpec[]): string {
       cells[10] = '0';
       cells[19] = o.comments;
       for (const [i, v] of Object.entries(o.extras ?? {})) cells[Number(i)] = v;
+      return row(cells, OBS_WIDTH);
+    })
+    .join('\n');
+}
+
+/** One uploader-written placeholder row per file: observationType 'blank', no species. */
+export function blankObservationsCsv(prefix: string, specs: MediaSpec[]): string {
+  return specs
+    .map((m, i) => {
+      const cells: string[] = [];
+      cells[0] = `blank-${i}`;
+      cells[1] = DEPLOYMENT;
+      cells[2] = '';
+      cells[3] = mediaKey(prefix, m.file);
+      cells[4] = m.timestamp;
+      cells[5] = 'blank';
       return row(cells, OBS_WIDTH);
     })
     .join('\n');
@@ -329,6 +347,32 @@ export function seedFixtures(s3: MockS3): void {
   );
   MEDIA_B.forEach((m, i) => {
     s3.put(BUCKET, mediaKey(PREFIX_B, m.file), makePng(240, 180, i + 20), 'image/png');
+  });
+
+  // --- Upload C: fresh uploader-only batch, every file has a blank obs row ----
+  s3.put(BUCKET, `${PREFIX_C}media.csv`, mediaCsv(PREFIX_C, MEDIA_A), 'text/csv');
+  s3.put(BUCKET, `${PREFIX_C}observations.csv`, blankObservationsCsv(PREFIX_C, MEDIA_A), 'text/csv');
+  s3.put(BUCKET, `${PREFIX_C}deployments.csv`, deploymentsCsv(), 'text/csv');
+  s3.put(
+    BUCKET,
+    `${PREFIX_C}UploadMeta.json`,
+    uploadMetaJson({
+      bucket: BUCKET,
+      prefix: PREFIX_C,
+      user: 'newuploader',
+      imageCount: MEDIA_A.length,
+      imagesWithSpecies: 0,
+      description: 'Fresh upload — not yet identified',
+    }),
+    'application/json',
+  );
+  MEDIA_A.forEach((m, i) => {
+    s3.put(
+      BUCKET,
+      mediaKey(PREFIX_C, m.file),
+      makePng(240, 180, i + 40),
+      m.mime === 'video/mp4' ? 'video/mp4' : 'image/png',
+    );
   });
 
   // --- A complete snapshot of upload A, plus an abandoned partial one --------

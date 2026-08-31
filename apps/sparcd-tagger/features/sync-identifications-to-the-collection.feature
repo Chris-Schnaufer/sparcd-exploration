@@ -120,6 +120,13 @@ Feature: Publish local identifications back to the collection
     # Depends on the S3-compatible backend in use; not reachable against a
     # store that supports conditional writes.
 
+  @H3
+  Scenario: Tagging an image on a blank-row upload is counted as an addition, not a modification
+    Given an upload with only uploader-written blank rows is open in the tagging workspace
+    When a species is applied to the first image
+    And the Sync dialog is opened
+    Then the diff counts it as 1 addition and 0 modifications
+
   @unmapped
   Scenario: The workspace reports its sync state at a glance
     Then the header shows whether the upload is local-only, has unsynced edits, is syncing, is synced, is in conflict, was a dry-run, or errored
