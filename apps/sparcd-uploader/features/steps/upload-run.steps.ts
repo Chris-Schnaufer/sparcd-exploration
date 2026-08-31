@@ -78,6 +78,19 @@ Then(
   },
 );
 
+Then('its tooltip remains inside a narrow viewport', async ({ app }) => {
+  await app.page.setViewportSize({ width: 320, height: 720 });
+  const pill = app.page.getByRole('status');
+  const tooltip = app.page.getByRole('tooltip');
+  await pill.focus();
+  await expect(tooltip).toBeVisible();
+
+  const box = await tooltip.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(320);
+});
+
 Then('dry run is switched off by default', async ({ app }) => {
   await expect(app.dryRunCheckbox()).not.toBeChecked();
   await expect(app.page.getByRole('button', { name: 'Start upload' })).toBeVisible();

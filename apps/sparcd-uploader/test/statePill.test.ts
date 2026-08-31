@@ -55,9 +55,14 @@ describe('live upload phase to title-bar state', () => {
     [snapshot('blobs'), 'uploading'],
     [snapshot('metadata'), 'publishing'],
     [snapshot('done'), 'complete'],
+    [snapshot('preparing', true), 'dry-run'],
+    [snapshot('blobs', true), 'dry-run'],
+    [snapshot('metadata', true), 'dry-run'],
     [snapshot('done', true), 'dry-run'],
     [snapshot('partial'), 'failed'],
     [snapshot('error'), 'failed'],
+    [snapshot('partial', true), 'failed'],
+    [snapshot('error', true), 'failed'],
   ] satisfies [UploadSnapshot | null, UploadState][])('maps %# to %s', (snap, expected) => {
     expect(uploadStateOf(snap)).toBe(expected);
   });
