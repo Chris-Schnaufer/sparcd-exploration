@@ -45,6 +45,24 @@ Given('the upload has not been started', async ({ app }) => {
   expect(app.s3.puts).toHaveLength(0);
 });
 
+Then(
+  'the status indicator reads "ready" and its hover text says no upload is in progress',
+  async ({ app }) => {
+    const pill = app.page.getByRole('status');
+    await expect(pill).toContainText('ready');
+    await expect(pill).toHaveAttribute('title', 'No upload in progress');
+  },
+);
+
+Then(
+  'the status indicator reads "complete" and its hover text confirms the upload succeeded',
+  async ({ app }) => {
+    const pill = app.page.getByRole('status');
+    await expect(pill).toContainText('complete');
+    await expect(pill).toHaveAttribute('title', 'Upload complete');
+  },
+);
+
 Then('dry run is switched off by default', async ({ app }) => {
   await expect(app.dryRunCheckbox()).not.toBeChecked();
   await expect(app.page.getByRole('button', { name: 'Start upload' })).toBeVisible();
