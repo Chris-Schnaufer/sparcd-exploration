@@ -31,6 +31,7 @@ const obsCsv = serializeObservations([
     mediaId: 'Collections/c/Uploads/u/IMG001.JPG',
     deploymentId: 'c:loc-a',
     timestamp: '2024-01-01T08:00:00',
+    observationType: 'animal',
     scientificName: 'Canis latrans',
     count: 2,
     tags: '[COMMONNAME:Coyote]',
@@ -47,6 +48,7 @@ const multiObsCsv = serializeObservations([
     mediaId: 'Collections/c/Uploads/u/IMG001.JPG',
     deploymentId: 'c:loc-a',
     timestamp: '2024-01-01T08:00:00',
+    observationType: 'animal',
     scientificName: 'Odocoileus hemionus',
     count: 3,
     tags: '[COMMONNAME:Mule Deer]',
@@ -56,9 +58,23 @@ const multiObsCsv = serializeObservations([
     mediaId: 'Collections/c/Uploads/u/IMG001.JPG',
     deploymentId: 'c:loc-a',
     timestamp: '2024-01-01T08:00:00',
+    observationType: 'animal',
     scientificName: 'Canis latrans',
     count: 1,
     tags: '[COMMONNAME:Coyote]',
+  },
+]);
+
+// A blank-row fixture: IMG001 has a placeholder observation (observationType: 'blank').
+const blankObsCsv = serializeObservations([
+  {
+    observationId: 'IMG001.JPG:0',
+    mediaId: 'Collections/c/Uploads/u/IMG001.JPG',
+    deploymentId: 'c:loc-a',
+    timestamp: '',
+    observationType: 'blank',
+    scientificName: '',
+    tags: '',
   },
 ]);
 
@@ -90,6 +106,12 @@ describe('buildTagImages', () => {
       'Canis latrans',
     ]);
     expect(multi[0].baseObservations[0].count).toBe(3);
+  });
+
+  it('treats a blank placeholder row as untagged (empty base observations)', () => {
+    const blank = buildTagImages({ mediaCsv, observationsCsv: blankObsCsv });
+    expect(blank[0].baseObservations).toEqual([]);
+    expect(blank[1].baseObservations).toEqual([]);
   });
 });
 

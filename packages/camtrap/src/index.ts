@@ -551,6 +551,17 @@ function buildObservationRow(
   return row;
 }
 
+function buildBlankObservationRow(edit: MediaEdit, observationId: string): string[] {
+  const row = new Array<string>(OBS_COLUMN_COUNT).fill('');
+  row[OBS_COL.observationId] = observationId;
+  row[OBS_COL.deploymentId] = edit.deploymentId;
+  row[OBS_COL.mediaId] = edit.mediaId;
+  row[OBS_COL.timestamp] = edit.timestamp;
+  row[OBS_COL.observationType] = 'blank';
+  row[OBS_COL.cameraSetup] = 'false';
+  return row;
+}
+
 /**
  * Merge time corrections into `media.csv`. Only rows whose media id appears in
  * an edit with a `mediaTimestamp` are touched (col 4); every other byte —
@@ -578,7 +589,8 @@ export type MergeObservationsOptions = {
  * observations; unrelated media keep their rows untouched and in order. New
  * rows take the slot of that media's first existing row, or append (in edit
  * order) when the image had none. Zero-count rows are dropped (sparcd-web
- * parity), so an all-zero edit detags the image.
+ * parity); when the resulting set is empty a blank placeholder row is written
+ * so every media file retains exactly one row (one-row-per-file contract).
  */
 export function mergeObservations(
   canonicalObsCsv: string,
@@ -589,11 +601,12 @@ export function mergeObservations(
   const editByMedia = new Map(edits.map((e) => [e.mediaId, e]));
   const built = new Map<string, string[][]>();
   for (const e of edits) {
+    const positive = e.observations
+      .filter(positiveCount)
+      .map((o, i) => buildObservationRow(e, o, genId(e.mediaId, i)));
     built.set(
       e.mediaId,
-      e.observations
-        .filter(positiveCount)
-        .map((o, i) => buildObservationRow(e, o, genId(e.mediaId, i))),
+      positive.length > 0 ? positive : [buildBlankObservationRow(e, genId(e.mediaId, 0))],
     );
   }
 

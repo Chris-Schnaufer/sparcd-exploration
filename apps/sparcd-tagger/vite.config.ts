@@ -8,6 +8,9 @@ const pkg = (name: string, entry: string) =>
   fileURLToPath(new URL(`../../packages/${name}/src/${entry}`, import.meta.url));
 
 export default defineConfig({
+  test: {
+    exclude: ['**/.features-gen/**', '**/node_modules/**'],
+  },
   // Served from a subpath on GitHub Pages: culverlab.github.io/sparcd-exploration/tagger/
   base: '/sparcd-exploration/tagger/',
   server: { port: 5312 },
