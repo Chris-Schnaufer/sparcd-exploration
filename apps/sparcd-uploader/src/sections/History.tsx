@@ -101,6 +101,17 @@ export function History() {
     return () => input.removeEventListener('cancel', onCancel);
   }, [pickerOpen]);
 
+  // Fallback for Safari ≤16 and Firefox ≤90, which don't fire `cancel` on
+  // <input type="file">. When the window regains focus after the OS picker
+  // closes with no selection, clear the guard so Resume buttons re-enable.
+  useEffect(() => {
+    if (!pickerOpen || !reselectRef.current) return;
+    const input = reselectRef.current;
+    const onFocus = () => { if (!input.files?.length) setPickerOpen(false); };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [pickerOpen]);
+
   const online = useOnline();
 
   const launch = useCallback(
