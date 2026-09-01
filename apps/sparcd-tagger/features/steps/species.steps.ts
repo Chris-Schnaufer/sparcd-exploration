@@ -30,7 +30,7 @@ const VOCAB = [
 ];
 
 const appliedChip = (page: Page, label: string) =>
-  page.locator('span.inline-flex').filter({ hasText: label }).first();
+  page.locator('span.inline-flex:not([data-testid="applied-species-summary"])').filter({ hasText: label }).first();
 
 /** Two or more species collapse to a summary; open it so the chips render. */
 async function expandApplied(page: Page): Promise<void> {
