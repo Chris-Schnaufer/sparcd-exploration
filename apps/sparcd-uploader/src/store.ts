@@ -329,6 +329,7 @@ export const useStore = create<UploaderState>()(
           streamingQueueClosed: false,
           activeSnap: null,
           activeRunSource: null,
+          attachedFiles: null,
         }),
       toggleTheme: () =>
         set((s) => {
