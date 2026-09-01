@@ -78,6 +78,17 @@ Then(
   },
 );
 
+Then('the completion dialog states the file count and collection ID', async ({ app }) => {
+  const dialog = app.page.getByRole('dialog', { name: 'Upload complete' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText(`Published 4 files to ${UUID_A}`);
+});
+
+Then('dismissing it closes the dialog', async ({ app }) => {
+  await app.page.getByRole('button', { name: 'OK' }).click();
+  await expect(app.page.getByRole('dialog', { name: 'Upload complete' })).toHaveCount(0);
+});
+
 async function expectDryRunPill(app: App): Promise<void> {
   const pill = app.page.getByRole('status');
   const tooltip = app.page.locator('[role="tooltip"]');
@@ -162,6 +173,12 @@ When('a real upload is started and completes', async ({ app }) => {
   await app.dryRunCheckbox().uncheck();
   await app.startRun();
   await app.waitForRunPhase('done');
+});
+
+When('a real upload completes without dismissing its confirmation', async ({ app }) => {
+  await app.dryRunCheckbox().uncheck();
+  await app.startRun();
+  await expect(app.runPhase()).toHaveText('done', { timeout: 60_000 });
 });
 
 Then(

@@ -46,6 +46,7 @@ describe('live upload phase to title-bar state', () => {
     totalBytes: 0,
     log: [],
     bucket: 'bucket',
+    collectionUuid: 'collection',
   });
 
   it('maps an absent snapshot to ready', () => {

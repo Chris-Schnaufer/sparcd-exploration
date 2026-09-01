@@ -57,6 +57,12 @@ Feature: Upload and publish a batch
     And the folder is named for the moment of upload and the uploader's identity
     And each stored object's path is the one recorded for it in the media table
 
+  @unmapped
+  Scenario: The completion dialog reports how many files were published and to which collection
+    When a real upload completes without dismissing its confirmation
+    Then the completion dialog states the file count and collection ID
+    And dismissing it closes the dialog
+
   @F1
   Scenario: Every stored object is confirmed once the batch is written
     When a file has been uploaded
