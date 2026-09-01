@@ -31,8 +31,11 @@ export function App() {
   // Warn on tab close/reload while any real run (fresh or resume) is in flight.
   // Lives here rather than in the section components so it covers History resume
   // runs too — both sections write into the same store activeSnap.
-  const runningForReal =
-    (activeSnap?.phase === 'blobs' || activeSnap?.phase === 'metadata') && !activeSnap?.dryRun;
+  const activelyRunning =
+    activeSnap?.phase === 'preparing' ||
+    activeSnap?.phase === 'blobs' ||
+    activeSnap?.phase === 'metadata';
+  const runningForReal = activelyRunning && !activeSnap?.dryRun;
   useEffect(() => {
     if (!runningForReal) return;
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -43,13 +46,14 @@ export function App() {
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [runningForReal]);
 
-  // Hold a screen wake lock while a real run is in flight. Lives here (not in
-  // Upload) so it survives the user navigating away mid-upload. The lock is
-  // auto-released by the browser on tab hide, so it's re-acquired on regaining
-  // visibility. Generation counter guards against orphaned sentinels when two
-  // visibility events fire before either acquire() resolves.
+  // Hold a screen wake lock while any run is in flight (including dry runs and
+  // the preparing phase). Lives here (not in Upload) so it survives the user
+  // navigating away mid-upload. The lock is auto-released by the browser on tab
+  // hide, so it's re-acquired on regaining visibility. Generation counter guards
+  // against orphaned sentinels when two visibility events fire before either
+  // acquire() resolves.
   useEffect(() => {
-    if (!runningForReal || !('wakeLock' in navigator)) return;
+    if (!activelyRunning || !('wakeLock' in navigator)) return;
     let lock: WakeLockSentinel | null = null;
     let cancelled = false;
     let gen = 0;
@@ -83,7 +87,7 @@ export function App() {
       document.removeEventListener('visibilitychange', onVisibility);
       void lock?.release();
     };
-  }, [runningForReal]);
+  }, [activelyRunning]);
 
   if (!s3Config) {
     return (

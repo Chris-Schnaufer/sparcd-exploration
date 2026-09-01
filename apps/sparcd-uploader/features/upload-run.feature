@@ -186,3 +186,19 @@ Feature: Upload and publish a batch
     When "Next batch" is chosen
     Then the wizard returns to the Files step with an empty batch
     And the collection, deployment, uploader identity, description and timezone of the previous batch are kept
+
+  @unmapped
+  Scenario: The screen wake lock is held while a dry run is in progress
+    Given the browser wake lock API is available in this session
+    When the operator opts into a dry run
+    And the dry run is started and completes
+    Then the browser wake lock was requested
+
+  @unmapped
+  Scenario: The preparing phase is logged and the wake lock is held before the first blob lands
+    Given the browser wake lock API is available in this session
+    And the first media blob is held at the mock
+    When a real upload is started
+    Then the activity log has the preparing-upload entry
+    And the browser wake lock was requested
+    And releasing the held blob lets the upload complete
