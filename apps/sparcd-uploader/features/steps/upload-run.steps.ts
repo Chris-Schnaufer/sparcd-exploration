@@ -78,6 +78,18 @@ Then(
   },
 );
 
+Then('the dry-run pill tooltip reads "Dry run — nothing is written to S3"', async ({ app }) => {
+  const pill = app.page.getByRole('status');
+  const tooltip = app.page.locator('[role="tooltip"]');
+  await expect(pill).toContainText('dry-run');
+  await pill.hover();
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toHaveText('Dry run — nothing is written to S3');
+  await app.page.mouse.move(0, 0);
+  await pill.focus();
+  await expect(tooltip).toBeVisible();
+});
+
 Then('dry run is switched off by default', async ({ app }) => {
   await expect(app.dryRunCheckbox()).not.toBeChecked();
   await expect(app.page.getByRole('button', { name: 'Start upload' })).toBeVisible();

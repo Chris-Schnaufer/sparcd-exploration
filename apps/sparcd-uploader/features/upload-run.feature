@@ -44,6 +44,7 @@ Feature: Upload and publish a batch
     When the operator opts into a dry run
     And the dry run is started
     Then the title-bar pill reads "dry-run" throughout the run
+    And the dry-run pill tooltip reads "Dry run — nothing is written to S3"
 
   @unmapped
   Scenario: A real upload states what access it needs before it starts
