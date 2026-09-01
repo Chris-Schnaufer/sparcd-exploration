@@ -109,7 +109,7 @@ const NOW = new Date('2024-01-20T14:30:00');
 
 type Recorder = {
   snapshots: { key: string; body: string }[];
-  replaces: { key: string; etag: string }[];
+  replaces: { key: string; body: string; etag: string }[];
   journals: SyncJournal[];
   cleared: number;
 };
@@ -129,10 +129,10 @@ function fakeIO(
         throw Object.assign(new Error('exists'), { name: 'PreconditionFailedError', $metadata: { httpStatusCode: 412 } });
       rec.snapshots.push({ key, body });
     },
-    replace: async (key, _body, etag) => {
+    replace: async (key, body, etag) => {
       const err = opts.replaceError?.(key);
       if (err) throw err;
-      rec.replaces.push({ key, etag });
+      rec.replaces.push({ key, body, etag });
       return { etag: `"new-${key.split('/').pop()}"` };
     },
     saveJournal: async (j) => rec.journals.push(structuredClone(j)),
@@ -365,6 +365,13 @@ describe('runSync — live write path', () => {
       'observations.csv', 'UploadMeta.json',
     ]);
     expect(rec.replaces[0].etag).toBe('"obs-1"'); // wrote against the reviewed ETag
+    const writtenObservations = parseObservations(rec.replaces[0].body);
+    expect(
+      writtenObservations.find((row) => row.scientificName === 'Canis latrans')?.observationId,
+    ).toBe('IMG002.JPG:0');
+    expect(
+      writtenObservations.find((row) => row.scientificName === 'Puma concolor')?.observationId,
+    ).toBe(`${K1}:0`);
     expect(rec.cleared).toBe(1);
     if (res.status === 'synced') {
       expect(res.summary.additions).toBe(1);

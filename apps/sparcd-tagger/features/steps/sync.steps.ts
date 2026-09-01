@@ -70,6 +70,7 @@ Then(
     );
     expect(added).toBeTruthy();
     expect(added!.count).toBe(1);
+    expect(added!.observationId).toBe('IMG002.JPG:0');
     const meta = JSON.parse(s3.text(BUCKET, `${PREFIX_A}UploadMeta.json`)) as {
       imagesWithSpecies: number;
     };
@@ -88,14 +89,14 @@ Then(
     expect(obs.length).toBeGreaterThanOrEqual(OBS_A.length + 1);
     for (const o of obs) {
       expect(o.observationId).not.toBe('');
-      // Observation IDs must be bundle-relative: "<relative-path>:<index>",
-      // not full S3 keys like "Collections/.../cam1/IMG.JPG:0".
-      const relPath = o.mediaId.slice(PREFIX_A.length);
-      expect(o.observationId).toMatch(new RegExp(`^${relPath}:\\d+$`));
       expect(o.mediaId.startsWith(PREFIX_A)).toBe(true);
       expect(Number.isFinite(o.count)).toBe(true);
     }
-    // Prior rows survive untouched.
+    // Sync only regenerates rows for edited media. Existing rows belonging to
+    // untouched images retain the producer-defined IDs with which they arrived.
+    for (const prior of OBS_A) {
+      expect(obs.some((o) => o.observationId === prior.id)).toBe(true);
+    }
     expect(obs.some((o) => o.scientificName === 'Casper')).toBe(true);
     expect(obs.some((o) => o.scientificName === 'Puma concolor')).toBe(true);
   },
