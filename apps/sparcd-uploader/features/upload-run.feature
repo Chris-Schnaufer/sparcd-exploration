@@ -56,6 +56,7 @@ Feature: Upload and publish a batch
     Then the tool lists the upload folder and confirms every object is stored at its recorded size
     And a few of the stored objects are re-read to confirm storage kept their recorded fingerprint
     And an object the listing contradicts is treated as a failure of that file, not as a success
+    And an object whose sha256 fingerprint is absent from storage is treated as a failure
     # One listing pass per thousand objects rather than a re-read per file: at
     # long-haul latency the extra round trip per file dominated a small upload,
     # and the listing answers the question that matters — is every object there,
