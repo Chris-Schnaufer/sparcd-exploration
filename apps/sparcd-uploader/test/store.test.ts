@@ -3,6 +3,7 @@ import type { ScannedFile } from '../src/lib/scanFiles';
 import type { ProcessResponse } from '../src/lib/processPool';
 import type { FileValidation } from '../src/lib/validation';
 import type { NaiveDateTime } from '../src/lib/exifTime';
+import type { UploadPhase, UploadSnapshot } from '../src/lib/upload';
 
 const storage = () => {
   const m = new Map<string, string>();
@@ -51,6 +52,21 @@ function success(id: string, over: Partial<ProcessResponse> = {}): ProcessRespon
   };
 }
 
+function snapshot(sessionId: string, phase: UploadPhase): UploadSnapshot {
+  return {
+    version: 1,
+    sessionId,
+    phase,
+    dryRun: false,
+    files: [],
+    uploadedBytes: 0,
+    skippedBytes: 0,
+    totalBytes: 0,
+    log: [],
+    bucket: 'sparcd-test',
+  };
+}
+
 beforeEach(() => {
   useStore.setState({
     files: [],
@@ -64,7 +80,63 @@ beforeEach(() => {
     streamingRun: null,
     streamingQueueClosed: false,
     activeSnap: null,
+    activeRunGeneration: 0,
+    activeRunReserved: false,
     activeRunSource: null,
+    historyResumePreparation: null,
+  });
+});
+
+describe('active run ownership', () => {
+  it('ignores a late snapshot after the run is invalidated', () => {
+    const store = useStore.getState();
+    const generation = store.beginActiveRun();
+    const cancel = vi.fn();
+    store.setActiveRun({ cancel, done: Promise.resolve() }, generation!);
+
+    store.cancelActiveRun();
+    store.setActiveSnap(snapshot('stale', 'error'), generation!);
+
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(useStore.getState().activeRun).toBeNull();
+    expect(useStore.getState().activeSnap).toBeNull();
+    expect(useStore.getState().activeRunSource).toBeNull();
+  });
+
+  it('refuses a second reservation without cancelling or replacing the first', () => {
+    const store = useStore.getState();
+    const cancel = vi.fn();
+    const generation = store.beginActiveRun();
+    store.setActiveRun({ cancel, done: Promise.resolve() }, generation!);
+
+    expect(store.beginActiveRun()).toBeNull();
+    expect(cancel).not.toHaveBeenCalled();
+    expect(useStore.getState().activeRunReserved).toBe(true);
+    expect(useStore.getState().activeRunSource).toBe('upload');
+  });
+
+  it('cancels a runner attached after its reservation was invalidated', () => {
+    const store = useStore.getState();
+    const generation = store.beginActiveRun();
+    const cancel = vi.fn();
+
+    store.cancelActiveRun();
+    store.setActiveRun({ cancel, done: Promise.resolve() }, generation!);
+
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it('releases the reservation but retains a terminal snapshot for display', () => {
+    const store = useStore.getState();
+    const generation = store.beginActiveRun();
+    const done = snapshot('finished', 'done');
+
+    store.setActiveSnap(done, generation!);
+
+    expect(useStore.getState().activeRunReserved).toBe(false);
+    expect(useStore.getState().activeSnap).toBe(done);
+    expect(useStore.getState().activeRunSource).toBe('upload');
+    expect(store.beginActiveRun()).not.toBeNull();
   });
 });
 
@@ -80,7 +152,8 @@ describe('streaming bridge ownership', () => {
     useStore.getState().setFiles([scanned('a.jpg')]);
     useStore.getState().applyProgress([], [success('a.jpg')]);
     const run = streamingRun();
-    useStore.getState().setActiveRun(run, run);
+    const generation = useStore.getState().beginActiveRun();
+    useStore.getState().setActiveRun(run, generation!, run);
 
     forwardReadyToStreamingRun([{ id: 'a.jpg' }]);
     const files = useStore.getState().files;
@@ -98,9 +171,12 @@ describe('streaming bridge ownership', () => {
     useStore.getState().applyProgress([], [success('a.jpg')]);
     const old = streamingRun();
     const resume = { cancel: vi.fn(), done: Promise.resolve() };
-    useStore.getState().setActiveRun(old, old);
+    const oldGeneration = useStore.getState().beginActiveRun();
+    useStore.getState().setActiveRun(old, oldGeneration!, old);
 
-    useStore.getState().setActiveRun(resume);
+    useStore.getState().setActiveSnap(snapshot('old', 'done'), oldGeneration!);
+    const resumeGeneration = useStore.getState().beginActiveRun();
+    useStore.getState().setActiveRun(resume, resumeGeneration!);
     forwardReadyToStreamingRun([{ id: 'a.jpg' }]);
     maybeCloseStreamingQueue(useStore.getState().files);
 
@@ -129,8 +205,11 @@ describe('streaming bridge ownership', () => {
       done: new Promise<void>((resolve) => { finishNew = resolve; }),
     };
 
-    useStore.getState().setActiveRun(old, old);
-    useStore.getState().setActiveRun(replacement, replacement);
+    const oldGeneration = useStore.getState().beginActiveRun();
+    useStore.getState().setActiveRun(old, oldGeneration!, old);
+    useStore.getState().setActiveSnap(snapshot('old', 'done'), oldGeneration!);
+    const replacementGeneration = useStore.getState().beginActiveRun();
+    useStore.getState().setActiveRun(replacement, replacementGeneration!, replacement);
     finishOld();
     await old.done;
     await Promise.resolve();
@@ -158,7 +237,8 @@ describe('store persistence', () => {
     useStore.getState().setConcurrencyMode('manual');
     useStore.getState().setUploadConcurrency(16);
     useStore.getState().setFiles([scanned('a.jpg')]);
-    useStore.getState().setActiveSnap({ sessionId: 'session-1' } as never);
+    const generation = useStore.getState().beginActiveRun();
+    useStore.getState().setActiveSnap({ sessionId: 'session-1' } as never, generation!);
 
     const persisted = JSON.parse(window.sessionStorage.getItem('sparcd-uploader-session')!).state;
 
@@ -172,6 +252,31 @@ describe('store persistence', () => {
       dryRun: false,
       concurrencyMode: 'manual',
       uploadConcurrency: 16,
+    });
+  });
+});
+
+describe('History resume preparation', () => {
+  it('keeps the active session and progress in shared state', () => {
+    const store = useStore.getState();
+    store.beginHistoryResumePreparation('session-a');
+    store.setHistoryResumeProgress('session-a', 7, 12);
+
+    expect(useStore.getState().historyResumePreparation).toEqual({
+      sessionId: 'session-a',
+      progress: { done: 7, total: 12 },
+    });
+  });
+
+  it('ignores stale progress and cleanup from an older preparation', () => {
+    const store = useStore.getState();
+    store.beginHistoryResumePreparation('session-new');
+    store.setHistoryResumeProgress('session-old', 4, 10);
+    store.clearHistoryResumePreparation('session-old');
+
+    expect(useStore.getState().historyResumePreparation).toEqual({
+      sessionId: 'session-new',
+      progress: null,
     });
   });
 });

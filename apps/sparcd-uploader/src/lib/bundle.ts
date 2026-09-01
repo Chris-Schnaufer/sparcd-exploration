@@ -399,29 +399,29 @@ export async function buildBundleFromRecords(input: {
   // A resumed-before-bundle batch's observations.csv must publish the same
   // shape as a normal upload's. A file the tagger identified publishes its
   // species rows instead of a placeholder.
-  const observations: Observation[] = files.flatMap((f) =>
-    observationRowsFor(
+  const observations: Observation[] = files.flatMap((f) => {
+    const objectName = f.remoteKey.slice(uploadPath.length + 1);
+    return observationRowsFor(
       {
         mediaId: f.remoteKey,
-        objectName: f.remoteKey.slice(uploadPath.length + 1),
+        objectName,
         deploymentId: deployment.deploymentId,
         timestamp: f.captureTimestamp ?? '',
         preTags: f.preTags,
       },
       () => [
         {
-          observationId: defaultObservationId(f.remoteKey.slice(uploadPath.length + 1), 0),
+          observationId: defaultObservationId(objectName, 0),
           mediaId: f.remoteKey,
           deploymentId: deployment.deploymentId,
           timestamp: f.captureTimestamp ?? '',
           observationType: 'blank',
           scientificName: '',
-          count: 0,
           tags: '',
         },
       ],
-    ),
-  );
+    );
+  });
 
   const deploymentsCsv = serializeDeployments([deployment]);
   const mediaCsv = serializeMedia(media);

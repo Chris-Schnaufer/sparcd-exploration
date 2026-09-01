@@ -2,11 +2,11 @@ import { useEffect } from 'react';
 
 export function UploadCompleteDialog({
   doneCount,
-  skippedCount,
+  collectionId,
   onClose,
 }: {
   doneCount: number;
-  skippedCount: number;
+  collectionId: string;
   onClose: () => void;
 }) {
   useEffect(() => {
@@ -33,13 +33,8 @@ export function UploadCompleteDialog({
             Upload complete
           </h2>
           <p className="font-body text-[14px] text-ink">
-            {doneCount} file{doneCount === 1 ? '' : 's'} successfully uploaded.
+            Published {doneCount} file{doneCount === 1 ? '' : 's'} to {collectionId}.
           </p>
-          {skippedCount > 0 && (
-            <p className="font-body text-[14px] text-inkSoft">
-              {skippedCount} file{skippedCount === 1 ? '' : 's'} already stored and skipped.
-            </p>
-          )}
         </div>
         <footer className="flex items-center justify-end border-t border-rule px-5 py-3">
           <button
