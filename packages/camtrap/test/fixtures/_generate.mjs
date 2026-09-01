@@ -57,6 +57,7 @@ const obs = (o) => {
   r[1] = DEP;
   r[3] = o.mediaId;
   r[4] = o.ts;
+  r[5] = 'animal'; // observation_type
   r[6] = 'false'; // camera_setup
   r[8] = o.sci;
   r[9] = String(o.count);
@@ -64,6 +65,18 @@ const obs = (o) => {
   r[19] = o.comments ?? '';
   // Optional unrelated columns (used by the survivor row to prove preservation).
   if (o.extra) for (const [i, v] of Object.entries(o.extra)) r[Number(i)] = v;
+  return r;
+};
+
+// Blank placeholder row: one row per detagged file (observationType 'blank').
+const blankObs = (id, mediaId, ts) => {
+  const r = new Array(20).fill('');
+  r[0] = id;
+  r[1] = DEP;
+  r[3] = mediaId;
+  r[4] = ts;
+  r[5] = 'blank';
+  r[6] = 'false';
   return r;
 };
 
@@ -167,12 +180,12 @@ writeFileSync(join(upDir, 'UploadMeta.json'), json(uploadMeta(0, [])));
 // Edits applied to the java baseline:
 //   IMG001  retag  Mule Deer -> Coyote x1                 (present -> present)
 //   IMG002  add    Mule Deer x1 + requested "Jaguarundi"  (empty   -> present)  +retag
-//   IMG003  detag  remove Ghost                           (present -> empty)    +detag
+//   IMG003  detag  remove Ghost -> blank placeholder       (present -> empty)    +detag
 //   IMG005  add    Ghost x1, time corrected +1h           (empty   -> present)  +retag
 // imagesWithSpecies: 3 - 1 + 2 = 4. user=jgonzalez stamp=2024.01.20.14.30.00.
 //
 // Observation ids use the package default scheme `${mediaId}:${index}`. Output
-// order: walk canonical rows (IMG001 slot -> Coyote; IMG003 slot -> nothing;
+// order: walk canonical rows (IMG001 slot -> Coyote; IMG003 slot -> blank row;
 // IMG004 survivor kept), then append new-only edited media in edit order
 // (IMG002 rows, then IMG005).
 
@@ -187,6 +200,7 @@ writeFileSync(join(editDir, 'media.csv'), csv(mediaEdited));
 const editedObs = [
   obs({ id: `${IMG.one}:0`, mediaId: IMG.one, ts: '2024-01-10T08:00:00',
         sci: 'Canis latrans', count: 1, comments: '[COMMONNAME:Coyote]' }),
+  blankObs(`${IMG.three}:0`, IMG.three, '2024-01-10T22:15:00'),
   survivor,
   obs({ id: `${IMG.two}:0`, mediaId: IMG.two, ts: '2024-01-10T08:00:30',
         sci: 'Odocoileus hemionus', count: 1, comments: '[COMMONNAME:Mule Deer]' }),

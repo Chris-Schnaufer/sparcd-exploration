@@ -68,7 +68,8 @@ Feature: Identify species before the batch is uploaded
   Scenario: The upload carries the images and the identifications together
     Given a batch was tagged in the Tagger and handed back
     When it is published
-    Then observations.csv has one row per species applied, against the right image
+    Then all stored objects pass the final review
+    And observations.csv has one row per species applied, against the right image
     And each row carries the common name the tagger used
     And the upload metadata counts every identified image, empty frames included
 
@@ -90,7 +91,8 @@ Feature: Identify species before the batch is uploaded
   Scenario: An untagged file is accepted and published as untagged
     Given a batch was tagged in the Tagger and handed back
     When it is published
-    Then the untagged files have no species-identified observation row
+    Then all stored objects pass the final review
+    And the untagged files have no species-identified observation row
     And they are still in media.csv like every other image
     And every media row carries the media type the examination sniffed
     # Not a guess from the file extension: a batch that went through the Tagger

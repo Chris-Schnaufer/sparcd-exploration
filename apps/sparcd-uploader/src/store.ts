@@ -42,6 +42,7 @@ export type PendingResume = {
   session: LoadedSession;
   attached: Map<string, File>;
   problems: ReconcileProblem[];
+  generation: number;
 };
 
 /** A scanned file plus the results of P1 worker processing. */
@@ -101,11 +102,22 @@ type UploaderState = {
   streamingRun: StreamingUploadRun | null;
   streamingQueueClosed: boolean;
   activeSnap: UploadSnapshot | null;
+  // Invalidated before cancellation so late callbacks from an obsolete run
+  // cannot repopulate state or overwrite its replacement.
+  activeRunGeneration: number;
   // Always 'upload': History prepares a resume and hands it to the wizard's
   // Upload step, which is the one surface that runs anything. Kept as a field
   // because disconnect and the beforeunload guard read it to tell a real run
   // from none.
   activeRunSource: 'upload' | null;
+  activeRunReserved: boolean;
+  // Folder recovery/hash verification happens before an UploadRun exists. Keep
+  // its lock and progress here so leaving History cannot orphan the work and
+  // expose Resume/Discard while the old component continues asynchronously.
+  historyResumePreparation: {
+    sessionId: string;
+    progress: { done: number; total: number } | null;
+  } | null;
   // Files reattached by a History handoff. Cleared alongside activeRun so a
   // completed or cancelled run doesn't hold stale File references. Used by
   // retryPartialRun so the App-level auto-resume effect can reach them without
@@ -115,10 +127,19 @@ type UploaderState = {
   connect: (config: S3Config, remember: boolean) => void;
   disconnect: () => void;
   setSection: (section: Section) => void;
-  setActiveRun: (run: UploadRun | StreamingUploadRun, streamingRun?: StreamingUploadRun) => void;
+  beginActiveRun: () => number | null;
+  setActiveRun: (
+    run: UploadRun | StreamingUploadRun,
+    generation: number,
+    streamingRun?: StreamingUploadRun,
+  ) => void;
   closeStreamingQueue: (files: FileEntry[]) => void;
-  setActiveSnap: (snap: UploadSnapshot | null) => void;
+  setActiveSnap: (snap: UploadSnapshot, generation: number) => void;
+  cancelActiveRun: () => void;
   clearActiveRun: () => void;
+  beginHistoryResumePreparation: (sessionId: string) => void;
+  setHistoryResumeProgress: (sessionId: string, done: number, total: number) => void;
+  clearHistoryResumePreparation: (sessionId: string) => void;
   toggleTheme: () => void;
   setElevationUnit: (unit: ElevationUnit) => void;
   setStep: (step: WizardStep) => void;
@@ -151,6 +172,47 @@ type UploaderState = {
   retryPartialRun: () => Promise<void>;
   nextBatch: () => void;
 };
+
+function disconnectedState(s: UploaderState): Partial<UploaderState> {
+  return {
+    s3Config: null,
+    connectionId: s.connectionId + 1,
+    section: 'new',
+    step: 'drop',
+    files: [],
+    validations: {},
+    scanning: false,
+    processing: false,
+    batchToken: s.batchToken + 1,
+    dirHandle: null,
+    fileAccessMode: 'reselect-required',
+    flipId: null,
+    selectedLocationKey: null,
+    selectedBucket: null,
+    uploaderUser: '',
+    uploadTimeZone: localTimeZone(),
+    pendingResume: null,
+    activeRun: null,
+    streamingRun: null,
+    streamingQueueClosed: false,
+    activeSnap: null,
+    activeRunGeneration: s.activeRunGeneration + 1,
+    activeRunReserved: false,
+    activeRunSource: null,
+    historyResumePreparation: null,
+    attachedFiles: null,
+  };
+}
+
+function sameConnection(a: S3Config | null, b: S3Config): boolean {
+  return !!a &&
+    a.endpoint === b.endpoint &&
+    a.region === b.region &&
+    a.accessKey === b.accessKey &&
+    a.secretKey === b.secretKey &&
+    a.forcePathStyle === b.forcePathStyle &&
+    a.secure === b.secure;
+}
 
 const toEntry = (f: ScannedFile): FileEntry => ({ ...f, processState: 'queued' });
 
@@ -258,7 +320,10 @@ export const useStore = create<UploaderState>()(
       streamingRun: null,
       streamingQueueClosed: false,
       activeSnap: null,
+      activeRunGeneration: 0,
+      activeRunReserved: false,
       activeRunSource: null,
+      historyResumePreparation: null,
       attachedFiles: null,
 
       connect: (config, remember) => {
@@ -275,35 +340,34 @@ export const useStore = create<UploaderState>()(
       },
       disconnect: () => {
         invalidateRetryPartialRun();
-        get().activeRun?.cancel();
+        const run = get().activeRun;
+        set((s) => disconnectedState(s));
+        run?.cancel();
         clearClientCache();
         clearSharedConnection();
         invalidateFileIndex();
-        set((s) => ({
-          s3Config: null,
-          connectionId: s.connectionId + 1,
-          section: 'new',
-          step: 'drop',
-          files: [],
-          validations: {},
-          dirHandle: null,
-          fileAccessMode: 'reselect-required',
-          flipId: null,
-          selectedLocationKey: null,
-          selectedBucket: null,
-          uploaderUser: '',
-          uploadTimeZone: localTimeZone(),
+      },
+      setSection: (section) => set({ section }),
+      beginActiveRun: () => {
+        if (get().activeRunReserved) return null;
+        const generation = get().activeRunGeneration + 1;
+        set({
           activeRun: null,
           streamingRun: null,
           streamingQueueClosed: false,
           activeSnap: null,
-          activeRunSource: null,
-          attachedFiles: null,
-        }));
+          activeRunGeneration: generation,
+          activeRunReserved: true,
+          activeRunSource: 'upload',
+        });
+        return generation;
       },
-      setSection: (section) => set({ section }),
-      setActiveRun: (run, streamingRun) => {
-        invalidateRetryPartialRun();
+      setActiveRun: (run, generation, streamingRun) => {
+        const state = get();
+        if (state.activeRunGeneration !== generation || !state.activeRunReserved) {
+          run.cancel();
+          return;
+        }
         set({
           activeRun: run,
           streamingRun: streamingRun ?? null,
@@ -314,7 +378,10 @@ export const useStore = create<UploaderState>()(
           const releaseBridge = () => {
             // A replacement may have started before this run settled. Only
             // its own completion may release the bridge ownership.
-            if (get().streamingRun === streamingRun) {
+            if (
+              get().activeRunGeneration === generation &&
+              get().streamingRun === streamingRun
+            ) {
               set({ streamingRun: null, streamingQueueClosed: false });
             }
           };
@@ -330,18 +397,59 @@ export const useStore = create<UploaderState>()(
         set({ streamingQueueClosed: true });
         streamingRun.close(files);
       },
-      setActiveSnap: (snap) => set({ activeSnap: snap }),
-      clearActiveRun: () => {
-        invalidateRetryPartialRun();
-        set({
+      setActiveSnap: (snap, generation) =>
+        set((s) => {
+          if (s.activeRunGeneration !== generation) return {};
+          const terminal = snap.phase === 'done' || snap.phase === 'error' || snap.phase === 'partial';
+          return terminal
+            ? {
+                activeSnap: snap,
+                activeRun: null,
+                streamingRun: null,
+                streamingQueueClosed: false,
+                activeRunReserved: false,
+              }
+            : { activeSnap: snap };
+        }),
+      cancelActiveRun: () => {
+        const run = get().activeRun;
+        set((s) => ({
           activeRun: null,
           streamingRun: null,
           streamingQueueClosed: false,
           activeSnap: null,
+          activeRunGeneration: s.activeRunGeneration + 1,
+          activeRunReserved: false,
           activeRunSource: null,
           attachedFiles: null,
-        });
+        }));
+        run?.cancel();
       },
+      clearActiveRun: () =>
+        set((s) => ({
+          activeRun: null,
+          streamingRun: null,
+          streamingQueueClosed: false,
+          activeSnap: null,
+          activeRunGeneration: s.activeRunGeneration + 1,
+          activeRunReserved: false,
+          activeRunSource: null,
+          attachedFiles: null,
+        })),
+      beginHistoryResumePreparation: (sessionId) =>
+        set({ historyResumePreparation: { sessionId, progress: null } }),
+      setHistoryResumeProgress: (sessionId, done, total) =>
+        set((s) =>
+          s.historyResumePreparation?.sessionId === sessionId
+            ? { historyResumePreparation: { sessionId, progress: { done, total } } }
+            : {},
+        ),
+      clearHistoryResumePreparation: (sessionId) =>
+        set((s) =>
+          s.historyResumePreparation?.sessionId === sessionId
+            ? { historyResumePreparation: null }
+            : {},
+        ),
       toggleTheme: () =>
         set((s) => {
           const theme: Theme = s.theme === 'light' ? 'dark' : 'light';
@@ -479,7 +587,10 @@ export const useStore = create<UploaderState>()(
           streamingRun: null,
           streamingQueueClosed: false,
           activeSnap: null,
+          activeRunGeneration: s.activeRunGeneration + 1,
+          activeRunReserved: false,
           activeRunSource: null,
+          historyResumePreparation: null,
           attachedFiles: null,
         }));
       },
@@ -518,11 +629,13 @@ export const useStore = create<UploaderState>()(
             get().concurrencyMode === 'manual'
               ? { mode: 'manual' as const, get: () => get().uploadConcurrency }
               : { mode: 'adaptive' as const };
+          const generation = get().beginActiveRun();
+          if (generation === null) return;
           const run = resumeUpload(
             { config: s3Config, session, attached, concurrency },
-            get().setActiveSnap,
+            (next) => get().setActiveSnap(next, generation),
           );
-          get().setActiveRun(run);
+          get().setActiveRun(run, generation);
         } catch {
           // Transient IDB or resume error — leave phase as 'partial' so the
           // next visibility or online event can try again. Permanent failures
@@ -551,7 +664,10 @@ export const useStore = create<UploaderState>()(
           streamingRun: null,
           streamingQueueClosed: false,
           activeSnap: null,
+          activeRunGeneration: s.activeRunGeneration + 1,
+          activeRunReserved: false,
           activeRunSource: null,
+          historyResumePreparation: null,
           attachedFiles: null,
         }));
       },
@@ -587,24 +703,25 @@ export const useStore = create<UploaderState>()(
 // connectionId so client-side caches scoped to a connection are invalidated.
 // Also answers a sibling tab's own request with our current s3Config, if any.
 subscribeSharedConnection((cfg) => {
+  const current = useStore.getState();
+  // A sibling tab can rebroadcast the exact same session while answering a
+  // connection request. That is not a replacement and must not cancel work.
+  if (cfg && sameConnection(current.s3Config, cfg)) return;
   clearClientCache();
-  if (!cfg) invalidateFileIndex();
+  const replacingConnection = !!cfg && !!current.s3Config && !sameConnection(current.s3Config, cfg);
+  if (!cfg || replacingConnection) {
+    invalidateFileIndex();
+    const run = current.activeRun;
+    useStore.setState((s) => ({
+      ...disconnectedState(s),
+      ...(cfg ? { s3Config: cfg, uploaderUser: cfg.accessKey } : {}),
+    }));
+    run?.cancel();
+    return;
+  }
   useStore.setState((s) => ({
     s3Config: cfg,
     connectionId: s.connectionId + 1,
-    ...(cfg
-      ? { uploaderUser: s.uploaderUser || cfg.accessKey }
-      : {
-          section: 'new' as const,
-          step: 'drop' as const,
-          files: [],
-          validations: {},
-          dirHandle: null,
-          fileAccessMode: 'reselect-required' as const,
-          flipId: null,
-          selectedLocationKey: null,
-          selectedBucket: null,
-          uploaderUser: '',
-        }),
+    uploaderUser: s.uploaderUser || cfg.accessKey,
   }));
 }, () => useStore.getState().s3Config);

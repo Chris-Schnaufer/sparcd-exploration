@@ -261,7 +261,7 @@ export class S3Mock {
           status: 200,
           contentType: obj.contentType,
           headers,
-          body: method === 'HEAD' ? undefined : obj.body,
+          body: method === 'HEAD' ? Buffer.alloc(0) : obj.body,
         });
         if (method === 'GET') this.onGet?.(bucket, key);
         return;

@@ -22,7 +22,7 @@ Feature: Settings and the data the uploader keeps on this machine
   @unmapped
   Scenario: Disconnecting from Settings clears this machine's upload records
     Given there are no unfinished uploads on this machine
-    When "Disconnect / edit" is chosen
+    When "Disconnect" is chosen
     Then the connection is ended
     And this browser's recorded upload sessions, file states and metadata are cleared
     And the tool returns to the connection screen ready for the next person
@@ -30,7 +30,7 @@ Feature: Settings and the data the uploader keeps on this machine
   @unmapped
   Scenario: Disconnecting is guarded when unfinished uploads exist
     Given there are unfinished uploads recorded on this machine
-    When "Disconnect / edit" is chosen
+    When "Disconnect" is chosen
     Then the tool states how many resumable uploads would be lost
     And it offers to review them in History, to cancel, or to discard them and disconnect
     And nothing is cleared unless discarding is explicitly chosen

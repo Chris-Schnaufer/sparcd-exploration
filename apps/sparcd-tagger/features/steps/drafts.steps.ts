@@ -29,7 +29,7 @@ When('identifications are added, corrected or removed', async ({ page }) => {
   await speciesApply(page, 'Canis latrans').click();
   await focusFrame(page, 'IMG001.JPG');
   await page
-    .locator('span.inline-flex')
+    .locator('span.inline-flex:not([data-testid="applied-species-summary"])')
     .filter({ hasText: 'Mule Deer' })
     .first()
     .locator('input[type="number"]')

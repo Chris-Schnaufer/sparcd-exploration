@@ -6,5 +6,6 @@ export function uploadStateOf(snapshot: UploadSnapshot | null): UploadState {
   if (snapshot.phase === 'done') return snapshot.dryRun ? 'dry-run' : 'complete';
   if (snapshot.phase === 'metadata') return snapshot.dryRun ? 'dry-run' : 'publishing';
   if (snapshot.phase === 'partial' || snapshot.phase === 'error') return 'failed';
+  if (snapshot.dryRun) return 'dry-run';
   return 'uploading'; // preparing or blobs
 }

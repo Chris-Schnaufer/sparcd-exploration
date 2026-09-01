@@ -70,6 +70,7 @@ Then(
     );
     expect(added).toBeTruthy();
     expect(added!.count).toBe(1);
+    expect(added!.observationId).toBe('IMG002.JPG:0');
     const meta = JSON.parse(s3.text(BUCKET, `${PREFIX_A}UploadMeta.json`)) as {
       imagesWithSpecies: number;
     };
@@ -91,9 +92,24 @@ Then(
       expect(o.mediaId.startsWith(PREFIX_A)).toBe(true);
       expect(Number.isFinite(o.count)).toBe(true);
     }
-    // Prior rows survive untouched.
+    // Sync only regenerates rows for edited media. Existing rows belonging to
+    // untouched images retain the producer-defined IDs with which they arrived.
+    for (const prior of OBS_A) {
+      expect(obs.some((o) => o.observationId === prior.id)).toBe(true);
+    }
     expect(obs.some((o) => o.scientificName === 'Casper')).toBe(true);
     expect(obs.some((o) => o.scientificName === 'Puma concolor')).toBe(true);
+  },
+);
+
+Then(
+  "the detagged image's slot in observations.csv is a blank placeholder, not absent",
+  async ({ s3 }) => {
+    const obs = parseObservations(s3.text(BUCKET, `${PREFIX_A}observations.csv`));
+    const row = obs.find((o) => o.mediaId.endsWith('IMG001.JPG'));
+    expect(row).toBeDefined();
+    expect(row!.observationType).toBe('blank');
+    expect(row!.scientificName).toBe('');
   },
 );
 

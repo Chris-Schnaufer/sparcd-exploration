@@ -111,6 +111,8 @@ export function Upload() {
   // is ours.
   const snap = useStore((s) => s.activeSnap);
   const activeRun = useStore((s) => s.activeRun);
+  const activeRunReserved = useStore((s) => s.activeRunReserved);
+  const beginActiveRun = useStore((s) => s.beginActiveRun);
   const setActiveRun = useStore((s) => s.setActiveRun);
   const setActiveSnap = useStore((s) => s.setActiveSnap);
   const clearActiveRun = useStore((s) => s.clearActiveRun);
@@ -120,6 +122,7 @@ export function Upload() {
   const attachedRef = useRef<Map<string, File> | null>(null);
   const running =
     snap?.phase === 'preparing' || snap?.phase === 'blobs' || snap?.phase === 'metadata';
+  const anyRunActive = activeRunReserved;
   // Dismisses the "upload complete" popup — reset whenever a new run (fresh
   // start or resume) begins, so a later run's completion pops it again.
   const [completeDismissed, setCompleteDismissed] = useState(false);
@@ -137,6 +140,7 @@ export function Upload() {
     setCompleteDismissed(false);
     attachedRef.current = pending.attached;
     useStore.getState().setAttachedFiles(pending.attached);
+    const generation = pending.generation;
     const run = resumeUpload(
       {
         config: s3Config,
@@ -144,9 +148,9 @@ export function Upload() {
         attached: pending.attached,
         concurrency: concurrencyControl(),
       },
-      setActiveSnap,
+      (next) => setActiveSnap(next, generation),
     );
-    setActiveRun(run);
+    setActiveRun(run, generation);
   }, [pendingResume, s3Config, setActiveRun, setActiveSnap]);
 
 
@@ -159,6 +163,8 @@ export function Upload() {
     setCompleteDismissed(false);
     attachedRef.current = null; // this batch's files are the store's again
     setResumeProblems([]);
+    const generation = beginActiveRun();
+    if (generation === null) return;
     const run = runStreamingUpload(
       {
         config: s3Config,
@@ -177,9 +183,9 @@ export function Upload() {
           files,
         },
       },
-      setActiveSnap,
+      (next) => setActiveSnap(next, generation),
     );
-    setActiveRun(run, run);
+    setActiveRun(run, generation, run);
     // If inspection finished before Start was clicked, no later store update
     // will close the queue. The store owns the run; close it immediately here.
     useStore.getState().closeStreamingQueue(files);
@@ -201,6 +207,11 @@ export function Upload() {
     // The async gap before resumeUpload's first emit leaves the Retry button
     // mounted — guard so a double-click can't start two concurrent runs.
     if (!snap || !s3Config || retryPending.current) return;
+    const expectedConnectionId = connectionId;
+    const connectionIsCurrent = () => {
+      const state = useStore.getState();
+      return !!state.s3Config && state.connectionId === expectedConnectionId;
+    };
     retryPending.current = true;
     setRetryError(null);
     setCompleteDismissed(false);
@@ -209,6 +220,7 @@ export function Upload() {
       // present — but the load can still fail (cleared site data, IDB error),
       // and the guard must unlatch or Retry is dead until a reload.
       const session = await loadSession(snap.sessionId);
+      if (!connectionIsCurrent()) return;
       if (!session) throw new Error('no saved record for this session');
       const attached = attachedRef.current ?? new Map(files.map((f) => [f.relPath, f.file]));
 
@@ -237,6 +249,7 @@ export function Upload() {
             ]),
         );
         const result = await ensureBundle(session.batch, session, resolved);
+        if (!connectionIsCurrent()) return;
         if (!result.ok) {
           const reasons = result.problems.map((p) => `${p.fileName}: ${p.reason}`).slice(0, 3).join('; ');
           throw new Error(`${result.problems.length} file(s) couldn't be resolved (${reasons})`);
@@ -244,18 +257,23 @@ export function Upload() {
       }
 
       const finalSession = session.bundle ? session : await loadSession(snap.sessionId);
+      if (!connectionIsCurrent()) return;
       if (!finalSession) throw new Error('session record disappeared while resolving it');
 
+      const config = useStore.getState().s3Config;
+      if (!config || !connectionIsCurrent()) return;
+      const generation = beginActiveRun();
+      if (generation === null) return;
       const run = resumeUpload(
         {
-          config: s3Config,
+          config,
           session: finalSession,
           attached,
           concurrency: concurrencyControl(),
         },
-        setActiveSnap,
+        (next) => setActiveSnap(next, generation),
       );
-      setActiveRun(run);
+      setActiveRun(run, generation);
     } catch (e) {
       setRetryError(
         `Couldn't resume this upload (${e instanceof Error ? e.message : String(e)}). Retry again; if it keeps failing, go Back and start the upload over.`,
@@ -263,7 +281,7 @@ export function Upload() {
     } finally {
       retryPending.current = false;
     }
-  }, [snap, s3Config, files]);
+  }, [snap, s3Config, connectionId, files, beginActiveRun, setActiveRun, setActiveSnap]);
 
   // A resumed run replays a persisted bundle and needs nothing from Assign, so
   // these guards stand down once a run is in flight or handed off.
@@ -314,7 +332,7 @@ export function Upload() {
               <input
                 type="checkbox"
                 checked={effectiveDryRun}
-                disabled={running}
+                disabled={anyRunActive}
                 onChange={(e) => setDryRun(e.target.checked)}
                 className="accent-accent"
               />
@@ -443,9 +461,9 @@ export function Upload() {
       <div className="flex flex-wrap items-center justify-between gap-4 border-t border-ruleSoft pt-5">
         <button
           onClick={() => setStep('assign')}
-          disabled={running}
+          disabled={anyRunActive}
           className={`border border-ink text-ink px-3.5 py-2.5 sm:py-1.5 min-h-[44px] sm:min-h-0 text-[14px] font-body hover:bg-paperHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 ${
-            running ? 'opacity-40 cursor-not-allowed' : ''
+            anyRunActive ? 'opacity-40 cursor-not-allowed' : ''
           }`}
         >
           Back
@@ -458,6 +476,13 @@ export function Upload() {
               className="border border-warn text-warn px-3.5 py-2.5 sm:py-1.5 min-h-[44px] sm:min-h-0 text-[14px] font-body hover:bg-paperHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
             >
               Cancel
+            </button>
+          ) : anyRunActive ? (
+            <button
+              disabled
+              className="bg-ink text-paper border border-ink px-3.5 py-2.5 sm:py-1.5 min-h-[44px] sm:min-h-0 text-[14px] font-body font-[600] opacity-40 cursor-not-allowed"
+            >
+              {effectiveDryRun ? 'Start dry run' : 'Start upload'}
             </button>
           ) : snap?.phase === 'done' && !snap.dryRun ? (
             <button
@@ -492,7 +517,7 @@ export function Upload() {
       {snap?.phase === 'done' && !snap.dryRun && !completeDismissed && (
         <UploadCompleteDialog
           doneCount={snap.files.filter((f) => f.state === 'done').length}
-          skippedCount={snap.files.filter((f) => f.state === 'skipped').length}
+          collectionId={snap.collectionUuid}
           onClose={() => setCompleteDismissed(true)}
         />
       )}
