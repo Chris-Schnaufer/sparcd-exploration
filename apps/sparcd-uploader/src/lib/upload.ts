@@ -461,12 +461,12 @@ function makeRunner(
         // a long outage with many lanes would otherwise flood the run monitor.
         log('warn', `waiting for network to retry ${it.key}`);
         while (navigator.onLine === false) {
-          if (cancelled) throw new Error('cancelled');
+          if (cancelled || abort.signal.aborted) throw new Error('cancelled');
           await waitForOnline(abort.signal);
         }
         log('info', `network back, retrying ${it.key}`);
       }
-      if (cancelled) throw new Error('cancelled');
+      if (cancelled || abort.signal.aborted) throw new Error('cancelled');
     };
 
     // A completed blob from a prior run: sanity-check the remote copy before
@@ -500,6 +500,7 @@ function makeRunner(
           const wait = backoff(attempt);
           log('warn', `verify retry ${it.key} (attempt ${attempt + 2}) after ${Math.round(wait)}ms`);
           await sleep(wait);
+          if (cancelled || abort.signal.aborted) throw err;
           await ensureOnline();
           attempt++;
         }
