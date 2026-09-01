@@ -2,7 +2,7 @@ import { Given, When, Then, expect } from './fixtures';
 import type { App, FileSpec } from './app';
 import { FOLDER, jpegAt, publishableBatch, slowPublishableBatch } from './batches';
 import { BUCKET_A, UUID_A } from './fixtures-data';
-import { FAILING_FILE, producePartialRun as basePartialRun } from './helpers';
+import { FAILING_FILE, producePartialRun as basePartialRun, writtenCsvRows } from './helpers';
 
 const UPLOADS_PREFIX = `Collections/${UUID_A}/Uploads/`;
 const METADATA_NAMES = ['deployments.csv', 'media.csv', 'observations.csv', 'UploadMeta.json', 'UploadComplete.json'];
@@ -238,6 +238,19 @@ Then(
     expect(deployments.body).toContain(`${UUID_A}:BEAR1`);
     // Nothing on the History screen asked for any of it.
     await expect(app.page.getByRole('heading', { name: 'Target collection' })).toHaveCount(0);
+  },
+);
+
+Then(
+  "the resumed upload's observations.csv matches what a fresh upload would have written",
+  async ({ app }) => {
+    const rows = writtenCsvRows(app, 'observations.csv');
+    // Every row is a blank placeholder (no species identified).
+    for (const row of rows) {
+      expect(row[5]).toBe('blank');   // observationType
+      expect(row[9]).toBe('');        // count — blank, not "0"
+      expect(row[10]).toBe('');       // count_new — blank, not "0"
+    }
   },
 );
 
