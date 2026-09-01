@@ -55,7 +55,7 @@ Feature: Resume an interrupted upload and retry a failed one
     Then it writes to the same collection, the same upload folder and the same object paths as the original attempt
     And the deployment, uploader identity and description are taken from the recorded session, not re-entered
 
-  @unmapped
+  @AL2
   Scenario: A partial History-resumed run retries automatically when the tab becomes visible again
     Given an open upload is listed in History
     And the user resumes it and the upload lands as partial
