@@ -121,6 +121,14 @@ Feature: Publish local identifications back to the collection
     # store that supports conditional writes.
 
   @H3
+  Scenario: Detagging an image and syncing writes a blank placeholder row rather than removing the row
+    Given the dry-run setting has been switched off
+    And the focused image carries at least one species
+    When "Detag" is used
+    And the sync is run
+    Then the detagged image's slot in observations.csv is a blank placeholder, not absent
+
+  @H3
   Scenario: Tagging an image on a blank-row upload is counted as an addition, not a modification
     Given an upload with only uploader-written blank rows is open in the tagging workspace
     When a species is applied to the first image
