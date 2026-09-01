@@ -97,9 +97,22 @@ Then('the Focus view shows that image', async ({ page }) => {
 Then('on-screen previous and next controls move between images there', async ({ page }) => {
   // The paging buttons are the touch affordance, shown below the lg breakpoint.
   await page.setViewportSize(TOUCH);
-  await page.getByRole('button', { name: 'Next image' }).click();
+  const previous = page.getByRole('button', { name: 'Previous image' });
+  const next = page.getByRole('button', { name: 'Next image' });
+  const questionable = page.getByRole('button', { name: 'Questionable' });
+  await expect(previous).toHaveAttribute('title', 'Previous image (Arrow Up)');
+  await expect(next).toHaveAttribute('title', 'Next image (Arrow Down)');
+  await expect(questionable).toHaveAttribute('title', 'Toggle questionable (Shift+Space)');
+  for (const retired of [
+    'Previous image (k)',
+    'Next image (j)',
+    'Toggle questionable (x)',
+  ]) {
+    await expect(page.locator(`[title="${retired}"]`)).toHaveCount(0);
+  }
+  await next.click();
   await expect(positionReadout(page)).toHaveText('4 / 6');
-  await page.getByRole('button', { name: 'Previous image' }).click();
+  await previous.click();
   await expect(positionReadout(page)).toHaveText('3 / 6');
   await page.setViewportSize(DESKTOP);
 });
