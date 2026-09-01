@@ -18,7 +18,7 @@ import { BUCKET, PREFIX_A, MEDIA_A } from './support/data';
 import { openSyncDialog, setSyncDryRun, readStore } from './support/flows';
 
 const appliedChip = (page: Page, label: string) =>
-  page.locator('span.inline-flex').filter({ hasText: label }).first();
+  page.locator('span.inline-flex:not([data-testid="applied-species-summary"])').filter({ hasText: label }).first();
 
 async function expandApplied(page: Page): Promise<void> {
   const summary = page.locator('button[title="Show all applied species"]');
@@ -84,7 +84,8 @@ Then('several species collapse to a summary that can be expanded', async ({ page
   const summary = page.locator('[data-testid="applied-species-summary"]');
   await expect(summary).toBeVisible();
   await expect(summary).toContainText('+1 more');
-  await page.locator('button[title="Show all applied species"]').click();
+  // The entire summary row is the click target — not just the arrow glyph.
+  await summary.click();
   await expect(appliedChip(page, 'Coyote')).toBeVisible();
 });
 

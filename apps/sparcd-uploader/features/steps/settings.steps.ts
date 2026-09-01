@@ -43,9 +43,9 @@ Given('there are unfinished uploads recorded on this machine', async ({ app }) =
   expect(batches[0].completedAt).toBeUndefined();
 });
 
-When('"Disconnect \\/ edit" is chosen', async ({ app }) => {
+When('"Disconnect" is chosen', async ({ app }) => {
   await app.gotoSection('Settings');
-  await app.page.getByRole('button', { name: 'Disconnect / edit' }).click();
+  await app.page.getByRole('button', { name: 'Disconnect', exact: true }).click();
 });
 
 Then('the connection is ended', async ({ app }) => {
@@ -85,7 +85,7 @@ Then('nothing is cleared unless discarding is explicitly chosen', async ({ app }
   expect(await app.readBatchRecords()).toHaveLength(1);
   await expect(app.page.getByRole('button', { name: 'Logout', exact: true })).toBeVisible();
 
-  await app.page.getByRole('button', { name: 'Disconnect / edit' }).click();
+  await app.page.getByRole('button', { name: 'Disconnect' }).click();
   await app.page.getByRole('button', { name: 'Discard & disconnect' }).click();
   await expect(app.connectForm()).toBeVisible({ timeout: 30_000 });
   expect(await app.readBatchRecords()).toHaveLength(0);

@@ -33,22 +33,31 @@ export function AppliedSpecies(props: AppliedSpeciesProps) {
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      {multi && (
-        <button
-          onClick={() => setExpanded(!expanded)}
-          aria-expanded={expanded}
-          className="min-w-11 min-h-11 md:min-w-0 md:min-h-0 grid place-items-center text-[20px] leading-none text-inkSoft hover:text-ink focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
-          title={expanded ? 'Collapse applied species' : 'Show all applied species'}
-          aria-label={expanded ? 'Collapse applied species' : 'Show all applied species'}
-        >
-          {expanded ? '▾' : '▸'}
-        </button>
-      )}
       {multi && !expanded ? (
-        <span data-testid="applied-species-summary" className="inline-flex items-center gap-1.5 px-2 py-1 text-[12px] border border-rule text-inkSoft">
-          {summary} <span className="text-inkMute">+{obs.length - 1} more</span>
-        </span>
-      ) : (
+        <button
+          onClick={() => setExpanded(true)}
+          aria-expanded={false}
+          className="min-w-11 min-h-11 inline-flex items-center gap-1.5 text-[12px] border border-rule text-inkSoft hover:text-ink focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent px-2 py-1"
+          title="Show all applied species"
+          aria-label="Show all applied species"
+          data-testid="applied-species-summary"
+        >
+          <span className="text-[20px] leading-none">▸</span>
+          <span>{summary}</span>
+          <span className="text-inkMute">+{obs.length - 1} more</span>
+        </button>
+      ) : multi ? (
+        <button
+          onClick={() => setExpanded(false)}
+          aria-expanded={true}
+          className="min-w-11 min-h-11 grid place-items-center text-[20px] leading-none text-inkSoft hover:text-ink focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+          title="Collapse applied species"
+          aria-label="Collapse applied species"
+        >
+          ▾
+        </button>
+      ) : null}
+      {(!multi || expanded) ? (
         obs.map((o) => (
           <Chip
             key={o.scientificName}
@@ -57,7 +66,7 @@ export function AppliedSpecies(props: AppliedSpeciesProps) {
             onRemove={() => props.onRemove(o.scientificName)}
           />
         ))
-      )}
+      ) : null}
 
       <button
         onClick={props.onDetagAll}

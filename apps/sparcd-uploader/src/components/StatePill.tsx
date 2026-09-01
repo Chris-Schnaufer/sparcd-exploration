@@ -37,7 +37,7 @@ export const STATE_PILL_CONFIG: Record<
     label: 'dry-run',
     glyph: '◇',
     cls: 'border-warn text-warn',
-    description: 'Dry run — nothing was written',
+    description: 'Dry run — nothing is written to S3',
   },
 };
 
