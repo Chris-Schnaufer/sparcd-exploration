@@ -665,3 +665,52 @@ Then(
     await expect(app.timeZoneSelect()).toHaveValue('America/Phoenix');
   },
 );
+
+// --- wake lock and preparing phase -------------------------------------------
+
+Given('the browser wake lock API is available in this session', async ({ app }) => {
+  await app.page.evaluate(() => {
+    (window as unknown as Record<string, unknown>).__wakeLockCount = 0;
+    Object.defineProperty(navigator, 'wakeLock', {
+      value: {
+        request: async (_type: string) => {
+          (window as unknown as Record<string, unknown>).__wakeLockCount =
+            ((window as unknown as Record<string, unknown>).__wakeLockCount as number) + 1;
+          return { type: 'screen', released: false, release: async () => {} };
+        },
+      },
+      configurable: true,
+    });
+  });
+});
+
+Given('the first media blob is held at the mock', async ({ app }) => {
+  holdFirstMediaPut(app);
+});
+
+When('a real upload is started', async ({ app }) => {
+  await app.dryRunCheckbox().uncheck();
+  await app.startRun();
+  await expect.poll(() => app.s3.puts.length, { timeout: 30_000 }).toBeGreaterThan(0);
+});
+
+When('the dry run is started and completes', async ({ app }) => {
+  await app.startRun();
+  await app.waitForRunPhase('done');
+});
+
+Then('the activity log has the preparing-upload entry', async ({ app }) => {
+  expect(await app.logText()).toContain('preparing upload…');
+});
+
+Then('the browser wake lock was requested', async ({ app }) => {
+  const count = await app.page.evaluate(
+    () => (window as unknown as Record<string, unknown>).__wakeLockCount as number,
+  );
+  expect(count).toBeGreaterThan(0);
+});
+
+Then('releasing the held blob lets the upload complete', async ({ app }) => {
+  app.s3.releaseHeldPuts();
+  await app.waitForRunPhase('done');
+});
