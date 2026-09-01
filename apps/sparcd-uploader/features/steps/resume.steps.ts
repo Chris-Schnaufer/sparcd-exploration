@@ -245,6 +245,7 @@ Then(
   "the resumed upload's observations.csv matches what a fresh upload would have written",
   async ({ app }) => {
     const rows = writtenCsvRows(app, 'observations.csv');
+    expect(rows.length).toBeGreaterThan(0);
     // Every row is a blank placeholder (no species identified).
     for (const row of rows) {
       expect(row[5]).toBe('blank');   // observationType
