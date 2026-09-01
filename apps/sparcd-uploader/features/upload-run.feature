@@ -39,12 +39,11 @@ Feature: Upload and publish a batch
     And the run is not recorded in History
 
   @A1
-  Scenario: The title-bar pill shows dry-run while a dry run is in progress
-    Given the upload has not been started
+  Scenario: The title-bar pill shows dry-run during blob processing and after completion
+    Given some files are still being examined
     When the operator opts into a dry run
     And the dry run is started
-    Then the title-bar pill reads "dry-run" throughout the run
-    And the dry-run pill tooltip reads "Dry run — nothing is written to S3"
+    Then the title-bar pill and tooltip show dry-run while blobs are processing and after completion
 
   @unmapped
   Scenario: A real upload states what access it needs before it starts
