@@ -425,8 +425,8 @@ export function Tag() {
     setSelected(new Set());
   };
 
-  // On-screen questionable toggle mirrors the `x` key: act on the selection (or
-  // the focused image), flipping off the focused image's current state.
+  // On-screen questionable toggle mirrors Shift+Space: act on the selection
+  // (or the focused image), flipping off the focused image's current state.
   const toggleQuestionable = () => {
     const targets = targetsOf();
     if (!targets.length || !current) return;
@@ -1555,33 +1555,33 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
   }
   if (e.altKey) return;
 
-  // Shift+J / Shift+K — burst navigation.
-  if (e.shiftKey) {
-    const k = e.key.toLowerCase();
-    if (k === 'j') {
-      e.preventDefault();
-      gotoBurst(s, 1);
-    } else if (k === 'k') {
-      e.preventDefault();
-      gotoBurst(s, -1);
-    }
-    return;
-  }
-
   const current = s.list[s.focus];
   switch (e.key) {
-    case 'j':
     case 'ArrowDown':
       e.preventDefault();
       focusMove(s, s.focus + 1);
       return;
-    case 'k':
     case 'ArrowUp':
       e.preventDefault();
       focusMove(s, s.focus - 1);
       return;
+    case 'PageDown':
+      e.preventDefault();
+      gotoBurst(s, 1);
+      return;
+    case 'PageUp':
+      e.preventDefault();
+      gotoBurst(s, -1);
+      return;
     case ' ':
       e.preventDefault();
+      if (e.shiftKey) {
+        const targets = s.targetsOf();
+        if (!targets.length || !current) return;
+        const anchorDraft = s.drafts[current.key];
+        s.setQuestionableMany(s.ctx, targets, !anchorDraft?.questionable);
+        return;
+      }
       s.filterRef.current?.focus();
       return;
     case 'Enter':
@@ -1594,15 +1594,6 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
     case 'Escape':
       if (s.selected.size) s.setSelected(new Set());
       return;
-    case 'x':
-    case 'X': {
-      const targets = s.targetsOf();
-      if (!targets.length || !current) return;
-      // Anchor on the focused image so a mixed selection resolves predictably.
-      const anchorDraft = s.drafts[current.key];
-      s.setQuestionableMany(s.ctx, targets, !anchorDraft?.questionable);
-      return;
-    }
   }
 
   const action = s.keyMap.get(e.key.toLowerCase());

@@ -88,6 +88,18 @@ Feature: Assign species to images in an upload
     And the assigned key is shown on the species row
 
   @H2
+  Scenario Outline: Former navigation keys and their shifted forms can be assigned to species
+    Given an image is focused
+    When "<key>" is assigned to a species and pressed
+    Then that species is recorded on the image
+
+    Examples:
+      | key |
+      | j   |
+      | k   |
+      | x   |
+
+  @H2
   Scenario: Keys already bound in the desktop app work without re-assignment
     Given the species vocabulary carries a key binding for a species
     Then that key applies the species without any local assignment
