@@ -28,7 +28,7 @@ describe('uploader state-pill descriptions', () => {
     ['publishing', 'Publishing upload metadata'],
     ['complete', 'Upload complete'],
     ['failed', 'Upload failed'],
-    ['dry-run', 'Dry run — nothing was written'],
+    ['dry-run', 'Dry run — nothing is written to S3'],
   ] satisfies [UploadState, string][])('%s explains its exact meaning', (state, description) => {
     expect(STATE_PILL_CONFIG[state].description).toBe(description);
   });
@@ -48,17 +48,23 @@ describe('live upload phase to title-bar state', () => {
     bucket: 'bucket',
   });
 
-  it.each([
-    [null, 'ready'],
-    [snapshot('idle'), 'ready'],
-    [snapshot('preparing'), 'uploading'],
-    [snapshot('blobs'), 'uploading'],
-    [snapshot('metadata'), 'publishing'],
-    [snapshot('done'), 'complete'],
-    [snapshot('done', true), 'dry-run'],
-    [snapshot('partial'), 'failed'],
-    [snapshot('error'), 'failed'],
-  ] satisfies [UploadSnapshot | null, UploadState][])('maps %# to %s', (snap, expected) => {
-    expect(uploadStateOf(snap)).toBe(expected);
+  it('maps an absent snapshot to ready', () => {
+    expect(uploadStateOf(null)).toBe('ready');
   });
+
+  it.each([
+    ['idle', 'ready', 'ready'],
+    ['preparing', 'uploading', 'dry-run'],
+    ['blobs', 'uploading', 'dry-run'],
+    ['metadata', 'publishing', 'dry-run'],
+    ['partial', 'failed', 'failed'],
+    ['done', 'complete', 'dry-run'],
+    ['error', 'failed', 'failed'],
+  ] satisfies [UploadPhase, UploadState, UploadState][])(
+    'maps %s to %s for a real upload and %s for a dry run',
+    (phase, realState, dryRunState) => {
+      expect(uploadStateOf(snapshot(phase))).toBe(realState);
+      expect(uploadStateOf(snapshot(phase, true))).toBe(dryRunState);
+    },
+  );
 });

@@ -78,6 +78,19 @@ Then(
   },
 );
 
+async function expectDryRunPill(app: App): Promise<void> {
+  const pill = app.page.getByRole('status');
+  const tooltip = app.page.locator('[role="tooltip"]');
+  await expect(pill).toContainText('dry-run');
+  await pill.hover();
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toHaveText('Dry run — nothing is written to S3');
+  await app.page.mouse.move(0, 0);
+  await pill.focus();
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toHaveText('Dry run — nothing is written to S3');
+}
+
 Then('dry run is switched off by default', async ({ app }) => {
   await expect(app.dryRunCheckbox()).not.toBeChecked();
   await expect(app.page.getByRole('button', { name: 'Start upload' })).toBeVisible();
@@ -86,6 +99,23 @@ Then('dry run is switched off by default', async ({ app }) => {
 When('the operator opts into a dry run', async ({ app }) => {
   await app.dryRunCheckbox().check();
 });
+
+When('the dry run is started', async ({ app }) => {
+  await app.startRun();
+});
+
+Then(
+  'the title-bar pill and tooltip show dry-run while blobs are processing and after completion',
+  async ({ app }) => {
+    // The held inspection result keeps the streaming queue open, so
+    // "uploading" deterministically means the dry run is in its blobs phase.
+    await app.waitForRunPhase('uploading');
+    await expectDryRunPill(app);
+    await app.releaseHeldInspect();
+    await app.waitForRunPhase('done');
+    await expectDryRunPill(app);
+  },
+);
 
 Then(
   'starting it lists every object that would be written, with its size and fingerprint',
