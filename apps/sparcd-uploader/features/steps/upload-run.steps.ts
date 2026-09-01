@@ -89,6 +89,19 @@ Then('dismissing it closes the dialog', async ({ app }) => {
   await expect(app.page.getByRole('dialog', { name: 'Upload complete' })).toHaveCount(0);
 });
 
+async function expectDryRunPill(app: App): Promise<void> {
+  const pill = app.page.getByRole('status');
+  const tooltip = app.page.locator('[role="tooltip"]');
+  await expect(pill).toContainText('dry-run');
+  await pill.hover();
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toHaveText('Dry run — nothing is written to S3');
+  await app.page.mouse.move(0, 0);
+  await pill.focus();
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toHaveText('Dry run — nothing is written to S3');
+}
+
 Then('dry run is switched off by default', async ({ app }) => {
   await expect(app.dryRunCheckbox()).not.toBeChecked();
   await expect(app.page.getByRole('button', { name: 'Start upload' })).toBeVisible();
@@ -97,6 +110,23 @@ Then('dry run is switched off by default', async ({ app }) => {
 When('the operator opts into a dry run', async ({ app }) => {
   await app.dryRunCheckbox().check();
 });
+
+When('the dry run is started', async ({ app }) => {
+  await app.startRun();
+});
+
+Then(
+  'the title-bar pill and tooltip show dry-run while blobs are processing and after completion',
+  async ({ app }) => {
+    // The held inspection result keeps the streaming queue open, so
+    // "uploading" deterministically means the dry run is in its blobs phase.
+    await app.waitForRunPhase('uploading');
+    await expectDryRunPill(app);
+    await app.releaseHeldInspect();
+    await app.waitForRunPhase('done');
+    await expectDryRunPill(app);
+  },
+);
 
 Then(
   'starting it lists every object that would be written, with its size and fingerprint',
@@ -227,6 +257,26 @@ Then(
     const rows = await app.page.locator('div[data-index]').allTextContents();
     const mismatched = rows.find((r) => r.includes('IMG_0002.JPG'))!;
     expect(mismatched).not.toContain('done');
+    expect(
+      app.s3.puts.filter((p) => METADATA_NAMES.some((n) => p.key.endsWith(n))).length,
+    ).toBe(metadataBefore);
+  },
+);
+
+Then(
+  "an object whose sha256 fingerprint is absent from storage is treated as a failure",
+  async ({ app }) => {
+    // Strip sha256 from every non-metadata PUT after storage — simulates a path
+    // that accepts the upload but loses or never returns the digest header.
+    app.s3.afterPut = (_bucket, key, obj) => {
+      if (!METADATA_NAMES.some((n) => key.endsWith(n))) delete obj.meta['sha256'];
+    };
+    const metadataBefore = app.s3.puts.filter((p) => METADATA_NAMES.some((n) => p.key.endsWith(n))).length;
+    await rescanFromUpload(app, standardBatch());
+    await app.dryRunCheckbox().uncheck();
+    await app.startRun();
+    await expect(app.page.getByText(/final review: digest contract broken/).first()).toBeVisible({ timeout: 60_000 });
+    await expect(app.runPhase()).toHaveText('partial');
     expect(
       app.s3.puts.filter((p) => METADATA_NAMES.some((n) => p.key.endsWith(n))).length,
     ).toBe(metadataBefore);
@@ -682,3 +732,52 @@ Then(
     await expect(app.timeZoneSelect()).toHaveValue('America/Phoenix');
   },
 );
+
+// --- wake lock and preparing phase -------------------------------------------
+
+Given('the browser wake lock API is available in this session', async ({ app }) => {
+  await app.page.evaluate(() => {
+    (window as unknown as Record<string, unknown>).__wakeLockCount = 0;
+    Object.defineProperty(navigator, 'wakeLock', {
+      value: {
+        request: async (_type: string) => {
+          (window as unknown as Record<string, unknown>).__wakeLockCount =
+            ((window as unknown as Record<string, unknown>).__wakeLockCount as number) + 1;
+          return { type: 'screen', released: false, release: async () => {} };
+        },
+      },
+      configurable: true,
+    });
+  });
+});
+
+Given('the first media blob is held at the mock', async ({ app }) => {
+  holdFirstMediaPut(app);
+});
+
+When('a real upload is started', async ({ app }) => {
+  await app.dryRunCheckbox().uncheck();
+  await app.startRun();
+  await expect.poll(() => app.s3.puts.length, { timeout: 30_000 }).toBeGreaterThan(0);
+});
+
+When('the dry run is started and completes', async ({ app }) => {
+  await app.startRun();
+  await app.waitForRunPhase('done');
+});
+
+Then('the activity log has the preparing-upload entry', async ({ app }) => {
+  expect(await app.logText()).toContain('preparing upload…');
+});
+
+Then('the browser wake lock was requested', async ({ app }) => {
+  const count = await app.page.evaluate(
+    () => (window as unknown as Record<string, unknown>).__wakeLockCount as number,
+  );
+  expect(count).toBeGreaterThan(0);
+});
+
+Then('releasing the held blob lets the upload complete', async ({ app }) => {
+  app.s3.releaseHeldPuts();
+  await app.waitForRunPhase('done');
+});

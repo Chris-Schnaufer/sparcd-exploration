@@ -54,6 +54,7 @@ Feature: Resume an interrupted upload and retry a failed one
     When an interrupted upload is resumed
     Then it writes to the same collection, the same upload folder and the same object paths as the original attempt
     And the deployment, uploader identity and description are taken from the recorded session, not re-entered
+    And the resumed upload's observations.csv matches what a fresh upload would have written
 
   @AL2
   Scenario: Retrying the failed files of a partial run completes that same upload
