@@ -111,6 +111,7 @@ export function Upload() {
   // is ours.
   const snap = useStore((s) => s.activeSnap);
   const activeRun = useStore((s) => s.activeRun);
+  const beginActiveRun = useStore((s) => s.beginActiveRun);
   const setActiveRun = useStore((s) => s.setActiveRun);
   const setActiveSnap = useStore((s) => s.setActiveSnap);
   const clearActiveRun = useStore((s) => s.clearActiveRun);
@@ -136,6 +137,7 @@ export function Upload() {
     setResumeProblems(pending.problems);
     setCompleteDismissed(false);
     attachedRef.current = pending.attached;
+    const generation = beginActiveRun();
     const run = resumeUpload(
       {
         config: s3Config,
@@ -143,10 +145,10 @@ export function Upload() {
         attached: pending.attached,
         concurrency: concurrencyControl(),
       },
-      setActiveSnap,
+      (next) => setActiveSnap(next, generation),
     );
-    setActiveRun(run);
-  }, [pendingResume, s3Config, setActiveRun, setActiveSnap]);
+    setActiveRun(run, generation);
+  }, [pendingResume, s3Config, beginActiveRun, setActiveRun, setActiveSnap]);
 
 
 
@@ -158,6 +160,7 @@ export function Upload() {
     setCompleteDismissed(false);
     attachedRef.current = null; // this batch's files are the store's again
     setResumeProblems([]);
+    const generation = beginActiveRun();
     const run = runStreamingUpload(
       {
         config: s3Config,
@@ -176,9 +179,9 @@ export function Upload() {
           files,
         },
       },
-      setActiveSnap,
+      (next) => setActiveSnap(next, generation),
     );
-    setActiveRun(run, run);
+    setActiveRun(run, generation, run);
     // If inspection finished before Start was clicked, no later store update
     // will close the queue. The store owns the run; close it immediately here.
     useStore.getState().closeStreamingQueue(files);
@@ -200,6 +203,11 @@ export function Upload() {
     // The async gap before resumeUpload's first emit leaves the Retry button
     // mounted — guard so a double-click can't start two concurrent runs.
     if (!snap || !s3Config || retryPending.current) return;
+    const expectedConnectionId = connectionId;
+    const connectionIsCurrent = () => {
+      const state = useStore.getState();
+      return !!state.s3Config && state.connectionId === expectedConnectionId;
+    };
     retryPending.current = true;
     setRetryError(null);
     setCompleteDismissed(false);
@@ -208,6 +216,7 @@ export function Upload() {
       // present — but the load can still fail (cleared site data, IDB error),
       // and the guard must unlatch or Retry is dead until a reload.
       const session = await loadSession(snap.sessionId);
+      if (!connectionIsCurrent()) return;
       if (!session) throw new Error('no saved record for this session');
       const attached = attachedRef.current ?? new Map(files.map((f) => [f.relPath, f.file]));
 
@@ -236,6 +245,7 @@ export function Upload() {
             ]),
         );
         const result = await ensureBundle(session.batch, session, resolved);
+        if (!connectionIsCurrent()) return;
         if (!result.ok) {
           const reasons = result.problems.map((p) => `${p.fileName}: ${p.reason}`).slice(0, 3).join('; ');
           throw new Error(`${result.problems.length} file(s) couldn't be resolved (${reasons})`);
@@ -243,18 +253,22 @@ export function Upload() {
       }
 
       const finalSession = session.bundle ? session : await loadSession(snap.sessionId);
+      if (!connectionIsCurrent()) return;
       if (!finalSession) throw new Error('session record disappeared while resolving it');
 
+      const config = useStore.getState().s3Config;
+      if (!config || !connectionIsCurrent()) return;
+      const generation = beginActiveRun();
       const run = resumeUpload(
         {
-          config: s3Config,
+          config,
           session: finalSession,
           attached,
           concurrency: concurrencyControl(),
         },
-        setActiveSnap,
+        (next) => setActiveSnap(next, generation),
       );
-      setActiveRun(run);
+      setActiveRun(run, generation);
     } catch (e) {
       setRetryError(
         `Couldn't resume this upload (${e instanceof Error ? e.message : String(e)}). Retry again; if it keeps failing, go Back and start the upload over.`,
@@ -262,7 +276,7 @@ export function Upload() {
     } finally {
       retryPending.current = false;
     }
-  }, [snap, s3Config, files]);
+  }, [snap, s3Config, connectionId, files, beginActiveRun, setActiveRun, setActiveSnap]);
 
   // Self-heal after an interruption the user might not notice — a run that
   // landed on 'partial' (some files failed after exhausting their own

@@ -848,17 +848,24 @@ function makeRunner(
   // silently accept a metadata collision.
   const writeMetadata = async (writes: RunPlan['writes'], uploadPath: string): Promise<void> => {
     for (const w of writes) {
+      if (cancelled) throw new Error('cancelled');
       const key = `${uploadPath}/${w.name}`;
       if (dryRun) {
         log('put', `PUT ${snap.bucket}/${key} (${new TextEncoder().encode(w.body).length} B)`);
         continue;
       }
       for (let attempt = 0; ; attempt++) {
+        if (cancelled) throw new Error('cancelled');
         try {
-          await client.writeImmutable(snap.bucket, key, w.body, { contentType: w.contentType });
+          await client.writeImmutable(snap.bucket, key, w.body, {
+            contentType: w.contentType,
+            signal: abort.signal,
+          });
+          if (cancelled) throw new Error('cancelled');
           log('info', `wrote ${key}`);
           break;
         } catch (err) {
+          if (cancelled) throw new Error('cancelled');
           if (err instanceof PreconditionFailedError) {
             if (isResume) {
               log('info', `already present, skip: ${key}`);
@@ -868,6 +875,7 @@ function makeRunner(
           }
           if (attempt + 1 >= MAX_ATTEMPTS || !isTransient(err)) throw err;
           await sleep(backoff(attempt));
+          if (cancelled) throw new Error('cancelled');
         }
       }
     }
@@ -1004,6 +1012,7 @@ function makeRunner(
     // byte-identical ledger to resume from instead of starting over: it's
     // just not written to S3 until every blob has actually landed.
     const { writes, metadataBundleSha256 } = await buildMetadata();
+    if (cancelled) throw new Error('cancelled');
     snap.metadataBundleSha256 = metadataBundleSha256;
 
     const failed = snap.files.filter((f) => f.state === 'failed').length;
@@ -1209,6 +1218,7 @@ export function runStreamingUpload(
           return { writes: metadataWrites(bundle), metadataBundleSha256: bundle.metadataBundleSha256 };
         },
       );
+      if (runner.isCancelled()) throw new Error('cancelled');
       if (runner.snap.phase !== 'partial') {
         runner.snap.phase = 'done';
         // Behind the ledger too: `openSession` re-puts the batch row, so a
@@ -1394,6 +1404,7 @@ export function resumeUpload(
     try {
       runner.log('info', `resuming ${batch.uploadPrefix}/`);
       await runner.runOnce(plan);
+      if (runner.isCancelled()) throw new Error('cancelled');
       if (runner.snap.phase !== 'partial') {
         runner.snap.phase = 'done';
         await markBatchComplete(batch.id, new Date().toISOString());

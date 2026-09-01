@@ -3,6 +3,7 @@ import type { ScannedFile } from '../src/lib/scanFiles';
 import type { ProcessResponse } from '../src/lib/processPool';
 import type { FileValidation } from '../src/lib/validation';
 import type { NaiveDateTime } from '../src/lib/exifTime';
+import type { UploadPhase, UploadSnapshot } from '../src/lib/upload';
 
 const storage = () => {
   const m = new Map<string, string>();
@@ -51,6 +52,21 @@ function success(id: string, over: Partial<ProcessResponse> = {}): ProcessRespon
   };
 }
 
+function snapshot(sessionId: string, phase: UploadPhase): UploadSnapshot {
+  return {
+    version: 1,
+    sessionId,
+    phase,
+    dryRun: false,
+    files: [],
+    uploadedBytes: 0,
+    skippedBytes: 0,
+    totalBytes: 0,
+    log: [],
+    bucket: 'sparcd-test',
+  };
+}
+
 beforeEach(() => {
   useStore.setState({
     files: [],
@@ -64,8 +80,39 @@ beforeEach(() => {
     streamingRun: null,
     streamingQueueClosed: false,
     activeSnap: null,
+    activeRunGeneration: 0,
     activeRunSource: null,
     historyResumePreparation: null,
+  });
+});
+
+describe('active run ownership', () => {
+  it('ignores a late snapshot after the run is invalidated', () => {
+    const store = useStore.getState();
+    const generation = store.beginActiveRun();
+    const cancel = vi.fn();
+    store.setActiveRun({ cancel, done: Promise.resolve() }, generation);
+
+    store.cancelActiveRun();
+    store.setActiveSnap(snapshot('stale', 'error'), generation);
+
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(useStore.getState().activeRun).toBeNull();
+    expect(useStore.getState().activeSnap).toBeNull();
+    expect(useStore.getState().activeRunSource).toBeNull();
+  });
+
+  it('does not let an older run overwrite a newer run', () => {
+    const store = useStore.getState();
+    const oldGeneration = store.beginActiveRun();
+    const newGeneration = store.beginActiveRun();
+    const current = snapshot('current', 'blobs');
+
+    store.setActiveSnap(current, newGeneration);
+    store.setActiveSnap(snapshot('old', 'done'), oldGeneration);
+
+    expect(useStore.getState().activeSnap).toBe(current);
+    expect(useStore.getState().activeRunSource).toBe('upload');
   });
 });
 
@@ -81,7 +128,8 @@ describe('streaming bridge ownership', () => {
     useStore.getState().setFiles([scanned('a.jpg')]);
     useStore.getState().applyProgress([], [success('a.jpg')]);
     const run = streamingRun();
-    useStore.getState().setActiveRun(run, run);
+    const generation = useStore.getState().beginActiveRun();
+    useStore.getState().setActiveRun(run, generation, run);
 
     forwardReadyToStreamingRun([{ id: 'a.jpg' }]);
     const files = useStore.getState().files;
@@ -99,9 +147,11 @@ describe('streaming bridge ownership', () => {
     useStore.getState().applyProgress([], [success('a.jpg')]);
     const old = streamingRun();
     const resume = { cancel: vi.fn(), done: Promise.resolve() };
-    useStore.getState().setActiveRun(old, old);
+    const oldGeneration = useStore.getState().beginActiveRun();
+    useStore.getState().setActiveRun(old, oldGeneration, old);
 
-    useStore.getState().setActiveRun(resume);
+    const resumeGeneration = useStore.getState().beginActiveRun();
+    useStore.getState().setActiveRun(resume, resumeGeneration);
     forwardReadyToStreamingRun([{ id: 'a.jpg' }]);
     maybeCloseStreamingQueue(useStore.getState().files);
 
@@ -130,8 +180,10 @@ describe('streaming bridge ownership', () => {
       done: new Promise<void>((resolve) => { finishNew = resolve; }),
     };
 
-    useStore.getState().setActiveRun(old, old);
-    useStore.getState().setActiveRun(replacement, replacement);
+    const oldGeneration = useStore.getState().beginActiveRun();
+    useStore.getState().setActiveRun(old, oldGeneration, old);
+    const replacementGeneration = useStore.getState().beginActiveRun();
+    useStore.getState().setActiveRun(replacement, replacementGeneration, replacement);
     finishOld();
     await old.done;
     await Promise.resolve();
@@ -159,7 +211,8 @@ describe('store persistence', () => {
     useStore.getState().setConcurrencyMode('manual');
     useStore.getState().setUploadConcurrency(16);
     useStore.getState().setFiles([scanned('a.jpg')]);
-    useStore.getState().setActiveSnap({ sessionId: 'session-1' } as never);
+    const generation = useStore.getState().beginActiveRun();
+    useStore.getState().setActiveSnap({ sessionId: 'session-1' } as never, generation);
 
     const persisted = JSON.parse(window.sessionStorage.getItem('sparcd-uploader-session')!).state;
 

@@ -35,6 +35,13 @@ type Row = { batch: BatchRecord; counts: Record<PersistedFileState, number> };
 
 const stampOf = (prefix: string) => prefix.slice(prefix.lastIndexOf('/') + 1);
 
+function ownsPreparation(sessionId: string, connectionId: number): boolean {
+  const state = useStore.getState();
+  return !!state.s3Config &&
+    state.connectionId === connectionId &&
+    state.historyResumePreparation?.sessionId === sessionId;
+}
+
 function Badge({ batch }: { batch: BatchRecord }) {
   const done = !!batch.completedAt;
   return (
@@ -103,8 +110,13 @@ export function History() {
   const online = useOnline();
 
   const launch = useCallback(
-    (session: LoadedSession, attached: Map<string, File>, probs: ReconcileProblem[]) => {
-      clearPreparation(session.batch.id);
+    (
+      session: LoadedSession,
+      attached: Map<string, File>,
+      probs: ReconcileProblem[],
+      expectedConnectionId: number,
+    ) => {
+      if (!ownsPreparation(session.batch.id, expectedConnectionId)) return;
       const missingRequired = session.files.filter((f) => f.state !== 'done' && !attached.has(f.localPath));
       if (missingRequired.length > 0) {
         setProblems([
@@ -124,7 +136,9 @@ export function History() {
       }
       setProblems([]);
       setMessage(null);
+      if (!ownsPreparation(session.batch.id, expectedConnectionId)) return;
       setPendingResume({ session, attached, problems: probs });
+      clearPreparation(session.batch.id);
       setSection('new');
       setStep('upload');
     },
@@ -142,8 +156,11 @@ export function History() {
       attached: Map<string, File>,
       probs: ReconcileProblem[],
       resolved: Map<string, ProcessResponse>,
+      expectedConnectionId: number,
     ) => {
+      if (!ownsPreparation(batch.id, expectedConnectionId)) return;
       const result = await ensureBundle(batch, session, resolved);
+      if (!ownsPreparation(batch.id, expectedConnectionId)) return;
       if (!result.ok) {
         setProblems([...probs, ...result.problems]);
         setMessage(
@@ -152,11 +169,12 @@ export function History() {
         return;
       }
       const finalSession = session.bundle ? session : await loadSession(batch.id);
+      if (!ownsPreparation(batch.id, expectedConnectionId)) return;
       if (!finalSession) {
         setMessage('Session record is missing.');
         return;
       }
-      launch(finalSession, attached, probs);
+      launch(finalSession, attached, probs, expectedConnectionId);
     },
     [launch],
   );
@@ -164,6 +182,7 @@ export function History() {
   const beginResume = useCallback(
     async (batch: BatchRecord) => {
       setProblems([]);
+      const expectedConnectionId = useStore.getState().connectionId;
       beginPreparation(batch.id);
       try {
         if (!s3Config) {
@@ -190,13 +209,22 @@ export function History() {
             sessionPromise.then((s) => s?.files ?? []),
             onProgress,
           );
+          if (!ownsPreparation(batch.id, expectedConnectionId)) return;
           const session = await sessionPromise;
+          if (!ownsPreparation(batch.id, expectedConnectionId)) return;
           if (!session) {
             setMessage('Session record is missing.');
             return;
           }
           if (restore.ok) {
-            await launchWithBundle(batch, session, restore.attached, restore.problems, restore.resolved);
+            await launchWithBundle(
+              batch,
+              session,
+              restore.attached,
+              restore.problems,
+              restore.resolved,
+              expectedConnectionId,
+            );
             return;
           }
           setMessage(restore.reason);
@@ -206,18 +234,22 @@ export function History() {
         // Reselect path.
         if (supportsDirectoryHandle) {
           const picked = await reselectFolder();
+          if (!ownsPreparation(batch.id, expectedConnectionId)) return;
           if (!picked) return; // user dismissed
           const session = await sessionPromise;
+          if (!ownsPreparation(batch.id, expectedConnectionId)) return;
           if (!session) {
             setMessage('Session record is missing.');
             return;
           }
           const { attached, problems: probs, resolved } = await reconcileReselect(session.files, picked.scanned, onProgress);
+          if (!ownsPreparation(batch.id, expectedConnectionId)) return;
           // Opportunistically upgrade the session to a durable handle for next time.
           if (picked.handle) {
             await updateBatch(batch.id, { dirHandle: picked.handle, fileAccessMode: 'persistent-handle' });
+            if (!ownsPreparation(batch.id, expectedConnectionId)) return;
           }
-          await launchWithBundle(batch, session, attached, probs, resolved);
+          await launchWithBundle(batch, session, attached, probs, resolved, expectedConnectionId);
         } else {
           // No durable picker — fall back to a transient <input webkitdirectory>.
           // Release the lock before clicking: on Firefox/Safari a cancelled picker
@@ -241,9 +273,11 @@ export function History() {
       const batch = pendingReselect.current;
       pendingReselect.current = null;
       if (!batch || !list || list.length === 0) return;
+      const expectedConnectionId = useStore.getState().connectionId;
       beginPreparation(batch.id);
       try {
         const session = await loadSession(batch.id);
+        if (!ownsPreparation(batch.id, expectedConnectionId)) return;
         if (!session) {
           setMessage('Session record is missing.');
           return;
@@ -251,7 +285,8 @@ export function History() {
         const { attached, problems: probs, resolved } = await reconcileReselect(session.files, scanFileList(list), (done, total) =>
           setPreparationProgress(batch.id, done, total),
         );
-        await launchWithBundle(batch, session, attached, probs, resolved);
+        if (!ownsPreparation(batch.id, expectedConnectionId)) return;
+        await launchWithBundle(batch, session, attached, probs, resolved, expectedConnectionId);
       } finally {
         clearPreparation(batch.id);
       }
