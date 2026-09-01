@@ -499,6 +499,19 @@ export function Tag() {
     return () => clearTimeout(t);
   }, [savedAt]);
 
+  // Must stay above the early returns below — useMemo must be called unconditionally.
+  const discardSummaries = useMemo(
+    () =>
+      buildDiscardSummaries(
+        Object.values(drafts).filter((r) => r.dirty),
+        list.map((image) => ({
+          ...image,
+          restoredTimestamp: correctedTimestamp(image.baseTimestamp, timeOffset, null),
+        })),
+      ),
+    [drafts, list, timeOffset],
+  );
+
   if (!localRecord) {
     if (!current && images.isLoading)
       return <Centered>Loading the upload’s canonical media…</Centered>;
@@ -511,17 +524,6 @@ export function Tag() {
   const eff = current ? effectiveOf(current, draft) : null;
   const currentBase = current ? { observations: current.baseObservations } : undefined;
   const nDirty = dirtyCount(drafts);
-  const discardSummaries = useMemo(
-    () =>
-      buildDiscardSummaries(
-        Object.values(drafts).filter((r) => r.dirty),
-        list.map((image) => ({
-          ...image,
-          restoredTimestamp: correctedTimestamp(image.baseTimestamp, timeOffset, null),
-        })),
-      ),
-    [drafts, list, timeOffset],
-  );
   const discardDetails = discardSummaries.map(
     (summary) =>
       `${summary.displayName}: ${summary.changes.map((change) => change.label).join(', ') || 'local draft record'}`,
