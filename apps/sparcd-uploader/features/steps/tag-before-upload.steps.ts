@@ -205,6 +205,12 @@ When('a dry run of it is started', async ({ app }) => {
   await app.waitForRunPhase('done');
 });
 
+Then('all stored objects pass the final review', async ({ app }) => {
+  await expect(
+    app.page.getByText(/final review: all \d+ objects confirmed/),
+  ).toBeVisible();
+});
+
 Then('nothing about the hand-off is left on this machine', async ({ app }) => {
   await expect.poll(async () => (await app.readFlipRecords()).length).toBe(0);
 });

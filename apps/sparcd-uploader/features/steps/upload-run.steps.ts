@@ -216,6 +216,26 @@ Then(
   },
 );
 
+Then(
+  "an object whose sha256 fingerprint is absent from storage is treated as a failure",
+  async ({ app }) => {
+    // Strip sha256 from every non-metadata PUT after storage — simulates a path
+    // that accepts the upload but loses or never returns the digest header.
+    app.s3.afterPut = (_bucket, key, obj) => {
+      if (!METADATA_NAMES.some((n) => key.endsWith(n))) delete obj.meta['sha256'];
+    };
+    const metadataBefore = app.s3.puts.filter((p) => METADATA_NAMES.some((n) => p.key.endsWith(n))).length;
+    await rescanFromUpload(app, standardBatch());
+    await app.dryRunCheckbox().uncheck();
+    await app.startRun();
+    await expect(app.page.getByText(/final review: digest contract broken/).first()).toBeVisible({ timeout: 60_000 });
+    await expect(app.runPhase()).toHaveText('partial');
+    expect(
+      app.s3.puts.filter((p) => METADATA_NAMES.some((n) => p.key.endsWith(n))).length,
+    ).toBe(metadataBefore);
+  },
+);
+
 // --- streaming past Inspect ------------------------------------------------
 
 Given('some files are still being examined', async ({ app }) => {
