@@ -88,6 +88,9 @@ Then(
     expect(obs.length).toBeGreaterThanOrEqual(OBS_A.length + 1);
     for (const o of obs) {
       expect(o.observationId).not.toBe('');
+      // Observation IDs must use the bundle-relative scheme (e.g. "cam1/IMG.JPG:0"),
+      // not full S3 keys (e.g. "Collections/.../cam1/IMG.JPG:0").
+      expect(o.observationId.startsWith('Collections/')).toBe(false);
       expect(o.mediaId.startsWith(PREFIX_A)).toBe(true);
       expect(Number.isFinite(o.count)).toBe(true);
     }

@@ -270,11 +270,14 @@ async function buildWrites(
   plan: SyncPlan,
   user: string,
   editStamp: string,
+  uploadPrefix: string,
 ): Promise<PreparedWrite[]> {
   const allMediaEdits = [...plan.tagEdits, ...plan.timeEdits];
   const bodies: Record<CanonicalRole, string> = {
     media: mergeMedia(current.media.text, allMediaEdits),
-    observations: mergeObservations(current.observations.text, plan.tagEdits),
+    observations: mergeObservations(current.observations.text, plan.tagEdits, {
+      observationId: (mediaId, i) => `${mediaId.slice(uploadPrefix.length + 1)}:${i}`,
+    }),
     uploadMeta: '',
   };
   const delta = computeSpeciesDelta(current.observations.text, plan.tagEdits);
@@ -480,7 +483,7 @@ export async function runSync(params: SyncParams, io: SyncIO): Promise<SyncResul
   }
 
   const editStamp = javaEditStamp(io.now());
-  const writes = await buildWrites(current, plan, user, editStamp);
+  const writes = await buildWrites(current, plan, user, editStamp, uploadPrefix);
   const snapshotPrefix = snapshotPrefixOf(uploadPrefix, user, snapshotStamp(io.now()));
 
   if (dryRun) {
