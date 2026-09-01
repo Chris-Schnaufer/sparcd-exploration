@@ -85,7 +85,7 @@ Then('nothing is cleared unless discarding is explicitly chosen', async ({ app }
   expect(await app.readBatchRecords()).toHaveLength(1);
   await expect(app.page.getByRole('button', { name: 'Logout', exact: true })).toBeVisible();
 
-  await app.page.getByRole('button', { name: 'Disconnect / edit' }).click();
+  await app.page.getByRole('button', { name: 'Disconnect' }).click();
   await app.page.getByRole('button', { name: 'Discard & disconnect' }).click();
   await expect(app.connectForm()).toBeVisible({ timeout: 30_000 });
   expect(await app.readBatchRecords()).toHaveLength(0);
