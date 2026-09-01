@@ -477,6 +477,49 @@ Then('no other upload can be resumed while one is running', async ({ app }) => {
   await expect(app.runPhase()).toHaveText('uploading');
 });
 
+When('the user leaves History and returns while the resume is running', async ({ app }) => {
+  await app.gotoSection('Settings');
+  await expect(app.page.getByText('Uploader identity')).toBeVisible();
+  await app.gotoSection('History');
+});
+
+Then('the resumed session cannot be resumed or discarded', async ({ app }) => {
+  await expect(app.page.getByRole('button', { name: 'Resume' }).first()).toBeDisabled();
+  await expect(app.page.getByRole('button', { name: 'Discard' }).first()).toBeDisabled();
+  expect(await app.readBatchRecords()).toHaveLength(1);
+});
+
+Then('the resume remains visible and cancellable on the Upload step', async ({ app }) => {
+  await app.gotoSection('New upload');
+  await expect(app.runPhase()).toHaveText('uploading');
+  await expect(app.page.getByRole('button', { name: 'Cancel' })).toBeVisible();
+  await app.page.getByRole('button', { name: 'Cancel' }).click();
+  await expect(app.page.getByText('cancelled').first()).toBeVisible();
+});
+
+Given('a fresh upload is running in the background', async ({ app }) => {
+  await app.dropFolder(publishableBatch());
+  await app.walkToUploadStep({ uploader: 'Ada Lovelace', description: 'July retrieval' });
+  holdFirstMediaPut(app);
+  await app.dryRunCheckbox().uncheck();
+  await app.startRun();
+  await expect.poll(() => app.s3.puts.length, { timeout: 30_000 }).toBeGreaterThan(0);
+});
+
+When('History is opened during the fresh upload', async ({ app }) => {
+  await app.gotoSection('History');
+  await expect(app.page.getByRole('button', { name: 'Resume' })).toBeVisible();
+});
+
+Then('its live local session cannot be resumed or discarded', async ({ app }) => {
+  await expect(app.page.getByRole('button', { name: 'Resume' })).toBeDisabled();
+  await expect(app.page.getByRole('button', { name: 'Discard' }).first()).toBeDisabled();
+  expect(await app.readBatchRecords()).toHaveLength(1);
+  await app.gotoSection('New upload');
+  await app.page.getByRole('button', { name: 'Cancel' }).click();
+  await expect(app.page.getByText('cancelled').first()).toBeVisible();
+});
+
 // --- a retry with no readable record ---------------------------------------
 
 Given('the local record for a partial run cannot be read', async ({ app }) => {

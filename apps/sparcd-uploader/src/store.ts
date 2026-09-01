@@ -104,6 +104,13 @@ type UploaderState = {
   // because disconnect and the beforeunload guard read it to tell a real run
   // from none.
   activeRunSource: 'upload' | null;
+  // Folder recovery/hash verification happens before an UploadRun exists. Keep
+  // its lock and progress here so leaving History cannot orphan the work and
+  // expose Resume/Discard while the old component continues asynchronously.
+  historyResumePreparation: {
+    sessionId: string;
+    progress: { done: number; total: number } | null;
+  } | null;
 
   connect: (config: S3Config, remember: boolean) => void;
   disconnect: () => void;
@@ -112,6 +119,9 @@ type UploaderState = {
   closeStreamingQueue: (files: FileEntry[]) => void;
   setActiveSnap: (snap: UploadSnapshot | null) => void;
   clearActiveRun: () => void;
+  beginHistoryResumePreparation: (sessionId: string) => void;
+  setHistoryResumeProgress: (sessionId: string, done: number, total: number) => void;
+  clearHistoryResumePreparation: (sessionId: string) => void;
   toggleTheme: () => void;
   setElevationUnit: (unit: ElevationUnit) => void;
   setStep: (step: WizardStep) => void;
@@ -243,6 +253,7 @@ export const useStore = create<UploaderState>()(
       streamingQueueClosed: false,
       activeSnap: null,
       activeRunSource: null,
+      historyResumePreparation: null,
 
       connect: (config, remember) => {
         clearClientCache();
@@ -279,6 +290,7 @@ export const useStore = create<UploaderState>()(
           streamingQueueClosed: false,
           activeSnap: null,
           activeRunSource: null,
+          historyResumePreparation: null,
         }));
       },
       setSection: (section) => set({ section }),
@@ -318,6 +330,20 @@ export const useStore = create<UploaderState>()(
           activeSnap: null,
           activeRunSource: null,
         }),
+      beginHistoryResumePreparation: (sessionId) =>
+        set({ historyResumePreparation: { sessionId, progress: null } }),
+      setHistoryResumeProgress: (sessionId, done, total) =>
+        set((s) =>
+          s.historyResumePreparation?.sessionId === sessionId
+            ? { historyResumePreparation: { sessionId, progress: { done, total } } }
+            : {},
+        ),
+      clearHistoryResumePreparation: (sessionId) =>
+        set((s) =>
+          s.historyResumePreparation?.sessionId === sessionId
+            ? { historyResumePreparation: null }
+            : {},
+        ),
       toggleTheme: () =>
         set((s) => {
           const theme: Theme = s.theme === 'light' ? 'dark' : 'light';
@@ -455,6 +481,7 @@ export const useStore = create<UploaderState>()(
           streamingQueueClosed: false,
           activeSnap: null,
           activeRunSource: null,
+          historyResumePreparation: null,
         }));
       },
 
@@ -487,6 +514,7 @@ export const useStore = create<UploaderState>()(
           streamingQueueClosed: false,
           activeSnap: null,
           activeRunSource: null,
+          historyResumePreparation: null,
         }));
       },
     }),

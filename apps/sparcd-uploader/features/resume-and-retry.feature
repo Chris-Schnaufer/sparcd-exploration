@@ -105,6 +105,19 @@ Feature: Resume an interrupted upload and retry a failed one
     And the resume can be cancelled
 
   @unmapped
+  Scenario: Returning to History keeps a live resume protected
+    Given a resume is running
+    When the user leaves History and returns while the resume is running
+    Then the resumed session cannot be resumed or discarded
+    And the resume remains visible and cancellable on the Upload step
+
+  @unmapped
+  Scenario: History protects a live run started from New upload
+    Given a fresh upload is running in the background
+    When History is opened during the fresh upload
+    Then its live local session cannot be resumed or discarded
+
+  @unmapped
   Scenario: A retry whose local record cannot be read says so and stays retryable
     Given the local record for a partial run cannot be read
     When "Retry failed files" is chosen

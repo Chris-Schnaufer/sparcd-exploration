@@ -65,6 +65,7 @@ beforeEach(() => {
     streamingQueueClosed: false,
     activeSnap: null,
     activeRunSource: null,
+    historyResumePreparation: null,
   });
 });
 
@@ -172,6 +173,31 @@ describe('store persistence', () => {
       dryRun: false,
       concurrencyMode: 'manual',
       uploadConcurrency: 16,
+    });
+  });
+});
+
+describe('History resume preparation', () => {
+  it('keeps the active session and progress in shared state', () => {
+    const store = useStore.getState();
+    store.beginHistoryResumePreparation('session-a');
+    store.setHistoryResumeProgress('session-a', 7, 12);
+
+    expect(useStore.getState().historyResumePreparation).toEqual({
+      sessionId: 'session-a',
+      progress: { done: 7, total: 12 },
+    });
+  });
+
+  it('ignores stale progress and cleanup from an older preparation', () => {
+    const store = useStore.getState();
+    store.beginHistoryResumePreparation('session-new');
+    store.setHistoryResumeProgress('session-old', 4, 10);
+    store.clearHistoryResumePreparation('session-old');
+
+    expect(useStore.getState().historyResumePreparation).toEqual({
+      sessionId: 'session-new',
+      progress: null,
     });
   });
 });
