@@ -88,9 +88,10 @@ Then(
     expect(obs.length).toBeGreaterThanOrEqual(OBS_A.length + 1);
     for (const o of obs) {
       expect(o.observationId).not.toBe('');
-      // Observation IDs must use the bundle-relative scheme (e.g. "cam1/IMG.JPG:0"),
-      // not full S3 keys (e.g. "Collections/.../cam1/IMG.JPG:0").
-      expect(o.observationId.startsWith('Collections/')).toBe(false);
+      // Observation IDs must be bundle-relative: "<relative-path>:<index>",
+      // not full S3 keys like "Collections/.../cam1/IMG.JPG:0".
+      const relPath = o.mediaId.slice(PREFIX_A.length);
+      expect(o.observationId).toMatch(new RegExp(`^${relPath}:\\d+$`));
       expect(o.mediaId.startsWith(PREFIX_A)).toBe(true);
       expect(Number.isFinite(o.count)).toBe(true);
     }

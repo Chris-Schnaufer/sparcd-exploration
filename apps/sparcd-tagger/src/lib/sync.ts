@@ -276,7 +276,7 @@ async function buildWrites(
   const bodies: Record<CanonicalRole, string> = {
     media: mergeMedia(current.media.text, allMediaEdits),
     observations: mergeObservations(current.observations.text, plan.tagEdits, {
-      observationId: (mediaId, i) => `${mediaId.slice(uploadPrefix.length + 1)}:${i}`,
+      observationId: (mediaId, i) => `${mediaId.slice(uploadPrefix.length)}:${i}`,
     }),
     uploadMeta: '',
   };
