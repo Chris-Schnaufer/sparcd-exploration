@@ -87,6 +87,17 @@ When('the operator opts into a dry run', async ({ app }) => {
   await app.dryRunCheckbox().check();
 });
 
+When('the dry run is started', async ({ app }) => {
+  await app.startRun();
+});
+
+Then('the title-bar pill reads "dry-run" throughout the run', async ({ app }) => {
+  const pill = app.page.getByRole('status');
+  await expect(pill).toContainText('dry-run');
+  await app.waitForRunPhase('done');
+  await expect(pill).toContainText('dry-run');
+});
+
 Then(
   'starting it lists every object that would be written, with its size and fingerprint',
   async ({ app }) => {
