@@ -1,8 +1,10 @@
 {
   "name": "sparcd-dev-proxy",
   "private": true,
+  "type": "module",
   "scripts": {
-    "dev": "vite"
+    "dev": "vite",
+    "smoke": "node smoke.mjs"
   },
   "devDependencies": {
     "vite": "^5.4.9"

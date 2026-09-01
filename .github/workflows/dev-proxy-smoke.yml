@@ -1,0 +1,41 @@
+name: Dev proxy smoke test
+
+on:
+  pull_request:
+    paths:
+      - "apps/sparcd-dev-proxy/**"
+      - "apps/sparcd-uploader/vite.config.*"
+      - "apps/sparcd-tagger/vite.config.*"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/dev-proxy-smoke.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/sparcd-dev-proxy/**"
+      - "apps/sparcd-uploader/vite.config.*"
+      - "apps/sparcd-tagger/vite.config.*"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/dev-proxy-smoke.yml"
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify both apps through one origin
+        run: pnpm --filter sparcd-dev-proxy smoke

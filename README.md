@@ -109,8 +109,8 @@ http://localhost:5310/sparcd-exploration/uploader/
 http://localhost:5310/sparcd-exploration/tagger/
 ```
 
-Hot-module reload works through the proxy because Vite proxies WebSocket
-upgrade requests by default.
+Hot-module reload works through the proxy because both routes explicitly
+forward WebSocket upgrade requests to their Vite server.
 
 The Vite apps prefill the S3 endpoint from a gitignored
 `apps/<name>/.env` (`VITE_SPARCD_S3_ENDPOINT`). Credentials are never
