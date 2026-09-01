@@ -35,6 +35,15 @@ type Row = { batch: BatchRecord; counts: Record<PersistedFileState, number> };
 
 const stampOf = (prefix: string) => prefix.slice(prefix.lastIndexOf('/') + 1);
 
+function ownsPreparation(sessionId: string, connectionId: number, generation: number): boolean {
+  const state = useStore.getState();
+  return !!state.s3Config &&
+    state.connectionId === connectionId &&
+    state.activeRunGeneration === generation &&
+    state.activeRunReserved &&
+    state.historyResumePreparation?.sessionId === sessionId;
+}
+
 function Badge({ batch }: { batch: BatchRecord }) {
   const done = !!batch.completedAt;
   return (
@@ -53,27 +62,29 @@ export function History() {
   const setPendingResume = useStore((s) => s.setPendingResume);
   const setSection = useStore((s) => s.setSection);
   const setStep = useStore((s) => s.setStep);
-  // The Upload step owns every run, resumes included, so a run in flight is
-  // simply the store's active snapshot. Its session id is what keeps a running
-  // batch from being resumed twice or discarded out from under itself.
-  const runningSessionId = useStore((s) =>
-    s.activeSnap && (s.activeSnap.phase === 'preparing' || s.activeSnap.phase === 'blobs' || s.activeSnap.phase === 'metadata')
+  // Upload owns fresh and resumed runs. History only needs the live session id
+  // to keep that session's local ledger protected while the run is active.
+  const activeSessionId = useStore((s) =>
+    s.activeSnap &&
+    (s.activeSnap.phase === 'preparing' ||
+      s.activeSnap.phase === 'blobs' ||
+      s.activeSnap.phase === 'metadata')
       ? s.activeSnap.sessionId
       : null,
   );
+  const activeRunReserved = useStore((s) => s.activeRunReserved);
+  const beginActiveRun = useStore((s) => s.beginActiveRun);
+  const clearActiveRun = useStore((s) => s.clearActiveRun);
+  const preparation = useStore((s) => s.historyResumePreparation);
+  const beginPreparation = useStore((s) => s.beginHistoryResumePreparation);
+  const setPreparationProgress = useStore((s) => s.setHistoryResumeProgress);
+  const clearPreparation = useStore((s) => s.clearHistoryResumePreparation);
 
   const [rows, setRows] = useState<Row[] | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [problems, setProblems] = useState<ReconcileProblem[]>([]);
-  // Re-verifying a large batch's content hashes before resume can take real
-  // time with otherwise no visible feedback — surfaced in that batch's own
-  // tile so it doesn't look like Resume is just doing nothing. It also latches
-  // the button: it is set synchronously, before the first await, so a
-  // double-click can't prepare the same batch twice.
-  const [verifyingBatchId, setVerifyingBatchId] = useState<string | null>(null);
-  const [verifyProgress, setVerifyProgress] = useState<{ done: number; total: number } | null>(null);
-  // True while the fallback <input> picker is open. Separate from verifyingBatchId
-  // so Resume is disabled without showing "Verifying…" on every row.
+  // True while the fallback <input> picker is open. Separate from the shared
+  // preparation lock because a cancelled native picker may fire no change event.
   const [pickerOpen, setPickerOpen] = useState(false);
   const pickerOpenRef = useRef(false);
   const pickerCleanupRef = useRef<(() => void) | null>(null);
@@ -104,13 +115,18 @@ export function History() {
   useEffect(() => {
     return () => pickerCleanupRef.current?.();
   }, []);
-
+  const running = activeSessionId !== null;
   const online = useOnline();
 
   const launch = useCallback(
-    (session: LoadedSession, attached: Map<string, File>, probs: ReconcileProblem[]) => {
-      setVerifyingBatchId(null);
-      setVerifyProgress(null);
+    (
+      session: LoadedSession,
+      attached: Map<string, File>,
+      probs: ReconcileProblem[],
+      expectedConnectionId: number,
+      generation: number,
+    ) => {
+      if (!ownsPreparation(session.batch.id, expectedConnectionId, generation)) return;
       const missingRequired = session.files.filter((f) => f.state !== 'done' && !attached.has(f.localPath));
       if (missingRequired.length > 0) {
         setProblems([
@@ -130,13 +146,13 @@ export function History() {
       }
       setProblems([]);
       setMessage(null);
-      // The wizard's Upload step owns the run UI, so hand the prepared session
-      // over and jump there rather than running a second monitor here.
-      setPendingResume({ session, attached, problems: probs });
+      if (!ownsPreparation(session.batch.id, expectedConnectionId, generation)) return;
+      setPendingResume({ session, attached, problems: probs, generation });
+      clearPreparation(session.batch.id);
       setSection('new');
       setStep('upload');
     },
-    [setPendingResume, setSection, setStep],
+    [clearPreparation, setPendingResume, setSection, setStep],
   );
 
   // If this session was interrupted before it ever reached publish
@@ -150,11 +166,13 @@ export function History() {
       attached: Map<string, File>,
       probs: ReconcileProblem[],
       resolved: Map<string, ProcessResponse>,
+      expectedConnectionId: number,
+      generation: number,
     ) => {
+      if (!ownsPreparation(batch.id, expectedConnectionId, generation)) return;
       const result = await ensureBundle(batch, session, resolved);
+      if (!ownsPreparation(batch.id, expectedConnectionId, generation)) return;
       if (!result.ok) {
-        setVerifyingBatchId(null);
-        setVerifyProgress(null);
         setProblems([...probs, ...result.problems]);
         setMessage(
           `${result.problems.length} file${result.problems.length === 1 ? '' : 's'} couldn't be resolved to resume this upload.`,
@@ -162,13 +180,12 @@ export function History() {
         return;
       }
       const finalSession = session.bundle ? session : await loadSession(batch.id);
+      if (!ownsPreparation(batch.id, expectedConnectionId, generation)) return;
       if (!finalSession) {
-        setVerifyingBatchId(null);
-        setVerifyProgress(null);
         setMessage('Session record is missing.');
         return;
       }
-      launch(finalSession, attached, probs);
+      launch(finalSession, attached, probs, expectedConnectionId, generation);
     },
     [launch],
   );
@@ -176,8 +193,13 @@ export function History() {
   const beginResume = useCallback(
     async (batch: BatchRecord) => {
       setProblems([]);
-      setVerifyingBatchId(batch.id);
-      setVerifyProgress(null);
+      const expectedConnectionId = useStore.getState().connectionId;
+      const generation = beginActiveRun();
+      if (generation === null) {
+        setMessage('Another upload is already active. Finish or cancel it before resuming this batch.');
+        return;
+      }
+      beginPreparation(batch.id);
       try {
         if (!s3Config) {
           setMessage('Connect to a storage endpoint before resuming.');
@@ -191,7 +213,8 @@ export function History() {
         // prompt, no error, nothing happens. Kick the load off in parallel
         // instead and only consume it once the gated step has resolved.
         const sessionPromise = loadSession(batch.id);
-        const onProgress = (done: number, total: number) => setVerifyProgress({ done, total });
+        const onProgress = (done: number, total: number) =>
+          setPreparationProgress(batch.id, done, total);
 
         // Durable handle: revalidate permission inside this click gesture, then
         // re-hash against the recorded files — a same-size in-place edit between
@@ -202,13 +225,23 @@ export function History() {
             sessionPromise.then((s) => s?.files ?? []),
             onProgress,
           );
+          if (!ownsPreparation(batch.id, expectedConnectionId, generation)) return;
           const session = await sessionPromise;
+          if (!ownsPreparation(batch.id, expectedConnectionId, generation)) return;
           if (!session) {
             setMessage('Session record is missing.');
             return;
           }
           if (restore.ok) {
-            await launchWithBundle(batch, session, restore.attached, restore.problems, restore.resolved);
+            await launchWithBundle(
+              batch,
+              session,
+              restore.attached,
+              restore.problems,
+              restore.resolved,
+              expectedConnectionId,
+              generation,
+            );
             return;
           }
           setMessage(restore.reason);
@@ -218,25 +251,29 @@ export function History() {
         // Reselect path.
         if (supportsDirectoryHandle) {
           const picked = await reselectFolder();
+          if (!ownsPreparation(batch.id, expectedConnectionId, generation)) return;
           if (!picked) return; // user dismissed
           const session = await sessionPromise;
+          if (!ownsPreparation(batch.id, expectedConnectionId, generation)) return;
           if (!session) {
             setMessage('Session record is missing.');
             return;
           }
           const { attached, problems: probs, resolved } = await reconcileReselect(session.files, picked.scanned, onProgress);
+          if (!ownsPreparation(batch.id, expectedConnectionId, generation)) return;
           // Opportunistically upgrade the session to a durable handle for next time.
           if (picked.handle) {
             await updateBatch(batch.id, { dirHandle: picked.handle, fileAccessMode: 'persistent-handle' });
+            if (!ownsPreparation(batch.id, expectedConnectionId, generation)) return;
           }
-          await launchWithBundle(batch, session, attached, probs, resolved);
+          await launchWithBundle(batch, session, attached, probs, resolved, expectedConnectionId, generation);
         } else {
           // No durable picker — fall back to a transient <input webkitdirectory>.
           // Release the lock before clicking: on Firefox/Safari a cancelled picker
           // fires no change event, so onReselectInput never runs. onReselectInput
           // re-acquires the lock itself when files actually arrive.
-          setVerifyingBatchId(null);
-          setVerifyProgress(null);
+          clearPreparation(batch.id);
+          clearActiveRun();
           pickerOpenRef.current = true;
           setPickerOpen(true);
           pendingReselect.current = batch;
@@ -261,11 +298,19 @@ export function History() {
           input.click();
         }
       } finally {
-        setVerifyingBatchId(null);
-        setVerifyProgress(null);
+        clearPreparation(batch.id);
+        const state = useStore.getState();
+        if (
+          state.activeRunGeneration === generation &&
+          state.activeRunReserved &&
+          !state.activeRun &&
+          state.pendingResume?.generation !== generation
+        ) {
+          clearActiveRun();
+        }
       }
     },
-    [s3Config, launchWithBundle, closePicker],
+    [s3Config, launchWithBundle, beginActiveRun, beginPreparation, setPreparationProgress, clearPreparation, clearActiveRun, closePicker],
   );
 
   const onReselectInput = useCallback(
@@ -274,28 +319,53 @@ export function History() {
       const batch = pendingReselect.current;
       pendingReselect.current = null;
       if (!batch || !list || list.length === 0) return;
-      setVerifyingBatchId(batch.id);
-      setVerifyProgress(null);
+      const expectedConnectionId = useStore.getState().connectionId;
+      const generation = beginActiveRun();
+      if (generation === null) {
+        setMessage('Another upload is already active. Finish or cancel it before resuming this batch.');
+        return;
+      }
+      beginPreparation(batch.id);
       try {
         const session = await loadSession(batch.id);
+        if (!ownsPreparation(batch.id, expectedConnectionId, generation)) return;
         if (!session) {
           setMessage('Session record is missing.');
           return;
         }
         const { attached, problems: probs, resolved } = await reconcileReselect(session.files, scanFileList(list), (done, total) =>
-          setVerifyProgress({ done, total }),
+          setPreparationProgress(batch.id, done, total),
         );
-        await launchWithBundle(batch, session, attached, probs, resolved);
+        if (!ownsPreparation(batch.id, expectedConnectionId, generation)) return;
+        await launchWithBundle(batch, session, attached, probs, resolved, expectedConnectionId, generation);
       } finally {
-        setVerifyingBatchId(null);
-        setVerifyProgress(null);
+        clearPreparation(batch.id);
+        const state = useStore.getState();
+        if (
+          state.activeRunGeneration === generation &&
+          state.activeRunReserved &&
+          !state.activeRun &&
+          state.pendingResume?.generation !== generation
+        ) {
+          clearActiveRun();
+        }
       }
     },
-    [launchWithBundle, closePicker],
+    [launchWithBundle, beginActiveRun, beginPreparation, setPreparationProgress, clearPreparation, clearActiveRun, closePicker],
   );
 
   const discard = useCallback(
     async (sessionId: string) => {
+      const state = useStore.getState();
+      const matchingSnap = state.activeSnap?.sessionId === sessionId ? state.activeSnap : null;
+      const matchingRunIsLive =
+        matchingSnap?.phase === 'preparing' ||
+        matchingSnap?.phase === 'blobs' ||
+        matchingSnap?.phase === 'metadata';
+      const preparationIsLive = state.historyResumePreparation?.sessionId === sessionId;
+      // The button is disabled for both cases, but enforce the invariant here
+      // too so a stale render or programmatic click can never delete a live ledger.
+      if (matchingRunIsLive || preparationIsLive) return;
       await discardSession(sessionId);
       await refresh();
     },
@@ -324,8 +394,6 @@ export function History() {
       </div>
     );
   }
-
-  const busy = verifyingBatchId !== null || pickerOpen || runningSessionId !== null;
 
   return (
     <div className="px-6 py-6 max-w-2xl mx-auto space-y-5">
@@ -368,8 +436,9 @@ export function History() {
 
       <ul className="space-y-3">
         {rows.map(({ batch, counts }) => {
-          const isVerifying = verifyingBatchId === batch.id && !!verifyProgress;
-          const isRunning = runningSessionId === batch.id;
+          const isActive = activeSessionId === batch.id;
+          const isPreparing = preparation?.sessionId === batch.id;
+          const verifyProgress = isPreparing ? preparation.progress : null;
           const total = batch.totalFiles;
           return (
             <li key={batch.id} className="border border-ruleSoft bg-panel px-4 py-3 space-y-2">
@@ -397,7 +466,7 @@ export function History() {
                 )}
               </p>
 
-              {isVerifying && verifyProgress && (
+              {isPreparing && verifyProgress && (
                 <p className="font-body text-[12px] text-inkSoft">
                   Verifying <span className="font-mono text-ink">{verifyProgress.done}</span> of{' '}
                   <span className="font-mono text-ink">{verifyProgress.total}</span> files against
@@ -408,23 +477,20 @@ export function History() {
               <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-1">
                 {!batch.completedAt && (
                   <button
-                    disabled={busy}
+                    disabled={activeRunReserved || preparation !== null || pickerOpen}
                     title={!online ? "You're offline" : undefined}
                     onClick={() => void beginResume(batch)}
                     className={`bg-ink text-paper border border-ink min-h-[44px] sm:min-h-0 px-4 sm:px-3 py-1 text-[13px] font-body font-[600] hover:opacity-90 ${
-                      busy ? 'opacity-40 cursor-not-allowed' : ''
+                      activeRunReserved || preparation !== null || pickerOpen ? 'opacity-40 cursor-not-allowed' : ''
                     }`}
                   >
-                    {verifyingBatchId === batch.id ? 'Verifying…' : 'Resume'}
+                    {isPreparing ? 'Verifying…' : 'Resume'}
                   </button>
                 )}
                 <button
-                  disabled={isRunning}
-                  title={isRunning ? 'This upload is currently running' : undefined}
+                  disabled={(running && isActive) || isPreparing}
                   onClick={() => void discard(batch.id)}
-                  className={`border border-ink text-ink min-h-[44px] sm:min-h-0 px-4 sm:px-3 py-1 text-[13px] font-body hover:bg-paperHover ${
-                    isRunning ? 'opacity-40 cursor-not-allowed' : ''
-                  }`}
+                  className="border border-ink text-ink min-h-[44px] sm:min-h-0 px-4 sm:px-3 py-1 text-[13px] font-body hover:bg-paperHover"
                 >
                   Discard
                 </button>

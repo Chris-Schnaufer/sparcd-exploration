@@ -362,7 +362,7 @@ export class SafeS3Client {
     bucket: string,
     key: string,
     body: Uint8Array | string,
-    opts: { contentType?: string; metadata?: Record<string, string> } = {},
+    opts: { contentType?: string; metadata?: Record<string, string>; signal?: AbortSignal } = {},
   ): Promise<void> {
     this.assertWritable(bucket);
     try {
@@ -375,6 +375,7 @@ export class SafeS3Client {
           ContentType: opts.contentType,
           Metadata: opts.metadata,
         }),
+        { abortSignal: opts.signal },
       );
     } catch (err) {
       throw translateWriteError(err, key);

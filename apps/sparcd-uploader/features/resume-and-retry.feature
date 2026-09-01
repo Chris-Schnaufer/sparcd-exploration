@@ -54,6 +54,7 @@ Feature: Resume an interrupted upload and retry a failed one
     When an interrupted upload is resumed
     Then it writes to the same collection, the same upload folder and the same object paths as the original attempt
     And the deployment, uploader identity and description are taken from the recorded session, not re-entered
+    And the resumed upload's observations.csv matches what a fresh upload would have written
 
   @AL2
   Scenario: Retrying the failed files of a partial run completes that same upload
@@ -112,6 +113,19 @@ Feature: Resume an interrupted upload and retry a failed one
     # Regression for #68: on Safari ≤16 / Firefox ≤90 the `cancel` event on
     # <input type="file"> does not fire, so a window `focus` fallback clears
     # the guard when the picker closes with no files.
+
+  @unmapped
+  Scenario: Returning to History keeps a live resume protected
+    Given a resume is running
+    When the user leaves History and returns while the resume is running
+    Then the resumed session cannot be resumed or discarded
+    And the resume remains visible and cancellable on the Upload step
+
+  @unmapped
+  Scenario: History protects a live run started from New upload
+    Given a fresh upload is running in the background
+    When History is opened during the fresh upload
+    Then its live local session cannot be resumed or discarded
 
   @unmapped
   Scenario: A retry whose local record cannot be read says so and stays retryable

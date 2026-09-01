@@ -88,13 +88,16 @@ describe('no accidental data loss', () => {
     );
   });
 
-  it('detag removes every row for the detagged image only', () => {
-    expect(merged.some((o) => o.mediaId === k('IMG003.JPG'))).toBe(false);
+  it('detag writes a blank placeholder row instead of removing the row', () => {
+    const detagged = merged.find((o) => o.mediaId === k('IMG003.JPG'))!;
+    expect(detagged).toBeDefined();
+    expect(detagged.observationType).toBe('blank');
+    expect(detagged.scientificName).toBe('');
   });
 });
 
 describe('zero-count filtering (sparcd-web parity)', () => {
-  it('drops a zero-count observation, detagging the image', () => {
+  it('drops a zero-count observation and writes a blank placeholder row', () => {
     const edit: MediaEdit[] = [
       {
         mediaId: k('IMG001.JPG'),
@@ -104,7 +107,10 @@ describe('zero-count filtering (sparcd-web parity)', () => {
       },
     ];
     const out = parseObservations(mergeObservations(fixture('java-v016', 'observations.csv'), edit));
-    expect(out.some((o) => o.mediaId === k('IMG001.JPG'))).toBe(false);
+    const row = out.find((o) => o.mediaId === k('IMG001.JPG'))!;
+    expect(row).toBeDefined();
+    expect(row.observationType).toBe('blank');
+    expect(row.scientificName).toBe('');
     expect(computeSpeciesDelta(fixture('java-v016', 'observations.csv'), edit)).toEqual({
       detagged: 1,
       retagged: 0,

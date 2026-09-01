@@ -67,6 +67,27 @@ Feature: Connect the uploader to storage and manage the session
     And its in-progress batch, chosen collection and chosen deployment are cleared
 
   @unmapped
+  Scenario: Cross-tab logout cancels a live upload
+    Given two tabs are connected and one has a live upload
+    When one of them disconnects
+    Then the other returns to the connection screen
+    And the live upload stops without publishing metadata
+
+  @unmapped
+  Scenario: Replacing the shared connection cancels work using the old credentials
+    Given the connected uploader has a live upload
+    When another tab replaces the shared connection
+    Then the replacement connection is adopted
+    And the live upload stops without publishing metadata
+
+  @unmapped
+  Scenario: Replacing the shared connection stops obsolete Inspect workers
+    Given the connected uploader is inspecting a held file
+    When another tab replaces the shared connection
+    Then the replacement connection is adopted
+    And the obsolete Inspect workers are stopped
+
+  @unmapped
   Scenario: The header shows which endpoint and key are in use, never the secret
     Given the uploader is connected
     Then the header shows the endpoint host and a masked form of the access key

@@ -38,6 +38,13 @@ Feature: Upload and publish a batch
     And nothing is written to storage
     And the run is not recorded in History
 
+  @A1
+  Scenario: The title-bar pill shows dry-run during blob processing and after completion
+    Given some files are still being examined
+    When the operator opts into a dry run
+    And the dry run is started
+    Then the title-bar pill and tooltip show dry-run while blobs are processing and after completion
+
   @unmapped
   Scenario: A real upload states what access it needs before it starts
     Then the tool states that a setup issue on the storage side is not the user's fault
@@ -50,12 +57,19 @@ Feature: Upload and publish a batch
     And the folder is named for the moment of upload and the uploader's identity
     And each stored object's path is the one recorded for it in the media table
 
+  @unmapped
+  Scenario: The completion dialog reports how many files were published and to which collection
+    When a real upload completes without dismissing its confirmation
+    Then the completion dialog states the file count and collection ID
+    And dismissing it closes the dialog
+
   @F1
   Scenario: Every stored object is confirmed once the batch is written
     When a file has been uploaded
     Then the tool lists the upload folder and confirms every object is stored at its recorded size
     And a few of the stored objects are re-read to confirm storage kept their recorded fingerprint
     And an object the listing contradicts is treated as a failure of that file, not as a success
+    And an object whose sha256 fingerprint is absent from storage is treated as a failure
     # One listing pass per thousand objects rather than a re-read per file: at
     # long-haul latency the extra round trip per file dominated a small upload,
     # and the listing answers the question that matters — is every object there,
@@ -185,3 +199,19 @@ Feature: Upload and publish a batch
     When "Next batch" is chosen
     Then the wizard returns to the Files step with an empty batch
     And the collection, deployment, uploader identity, description and timezone of the previous batch are kept
+
+  @unmapped
+  Scenario: The screen wake lock is held while a dry run is in progress
+    Given the browser wake lock API is available in this session
+    When the operator opts into a dry run
+    And the dry run is started and completes
+    Then the browser wake lock was requested
+
+  @unmapped
+  Scenario: The preparing phase is logged and the wake lock is held before the first blob lands
+    Given the browser wake lock API is available in this session
+    And the first media blob is held at the mock
+    When a real upload is started
+    Then the activity log has the preparing-upload entry
+    And the browser wake lock was requested
+    And releasing the held blob lets the upload complete

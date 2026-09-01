@@ -93,6 +93,7 @@ export type UploadSnapshot = {
   log: LogLine[];
   uploadPath?: string;
   bucket: string;
+  collectionUuid: string;
   metadataBundleSha256?: string;
   lanes?: number; // live blob-lane target, so the UI can show what adaptive settled on
   error?: string;
@@ -247,6 +248,7 @@ type PlanItem = {
 type RunPlan = {
   sessionId: string;
   bucket: string;
+  collectionUuid: string;
   uploadPath: string;
   totalBytes: number;
   metadataBundleSha256: string;
@@ -425,6 +427,7 @@ function makeRunner(
     totalBytes: 0,
     log: [],
     bucket: '',
+    collectionUuid: '',
   };
 
   let lastEmit = 0;
@@ -733,6 +736,7 @@ function makeRunner(
     abort = new AbortController(); // fresh signal per attempt
     snap.sessionId = plan.sessionId;
     snap.bucket = plan.bucket;
+    snap.collectionUuid = plan.collectionUuid;
     snap.uploadPath = plan.uploadPath;
     snap.metadataBundleSha256 = plan.metadataBundleSha256;
     snap.totalBytes = plan.totalBytes;
@@ -844,17 +848,24 @@ function makeRunner(
   // silently accept a metadata collision.
   const writeMetadata = async (writes: RunPlan['writes'], uploadPath: string): Promise<void> => {
     for (const w of writes) {
+      if (cancelled) throw new Error('cancelled');
       const key = `${uploadPath}/${w.name}`;
       if (dryRun) {
         log('put', `PUT ${snap.bucket}/${key} (${new TextEncoder().encode(w.body).length} B)`);
         continue;
       }
       for (let attempt = 0; ; attempt++) {
+        if (cancelled) throw new Error('cancelled');
         try {
-          await client.writeImmutable(snap.bucket, key, w.body, { contentType: w.contentType });
+          await client.writeImmutable(snap.bucket, key, w.body, {
+            contentType: w.contentType,
+            signal: abort.signal,
+          });
+          if (cancelled) throw new Error('cancelled');
           log('info', `wrote ${key}`);
           break;
         } catch (err) {
+          if (cancelled) throw new Error('cancelled');
           if (err instanceof PreconditionFailedError) {
             if (isResume) {
               log('info', `already present, skip: ${key}`);
@@ -864,6 +875,7 @@ function makeRunner(
           }
           if (attempt + 1 >= MAX_ATTEMPTS || !isTransient(err)) throw err;
           await sleep(backoff(attempt));
+          if (cancelled) throw new Error('cancelled');
         }
       }
     }
@@ -882,6 +894,7 @@ function makeRunner(
     seed: {
       sessionId: string;
       bucket: string;
+      collectionUuid: string;
       uploadPath: string;
       totalBytes: number; // the FULL batch's total, known from the scan — not grown incrementally
       initialFiles: FileProgress[]; // placeholder ('inspecting') or real ('pending') entry per known file
@@ -893,6 +906,7 @@ function makeRunner(
     activeQueue = queue;
     snap.sessionId = seed.sessionId;
     snap.bucket = seed.bucket;
+    snap.collectionUuid = seed.collectionUuid;
     snap.uploadPath = seed.uploadPath;
     snap.totalBytes = seed.totalBytes;
     snap.files = seed.initialFiles;
@@ -998,6 +1012,7 @@ function makeRunner(
     // byte-identical ledger to resume from instead of starting over: it's
     // just not written to S3 until every blob has actually landed.
     const { writes, metadataBundleSha256 } = await buildMetadata();
+    if (cancelled) throw new Error('cancelled');
     snap.metadataBundleSha256 = metadataBundleSha256;
 
     const failed = snap.files.filter((f) => f.state === 'failed').length;
@@ -1086,6 +1101,7 @@ export function runStreamingUpload(
   });
   const sessionId = crypto.randomUUID();
   runner.snap.sessionId = sessionId;
+  runner.snap.collectionUuid = build.collectionUuid;
   // Surface the prep work — freezing every object key and opening the resume
   // ledger is real work at thousands of files, and a silent gap reads as a
   // hang. `runStreaming` flips straight to 'blobs' once the lanes start.
@@ -1178,6 +1194,7 @@ export function runStreamingUpload(
         {
           sessionId,
           bucket: build.bucket,
+          collectionUuid: build.collectionUuid,
           uploadPath: naming.uploadPath,
           totalBytes: build.files.reduce((n, f) => n + f.size, 0),
           initialFiles,
@@ -1201,6 +1218,7 @@ export function runStreamingUpload(
           return { writes: metadataWrites(bundle), metadataBundleSha256: bundle.metadataBundleSha256 };
         },
       );
+      if (runner.isCancelled()) throw new Error('cancelled');
       if (runner.snap.phase !== 'partial') {
         runner.snap.phase = 'done';
         // Behind the ledger too: `openSession` re-puts the batch row, so a
@@ -1307,6 +1325,7 @@ export function resumeUpload(
     dryRun: false,
   });
   runner.snap.sessionId = batch.id;
+  runner.snap.collectionUuid = batch.collectionUuid;
 
   if (!bundle) {
     const done = (async () => {
@@ -1360,6 +1379,7 @@ export function resumeUpload(
   const plan: RunPlan = {
     sessionId: batch.id,
     bucket: batch.targetBucket,
+    collectionUuid: batch.collectionUuid,
     uploadPath: batch.uploadPrefix,
     totalBytes: processedFiles.reduce((n, f) => n + f.size, 0),
     metadataBundleSha256: bundle.metadataBundleSha256,
@@ -1384,6 +1404,7 @@ export function resumeUpload(
     try {
       runner.log('info', `resuming ${batch.uploadPrefix}/`);
       await runner.runOnce(plan);
+      if (runner.isCancelled()) throw new Error('cancelled');
       if (runner.snap.phase !== 'partial') {
         runner.snap.phase = 'done';
         await markBatchComplete(batch.id, new Date().toISOString());

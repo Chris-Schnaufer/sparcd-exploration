@@ -141,3 +141,13 @@ export function ensureProcessing(): void {
     }
   });
 }
+
+/** Stop all Inspect work when its owning connection/session is torn down. */
+export function cancelProcessing(): void {
+  run?.cancel();
+  run = null;
+  runningToken = -1;
+  clearFlushTimer();
+  clearBuffers();
+  clearPosterQueue();
+}

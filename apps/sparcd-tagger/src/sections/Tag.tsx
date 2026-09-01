@@ -149,7 +149,7 @@ export function Tag() {
   // The scoped time-shift modal acts on a snapshotted selection, or on the
   // focused frame when no selection exists. Suppress tagger hotkeys behind it.
   const openBulkTime = () => {
-    const targets = bulkTimeTargets();
+    const targets = bulkTimeTargets;
     if (!targets.length) return;
     const scope = selected.size > 0 ? 'selection' : 'focused-frame';
     modalOpenRef.current = true;
@@ -367,20 +367,23 @@ export function Tag() {
   // Selection-scoped bulk time shift: each target carries its currently-displayed
   // corrected time so the store can freeze (corrected + delta) into a per-image
   // override. Frames without a capture time have nothing to correct, so skip them.
-  const bulkTimeTargets = () =>
-    (selected.size > 0 ? [...selected].map((i) => list[i]) : current ? [current] : [])
-      .filter((img) => img && img.baseTimestamp)
-      .map((img) => ({
-        mediaPath: img.key,
-        deploymentId: img.deploymentId,
-        base: { observations: img.baseObservations },
-        currentCorrected: correctedTimestamp(
-          img.baseTimestamp,
-          timeOffset,
-          drafts[img.key]?.timeOverride ?? null,
-        ),
-      }));
-  const scopedTimeApplicableCount = bulkTimeTargets().length;
+  const bulkTimeTargets = useMemo(
+    () =>
+      (selected.size > 0 ? [...selected].map((i) => list[i]) : current ? [current] : [])
+        .filter((img) => img && img.baseTimestamp)
+        .map((img) => ({
+          mediaPath: img.key,
+          deploymentId: img.deploymentId,
+          base: { observations: img.baseObservations },
+          currentCorrected: correctedTimestamp(
+            img.baseTimestamp,
+            timeOffset,
+            drafts[img.key]?.timeOverride ?? null,
+          ),
+        })),
+    [selected, current, list, drafts, timeOffset],
+  );
+  const scopedTimeApplicableCount = bulkTimeTargets.length;
   const scopedTimeUnavailableReason = selected.size > 0
     ? 'None of the selected frames has a capture time to shift'
     : 'This frame has no capture time to shift';
@@ -496,6 +499,19 @@ export function Tag() {
     return () => clearTimeout(t);
   }, [savedAt]);
 
+  // Must stay above the early returns below — useMemo must be called unconditionally.
+  const discardSummaries = useMemo(
+    () =>
+      buildDiscardSummaries(
+        Object.values(drafts).filter((r) => r.dirty),
+        list.map((image) => ({
+          ...image,
+          restoredTimestamp: correctedTimestamp(image.baseTimestamp, timeOffset, null),
+        })),
+      ),
+    [drafts, list, timeOffset],
+  );
+
   if (!localRecord) {
     if (!current && images.isLoading)
       return <Centered>Loading the upload’s canonical media…</Centered>;
@@ -508,14 +524,6 @@ export function Tag() {
   const eff = current ? effectiveOf(current, draft) : null;
   const currentBase = current ? { observations: current.baseObservations } : undefined;
   const nDirty = dirtyCount(drafts);
-  const dirtyRecords = Object.values(drafts).filter((r) => r.dirty);
-  const discardSummaries = buildDiscardSummaries(
-    dirtyRecords,
-    list.map((image) => ({
-      ...image,
-      restoredTimestamp: correctedTimestamp(image.baseTimestamp, timeOffset, null),
-    })),
-  );
   const discardDetails = discardSummaries.map(
     (summary) =>
       `${summary.displayName}: ${summary.changes.map((change) => change.label).join(', ') || 'local draft record'}`,
