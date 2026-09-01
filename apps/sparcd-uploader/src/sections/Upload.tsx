@@ -111,6 +111,7 @@ export function Upload() {
   // is ours.
   const snap = useStore((s) => s.activeSnap);
   const activeRun = useStore((s) => s.activeRun);
+  const activeRunReserved = useStore((s) => s.activeRunReserved);
   const beginActiveRun = useStore((s) => s.beginActiveRun);
   const setActiveRun = useStore((s) => s.setActiveRun);
   const setActiveSnap = useStore((s) => s.setActiveSnap);
@@ -121,6 +122,7 @@ export function Upload() {
   const attachedRef = useRef<Map<string, File> | null>(null);
   const running =
     snap?.phase === 'preparing' || snap?.phase === 'blobs' || snap?.phase === 'metadata';
+  const anyRunActive = activeRunReserved;
   // Dismisses the "upload complete" popup — reset whenever a new run (fresh
   // start or resume) begins, so a later run's completion pops it again.
   const [completeDismissed, setCompleteDismissed] = useState(false);
@@ -137,7 +139,7 @@ export function Upload() {
     setResumeProblems(pending.problems);
     setCompleteDismissed(false);
     attachedRef.current = pending.attached;
-    const generation = beginActiveRun();
+    const generation = pending.generation;
     const run = resumeUpload(
       {
         config: s3Config,
@@ -148,7 +150,7 @@ export function Upload() {
       (next) => setActiveSnap(next, generation),
     );
     setActiveRun(run, generation);
-  }, [pendingResume, s3Config, beginActiveRun, setActiveRun, setActiveSnap]);
+  }, [pendingResume, s3Config, setActiveRun, setActiveSnap]);
 
 
 
@@ -161,6 +163,7 @@ export function Upload() {
     attachedRef.current = null; // this batch's files are the store's again
     setResumeProblems([]);
     const generation = beginActiveRun();
+    if (generation === null) return;
     const run = runStreamingUpload(
       {
         config: s3Config,
@@ -259,6 +262,7 @@ export function Upload() {
       const config = useStore.getState().s3Config;
       if (!config || !connectionIsCurrent()) return;
       const generation = beginActiveRun();
+      if (generation === null) return;
       const run = resumeUpload(
         {
           config,
@@ -355,7 +359,7 @@ export function Upload() {
               <input
                 type="checkbox"
                 checked={effectiveDryRun}
-                disabled={running}
+                disabled={anyRunActive}
                 onChange={(e) => setDryRun(e.target.checked)}
                 className="accent-accent"
               />
@@ -484,9 +488,9 @@ export function Upload() {
       <div className="flex flex-wrap items-center justify-between gap-4 border-t border-ruleSoft pt-5">
         <button
           onClick={() => setStep('assign')}
-          disabled={running}
+          disabled={anyRunActive}
           className={`border border-ink text-ink px-3.5 py-2.5 sm:py-1.5 min-h-[44px] sm:min-h-0 text-[14px] font-body hover:bg-paperHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 ${
-            running ? 'opacity-40 cursor-not-allowed' : ''
+            anyRunActive ? 'opacity-40 cursor-not-allowed' : ''
           }`}
         >
           Back
@@ -499,6 +503,13 @@ export function Upload() {
               className="border border-warn text-warn px-3.5 py-2.5 sm:py-1.5 min-h-[44px] sm:min-h-0 text-[14px] font-body hover:bg-paperHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
             >
               Cancel
+            </button>
+          ) : anyRunActive ? (
+            <button
+              disabled
+              className="bg-ink text-paper border border-ink px-3.5 py-2.5 sm:py-1.5 min-h-[44px] sm:min-h-0 text-[14px] font-body font-[600] opacity-40 cursor-not-allowed"
+            >
+              {effectiveDryRun ? 'Start dry run' : 'Start upload'}
             </button>
           ) : snap?.phase === 'done' && !snap.dryRun ? (
             <button
