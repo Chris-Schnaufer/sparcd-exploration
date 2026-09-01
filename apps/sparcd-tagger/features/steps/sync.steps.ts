@@ -102,6 +102,17 @@ Then(
   },
 );
 
+Then(
+  "the detagged image's slot in observations.csv is a blank placeholder, not absent",
+  async ({ s3 }) => {
+    const obs = parseObservations(s3.text(BUCKET, `${PREFIX_A}observations.csv`));
+    const row = obs.find((o) => o.mediaId.endsWith('IMG001.JPG'));
+    expect(row).toBeDefined();
+    expect(row!.observationType).toBe('blank');
+    expect(row!.scientificName).toBe('');
+  },
+);
+
 // --- Preview ----------------------------------------------------------------
 
 When('the Sync dialog is opened', async ({ page }) => {
