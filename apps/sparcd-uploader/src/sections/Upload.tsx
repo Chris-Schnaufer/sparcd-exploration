@@ -17,9 +17,6 @@ import type { ProcessResponse } from '../lib/processPool';
 import { ensureBundle } from '../lib/resume';
 import { Note, RunMonitor } from '../components/RunMonitor';
 import { UploadCompleteDialog } from '../components/UploadCompleteDialog';
-// MetadataPreview omitted (#52 — exposes camera coordinates). Re-add the
-// import and the Preview block below to restore it for local debugging.
-// import { MetadataPreview } from '../components/MetadataPreview';
 import { CaptureTimeEditor } from '../components/CaptureTimeEditor';
 
 const sectionLabel = 'font-[600] text-[11px] tracking-[0.16em] uppercase text-inkSoft mb-2';
@@ -379,37 +376,6 @@ export function Upload() {
             message={`Still inspecting ${stillInspecting} file${stillInspecting === 1 ? '' : 's'} in the background — uploading proceeds as each one finishes; publishing waits until every file is done.`}
           />
         )}
-
-        {/* Preview block removed (#52 — exposes camera coordinates).
-            MetadataPreview.tsx and the commented-out import above are intact;
-            restore this block to re-enable for local debugging:
-        {location && collection && slug && (
-          <div className="space-y-2">
-            <h2 className={sectionLabel}>Preview</h2>
-            {previewOpen ? (
-              <div className="space-y-2">
-                <button type="button" onClick={() => setPreviewOpen(false)} ...>
-                  Hide preview
-                </button>
-                <MetadataPreview
-                  location={location}
-                  collectionUuid={collection.uuid}
-                  bucket={collection.bucket}
-                  uploaderSlug={slug}
-                  description={description}
-                  timeZone={uploadTimeZone}
-                  files={files}
-                />
-              </div>
-            ) : (
-              <button type="button" onClick={() => setPreviewOpen(true)} ...>
-                Click to preview the generated bundle files...
-              </button>
-            )}
-          </div>
-        )}
-        */}
-
 
         {/* Concurrency sits outside the config gate: a resume handed off from
             History has no Assign state behind it but still runs lanes. */}
