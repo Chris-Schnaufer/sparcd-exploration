@@ -45,6 +45,9 @@ const LIST_ROW_H = 56;
 const GRID_CARD_H = 158;
 const GRID_GAP = 8;
 const GRID_CELL_MIN = 150; // target card width; columns derive from container width
+// Full list metadata needs room for a useful filename in addition to its fixed
+// columns. Below this width, use the same compact row as the Focus strip.
+const DETAILED_LIST_MIN_WIDTH = 480;
 
 type FlatItem =
   | { kind: 'band'; burst: Burst }
@@ -154,7 +157,7 @@ export function Overview({
                   selected={selected.has(item.indices[0])}
                   onPick={onPick}
                   onDrill={onDrill}
-                  narrow={width < 360}
+                  narrow={width < DETAILED_LIST_MIN_WIDTH}
                 />
               ) : (
                 <div
@@ -223,7 +226,7 @@ function BurstBand({
 
 // Each cell subscribes only to its own draft, so tagging one image never
 // re-renders its neighbours (on top of virtualization already bounding the count).
-// narrow=true collapses the type/timestamp columns for the Focus strip.
+// narrow=true collapses type/timestamp for compact Overview rows and the Focus strip.
 function ListCell({
   img,
   index,
