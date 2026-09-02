@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createServer as createNetServer } from 'node:net';
+import { createServer as createNetServer, connect as netConnect } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
 import { createProxyConfig } from './vite.config.mjs';
@@ -30,6 +30,39 @@ async function startApp(relativeRoot) {
   const address = server.httpServer?.address();
   assert(address && typeof address !== 'string');
   return { server, origin: `http://${host}:${address.port}` };
+}
+
+// Sends a raw WebSocket upgrade request through the proxy and returns the HTTP
+// status code from the first response line (101 = upgrade accepted).
+// Using a raw TCP socket avoids Node.js HTTP-client quirks around the upgrade event.
+function wsUpgradeStatus(origin, path) {
+  return new Promise((resolve, reject) => {
+    const url = new URL(path, origin);
+    const socket = netConnect(Number(url.port), url.hostname);
+    const timer = setTimeout(() => {
+      socket.destroy();
+      reject(new Error(`WS upgrade timeout: ${path}`));
+    }, 5000);
+    socket.once('connect', () => {
+      socket.write(
+        `GET ${url.pathname} HTTP/1.1\r\n` +
+        `Host: ${url.host}\r\n` +
+        `Connection: Upgrade\r\n` +
+        `Upgrade: websocket\r\n` +
+        `Sec-WebSocket-Version: 13\r\n` +
+        `Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n` +
+        `Sec-WebSocket-Protocol: vite-hmr\r\n` +
+        `\r\n`,
+      );
+    });
+    socket.once('data', (chunk) => {
+      clearTimeout(timer);
+      socket.destroy();
+      const status = parseInt(chunk.toString().split(' ')[1], 10);
+      resolve(status);
+    });
+    socket.once('error', (err) => { clearTimeout(timer); reject(err); });
+  });
 }
 
 let uploader;
@@ -78,7 +111,15 @@ try {
   ]);
   assert.match(uploaderHtml, /\/sparcd-exploration\/uploader\/@vite\/client/);
   assert.match(taggerHtml, /\/sparcd-exploration\/tagger\/@vite\/client/);
-  console.log(`same-origin proxy smoke passed at ${origin}`);
+
+  const [uploaderWs, taggerWs] = await Promise.all([
+    wsUpgradeStatus(origin, '/sparcd-exploration/uploader/'),
+    wsUpgradeStatus(origin, '/sparcd-exploration/tagger/'),
+  ]);
+  assert.equal(uploaderWs, 101, `uploader WS upgrade: expected 101, got ${uploaderWs}`);
+  assert.equal(taggerWs, 101, `tagger WS upgrade: expected 101, got ${taggerWs}`);
+
+  console.log(`same-origin proxy smoke passed at ${origin} (HTTP + WS)`);
 } finally {
   await Promise.allSettled([
     proxy?.close(),
