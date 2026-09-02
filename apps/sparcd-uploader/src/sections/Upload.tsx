@@ -17,7 +17,9 @@ import type { ProcessResponse } from '../lib/processPool';
 import { ensureBundle } from '../lib/resume';
 import { Note, RunMonitor } from '../components/RunMonitor';
 import { UploadCompleteDialog } from '../components/UploadCompleteDialog';
-import { MetadataPreview } from '../components/MetadataPreview';
+// MetadataPreview omitted (#52 — exposes camera coordinates). Re-add the
+// import and the Preview block below to restore it for local debugging.
+// import { MetadataPreview } from '../components/MetadataPreview';
 import { CaptureTimeEditor } from '../components/CaptureTimeEditor';
 
 const sectionLabel = 'font-[600] text-[11px] tracking-[0.16em] uppercase text-inkSoft mb-2';
@@ -100,10 +102,6 @@ export function Upload() {
   // usable offline — only a real upload/retry needs to be gated.
   const online = useOnline();
 
-  // Preview is opt-in — building it rebuilds the whole bundle. Unlike on
-  // Assign, nothing on this step is still being live-edited, so it just
-  // reflects the current files/description/etc. directly, no debounce needed.
-  const [previewOpen, setPreviewOpen] = useState(false);
 
   // Run and snapshot live in the store so they survive section navigation —
   // unmounting this component stops rendering the run, not running it. This is
@@ -382,16 +380,15 @@ export function Upload() {
           />
         )}
 
+        {/* Preview block removed (#52 — exposes camera coordinates).
+            MetadataPreview.tsx and the commented-out import above are intact;
+            restore this block to re-enable for local debugging:
         {location && collection && slug && (
           <div className="space-y-2">
             <h2 className={sectionLabel}>Preview</h2>
             {previewOpen ? (
               <div className="space-y-2">
-                <button
-                  type="button"
-                  onClick={() => setPreviewOpen(false)}
-                  className="font-body text-[12px] text-inkSoft hover:text-ink underline underline-offset-4 decoration-rule focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-                >
+                <button type="button" onClick={() => setPreviewOpen(false)} ...>
                   Hide preview
                 </button>
                 <MetadataPreview
@@ -405,16 +402,13 @@ export function Upload() {
                 />
               </div>
             ) : (
-              <button
-                type="button"
-                onClick={() => setPreviewOpen(true)}
-                className="w-full border border-rule bg-paper px-3 py-2.5 text-left font-body text-[13px] text-inkSoft hover:text-ink hover:border-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1"
-              >
-                Click to preview the generated bundle files (UploadMeta.json, deployments/media/observations CSVs)…
+              <button type="button" onClick={() => setPreviewOpen(true)} ...>
+                Click to preview the generated bundle files...
               </button>
             )}
           </div>
         )}
+        */}
 
 
         {/* Concurrency sits outside the config gate: a resume handed off from
