@@ -1,8 +1,8 @@
 import { defineConfig } from 'vite';
 
 const DEFAULT_TARGETS = {
-  uploader: 'http://localhost:5311',
-  tagger: 'http://localhost:5312',
+  uploader: process.env.SPARCD_UPLOADER_DEV_URL ?? 'http://localhost:5311',
+  tagger: process.env.SPARCD_TAGGER_DEV_URL ?? 'http://localhost:5312',
 };
 
 /**
