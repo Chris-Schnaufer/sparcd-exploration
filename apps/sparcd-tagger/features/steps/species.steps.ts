@@ -312,16 +312,66 @@ Then('that species is recorded on the image', async ({ page }) => {
   await expect(gridCell(page, 'IMG002.JPG')).toContainText('Javelina');
 });
 
+Then('the assigned key is shown on the species row', async ({ page }) => {
+  await expect(speciesBadge(page, 'Pecari tajacu')).toHaveText('V');
+});
+
 When('{string} is assigned to a species and pressed', async ({ page }, key: string) => {
   await speciesAssignKey(page, 'Pecari tajacu').click();
   await page.keyboard.press(key);
   await expect(speciesBadge(page, 'Pecari tajacu')).toHaveText(key.toUpperCase());
   await page.keyboard.press(key);
-  await page.keyboard.press(`Shift+${key.toUpperCase()}`);
 });
 
-Then('the assigned key is shown on the species row', async ({ page }) => {
+Then('the keyboard shortcut reference is not opened', async ({ page }) => {
+  await expect(page.getByRole('dialog', { name: 'Keyboard shortcuts' })).toHaveCount(0);
+});
+
+When('an Alt-modified printable key is pressed while assigning a species key', async ({ page }) => {
+  await speciesAssignKey(page, 'Pecari tajacu').click();
+  await page.keyboard.press('Alt+j');
+});
+
+Then('key capture remains active and no key is assigned', async ({ page }) => {
+  await expect(speciesRow(page, 'Pecari tajacu')).toContainText('press a key…');
+  await expect(speciesBadge(page, 'Pecari tajacu')).toHaveCount(0);
+});
+
+When('a Shift-produced symbol is assigned to the species', async ({ page }) => {
+  await page.keyboard.press('Shift+Digit1');
+  await expect(speciesBadge(page, 'Pecari tajacu')).toHaveText('!');
+});
+
+When('that binding is pressed with Alt or Option', async ({ page }) => {
+  await page.evaluate(() => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '!', altKey: true, bubbles: true }));
+  });
+});
+
+Then('the species is not recorded on the image', async ({ page }) => {
+  await expect(gridCell(page, 'IMG002.JPG')).not.toContainText('Javelina');
+});
+
+When('that binding is pressed without Alt or Option', async ({ page }) => {
+  await page.keyboard.press('Shift+Digit1');
+});
+
+When('a lowercase alphabetic key is assigned to a species', async ({ page }) => {
+  await speciesAssignKey(page, 'Pecari tajacu').click();
+  await page.keyboard.press('v');
   await expect(speciesBadge(page, 'Pecari tajacu')).toHaveText('V');
+});
+
+When('the uppercase form of that binding is pressed', async ({ page }) => {
+  await page.keyboard.press('Shift+V');
+});
+
+When('the unassigned keyboard-help shortcut is pressed', async ({ page }) => {
+  await page.keyboard.press('Shift+Slash');
+});
+
+Then('the keyboard shortcut reference is opened', async ({ page }) => {
+  await expect(page.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeVisible();
 });
 
 Given('the species vocabulary carries a key binding for a species', async ({ page }) => {
@@ -329,7 +379,6 @@ Given('the species vocabulary carries a key binding for a species', async ({ pag
 });
 
 Then('that key applies the species without any local assignment', async ({ page }) => {
-  expect(await page.evaluate(() => localStorage.getItem('sparcd-tagger-keybindings'))).toBeNull();
   await focusFrame(page, 'IMG002.JPG');
   await page.keyboard.press('d');
   await expect(gridCell(page, 'IMG002.JPG')).toContainText('Mule Deer');
@@ -514,6 +563,101 @@ Then('each selected image increments the species from its own count', async ({ p
   // unselected image as the spatial drag/drop paths deliberately do not.
   expect(count('IMG005.JPG', 'Odocoileus hemionus')).toBeUndefined();
   await expect(gridCell(page, 'IMG005.JPG')).not.toContainText('Mule Deer');
+});
+
+Given('the saved user profile contains an older species configuration', async ({ page }) => {
+  await page.evaluate(() => {
+    const key = 'sparcd-tagger-keybindings';
+    const stored = JSON.parse(localStorage.getItem(key)!) as {
+      state: {
+        profiles: Record<
+          string,
+          {
+            overrides: Record<string, string | null>;
+            overrideRevisions: Record<string, { at: number; sequence: number; writer: string }>;
+            acceptedSpecies?: { scientificName: string; commonName: string; keyBinding: string | null }[];
+            acceptedRevision?: { at: number; sequence: number; writer: string };
+            pendingSpeciesChange?: unknown;
+            pendingRevision?: { at: number; sequence: number; writer: string };
+          }
+        >;
+      };
+      version: number;
+    };
+    const profile = Object.entries(stored.state.profiles).find(([id]) => id !== '__legacy__')![1];
+    const revision = { at: Date.now() + 1, sequence: 1, writer: 'bdd-fixture' };
+    profile.overrides['Former species'] = '!';
+    profile.overrideRevisions['Former species'] = revision;
+    profile.acceptedSpecies = [
+      { scientificName: 'Odocoileus hemionus', commonName: 'Old Deer Name', keyBinding: 'M' },
+      { scientificName: 'Former species', commonName: 'Former Species', keyBinding: 'F' },
+    ];
+    profile.acceptedRevision = revision;
+    delete profile.pendingSpeciesChange;
+    profile.pendingRevision = revision;
+    localStorage.setItem(key, JSON.stringify(stored));
+  });
+});
+
+When('the tagger is refreshed with its restored session', async ({ page }) => {
+  await page.reload();
+  await connect(page);
+});
+
+Then('no vocabulary reconciliation is performed', async ({ page }) => {
+  await expect(speciesChangedDialog(page)).toHaveCount(0);
+  const pending = await page.evaluate(() => {
+    const stored = JSON.parse(localStorage.getItem('sparcd-tagger-keybindings')!) as {
+      state: { profiles: Record<string, { pendingSpeciesChange?: unknown }> };
+    };
+    return Object.values(stored.state.profiles)[0].pendingSpeciesChange;
+  });
+  expect(pending).toBeUndefined();
+});
+
+When('the user explicitly logs in with the current server vocabulary', async ({ page }) => {
+  await page.evaluate(() => sessionStorage.clear());
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Connect' })).toBeVisible();
+  await expect(speciesChangedDialog(page)).toHaveCount(0);
+  await connect(page);
+  await expect(
+    page.getByRole('alertdialog', { name: 'Species vocabulary has changed' }),
+  ).toBeVisible();
+});
+
+const speciesChangedDialog = (page: Page) =>
+  page.getByRole('alertdialog', { name: 'Species vocabulary has changed' });
+
+Then('a blocking message lists added, removed and updated species', async ({ page }) => {
+  const dialog = speciesChangedDialog(page);
+  await expect(dialog).toContainText('Coyote');
+  await expect(dialog).toContainText('Former Species');
+  await expect(dialog).toContainText('Mule Deer');
+  await expect(dialog.getByRole('button', { name: 'I understand' })).toBeFocused();
+});
+
+Then('reopening again does not bypass the required acknowledgement', async ({ page }) => {
+  await page.reload();
+  await connect(page);
+  await expect(speciesChangedDialog(page)).toBeVisible();
+});
+
+When('the vocabulary change is acknowledged', async ({ page }) => {
+  await speciesChangedDialog(page).getByRole('button', { name: 'I understand' }).click();
+});
+
+Then('removed-species bindings are pruned and the message stays acknowledged', async ({ page }) => {
+  const removed = await page.evaluate(() => {
+    const stored = JSON.parse(localStorage.getItem('sparcd-tagger-keybindings')!) as {
+      state: { profiles: Record<string, { overrides: Record<string, string | null> }> };
+    };
+    return Object.values(stored.state.profiles)[0].overrides['Former species'];
+  });
+  expect(removed).toBeNull();
+  await page.reload();
+  await connect(page);
+  await expect(speciesChangedDialog(page)).toHaveCount(0);
 });
 
 // --- Loupe ------------------------------------------------------------------
