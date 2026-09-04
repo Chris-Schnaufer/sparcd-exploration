@@ -60,6 +60,11 @@ jobs:
         working-directory: apps/${{ matrix.app }}
         run: pnpm exec playwright install --with-deps chromium
 
+      - name: Run unit tests
+        if: matrix.app == 'sparcd-tagger'
+        working-directory: apps/${{ matrix.app }}
+        run: pnpm test
+
       - name: Run BDD suite
         working-directory: apps/${{ matrix.app }}
         run: pnpm test:bdd
