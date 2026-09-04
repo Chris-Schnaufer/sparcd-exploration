@@ -312,14 +312,6 @@ Then('that species is recorded on the image', async ({ page }) => {
   await expect(gridCell(page, 'IMG002.JPG')).toContainText('Javelina');
 });
 
-When('{string} is assigned to a species and pressed', async ({ page }, key: string) => {
-  await speciesAssignKey(page, 'Pecari tajacu').click();
-  await page.keyboard.press(key);
-  await expect(speciesBadge(page, 'Pecari tajacu')).toHaveText(key.toUpperCase());
-  await page.keyboard.press(key);
-  await page.keyboard.press(`Shift+${key.toUpperCase()}`);
-});
-
 Then('the assigned key is shown on the species row', async ({ page }) => {
   await expect(speciesBadge(page, 'Pecari tajacu')).toHaveText('V');
 });
