@@ -9,7 +9,8 @@ Feature: Assign species to images in an upload
   """
 
   As-built: a persistent species panel sits beside the images. A species can
-  be applied by clicking its row or by pressing the key bound to it. An
+  be selected by clicking its tile and applied with its add control, by
+  drag-and-drop, or by pressing the key bound to it. An
   identification applies to the focused image, or to every selected image when
   a selection exists. Identifications are held locally until they are synced.
 
@@ -30,11 +31,11 @@ Feature: Assign species to images in an upload
     Then the species list is headed "Available species"
 
   @H2
-  Scenario: Clicking a species identifies the focused image
+  Scenario: Clicking a species tile highlights it without identifying an image
     Given an image is focused
-    When a species row is used
-    Then that species is recorded on the focused image with a count of one
-    And the image's tile shows the species instead of "untagged"
+    When a species tile is selected
+    Then that species tile remains highlighted
+    And selecting the species has not changed the focused image
 
   @H2
   Scenario: An image can carry more than one species
@@ -171,6 +172,38 @@ Feature: Assign species to images in an upload
     # is unreachable: whenever the panel renders, an image is focused (focus
     # defaults to the first image and every path clamps it into range), and an
     # upload with no taggable images never renders the panel. See CORRECTIONS.md.
+
+  @H2
+  Scenario: Dragging a species tile onto the focused image adds it at count one
+    Given an image is focused
+    When a species tile is dragged onto the image area in the Focus view
+    Then that species is recorded on the focused image with a count of one
+    And the image's tile shows the species instead of "untagged"
+
+  @H2
+  Scenario: Dragging a species already on the image increments its count
+    Given the focused image already carries one species
+    When that species tile is dragged onto the image area in the Focus view
+    Then that species' count is incremented by one
+
+  @H2
+  Scenario: Dropping on the focused image does not apply to the current selection
+    Given several images are selected
+    When a species tile is dragged onto the image area in the Focus view
+    Then only the focused image receives the dropped species
+
+  @H2
+  Scenario: Dropping a species on an Overview image identifies only that image
+    Given several images are selected
+    When a species tile is dragged onto a different image tile in Overview
+    Then only the Overview image under the drop receives the species
+
+  @H2
+  Scenario: Dragging the Ghost tile onto an image replaces its species with Ghost
+    Given the focused image already carries one species
+    When the Ghost tile is dragged onto the image area in the Focus view
+    Then the image is recorded as an empty or false-trigger frame
+    And any real species previously on that image is removed
 
   @H2
   Scenario: New identifications are held locally until they are synced

@@ -26,6 +26,7 @@ import { rangeSet, toggleIndex, burstIndexSet } from '../lib/selection';
 import { effectiveOf, type Effective } from '../lib/effective';
 import { sortIndices, type SortField, type SortDir } from '../lib/sortImages';
 import { findFilenameMatches } from '../lib/imageSearch';
+import { parseSpeciesDrag, SPECIES_DRAG_TYPE } from '../lib/speciesDrag';
 import {
   useDraftStore,
   dirtyCount,
@@ -334,6 +335,7 @@ export function Tag() {
 
   const pushRecent = (sci: string) =>
     setRecent((r) => [sci, ...r.filter((x) => x !== sci)].slice(0, RECENT_LIMIT));
+  const [selectedSpecies, setSelectedSpecies] = useState<string | null>(null);
 
   // Operations target the selection when one exists, else the focused image.
   const targetsOf = (): TagTarget[] => {
@@ -357,7 +359,28 @@ export function Tag() {
     if (tag.scientificName) pushRecent(tag.scientificName);
   };
 
+  const applyIncrementAt = (index: number, tag: AppliedTag) => {
+    // A drop is spatial: it updates only the image under the drop zone, even
+    // if a multi-image selection still exists.
+    const image = list[index];
+    if (!image) return;
+    incrementSpeciesFn(
+      ctx,
+      [
+        {
+          mediaPath: image.key,
+          deploymentId: image.deploymentId,
+          base: { observations: image.baseObservations },
+        },
+      ],
+      tag,
+    );
+    if (tag.scientificName) pushRecent(tag.scientificName);
+  };
+
   const applyIncrement = (tag: AppliedTag) => {
+    // Keyboard bindings are selection-scoped, like the panel's explicit add
+    // control. Keep this separate from spatial drag/drop targeting.
     const targets = targetsOf();
     if (!targets.length) return;
     incrementSpeciesFn(ctx, targets, tag);
@@ -770,6 +793,7 @@ export function Tag() {
                   onPick={pick}
                   onSelectBurst={selectBurst}
                   onDrill={drill}
+                  onDropSpecies={applyIncrementAt}
                 />
               </div>
             </div>
@@ -808,6 +832,7 @@ export function Tag() {
               onPrev={() => gotoImage(focus - 1)}
               onNext={() => gotoImage(focus + 1)}
               onToggleQuestionable={toggleQuestionable}
+              onDropSpecies={(tag) => applyIncrementAt(focus, tag)}
             />
             <SpeciesPanel {...speciesPanelProps()} />
           </div>
@@ -862,6 +887,8 @@ export function Tag() {
       species: speciesList,
       onApply: apply,
       onZoom: openLoupe,
+      selectedSpecies,
+      onSelectSpecies: setSelectedSpecies,
       filter,
       onFilterChange: setFilter,
       filterRef,
@@ -917,6 +944,7 @@ function FocusPane({
   onPrev,
   onNext,
   onToggleQuestionable,
+  onDropSpecies,
 }: {
   current: TagImage | undefined;
   eff: Effective | null;
@@ -930,6 +958,7 @@ function FocusPane({
   onPrev: () => void;
   onNext: () => void;
   onToggleQuestionable: () => void;
+  onDropSpecies: (tag: AppliedTag) => void;
 }) {
   // View-only display adjustments live here so they reset to neutral when the
   // user leaves Focus (this component unmounts) and stay sticky while paging
@@ -939,9 +968,29 @@ function FocusPane({
   const isVideo = !!current && isVideoImage(current);
   const showAdjust = !!current && !isVideo;
 
+  const [isDragOver, setIsDragOver] = useState(false);
+
   return (
     <div className="flex flex-col min-h-[55svh] lg:min-h-0 bg-paper">
-      <div className="relative flex-1 min-h-0 grid place-items-center p-4 overflow-hidden">
+      <div
+        className={`relative flex-1 min-h-0 grid place-items-center p-4 overflow-hidden${isDragOver ? ' ring-2 ring-inset ring-accent' : ''}`}
+        data-testid="focus-drop-zone"
+        onDragOver={(e) => {
+          if (!e.dataTransfer.types.includes(SPECIES_DRAG_TYPE)) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'copy';
+          setIsDragOver(true);
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setIsDragOver(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setIsDragOver(false);
+          const tag = parseSpeciesDrag(e.dataTransfer.getData(SPECIES_DRAG_TYPE));
+          if (tag) onDropSpecies(tag);
+        }}
+      >
         {current && (
           <FocusImage
             objectKey={current.key}
