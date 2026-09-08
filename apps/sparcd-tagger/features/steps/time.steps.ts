@@ -138,7 +138,7 @@ Given('a single image is focused with no selection', async ({ page }) => {
 });
 
 When("the focused frame's time shift is applied", async ({ page }) => {
-  await page.getByRole('button', { name: 'Shift this frame' }).click();
+  await page.getByRole('button', { name: 'Time shift this frame' }).click();
   await expect(frameShiftModal(page)).toContainText('Time shift · this frame');
   await expect(frameShiftModal(page)).toContainText('Preview · this frame');
   await bump(frameShiftModal(page), 'Hour', 2);
@@ -169,7 +169,7 @@ Given('a timestamp-less image is focused with no selection', async ({ page }) =>
 });
 
 Then('its focused-frame shift is unavailable with an explanation', async ({ page }) => {
-  const button = page.getByRole('button', { name: 'Shift this frame' });
+  const button = page.getByRole('button', { name: 'Time shift this frame' });
   await expect(button).toHaveAttribute('aria-disabled', 'true');
   await expect(button).toHaveAttribute('title', 'This frame has no capture time to shift');
   await expect(page.locator('#scoped-time-unavailable')).toHaveText(
@@ -179,7 +179,7 @@ Then('its focused-frame shift is unavailable with an explanation', async ({ page
 
 When('the focused frame is shifted twice by one hour', async ({ page }) => {
   for (let i = 0; i < 2; i++) {
-    await page.getByRole('button', { name: 'Shift this frame' }).click();
+    await page.getByRole('button', { name: 'Time shift this frame' }).click();
     await bump(frameShiftModal(page), 'Hour', 1);
     await frameShiftModal(page).getByRole('button', { name: 'Apply to this frame →' }).click();
   }
@@ -202,7 +202,7 @@ Given('exactly one image is selected', async ({ page }) => {
 });
 
 When('that one-frame selection is shifted', async ({ page }) => {
-  await page.getByRole('button', { name: 'Shift selection' }).click();
+  await page.getByRole('button', { name: 'Time shift selection' }).click();
   await expect(selectionShiftModal(page)).toContainText('1 selected frame');
   await bump(selectionShiftModal(page), 'Hour', 1);
   await selectionShiftModal(page).getByRole('button', { name: 'Apply to 1 selected frame →' }).click();
@@ -229,7 +229,7 @@ Then('the unselected frames are unchanged', async ({ page }) => {
 // --- Selection-scoped shift -------------------------------------------------
 
 When("the selection's time shift is applied", async ({ page }) => {
-  await page.getByRole('button', { name: 'Shift selection' }).click();
+  await page.getByRole('button', { name: 'Time shift selection' }).click();
   await expect(selectionShiftModal(page)).toBeVisible();
   await bump(selectionShiftModal(page), 'Hour', 1);
   await selectionShiftModal(page).getByRole('button', { name: /^Apply to 3 selected/ }).click();
@@ -255,7 +255,7 @@ Then('each moves relative to the time it was already showing', async ({ page }) 
   await page.getByRole('button', { name: 'Overview', exact: true }).click();
   await gridCell(page, 'IMG001.JPG').click();
   await gridCell(page, 'IMG003.JPG').click({ modifiers: ['Shift'] });
-  await page.getByRole('button', { name: 'Shift selection' }).click();
+  await page.getByRole('button', { name: 'Time shift selection' }).click();
   await bump(selectionShiftModal(page), 'Min', 30);
   await selectionShiftModal(page).getByRole('button', { name: /^Apply to 3 selected/ }).click();
   await openFocus(page);
@@ -267,7 +267,7 @@ Then('the preview is anchored on the earliest selected frame', async ({ page }) 
   await page.getByRole('button', { name: 'Overview', exact: true }).click();
   await gridCell(page, 'IMG003.JPG').click();
   await gridCell(page, 'IMG001.JPG').click({ modifiers: ['Shift'] });
-  await page.getByRole('button', { name: 'Shift selection' }).click();
+  await page.getByRole('button', { name: 'Time shift selection' }).click();
   await expect(selectionShiftModal(page)).toContainText('Preview · earliest selected');
   await expect(selectionShiftModal(page).locator('div.line-through')).toContainText(
     '2024-01-10T09:30:00',
@@ -282,7 +282,7 @@ Given('the selection includes frames with no recorded capture time', async ({ pa
 });
 
 When('a selection shift is applied', async ({ page }) => {
-  await page.getByRole('button', { name: 'Shift selection' }).click();
+  await page.getByRole('button', { name: 'Time shift selection' }).click();
   await expect(selectionShiftModal(page)).toBeVisible();
   await bump(selectionShiftModal(page), 'Hour', 1);
   await selectionShiftModal(page).getByRole('button', { name: /^Apply to 1 selected/ }).click();
@@ -304,7 +304,7 @@ Then('those frames are skipped', async ({ page }) => {
 Then('the dialog states that they are', async ({ page }) => {
   await gridCell(page, 'IMG005.JPG').click();
   await gridCell(page, 'VID001.MP4').click({ modifiers: ['Shift'] });
-  await page.getByRole('button', { name: 'Shift selection' }).click();
+  await page.getByRole('button', { name: 'Time shift selection' }).click();
   await expect(selectionShiftModal(page)).toContainText(
     '1 selected frame without a capture time is skipped.',
   );

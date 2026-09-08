@@ -637,12 +637,12 @@ export function Tag() {
                 scopedTimeApplicableCount === 0
                   ? scopedTimeUnavailableReason
                   : selected.size > 0
-                  ? `Shift the ${selected.size} selected frame(s) by a signed offset`
-                  : 'Shift this frame by a signed offset'
+                  ? `Time shift the ${selected.size} selected frame(s) by a signed offset`
+                  : 'Time shift this frame by a signed offset'
               }
             >
               <span aria-hidden>◷</span>
-              {selected.size > 0 ? 'Shift selection' : 'Shift this frame'}
+              {selected.size > 0 ? 'Time shift selection' : 'Time shift this frame'}
             </button>
             {scopedTimeApplicableCount === 0 && (
               <span id="scoped-time-unavailable" className="sr-only">
