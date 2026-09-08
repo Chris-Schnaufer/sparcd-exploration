@@ -138,7 +138,7 @@ Given('a single image is focused with no selection', async ({ page }) => {
 });
 
 When("the focused frame's time shift is applied", async ({ page }) => {
-  await page.getByRole('button', { name: 'Time shift this frame' }).click();
+  await page.getByRole('button', { name: 'Time shift selection', exact: true }).click();
   await expect(frameShiftModal(page)).toContainText('Time shift · this frame');
   await expect(frameShiftModal(page)).toContainText('Preview · this frame');
   await bump(frameShiftModal(page), 'Hour', 2);
@@ -169,7 +169,7 @@ Given('a timestamp-less image is focused with no selection', async ({ page }) =>
 });
 
 Then('its focused-frame shift is unavailable with an explanation', async ({ page }) => {
-  const button = page.getByRole('button', { name: 'Time shift this frame' });
+  const button = page.getByRole('button', { name: 'Time shift selection', exact: true });
   await expect(button).toHaveAttribute('aria-disabled', 'true');
   await expect(button).toHaveAttribute('title', 'This frame has no capture time to shift');
   await expect(page.locator('#scoped-time-unavailable')).toHaveText(
@@ -179,7 +179,7 @@ Then('its focused-frame shift is unavailable with an explanation', async ({ page
 
 When('the focused frame is shifted twice by one hour', async ({ page }) => {
   for (let i = 0; i < 2; i++) {
-    await page.getByRole('button', { name: 'Time shift this frame' }).click();
+    await page.getByRole('button', { name: 'Time shift selection', exact: true }).click();
     await bump(frameShiftModal(page), 'Hour', 1);
     await frameShiftModal(page).getByRole('button', { name: 'Apply to this frame →' }).click();
   }
