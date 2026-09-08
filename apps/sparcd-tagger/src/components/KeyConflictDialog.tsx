@@ -48,7 +48,7 @@ export function KeyConflictDialog({
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="key-conflict-title"
-        aria-describedby="key-conflict-description"
+        aria-describedby="key-conflict-description key-conflict-warning"
         className="w-full max-w-md border-2 border-warn bg-paper p-5 shadow-xl"
       >
         <h2 id="key-conflict-title" className="font-display text-[20px] font-[600] text-ink">
@@ -58,7 +58,7 @@ export function KeyConflictDialog({
           <kbd className="border border-ink px-1.5 font-mono">{keyName}</kbd> is already assigned
           to {ownerNames.join(', ')}. Reassign it to {targetName}?
         </p>
-        <p className="mt-2 text-[13px] text-warn">
+        <p id="key-conflict-warning" className="mt-2 text-[13px] text-warn">
           Reassigning will clear the existing {ownerNames.length === 1 ? 'binding' : 'bindings'}.
         </p>
         <div className="mt-5 flex justify-end gap-2">
