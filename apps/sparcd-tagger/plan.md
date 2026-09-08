@@ -858,7 +858,7 @@ exactly like Java. The `tagger-edited-v016` golden exercises both a Ghost
 
 **For the P1 agent:** the merge/draft data model is ready
 (`MediaEdit`/`ObservationInput` in `@sparcd/camtrap`). P1 adds the Dexie `drafts`
-schema, the Tag workspace (currently a `Placeholder`), J/K nav, and the
+schema, the Tag workspace (currently a `Placeholder`), arrow-key nav, and the
 persistent species panel + Fuse index over the already-loaded `useSpecies`
 data. Keep all S3 read access behind `src/lib/s3.ts`; do not import
 `@aws-sdk/client-s3` in app code.
@@ -950,7 +950,7 @@ and override-wins resolution. Data-shape contracts remain in `@sparcd/camtrap`.
   fields exist and persist, but the upload-offset/per-image-override editors
   (the "Time correction" section) are unbuilt — a natural P2 add alongside
   bursts, or its own pass.
-- **`Cmd/Ctrl+S`, `?` cheatsheet, `Shift+J/K` burst nav, `Cmd/Ctrl+A`** are P2
+- **`Cmd/Ctrl+S`, `?` cheatsheet, `PgDn`/`PgUp` burst nav, `Cmd/Ctrl+A`** are P2
   (full keyboard set + cheatsheet modal); only the P1 subset is wired.
 - Live CORS/`species.json` presence is **still unverified** (carried from P0 —
   no credentials in this workspace). Drop an `apps/sparcd-tagger/.env` and run
@@ -991,16 +991,16 @@ avoid re-rendering thousands of cells is a **P3 perf task** alongside
 virtualization (still not added).
 
 **Full keyboard set (the P2 mandate).** Added to the global handler on top of
-P1's `J/K`/arrows/`Space`/`Enter`/`X`/`G`/assigned-keys: **`Shift+J`/`Shift+K`**
+P1's `ArrowDown`/`ArrowUp`/`Space`/`Enter`/`Shift+Space`/`G`/assigned-keys: **`PageDown`/`PageUp`**
 jump focus to the next/prev burst (clearing selection); **`Cmd/Ctrl+A`** selects
 the burst containing focus (the "apply to whole burst is one keystroke" path —
 then a species key applies to all); **`Cmd/Ctrl+S`** flushes pending debounced
 Dexie writes immediately and flashes a transient "saved ✓"; **`Esc`** clears the
 selection (or blurs the filter while typing); **`?`** toggles the cheatsheet.
-Plain `J`/`K` also clear selection so single-image nav is unambiguous. Species
-keys, `G`, and `X` now operate over the selection when one exists. `X` anchors
-its new questionable value on the focused image so a mixed selection resolves
-predictably.
+`ArrowDown`/`ArrowUp` also clear selection so single-image nav is unambiguous.
+Species keys, `G`, and `Shift+Space` now operate over the selection when one
+exists. `Shift+Space` anchors its new questionable value on the focused image
+so a mixed selection resolves predictably.
 
 **Batch draft mutations (`src/lib/drafts.ts`).** `applyTagMany` / `detagMany` /
 `setQuestionableMany` apply one patch to many targets in a **single** Zustand
@@ -1082,8 +1082,9 @@ tested helpers (`rangeSet`, `toggleIndex`, `burstIndexSet`,
 cell: plain click = single (focus + clear selection + set anchor); **Shift+click
 = range** from the anchor; **Cmd/Ctrl+click = additive toggle**; the band
 **select** button and `Cmd/Ctrl+A` = whole-burst. An `anchor` index (the last
-single pick / nav target) is the base for Shift-range; `J`/`K`/`Shift+J/K` all
-re-anchor through a shared `focusMove`. All paths route through the existing
+single pick / nav target) is the base for Shift-range; `ArrowDown`/`ArrowUp`
+and `PageDown`/`PageUp` all re-anchor through a shared `focusMove`. All paths
+route through the existing
 `applyTagMany`/`detagMany`/`setQuestionableMany` batch store methods (one Zustand
 `set`, one debounced Dexie write per target).
 
