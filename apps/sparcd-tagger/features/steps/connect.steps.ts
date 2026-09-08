@@ -262,7 +262,6 @@ Then(
     await openWorkspaceFromBrowse(page);
     await makeLocalEdit(page);
     await openSyncDialog(page);
-    await setSyncDryRun(page, false);
     await expect(page.getByRole('button', { name: 'Sync now' })).toBeVisible();
     await page.getByRole('button', { name: 'Sync now' }).click();
     await expect(page.getByText('Synced — canonical files replaced.')).toBeVisible();
