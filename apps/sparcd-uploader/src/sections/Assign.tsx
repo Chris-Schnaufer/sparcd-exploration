@@ -134,7 +134,7 @@ export function Assign() {
   const online = useOnline();
   const wasOffline = useRef(!online);
   useEffect(() => {
-    if (online && wasOffline.current) {
+    if (online && wasOffline.current && s3Config) {
       void refetchLocations();
       void collections.refetch();
       if (collection) void deployments.refetch();

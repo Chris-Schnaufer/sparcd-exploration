@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Connection, loadPersistedConnection } from '@sparcd/auth-ui';
 import { useStore } from './store';
 import './lib/streamingBridge';
@@ -33,9 +33,13 @@ export function App() {
     document.documentElement.classList.toggle('dark', theme === 'dark');
   }, [theme]);
 
+  const previousConnection = useRef(s3Config);
   useEffect(() => {
-    cancelProcessing();
-  }, [connectionId]);
+    // Initial login can happen while an offline batch is still being inspected.
+    // Only a session being torn down/replaced invalidates that local work.
+    if (previousConnection.current || !s3Config) cancelProcessing();
+    previousConnection.current = s3Config;
+  }, [connectionId, s3Config]);
 
   // Warn on tab close/reload while any real run (fresh or resume) is in flight.
   // Lives here rather than in the section components so it covers History resume

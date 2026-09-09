@@ -731,6 +731,7 @@ subscribeSharedConnection((cfg) => {
   useStore.setState((s) => ({
     s3Config: cfg,
     connectionId: s.connectionId + 1,
+    loginDeferred: false,
     uploaderUser: s.uploaderUser || cfg.accessKey,
   }));
 }, () => useStore.getState().s3Config);
