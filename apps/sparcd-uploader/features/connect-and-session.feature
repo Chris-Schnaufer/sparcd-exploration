@@ -21,6 +21,16 @@ Feature: Connect the uploader to storage and manage the session
     And the New upload, History and Settings sections are not reachable
 
   @unmapped
+  Scenario: Login can be deferred to work offline, then is asked for again when needed
+    Given no connection has been made in this browser session
+    When "Login later" is chosen instead of connecting
+    Then the New upload, History and Settings sections become reachable
+    And a batch can be dropped and inspected with no connection
+    When the Assign step is reached with no connection
+    Then it shows the connection screen instead of a collection picker
+    And going back from it returns to Inspect with the batch intact
+
+  @unmapped
   Scenario: Connecting requires an endpoint, an access key and a secret key
     Given the connection screen is shown
     When any of the endpoint, access key or secret key is empty

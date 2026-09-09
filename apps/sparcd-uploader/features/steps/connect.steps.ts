@@ -37,6 +37,35 @@ Then('the New upload, History and Settings sections are not reachable', async ({
   }
 });
 
+When('"Login later" is chosen instead of connecting', async ({ app }) => {
+  await app.page.getByRole('button', { name: 'Login later' }).click();
+});
+
+Then('the New upload, History and Settings sections become reachable', async ({ app }) => {
+  for (const label of ['New upload', 'History', 'Settings']) {
+    await expect(app.page.getByRole('button', { name: label })).toBeVisible();
+  }
+});
+
+Then('a batch can be dropped and inspected with no connection', async ({ app }) => {
+  await app.dropFolder(standardBatch());
+  await expect(app.fileListPane()).toBeVisible({ timeout: 30_000 });
+});
+
+When('the Assign step is reached with no connection', async ({ app }) => {
+  await app.page.getByRole('button', { name: 'Continue' }).click();
+});
+
+Then('it shows the connection screen instead of a collection picker', async ({ app }) => {
+  await expect(app.connectForm()).toBeVisible();
+  await expect(app.page.getByRole('heading', { name: 'Target collection' })).toHaveCount(0);
+});
+
+Then('going back from it returns to Inspect with the batch intact', async ({ app }) => {
+  await app.page.getByRole('button', { name: 'Back' }).click();
+  await expect(app.fileListPane()).toBeVisible();
+});
+
 Given('the connection screen is shown', async ({ app }) => {
   await expect(app.connectForm()).toBeVisible();
 });

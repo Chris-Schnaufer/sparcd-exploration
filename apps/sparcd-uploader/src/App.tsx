@@ -21,6 +21,8 @@ const connectPrefill = { ...persistedConnection, ...(devEndpoint ? { endpoint: d
 export function App() {
   const s3Config = useStore((s) => s.s3Config);
   const connectionId = useStore((s) => s.connectionId);
+  const loginDeferred = useStore((s) => s.loginDeferred);
+  const setLoginDeferred = useStore((s) => s.setLoginDeferred);
   const section = useStore((s) => s.section);
   const connect = useStore((s) => s.connect);
   const theme = useStore((s) => s.theme);
@@ -115,9 +117,14 @@ export function App() {
     };
   }, [activelyRunning]);
 
-  if (!s3Config) {
+  if (!s3Config && !loginDeferred) {
     return (
-      <Connection toolName="Uploader" initialConfig={connectPrefill} onConnect={connect} />
+      <Connection
+        toolName="Uploader"
+        initialConfig={connectPrefill}
+        onConnect={connect}
+        onSkip={() => setLoginDeferred(true)}
+      />
     );
   }
 
