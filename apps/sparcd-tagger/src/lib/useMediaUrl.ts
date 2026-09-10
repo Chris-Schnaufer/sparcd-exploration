@@ -4,13 +4,14 @@
 // the thumbnail until the folder opens, the original after. Every <img>/<video>
 // goes through here, so neither mode touches a single call site.
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useStore } from '../store';
 import { parseCollectionKey, presignImage } from './s3';
 import { useLocalBatch } from './localBatch';
+import { mediaRequestScheduler, type MediaPriority } from './mediaRequestScheduler';
 
-export type MediaPriority = 'high' | 'low';
+export type { MediaPriority } from './mediaRequestScheduler';
 
 /**
  * An object URL for the blob currently on screen, minted after commit and
@@ -38,25 +39,12 @@ function useObjectUrl(blob: Blob | undefined): string | undefined {
 export function useMediaUrl(
   objectKey: string,
   priority: MediaPriority = 'low',
-): { url: string | undefined; isError: boolean } {
+): { url: string | undefined; isError: boolean; markLoaded: () => void } {
   const cfg = useStore((s) => s.s3Config);
   const connectionId = useStore((s) => s.connectionId);
   const collectionKey = useStore((s) => s.selectedCollectionKey);
   const isLocal = useLocalBatch((s) => s.status === 'ready');
   const localUrl = useObjectUrl(useLocalBatch((s) => s.media[objectKey]));
-  // Presigning is local SigV4 work, but deferring thumbnail signing one task
-  // lets the focused frame start first when Focus mounts beside its filmstrip.
-  // A thumbnail promoted to the focused frame becomes ready immediately.
-  const [lowPriorityReady, setLowPriorityReady] = useState(priority === 'high');
-  useEffect(() => {
-    if (priority === 'high') {
-      setLowPriorityReady(true);
-      return;
-    }
-    setLowPriorityReady(false);
-    const timer = window.setTimeout(() => setLowPriorityReady(true), 0);
-    return () => window.clearTimeout(timer);
-  }, [priority, objectKey]);
 
   const { data, isError } = useQuery({
     queryKey: ['presign', connectionId, objectKey],
@@ -64,11 +52,39 @@ export function useMediaUrl(
       const { bucket } = parseCollectionKey(collectionKey!);
       return presignImage(cfg!, bucket, objectKey);
     },
-    enabled: !isLocal && !!cfg && !!collectionKey && (priority === 'high' || lowPriorityReady),
+    enabled: !isLocal && !!cfg && !!collectionKey,
     staleTime: 50 * 60 * 1000, // under the 1h URL TTL
     retry: 1,
   });
 
-  if (isLocal) return { url: localUrl, isError: false };
-  return { url: data, isError };
+  const [admittedUrl, setAdmittedUrl] = useState<string>();
+  const releaseRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    setAdmittedUrl(undefined);
+    if (isLocal || !data) return;
+    const lease = mediaRequestScheduler.acquire(priority);
+    let cancelled = false;
+    void lease.admitted.then(() => {
+      if (cancelled) {
+        lease.release();
+        return;
+      }
+      releaseRef.current = lease.release;
+      setAdmittedUrl(data);
+    });
+    return () => {
+      cancelled = true;
+      lease.cancel();
+      if (releaseRef.current === lease.release) releaseRef.current = null;
+    };
+  }, [data, isLocal, objectKey, priority]);
+
+  const markLoaded = useCallback(() => {
+    releaseRef.current?.();
+    releaseRef.current = null;
+  }, []);
+
+  if (isLocal) return { url: localUrl, isError: false, markLoaded };
+  return { url: admittedUrl, isError, markLoaded };
 }

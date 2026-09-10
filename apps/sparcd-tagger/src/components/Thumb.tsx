@@ -21,7 +21,7 @@ export function Thumb({
   isVideo?: boolean;
   priority?: MediaPriority;
 }) {
-  const { url, isError } = useMediaUrl(objectKey, priority);
+  const { url, isError, markLoaded } = useMediaUrl(objectKey, priority);
 
   if (isError) {
     return (
@@ -45,7 +45,9 @@ export function Thumb({
               // browser to decode and display the first frame as the poster.
               onLoadedMetadata={(e) => {
                 e.currentTarget.currentTime = 0.001;
+                markLoaded();
               }}
+              onError={markLoaded}
               className="w-full h-full object-cover"
             />
             <span
@@ -61,6 +63,8 @@ export function Thumb({
             alt={alt}
             loading="lazy"
             fetchPriority={priority}
+            onLoad={markLoaded}
+            onError={markLoaded}
             className="w-full h-full object-cover"
           />
         ))}
