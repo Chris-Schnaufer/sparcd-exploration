@@ -1170,7 +1170,12 @@ function FocusImage({
   const { url, isError, markLoaded } = useMediaUrl(objectKey, 'high');
   if (isError)
     return <div className="text-[13px] font-mono text-warn">Could not load this image.</div>;
-  if (!url) return <div className="text-[13px] font-mono text-inkMute">…</div>;
+  if (!url)
+    return (
+      <div className="w-full h-full grid place-items-center text-6xl leading-none font-mono text-inkMute">
+        …
+      </div>
+    );
   if (isVideo)
     return <FocusVideo src={url} alt={alt} resetKey={objectKey} onLoaded={markLoaded} />;
   return (
