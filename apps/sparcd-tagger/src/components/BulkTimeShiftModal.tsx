@@ -1,6 +1,6 @@
-// Scoped time-shift modal. Applies a signed y/mo/d/h/m/s delta to a snapshotted
-// selection or one focused frame, relative to the time each shows now. It does NOT
-// introduce a new correction input: on apply, each selected image's new absolute
+// Selection time-shift modal. Applies a signed y/mo/d/h/m/s delta to a snapshotted
+// selection, relative to the time each image shows now. It does NOT introduce a
+// new correction input: on apply, each selected image's new absolute
 // corrected timestamp is frozen into its per-image `timeOverride`, so resolution
 // and sync stay byte-identical to a hand-edited per-image override. The preview
 // anchors on the earliest-selected image; the same delta is applied uniformly.
@@ -25,21 +25,18 @@ const FIELDS: { key: Field; label: string }[] = [
 export function BulkTimeShiftModal({
   count,
   requestedCount,
-  scope,
   anchorTimestamp,
   onApply,
   onClose,
 }: {
   count: number;
   requestedCount: number;
-  scope: 'focused-frame' | 'selection';
   anchorTimestamp: string; // earliest applicable current time, the preview anchor
   onApply: (delta: TimeOffsetRecord) => void;
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState<TimeOffsetRecord>(ZERO_OFFSET_RECORD);
   const active = offsetActive(draft);
-  const focused = scope === 'focused-frame';
   const skipped = requestedCount - count;
   const corrected = anchorTimestamp ? shiftTimestamp(anchorTimestamp, draft) : '';
 
@@ -57,7 +54,7 @@ export function BulkTimeShiftModal({
       onClick={onClose}
       role="dialog"
       aria-modal="true"
-      aria-label={focused ? 'Time shift this frame' : 'Time shift selection'}
+      aria-label="Time shift selection"
     >
       <div
         className="w-full max-w-[680px] max-h-[90dvh] overflow-y-auto bg-paper border border-rule shadow-xl"
@@ -65,7 +62,7 @@ export function BulkTimeShiftModal({
       >
         <div className="flex items-center justify-between border-b border-rule px-5 py-3">
           <h2 className="font-display text-[18px] font-[600] text-ink">
-            Time shift · {focused ? 'this frame' : 'selection'}
+            Time shift · selection
           </h2>
           <button
             onClick={onClose}
@@ -80,11 +77,9 @@ export function BulkTimeShiftModal({
           <p className="text-[13px] text-inkSoft font-body max-w-[600px] mb-4">
             Offset only{' '}
             <strong className="text-ink">
-              {focused
-                ? 'this frame'
-                : skipped > 0
-                  ? `${count.toLocaleString()} of ${requestedCount.toLocaleString()} selected frames`
-                  : `${count.toLocaleString()} selected frame${count === 1 ? '' : 's'}`}
+              {skipped > 0
+                ? `${count.toLocaleString()} of ${requestedCount.toLocaleString()} selected frames`
+                : `${count.toLocaleString()} selected frame${count === 1 ? '' : 's'}`}
             </strong>{' '}
             — e.g. one camera in a mixed upload was on the wrong clock. The shift is applied relative
             to each frame's current time and stored as a{' '}
@@ -112,7 +107,7 @@ export function BulkTimeShiftModal({
           <div className="mt-5 border border-rule bg-panel px-4 py-3">
             <div className="flex items-center justify-between mb-2">
               <span className="font-body text-[11px] font-[600] tracking-[0.16em] uppercase text-inkSoft">
-                Preview · {focused ? 'this frame' : 'earliest selected'}
+                Preview · earliest selected
               </span>
               <span
                 className={`font-mono text-[11.5px] font-[600] ${active ? 'text-accent' : 'text-inkMute'}`}
@@ -162,9 +157,7 @@ export function BulkTimeShiftModal({
             disabled={!active}
             className="text-[13px] border border-ink bg-ink text-paper px-3 py-1.5 hover:bg-inkSoft disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
           >
-            {focused
-              ? 'Apply to this frame →'
-              : `Apply to ${count.toLocaleString()} selected frame${count === 1 ? '' : 's'} →`}
+            {`Apply to ${count.toLocaleString()} selected frame${count === 1 ? '' : 's'} →`}
           </button>
         </div>
       </div>
