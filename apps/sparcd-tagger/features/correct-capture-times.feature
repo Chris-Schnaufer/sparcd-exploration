@@ -50,6 +50,7 @@ Feature: Correct capture times on an upload whose camera clock was wrong
     When the selected images are shown in Focus
     Then time shift selection is enabled
     And the selection time-shift dialog opens
+    And the selection time-shift dialog confines focus and closes with Escape
 
   @unmapped
   Scenario: Only the selected frames can be shifted when one camera was wrong

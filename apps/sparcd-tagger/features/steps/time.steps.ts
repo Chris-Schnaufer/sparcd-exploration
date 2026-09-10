@@ -21,7 +21,7 @@ const uploadShiftModal = (page: Page) =>
   page.locator('div[role="dialog"][aria-label="Time shift"]');
 
 const selectionShiftModal = (page: Page) =>
-  page.locator('div[role="dialog"][aria-label="Time shift selection"]');
+  page.getByRole('dialog', { name: 'Time shift · selection' });
 
 const perImageTime = (page: Page) => page.locator('span.font-mono.font-\\[600\\]').first();
 
@@ -141,6 +141,7 @@ Then('time shift selection is disabled with an explanation', async ({ page }) =>
   await expect(page.locator('#scoped-time-unavailable')).toHaveText(
     'Select one or more images to time shift',
   );
+  await expect(page.locator('#scoped-time-unavailable')).toBeVisible();
 });
 
 Given('exactly one image is selected', async ({ page }) => {
@@ -195,7 +196,20 @@ Then('time shift selection is enabled', async ({ page }) => {
 Then('the selection time-shift dialog opens', async ({ page }) => {
   await page.getByRole('button', { name: 'Time shift selection', exact: true }).click();
   await expect(selectionShiftModal(page)).toBeVisible();
-  await selectionShiftModal(page).getByRole('button', { name: 'Cancel' }).click();
+  await expect(selectionShiftModal(page).getByRole('button', { name: 'Close' })).toBeFocused();
+});
+
+Then('the selection time-shift dialog confines focus and closes with Escape', async ({ page }) => {
+  const dialog = selectionShiftModal(page);
+  const close = dialog.getByRole('button', { name: 'Close' });
+  const cancel = dialog.getByRole('button', { name: 'Cancel' });
+  await page.keyboard.press('Shift+Tab');
+  await expect(cancel).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(close).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Time shift selection', exact: true })).toBeFocused();
 });
 
 Then('only the selected frames move by the offset', async ({ page }) => {

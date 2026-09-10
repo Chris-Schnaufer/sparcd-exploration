@@ -5,7 +5,7 @@
 // and sync stay byte-identical to a hand-edited per-image override. The preview
 // anchors on the earliest-selected image; the same delta is applied uniformly.
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { shiftTimestamp } from '@sparcd/camtrap';
 import type { TimeOffsetRecord } from '../lib/db';
 import { ZERO_OFFSET_RECORD, formatOffsetDelta, offsetActive } from '../lib/timeshift';
@@ -36,6 +36,11 @@ export function BulkTimeShiftModal({
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState<TimeOffsetRecord>(ZERO_OFFSET_RECORD);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   const active = offsetActive(draft);
   const skipped = requestedCount - count;
   const corrected = anchorTimestamp ? shiftTimestamp(anchorTimestamp, draft) : '';
@@ -48,23 +53,57 @@ export function BulkTimeShiftModal({
     onClose();
   };
 
+  useEffect(() => {
+    previousFocusRef.current = document.activeElement as HTMLElement | null;
+    closeRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      event.stopPropagation();
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      if (!focusable?.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true);
+      previousFocusRef.current?.focus();
+    };
+  }, []);
+
   return (
     <div
       className="fixed inset-0 z-50 grid place-items-center bg-ink/40 p-6"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
-      aria-label="Time shift selection"
+      aria-labelledby="selection-time-shift-title"
     >
       <div
+        ref={dialogRef}
         className="w-full max-w-[680px] max-h-[90dvh] overflow-y-auto bg-paper border border-rule shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-rule px-5 py-3">
-          <h2 className="font-display text-[18px] font-[600] text-ink">
+          <h2 id="selection-time-shift-title" className="font-display text-[18px] font-[600] text-ink">
             Time shift · selection
           </h2>
           <button
+            ref={closeRef}
             onClick={onClose}
             className="w-11 h-11 grid place-items-center md:w-7 md:h-7 border border-rule text-inkSoft hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
             aria-label="Close"

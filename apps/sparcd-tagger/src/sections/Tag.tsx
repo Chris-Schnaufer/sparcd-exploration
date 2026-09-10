@@ -647,7 +647,12 @@ export function Tag() {
               Time shift selection
             </button>
             {(selected.size === 0 || scopedTimeApplicableCount === 0) && (
-              <span id="scoped-time-unavailable" className="sr-only">
+              <span
+                id="scoped-time-unavailable"
+                role="status"
+                aria-live="polite"
+                className="text-[11px] font-mono text-inkSoft"
+              >
                 {scopedTimeUnavailableReason}
               </span>
             )}
