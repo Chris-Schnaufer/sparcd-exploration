@@ -10,6 +10,8 @@ import { useStore } from '../store';
 import { parseCollectionKey, presignImage } from './s3';
 import { useLocalBatch } from './localBatch';
 
+export type MediaPriority = 'high' | 'low';
+
 /**
  * An object URL for the blob currently on screen, minted after commit and
  * revoked only once React is done with it. Creating or revoking during render
@@ -33,12 +35,28 @@ function useObjectUrl(blob: Blob | undefined): string | undefined {
   return url;
 }
 
-export function useMediaUrl(objectKey: string): { url: string | undefined; isError: boolean } {
+export function useMediaUrl(
+  objectKey: string,
+  priority: MediaPriority = 'low',
+): { url: string | undefined; isError: boolean } {
   const cfg = useStore((s) => s.s3Config);
   const connectionId = useStore((s) => s.connectionId);
   const collectionKey = useStore((s) => s.selectedCollectionKey);
   const isLocal = useLocalBatch((s) => s.status === 'ready');
   const localUrl = useObjectUrl(useLocalBatch((s) => s.media[objectKey]));
+  // Presigning is local SigV4 work, but deferring thumbnail signing one task
+  // lets the focused frame start first when Focus mounts beside its filmstrip.
+  // A thumbnail promoted to the focused frame becomes ready immediately.
+  const [lowPriorityReady, setLowPriorityReady] = useState(priority === 'high');
+  useEffect(() => {
+    if (priority === 'high') {
+      setLowPriorityReady(true);
+      return;
+    }
+    setLowPriorityReady(false);
+    const timer = window.setTimeout(() => setLowPriorityReady(true), 0);
+    return () => window.clearTimeout(timer);
+  }, [priority, objectKey]);
 
   const { data, isError } = useQuery({
     queryKey: ['presign', connectionId, objectKey],
@@ -46,7 +64,7 @@ export function useMediaUrl(objectKey: string): { url: string | undefined; isErr
       const { bucket } = parseCollectionKey(collectionKey!);
       return presignImage(cfg!, bucket, objectKey);
     },
-    enabled: !isLocal && !!cfg && !!collectionKey,
+    enabled: !isLocal && !!cfg && !!collectionKey && (priority === 'high' || lowPriorityReady),
     staleTime: 50 * 60 * 1000, // under the 1h URL TTL
     retry: 1,
   });

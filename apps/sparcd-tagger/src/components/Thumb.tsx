@@ -1,4 +1,4 @@
-import { useMediaUrl } from '../lib/useMediaUrl';
+import { useMediaUrl, type MediaPriority } from '../lib/useMediaUrl';
 import { isVideoKey } from '../lib/workspace';
 
 // One presigned-GET thumbnail. The URL is signed lazily (per connection +
@@ -14,12 +14,14 @@ export function Thumb({
   objectKey,
   alt,
   isVideo = isVideoKey(objectKey),
+  priority = 'low',
 }: {
   objectKey: string;
   alt: string;
   isVideo?: boolean;
+  priority?: MediaPriority;
 }) {
-  const { url, isError } = useMediaUrl(objectKey);
+  const { url, isError } = useMediaUrl(objectKey, priority);
 
   if (isError) {
     return (
@@ -54,7 +56,13 @@ export function Thumb({
             </span>
           </>
         ) : (
-          <img src={url} alt={alt} loading="lazy" className="w-full h-full object-cover" />
+          <img
+            src={url}
+            alt={alt}
+            loading="lazy"
+            fetchPriority={priority}
+            className="w-full h-full object-cover"
+          />
         ))}
     </div>
   );

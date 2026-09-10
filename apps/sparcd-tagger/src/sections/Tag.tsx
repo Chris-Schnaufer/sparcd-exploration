@@ -1167,7 +1167,7 @@ function FocusImage({
   isVideo: boolean;
   filter?: string;
 }) {
-  const { url, isError } = useMediaUrl(objectKey);
+  const { url, isError } = useMediaUrl(objectKey, 'high');
   if (isError)
     return <div className="text-[13px] font-mono text-warn">Could not load this image.</div>;
   if (!url) return <div className="text-[13px] font-mono text-inkMute">…</div>;
@@ -1234,6 +1234,7 @@ function ZoomableImage({
               <img
                 src={src}
                 alt={alt}
+                fetchPriority="high"
                 draggable={false}
                 style={filter ? { filter } : undefined}
                 className="w-full h-full object-contain select-none"
