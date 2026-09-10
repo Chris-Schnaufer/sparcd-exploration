@@ -145,12 +145,12 @@ Then('the remaining species and their counts are preserved', async ({ page }) =>
   await expect(gridCell(page, 'IMG004.JPG')).not.toContainText('+1');
 });
 
-// --- Detag ------------------------------------------------------------------
+// --- Clear Species ------------------------------------------------------------------
 
 Given('the focused image carries at least one species', async ({ page }) => {
   await focusFrame(page, 'IMG001.JPG');
   await enterFocusView(page);
-  await expect(page.getByRole('button', { name: 'Detag', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Clear Species', exact: true })).toBeEnabled();
 });
 
 When('{string} is used', async ({ page }, label: string) => {
@@ -165,15 +165,15 @@ Then('it reads as untagged again', async ({ page }) => {
   await expect(listRow(page, 'IMG001.JPG')).toContainText('untagged');
 });
 
-Then('the Detag control is unavailable on an image that has none', async ({ page }) => {
-  await expect(page.getByRole('button', { name: 'Detag', exact: true })).toBeDisabled();
+Then('the Clear Species control is unavailable on an image that has none', async ({ page }) => {
+  await expect(page.getByRole('button', { name: 'Clear Species', exact: true })).toBeDisabled();
   await listRow(page, 'IMG004.JPG').click();
-  await expect(page.getByRole('button', { name: 'Detag', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Clear Species', exact: true })).toBeEnabled();
 });
 
 When('identifications are cleared', async ({ page }) => {
   await page.getByRole('button', { name: 'Focus', exact: true }).click();
-  await page.getByRole('button', { name: 'Detag', exact: true }).click();
+  await page.getByRole('button', { name: 'Clear Species', exact: true }).click();
 });
 
 Then('every selected image is left with no species', async ({ page }) => {
