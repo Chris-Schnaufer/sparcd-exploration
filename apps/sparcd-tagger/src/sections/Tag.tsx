@@ -1172,8 +1172,12 @@ function FocusImage({
     return <div className="text-[13px] font-mono text-warn">Could not load this image.</div>;
   if (!url)
     return (
-      <div className="w-full h-full grid place-items-center text-6xl leading-none font-mono text-inkMute">
-        …
+      <div className="w-full h-full grid place-items-center">
+        <img
+          src={`${import.meta.env.BASE_URL}loading.gif`}
+          alt="Loading focused image"
+          className="w-48 h-48 object-contain"
+        />
       </div>
     );
   if (isVideo)
