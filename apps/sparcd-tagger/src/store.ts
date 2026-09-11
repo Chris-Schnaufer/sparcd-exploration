@@ -10,9 +10,11 @@ import {
   type Theme,
 } from '@sparcd/auth-ui';
 import { clearClientCache } from './lib/s3';
+import type { DateFormat, TimeFormat } from './lib/formatting';
 
 export type Section = 'browse' | 'tag' | 'history' | 'settings';
 export type { Theme };
+export type ElevationUnit = 'meters' | 'feet';
 
 /** Top-bar sync state. P0 is read-only, so live values are `local-only`; the
  *  rest of the union exists so the pill is built once and P4 just feeds it. */
@@ -45,6 +47,9 @@ type TaggerState = {
   dryRun: boolean; // on by default; P4 sync logs and writes nothing until off
   burstGroupingEnabled: boolean; // off by default — our cameras shoot no bursts
   burstThresholdSec: number; // sequence grouping threshold (5–600s), used when enabled
+  dateFormat: DateFormat; // display only — media.csv col 4 is always stored as full ISO
+  timeFormat: TimeFormat; // display only, ditto
+  elevationUnit: ElevationUnit; // not yet consumed — no location/elevation display exists
 
   connect: (config: S3Config, remember: boolean) => void;
   disconnect: () => void;
@@ -59,6 +64,9 @@ type TaggerState = {
   setDryRun: (value: boolean) => void;
   setBurstGrouping: (value: boolean) => void;
   setBurstThreshold: (value: number) => void;
+  setDateFormat: (value: DateFormat) => void;
+  setTimeFormat: (value: TimeFormat) => void;
+  setElevationUnit: (value: ElevationUnit) => void;
 };
 
 // This tab's own session, if it has one — same tab, so a BrandSwitcher hop to
@@ -113,6 +121,9 @@ export const useStore = create<TaggerState>()(
     dryRun: true,
     burstGroupingEnabled: false,
     burstThresholdSec: 60,
+    dateFormat: 'iso',
+    timeFormat: '24h',
+    elevationUnit: 'meters',
 
     connect: (config, remember) => {
       clearClientCache();
@@ -165,6 +176,9 @@ export const useStore = create<TaggerState>()(
     setDryRun: (value) => set({ dryRun: value }),
     setBurstGrouping: (value) => set({ burstGroupingEnabled: value }),
     setBurstThreshold: (value) => set({ burstThresholdSec: value }),
+    setDateFormat: (value) => set({ dateFormat: value }),
+    setTimeFormat: (value) => set({ timeFormat: value }),
+    setElevationUnit: (value) => set({ elevationUnit: value }),
   }),
 );
 

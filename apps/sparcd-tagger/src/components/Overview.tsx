@@ -3,6 +3,8 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { correctedTimestamp } from '@sparcd/camtrap';
 import { Thumb } from './Thumb';
 import { useDraftStore } from '../lib/drafts';
+import { useStore } from '../store';
+import { formatDateTime } from '../lib/formatting';
 import { effectiveOf, isEditedFromBase, isGhostObs } from '../lib/effective';
 import { isRangeFullySelected } from '../lib/selection';
 import type { Burst, BurstGrouping } from '../lib/bursts';
@@ -255,11 +257,13 @@ function ListCell({
 }) {
   const draft = useDraftStore((s) => s.drafts[img.key]);
   const timeOffset = useDraftStore((s) => s.timeOffset);
+  const dateFormat = useStore((s) => s.dateFormat);
+  const timeFormat = useStore((s) => s.timeFormat);
   const eff = effectiveOf(img, draft);
   const isVideo = isVideoImage(img);
   const species = summarize(eff.observations) || 'untagged';
   const timestamp = correctedTimestamp(img.baseTimestamp, timeOffset, draft?.timeOverride ?? null);
-  const timestampDisplay = timestamp ? `${timestamp.slice(0, 10)} ${timestamp.slice(11, 16)}` : null;
+  const timestampDisplay = timestamp ? formatDateTime(timestamp, dateFormat, timeFormat) : null;
   const edited = isEditedFromBase(eff);
   const rowLabel = [
     `Filename: ${img.fileName}`,
@@ -312,7 +316,7 @@ function ListCell({
           data-column="timestamp"
           aria-label={timestamp ? `Capture time: ${timestamp}` : 'Capture time unavailable'}
           title={timestamp || 'No capture timestamp'}
-          className="w-28 shrink-0 whitespace-nowrap font-mono text-[11px] text-inkSoft leading-tight"
+          className="w-32 shrink-0 whitespace-nowrap font-mono text-[11px] text-inkSoft leading-tight"
         >
           {timestampDisplay ? (
             timestampDisplay
