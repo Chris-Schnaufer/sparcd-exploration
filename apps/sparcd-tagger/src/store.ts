@@ -50,6 +50,7 @@ type TaggerState = {
   dateFormat: DateFormat; // display only — media.csv col 4 is always stored as full ISO
   timeFormat: TimeFormat; // display only, ditto
   distanceUnit: DistanceUnit; // not yet consumed — no location/elevation display exists
+  autoAdvanceOnTag: boolean; // on by default — advances Focus after an assignment
 
   connect: (config: S3Config, remember: boolean) => void;
   disconnect: () => void;
@@ -67,6 +68,7 @@ type TaggerState = {
   setDateFormat: (value: DateFormat) => void;
   setTimeFormat: (value: TimeFormat) => void;
   setDistanceUnit: (value: DistanceUnit) => void;
+  setAutoAdvanceOnTag: (value: boolean) => void;
 };
 
 // This tab's own session, if it has one — same tab, so a BrandSwitcher hop to
@@ -77,6 +79,7 @@ const initialSession = loadSessionConnection();
 
 const LEGACY_THEME_KEY = 'sparcd-tagger-session';
 const DISPLAY_PREFERENCES_KEY = 'sparcd-tagger-display-preferences';
+const AUTO_ADVANCE_KEY = 'sparcd-tagger-auto-advance-on-tag';
 
 type DisplayPreferences = Pick<TaggerState, 'dateFormat' | 'timeFormat' | 'distanceUnit'>;
 
@@ -117,6 +120,19 @@ function clearDisplayPreferences() {
   } catch {
     // Disconnect still clears the active connection and in-memory preferences.
   }
+}
+
+function loadAutoAdvance(): boolean {
+  try {
+    const stored = localStorage.getItem(AUTO_ADVANCE_KEY);
+    return stored === null ? true : stored === 'true';
+  } catch {
+    return true;
+  }
+}
+
+function saveAutoAdvance(value: boolean) {
+  localStorage.setItem(AUTO_ADVANCE_KEY, String(value));
 }
 
 const initialDisplayPreferences = loadDisplayPreferences();
@@ -166,6 +182,7 @@ export const useStore = create<TaggerState>()(
     burstGroupingEnabled: false,
     burstThresholdSec: 60,
     ...initialDisplayPreferences,
+    autoAdvanceOnTag: loadAutoAdvance(),
 
     connect: (config, remember) => {
       clearClientCache();
@@ -181,6 +198,7 @@ export const useStore = create<TaggerState>()(
       clearClientCache();
       clearSharedConnection();
       clearDisplayPreferences();
+      localStorage.removeItem(AUTO_ADVANCE_KEY);
       set((s) => ({
         s3Config: null,
         connectionId: s.connectionId + 1,
@@ -189,6 +207,7 @@ export const useStore = create<TaggerState>()(
         selectedUploadPrefix: null,
         taggerUser: '',
         ...defaultDisplayPreferences,
+        autoAdvanceOnTag: true,
       }));
     },
     setSection: (section) => set({ section }),
@@ -238,6 +257,10 @@ export const useStore = create<TaggerState>()(
         saveDisplayPreferences(preferences);
         return { distanceUnit };
       }),
+    setAutoAdvanceOnTag: (autoAdvanceOnTag) => {
+      saveAutoAdvance(autoAdvanceOnTag);
+      set({ autoAdvanceOnTag });
+    },
   }),
 );
 
