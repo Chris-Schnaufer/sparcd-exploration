@@ -56,7 +56,7 @@ export function ImageAdjustments({
   return (
     <div className="flex flex-col items-start gap-2">
       {open && createPortal(
-        <div ref={panelRef} id="image-adjustments" role="region" aria-label="Image adjustments" style={{ position: 'fixed', left: position?.left ?? 0, top: position?.top ?? 0, visibility: position ? 'visible' : 'hidden', zIndex: 50 }} className="w-56 bg-panel/95 border border-rule shadow-sm p-3 flex flex-col gap-2.5">
+        <div ref={panelRef} id="image-adjustments" role="region" aria-label="Image adjustments" style={{ position: 'fixed', left: Math.max(8, Math.min(position?.left ?? 0, window.innerWidth - 232)), top: position?.top ?? 0, visibility: position ? 'visible' : 'hidden', zIndex: 50 }} className="w-56 bg-panel/95 border border-rule shadow-sm p-3 flex flex-col gap-2.5">
           {FIELDS.map((f) => (
             <label key={f.key} className="flex flex-col gap-1">
               <span className="flex items-center justify-between">
