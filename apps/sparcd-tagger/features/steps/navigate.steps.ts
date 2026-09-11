@@ -85,7 +85,7 @@ Then('only {string} remains in the Overview', async ({ page }, fileName: string)
 });
 
 Then('no images match the image filter', async ({ page }) => {
-  await expect(page.getByRole('status')).toHaveText('No images match these filters.');
+  await expect(page.getByText('No images match these filters.', { exact: true })).toBeVisible();
 });
 
 When('the image filter is opened and dismissed with Escape', async ({ page }) => {
