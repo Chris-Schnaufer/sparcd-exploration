@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { isNeutral, type Adjustments } from '../lib/adjustments';
 
 // A small, collapsible control panel that drives view-only CSS filters on the
@@ -17,18 +18,45 @@ export function ImageAdjustments({
   value,
   onChange,
   onReset,
+  getMediaRect,
 }: {
   value: Adjustments;
   onChange: (next: Adjustments) => void;
   onReset: () => void;
+  getMediaRect: () => DOMRect | null;
 }) {
   const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const neutral = isNeutral(value);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const media = getMediaRect();
+      const panel = panelRef.current?.getBoundingClientRect();
+      if (!media || !panel) return;
+      const gutter = 8;
+      const top = Math.max(gutter, Math.min(media.top, window.innerHeight - panel.height - gutter));
+      const left = media.left - panel.width - 12;
+      const right = media.right + 12;
+      if (left >= gutter) setPosition({ left, top });
+      else if (right + panel.width <= window.innerWidth - gutter) setPosition({ left: right, top });
+      else {
+        const candidates = [gutter, Math.max(gutter, window.innerWidth - panel.width - gutter)];
+        const overlap = (x: number) => Math.max(0, Math.min(x + panel.width, media.right) - Math.max(x, media.left));
+        setPosition({ left: overlap(candidates[0]) <= overlap(candidates[1]) ? candidates[0] : candidates[1], top });
+      }
+    };
+    place();
+    window.addEventListener('resize', place);
+    return () => window.removeEventListener('resize', place);
+  }, [getMediaRect, open]);
 
   return (
     <div className="flex flex-col items-start gap-2">
-      {open && (
-        <div className="w-56 bg-panel/95 border border-rule shadow-sm p-3 flex flex-col gap-2.5">
+      {open && createPortal(
+        <div ref={panelRef} id="image-adjustments" role="region" aria-label="Image adjustments" style={{ position: 'fixed', left: position?.left ?? 0, top: position?.top ?? 0, visibility: position ? 'visible' : 'hidden', zIndex: 50 }} className="w-56 bg-panel/95 border border-rule shadow-sm p-3 flex flex-col gap-2.5">
           {FIELDS.map((f) => (
             <label key={f.key} className="flex flex-col gap-1">
               <span className="flex items-center justify-between">
@@ -57,7 +85,7 @@ export function ImageAdjustments({
           >
             Reset
           </button>
-        </div>
+        </div>, document.body
       )}
       <button
         type="button"

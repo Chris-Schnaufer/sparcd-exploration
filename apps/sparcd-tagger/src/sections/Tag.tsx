@@ -975,10 +975,12 @@ function FocusPane({
   const showAdjust = !!current && !isVideo;
 
   const [isDragOver, setIsDragOver] = useState(false);
+  const dropRef = useRef<HTMLDivElement>(null);
 
   return (
     <div className="flex flex-col min-h-[55svh] lg:min-h-0 bg-paper">
       <div
+        ref={dropRef}
         className={`relative flex-1 min-h-0 grid place-items-center p-4 overflow-hidden${isDragOver ? ' ring-2 ring-inset ring-accent' : ''}`}
         data-testid="focus-drop-zone"
         onDragOver={(e) => {
@@ -1013,6 +1015,7 @@ function FocusPane({
               value={adjustments}
               onChange={setAdjustments}
               onReset={() => setAdjustments(NEUTRAL)}
+              getMediaRect={() => dropRef.current?.querySelector('img')?.getBoundingClientRect() ?? null}
             />
           </div>
         )}
