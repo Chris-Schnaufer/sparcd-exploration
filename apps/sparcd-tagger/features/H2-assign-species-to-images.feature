@@ -192,6 +192,27 @@ Feature: Assign species to images in an upload
     Then the binding the user set for the removed species is kept and the message stays acknowledged
 
   @H2
+  Scenario: A stale vocabulary refresh reports a server change when the tab regains focus
+    Given the server vocabulary gains Ringtail
+    When the stale tagger tab regains focus
+    Then Ringtail is available in the refreshed species vocabulary
+    And a blocking message lists Ringtail as added
+
+  @H2
+  Scenario: A stale vocabulary refresh makes no change when the server vocabulary is unchanged
+    Given the current species profile is recorded
+    When the stale tagger tab regains focus
+    Then no vocabulary-change message is shown
+    And the recorded species profile is unchanged
+
+  @H2
+  Scenario: A failed stale vocabulary refresh keeps the current vocabulary usable
+    Given the server rejects species vocabulary reads
+    When the stale tagger tab regains focus
+    Then the existing species vocabulary remains available
+    And no vocabulary-change message is shown
+
+  @H2
   Scenario: A species reference image can be enlarged before deciding
     Given a species row carries a reference image
     When its enlarge control is used
