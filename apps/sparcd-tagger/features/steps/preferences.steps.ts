@@ -4,6 +4,9 @@ import { settingsRadio } from './support/flows';
 
 const correctedTimeText = (page: Page) => page.locator('span.font-mono.font-\\[600\\]').first();
 
+const shiftPreview = (page: Page) =>
+  page.locator('div[role="dialog"][aria-label="Time shift"] div.border.bg-panel').first();
+
 Given('the date format is switched to MM\\/DD\\/YYYY in Settings', async ({ page }) => {
   await openSettings(page);
   await settingsRadio(page, 'MM/DD/YYYY').check();
@@ -46,4 +49,12 @@ Then("the focused image's corrected time carries an AM\\/PM marker", async ({ pa
 Then('a choice of meters or feet is offered for distance units', async ({ page }) => {
   await expect(settingsRadio(page, 'Meters')).toBeVisible();
   await expect(settingsRadio(page, 'Feet')).toBeVisible();
+});
+
+Then('the shift preview shows times with an AM\\/PM marker', async ({ page }) => {
+  await expect(shiftPreview(page)).toContainText(/AM|PM/);
+});
+
+Then('burst bands show their time span with an AM\\/PM marker', async ({ page }) => {
+  await expect(page.getByText(/^Burst \d+ ·/).first()).toContainText(/AM|PM/);
 });
