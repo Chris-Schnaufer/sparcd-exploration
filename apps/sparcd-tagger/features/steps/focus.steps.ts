@@ -343,9 +343,6 @@ Then('the adjustment panel is left of the focused image when space permits', asy
 
 Then('it moves right when the left side is constrained', async ({ page }) => {
   await page.setViewportSize({ width: 900, height: 860 });
-  await page.reload();
-  await page.getByRole('button', { name: 'Focus', exact: true }).click();
-  await adjustToggle(page).click();
   const [panel, image] = await Promise.all([adjustmentPanel(page).boundingBox(), focusedImage(page).boundingBox()]);
   expect(panel).not.toBeNull();
   expect(image).not.toBeNull();
@@ -354,9 +351,6 @@ Then('it moves right when the left side is constrained', async ({ page }) => {
 
 Then('it stays in the viewport when neither side fits', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 860 });
-  await page.reload();
-  await page.getByRole('button', { name: 'Focus', exact: true }).click();
-  await adjustToggle(page).click();
   const panel = await adjustmentPanel(page).boundingBox();
   expect(panel).not.toBeNull();
   expect(panel!.x).toBeGreaterThanOrEqual(0);
