@@ -65,7 +65,8 @@ Then('only IMG005.JPG remains in the Overview', async ({ page }) => {
 });
 
 When('the image filter searches all fields for {string}', async ({ page }, query: string) => {
-  await page.getByRole('button', { name: 'Filter' }).click();
+  if (!(await page.getByLabel('Match text').isVisible()))
+    await page.getByRole('button', { name: 'Filter' }).click();
   await page.getByLabel('Match text').fill(query);
 });
 
@@ -108,7 +109,7 @@ When('the next filtered image key is pressed in Focus', async ({ page }) => {
 });
 
 Then('IMG005.JPG is the focused filtered image', async ({ page }) => {
-  await expect(focusedTile(page)).toHaveAttribute('title', 'IMG005.JPG');
+  await expect(page.locator('.react-transform-component img')).toHaveAttribute('alt', 'IMG005.JPG');
   await expect(listRow(page, 'IMG001.JPG')).toHaveCount(0);
 });
 

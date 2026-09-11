@@ -23,7 +23,7 @@ import { cssFilter, NEUTRAL, type Adjustments } from '../lib/adjustments';
 import { Overview, type PickMods, type ViewKind } from '../components/Overview';
 import { groupBursts, type BurstGrouping } from '../lib/bursts';
 import { offsetActive, formatOffsetDelta, earliestCorrected } from '../lib/timeshift';
-import { rangeSet, toggleIndex, burstIndexSet } from '../lib/selection';
+import { rangeSet, toggleIndex, burstIndexSet, visibleRangeSet } from '../lib/selection';
 import { effectiveOf, type Effective } from '../lib/effective';
 import { sortIndices, type SortField, type SortDir } from '../lib/sortImages';
 import { findFilenameMatches } from '../lib/imageSearch';
@@ -467,7 +467,7 @@ export function Tag() {
   // --- Mouse selection gestures (single / Shift-range / Cmd-additive). --------
   const pick = (i: number, mods: PickMods) => {
     if (mods.shift) {
-      setSelected(rangeSet(anchor, i));
+      setSelected(imageFilterActive ? visibleRangeSet(visibleIndices, anchor, i) : rangeSet(anchor, i));
       setFocus(i);
     } else if (mods.meta) {
       // Seed from the focused image so the first Cmd-click yields a two-image
@@ -795,7 +795,7 @@ export function Tag() {
                 e.stopPropagation();
                 closeImageFilter();
               }}
-              className="absolute left-1/2 top-full z-40 mt-1 w-80 max-w-[calc(100vw-1rem)] -translate-x-1/2 space-y-3 border border-rule bg-panel p-3 shadow-lg sm:left-0 sm:translate-x-0"
+              className="absolute left-0 top-full z-40 mt-1 w-80 max-w-[calc(100vw-2rem)] space-y-3 border border-rule bg-panel p-3 shadow-lg"
             >
               <label className="block text-[11px] font-mono text-inkSoft">
                 Match text
@@ -1606,29 +1606,28 @@ function isMediaTarget(t: EventTarget | null): boolean {
 
 /** Move focus to image `i`, clearing selection and re-anchoring range-select. */
 function focusMove(s: HandlerState, i: number): void {
-  if (s.view === 'focus' && s.imageFilterActive) {
-    const currentPosition = s.visibleIndices.indexOf(s.focus);
-    const direction = i > s.focus ? 1 : -1;
-    const target = s.visibleIndices[currentPosition + direction];
-    if (target == null) return;
-    s.setFocus(target);
-    s.setAnchor(target);
-    s.setSelected(new Set());
-    return;
-  }
   const clamped = Math.max(0, Math.min(i, s.list.length - 1));
   s.setFocus(clamped);
   s.setAnchor(clamped);
   s.setSelected(new Set());
 }
 
+function filteredFocusMove(s: HandlerState, direction: 1 | -1): void {
+  if (s.view !== 'focus' || !s.imageFilterActive) return focusMove(s, s.focus + direction);
+  const target = s.visibleIndices[s.visibleIndices.indexOf(s.focus) + direction];
+  if (target != null) focusMove(s, target);
+}
+
 /** Move focus to the start of the burst `dir` away, clearing selection. */
 function gotoBurst(s: HandlerState, dir: 1 | -1): void {
   const curBurst = s.grouping.burstOf[s.focus] ?? 0;
-  const target = Math.max(0, Math.min(curBurst + dir, s.grouping.bursts.length - 1));
-  const b = s.grouping.bursts[target];
-  if (!b) return;
-  focusMove(s, b.start);
+  for (let target = curBurst + dir; target >= 0 && target < s.grouping.bursts.length; target += dir) {
+    const b = s.grouping.bursts[target];
+    if (!b) continue;
+    if (!s.imageFilterActive) return focusMove(s, b.start);
+    const matches = s.visibleIndices.filter((i) => i >= b.start && i <= b.end);
+    if (matches.length) return focusMove(s, dir === 1 ? matches[0] : matches[matches.length - 1]);
+  }
 }
 
 function handleKey(e: KeyboardEvent, s: HandlerState): void {
@@ -1739,11 +1738,11 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
   switch (e.key) {
     case 'ArrowDown':
       e.preventDefault();
-      focusMove(s, s.focus + 1);
+      filteredFocusMove(s, 1);
       return;
     case 'ArrowUp':
       e.preventDefault();
-      focusMove(s, s.focus - 1);
+      filteredFocusMove(s, -1);
       return;
     case 'PageDown':
       e.preventDefault();

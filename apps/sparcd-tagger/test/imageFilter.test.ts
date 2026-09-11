@@ -31,5 +31,6 @@ describe('matchesImageFilter', () => {
   it('combines populated date components', () => {
     expect(matchesImageFilter(image, { ...EMPTY_IMAGE_FILTER, year: '2024', month: '01', day: '15', hour: '10', minute: '32' })).toBe(true);
     expect(matchesImageFilter(image, { ...EMPTY_IMAGE_FILTER, year: '2024', day: '16' })).toBe(false);
+    expect(matchesImageFilter(image, { ...EMPTY_IMAGE_FILTER, month: '1', hour: '10' })).toBe(true);
   });
 });
