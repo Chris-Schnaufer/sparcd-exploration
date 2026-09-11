@@ -342,7 +342,9 @@ Then('the adjustment panel is left of the focused image when space permits', asy
 });
 
 Then('it moves right when the left side is constrained', async ({ page }) => {
-  await page.setViewportSize({ width: 900, height: 860 });
+  await focusedImage(page).evaluate((image) => {
+    image.parentElement?.parentElement?.setAttribute('style', 'transform: translateX(-360px)');
+  });
   const [panel, image] = await Promise.all([adjustmentPanel(page).boundingBox(), focusedImage(page).boundingBox()]);
   expect(panel).not.toBeNull();
   expect(image).not.toBeNull();
