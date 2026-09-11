@@ -50,6 +50,15 @@ Feature: Move through an upload and choose which images an action applies to
     Then only IMG005.JPG remains in the Overview
 
   @unmapped
+  Scenario: Text filtering covers filenames and timestamps and can be restricted
+    When the image filter searches all fields for "IMG002"
+    Then only "IMG002.JPG" remains in the Overview
+    When the image filter searches all fields for "2024-01-10T22:15"
+    Then only "IMG003.JPG" remains in the Overview
+    When the image filter searches filenames only for "Coyote"
+    Then no images match the image filter
+
+  @unmapped
   Scenario: An image can be opened from the Overview and paged from the Focus view
     Given the Overview is shown
     When the focused image is opened

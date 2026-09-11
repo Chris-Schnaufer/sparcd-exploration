@@ -64,6 +64,24 @@ Then('only IMG005.JPG remains in the Overview', async ({ page }) => {
   await expect(gridCell(page, 'IMG001.JPG')).toHaveCount(0);
 });
 
+When('the image filter searches all fields for {string}', async ({ page }, query: string) => {
+  await page.getByRole('button', { name: 'Filter' }).click();
+  await page.getByLabel('Match text').fill(query);
+});
+
+When('the image filter searches filenames only for {string}', async ({ page }, query: string) => {
+  await page.getByLabel('Match text').fill(query);
+  await page.getByLabel('Search in').selectOption('filename');
+});
+
+Then('only {string} remains in the Overview', async ({ page }, fileName: string) => {
+  await expect.poll(() => tileOrder(page)).toEqual([fileName]);
+});
+
+Then('no images match the image filter', async ({ page }) => {
+  await expect(page.getByRole('status')).toHaveText('No images match these filters.');
+});
+
 Then('the workspace shows the position of the focused image within the upload', async ({ page }) => {
   await expect(positionReadout(page)).toHaveText('1 / 6');
   await gridCell(page, 'IMG003.JPG').click();
