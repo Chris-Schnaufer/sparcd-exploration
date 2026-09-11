@@ -209,6 +209,8 @@ export function Tag() {
   const matches = useMemo(() => findFilenameMatches(list, imgQuery), [list, imgQuery]);
   const [imageFilter, setImageFilter] = useState<ImageFilter>(EMPTY_IMAGE_FILTER);
   const [showImageFilter, setShowImageFilter] = useState(false);
+  const imageFilterButtonRef = useRef<HTMLButtonElement>(null);
+  const imageFilterTextRef = useRef<HTMLInputElement>(null);
   const visibleIndices = useMemo(
     () =>
       list.flatMap((image, index) => {
@@ -235,6 +237,23 @@ export function Tag() {
     imageFilter.day !== '' ||
     imageFilter.hour !== '' ||
     imageFilter.minute !== '';
+
+  const closeImageFilter = () => {
+    setShowImageFilter(false);
+    requestAnimationFrame(() => imageFilterButtonRef.current?.focus());
+  };
+
+  useEffect(() => {
+    if (showImageFilter) imageFilterTextRef.current?.focus();
+  }, [showImageFilter]);
+
+  // Focus navigation always has a visible current item while a filter has
+  // matches. Selection retains canonical indexes and is deliberately untouched.
+  useEffect(() => {
+    if (!imageFilterActive || visibleIndices.length === 0 || visibleIndices.includes(focus)) return;
+    setFocus(visibleIndices[0]);
+    setAnchor(visibleIndices[0]);
+  }, [focus, imageFilterActive, visibleIndices]);
 
   const jumpToMatch = (pos: number) => {
     if (!matches.length) return;
@@ -485,6 +504,13 @@ export function Tag() {
     setSelected(new Set());
   };
 
+  const gotoFilteredImage = (direction: -1 | 1) => {
+    if (!imageFilterActive) return gotoImage(focus + direction);
+    const position = visibleIndices.indexOf(focus);
+    const target = visibleIndices[position + direction];
+    if (target != null) gotoImage(target);
+  };
+
   // On-screen questionable toggle mirrors Shift+Space: act on the selection
   // (or the focused image), flipping off the focused image's current state.
   const toggleQuestionable = () => {
@@ -500,6 +526,8 @@ export function Tag() {
   stateRef.current = {
     list,
     focus,
+    visibleIndices,
+    imageFilterActive,
     setFocus,
     setAnchor,
     grouping,
@@ -745,6 +773,7 @@ export function Tag() {
         </div>
         <div className="relative">
           <button
+            ref={imageFilterButtonRef}
             type="button"
             onClick={() => setShowImageFilter((shown) => !shown)}
             aria-expanded={showImageFilter}
@@ -758,12 +787,20 @@ export function Tag() {
           {showImageFilter && (
             <div
               id="image-filter-panel"
+              role="region"
               aria-label="Image filters"
-              className="absolute left-0 top-full z-40 mt-1 w-80 space-y-3 border border-rule bg-panel p-3 shadow-lg"
+              onKeyDown={(e) => {
+                if (e.key !== 'Escape') return;
+                e.preventDefault();
+                e.stopPropagation();
+                closeImageFilter();
+              }}
+              className="absolute left-1/2 top-full z-40 mt-1 w-80 max-w-[calc(100vw-1rem)] -translate-x-1/2 space-y-3 border border-rule bg-panel p-3 shadow-lg sm:left-0 sm:translate-x-0"
             >
               <label className="block text-[11px] font-mono text-inkSoft">
                 Match text
                 <input
+                  ref={imageFilterTextRef}
                   value={imageFilter.text}
                   onChange={(e) => setImageFilter((f) => ({ ...f, text: e.target.value }))}
                   placeholder="Filename, species, or date"
@@ -962,8 +999,8 @@ export function Tag() {
                 current && setTimeOverrideFn(ctx, current.key, current.deploymentId, currentBase, null)
               }
               onDetag={() => detagFn(ctx, targetsOf())}
-              onPrev={() => gotoImage(focus - 1)}
-              onNext={() => gotoImage(focus + 1)}
+              onPrev={() => gotoFilteredImage(-1)}
+              onNext={() => gotoFilteredImage(1)}
               onToggleQuestionable={toggleQuestionable}
               onDropSpecies={(tag) => applyIncrementAt(focus, tag)}
             />
@@ -1525,6 +1562,8 @@ function speciesJsonKey(list: Species[], sci: string): string | null {
 type HandlerState = {
   list: TagImage[];
   focus: number;
+  visibleIndices: number[];
+  imageFilterActive: boolean;
   setFocus: (n: number) => void;
   setAnchor: (n: number) => void;
   grouping: BurstGrouping;
@@ -1567,6 +1606,16 @@ function isMediaTarget(t: EventTarget | null): boolean {
 
 /** Move focus to image `i`, clearing selection and re-anchoring range-select. */
 function focusMove(s: HandlerState, i: number): void {
+  if (s.view === 'focus' && s.imageFilterActive) {
+    const currentPosition = s.visibleIndices.indexOf(s.focus);
+    const direction = i > s.focus ? 1 : -1;
+    const target = s.visibleIndices[currentPosition + direction];
+    if (target == null) return;
+    s.setFocus(target);
+    s.setAnchor(target);
+    s.setSelected(new Set());
+    return;
+  }
   const clamped = Math.max(0, Math.min(i, s.list.length - 1));
   s.setFocus(clamped);
   s.setAnchor(clamped);

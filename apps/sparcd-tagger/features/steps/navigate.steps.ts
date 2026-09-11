@@ -82,6 +82,50 @@ Then('no images match the image filter', async ({ page }) => {
   await expect(page.getByRole('status')).toHaveText('No images match these filters.');
 });
 
+When('the image filter is opened and dismissed with Escape', async ({ page }) => {
+  await page.getByRole('button', { name: 'Filter', exact: true }).click();
+  await page.getByLabel('Match text').press('Escape');
+});
+
+Then('the Filter control is collapsed and focused', async ({ page }) => {
+  const control = page.getByRole('button', { name: 'Filter', exact: true });
+  await expect(control).toHaveAttribute('aria-expanded', 'false');
+  await expect(control).toBeFocused();
+});
+
+When('the image filter limits Focus to the 2024-01-11 06 images', async ({ page }) => {
+  await page.getByRole('button', { name: 'Filter', exact: true }).click();
+  await page.getByLabel('Capture year').fill('2024');
+  await page.getByLabel('Capture month').fill('01');
+  await page.getByLabel('Capture day').fill('11');
+  await page.getByLabel('Capture hour').fill('06');
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Focus', exact: true }).click();
+});
+
+When('the next filtered image key is pressed in Focus', async ({ page }) => {
+  await page.keyboard.press('ArrowDown');
+});
+
+Then('IMG005.JPG is the focused filtered image', async ({ page }) => {
+  await expect(focusedTile(page)).toHaveAttribute('title', 'IMG005.JPG');
+  await expect(listRow(page, 'IMG001.JPG')).toHaveCount(0);
+});
+
+When('the image filter is opened in a narrow viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 860 });
+  await page.getByRole('button', { name: 'Filter', exact: true }).click();
+});
+
+Then('the image filter panel stays within the viewport', async ({ page }) => {
+  const panel = page.getByRole('region', { name: 'Image filters' });
+  await expect(panel).toBeVisible();
+  const box = await panel.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(320);
+});
+
 Then('the workspace shows the position of the focused image within the upload', async ({ page }) => {
   await expect(positionReadout(page)).toHaveText('1 / 6');
   await gridCell(page, 'IMG003.JPG').click();

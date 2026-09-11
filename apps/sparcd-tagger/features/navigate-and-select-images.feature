@@ -59,6 +59,22 @@ Feature: Move through an upload and choose which images an action applies to
     Then no images match the image filter
 
   @unmapped
+  Scenario: The image filter closes with Escape and returns focus to its control
+    When the image filter is opened and dismissed with Escape
+    Then the Filter control is collapsed and focused
+
+  @unmapped
+  Scenario: Focus navigation stays inside filtered images
+    When the image filter limits Focus to the 2024-01-11 06 images
+    And the next filtered image key is pressed in Focus
+    Then IMG005.JPG is the focused filtered image
+
+  @unmapped
+  Scenario: The image filter panel fits a narrow viewport
+    When the image filter is opened in a narrow viewport
+    Then the image filter panel stays within the viewport
+
+  @unmapped
   Scenario: An image can be opened from the Overview and paged from the Focus view
     Given the Overview is shown
     When the focused image is opened
