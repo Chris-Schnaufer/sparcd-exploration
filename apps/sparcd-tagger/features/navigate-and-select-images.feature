@@ -40,6 +40,16 @@ Feature: Move through an upload and choose which images an action applies to
     And any selection is cleared by the move
 
   @unmapped
+  Scenario: The image filter narrows the Overview by species text
+    When the image filter is opened and searches species for "Coyote"
+    Then only the matching image remains in the Overview
+
+  @unmapped
+  Scenario: The image filter combines capture date and untagged status
+    When the image filter limits capture time to 2024-01-11 06 and untagged images
+    Then only IMG005.JPG remains in the Overview
+
+  @unmapped
   Scenario: An image can be opened from the Overview and paged from the Focus view
     Given the Overview is shown
     When the focused image is opened

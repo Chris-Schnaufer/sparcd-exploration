@@ -34,6 +34,36 @@ Then('the Overview can be switched between a grid of tiles and a list of rows', 
   await expect(gridCell(page, 'IMG001.JPG')).toBeVisible();
 });
 
+When('the image filter is opened and searches species for {string}', async ({ page }, query: string) => {
+  await page.getByRole('button', { name: 'Filter' }).click();
+  await page.getByLabel('Match text').fill(query);
+  await page.getByLabel('Search in').selectOption('species');
+});
+
+Then('only the matching image remains in the Overview', async ({ page }) => {
+  await expect(gridCell(page, 'IMG004.JPG')).toBeVisible();
+  await expect(gridCell(page, 'IMG001.JPG')).toHaveCount(0);
+  await expect(gridCell(page, 'IMG002.JPG')).toHaveCount(0);
+});
+
+When(
+  'the image filter limits capture time to 2024-01-11 06 and untagged images',
+  async ({ page }) => {
+    await page.getByRole('button', { name: 'Filter' }).click();
+    await page.getByLabel('Capture year').fill('2024');
+    await page.getByLabel('Capture month').fill('01');
+    await page.getByLabel('Capture day').fill('11');
+    await page.getByLabel('Capture hour').fill('06');
+    await page.getByLabel('Tag state').selectOption('untagged');
+  },
+);
+
+Then('only IMG005.JPG remains in the Overview', async ({ page }) => {
+  await expect(gridCell(page, 'IMG005.JPG')).toBeVisible();
+  await expect(gridCell(page, 'IMG004.JPG')).toHaveCount(0);
+  await expect(gridCell(page, 'IMG001.JPG')).toHaveCount(0);
+});
+
 Then('the workspace shows the position of the focused image within the upload', async ({ page }) => {
   await expect(positionReadout(page)).toHaveText('1 / 6');
   await gridCell(page, 'IMG003.JPG').click();

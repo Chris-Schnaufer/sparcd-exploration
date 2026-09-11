@@ -27,6 +27,7 @@ import { rangeSet, toggleIndex, burstIndexSet } from '../lib/selection';
 import { effectiveOf, type Effective } from '../lib/effective';
 import { sortIndices, type SortField, type SortDir } from '../lib/sortImages';
 import { findFilenameMatches } from '../lib/imageSearch';
+import { EMPTY_IMAGE_FILTER, matchesImageFilter, type ImageFilter } from '../lib/imageFilter';
 import { parseSpeciesDrag, SPECIES_DRAG_TYPE } from '../lib/speciesDrag';
 import {
   useDraftStore,
@@ -206,6 +207,34 @@ export function Tag() {
   const [matchPos, setMatchPos] = useState(0);
   const imgSearchRef = useRef<HTMLInputElement>(null);
   const matches = useMemo(() => findFilenameMatches(list, imgQuery), [list, imgQuery]);
+  const [imageFilter, setImageFilter] = useState<ImageFilter>(EMPTY_IMAGE_FILTER);
+  const [showImageFilter, setShowImageFilter] = useState(false);
+  const visibleIndices = useMemo(
+    () =>
+      list.flatMap((image, index) => {
+        const draft = drafts[image.key];
+        return matchesImageFilter(
+          {
+            fileName: image.fileName,
+            timestamp: correctedTimestamp(image.baseTimestamp, timeOffset, draft?.timeOverride ?? null),
+            observations: effectiveOf(image, draft).observations,
+          },
+          imageFilter,
+        )
+          ? [index]
+          : [];
+      }),
+    [drafts, imageFilter, list, timeOffset],
+  );
+  const imageFilterActive =
+    imageFilter.text !== '' ||
+    imageFilter.scope !== 'all' ||
+    imageFilter.tagged !== 'all' ||
+    imageFilter.year !== '' ||
+    imageFilter.month !== '' ||
+    imageFilter.day !== '' ||
+    imageFilter.hour !== '' ||
+    imageFilter.minute !== '';
 
   const jumpToMatch = (pos: number) => {
     if (!matches.length) return;
@@ -714,6 +743,98 @@ export function Tag() {
             </>
           )}
         </div>
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setShowImageFilter((shown) => !shown)}
+            aria-expanded={showImageFilter}
+            aria-controls="image-filter-panel"
+            className={`inline-flex min-h-11 items-center gap-1 border px-2 py-1 text-[12px] font-mono focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent sm:min-h-0 ${
+              imageFilterActive ? 'border-ink bg-mark text-ink' : 'border-rule text-inkSoft hover:text-ink hover:border-ink'
+            }`}
+          >
+            Filter {imageFilterActive ? `${visibleIndices.length}/${list.length}` : ''}
+          </button>
+          {showImageFilter && (
+            <div
+              id="image-filter-panel"
+              aria-label="Image filters"
+              className="absolute left-0 top-full z-40 mt-1 w-80 space-y-3 border border-rule bg-panel p-3 shadow-lg"
+            >
+              <label className="block text-[11px] font-mono text-inkSoft">
+                Match text
+                <input
+                  value={imageFilter.text}
+                  onChange={(e) => setImageFilter((f) => ({ ...f, text: e.target.value }))}
+                  placeholder="Filename, species, or date"
+                  className="mt-1 w-full border border-rule bg-paper px-2 py-1 text-[13px] text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                />
+              </label>
+              <label className="block text-[11px] font-mono text-inkSoft">
+                Search in
+                <select
+                  value={imageFilter.scope}
+                  onChange={(e) =>
+                    setImageFilter((f) => ({ ...f, scope: e.target.value as ImageFilter['scope'] }))
+                  }
+                  className="mt-1 w-full border border-rule bg-paper px-2 py-1 text-[13px] text-ink"
+                >
+                  <option value="all">All fields</option>
+                  <option value="filename">Filename</option>
+                  <option value="species">Species</option>
+                  <option value="date">Date</option>
+                </select>
+              </label>
+              <label className="block text-[11px] font-mono text-inkSoft">
+                Tag state
+                <select
+                  value={imageFilter.tagged}
+                  onChange={(e) =>
+                    setImageFilter((f) => ({
+                      ...f,
+                      tagged: e.target.value as ImageFilter['tagged'],
+                    }))
+                  }
+                  className="mt-1 w-full border border-rule bg-paper px-2 py-1 text-[13px] text-ink"
+                >
+                  <option value="all">All images</option>
+                  <option value="tagged">Tagged only</option>
+                  <option value="untagged">Untagged only</option>
+                </select>
+              </label>
+              <fieldset>
+                <legend className="text-[11px] font-mono text-inkSoft">Capture date</legend>
+                <div className="mt-1 grid grid-cols-5 gap-1">
+                  {(['year', 'month', 'day', 'hour', 'minute'] as const).map((part) => (
+                    <input
+                      key={part}
+                      aria-label={`Capture ${part}`}
+                      value={imageFilter[part]}
+                      onChange={(e) =>
+                        setImageFilter((f) => ({ ...f, [part]: e.target.value }))
+                      }
+                      placeholder={{ year: 'YYYY', month: 'MM', day: 'DD', hour: 'HH', minute: 'MM' }[part]}
+                      inputMode="numeric"
+                      className="min-w-0 border border-rule bg-paper px-1 py-1 text-[12px] text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                    />
+                  ))}
+                </div>
+              </fieldset>
+              <div className="flex items-center justify-between">
+                <span aria-live="polite" className="text-[11px] font-mono text-inkSoft">
+                  {visibleIndices.length} of {list.length} images
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setImageFilter(EMPTY_IMAGE_FILTER)}
+                  className="text-[12px] font-mono text-inkSoft underline decoration-dotted hover:text-ink"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
 
         <div className="ml-auto flex flex-wrap items-center gap-3">
           {savedAt > 0 && <span className="text-[12px] font-mono text-accent">saved ✓</span>}
@@ -788,17 +909,24 @@ export function Tag() {
             <div className="flex flex-col min-h-[60svh] lg:min-h-0">
               <SortBar field={sortField} dir={sortDir} onSort={handleSort} />
               <div className="flex-1 min-h-0">
-                <Overview
-                  list={list}
-                  grouping={grouping}
-                  focus={focus}
-                  selected={selected}
-                  kind={overviewKind}
-                  onPick={pick}
-                  onSelectBurst={selectBurst}
-                  onDrill={drill}
-                  onDropSpecies={applyIncrementAt}
-                />
+                {imageFilterActive && visibleIndices.length === 0 ? (
+                  <p className="p-5 text-[13px] font-mono text-inkSoft" role="status">
+                    No images match these filters.
+                  </p>
+                ) : (
+                  <Overview
+                    list={list}
+                    visibleIndices={imageFilterActive ? visibleIndices : undefined}
+                    grouping={grouping}
+                    focus={focus}
+                    selected={selected}
+                    kind={overviewKind}
+                    onPick={pick}
+                    onSelectBurst={selectBurst}
+                    onDrill={drill}
+                    onDropSpecies={applyIncrementAt}
+                  />
+                )}
               </div>
             </div>
             <SpeciesPanel {...speciesPanelProps()} />
@@ -811,6 +939,7 @@ export function Tag() {
             <div className="h-[30svh] overflow-y-auto lg:h-auto lg:overflow-visible lg:contents">
               <Overview
                 list={list}
+                visibleIndices={imageFilterActive ? visibleIndices : undefined}
                 grouping={grouping}
                 focus={focus}
                 selected={selected}
