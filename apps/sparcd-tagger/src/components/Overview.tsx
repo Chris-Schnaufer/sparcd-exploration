@@ -4,7 +4,7 @@ import { correctedTimestamp } from '@sparcd/camtrap';
 import { Thumb } from './Thumb';
 import { useDraftStore } from '../lib/drafts';
 import { useStore } from '../store';
-import { formatDateTime } from '../lib/formatting';
+import { formatDateTime, formatTime, type TimeFormat } from '../lib/formatting';
 import { effectiveOf, isEditedFromBase, isGhostObs } from '../lib/effective';
 import { isRangeFullySelected } from '../lib/selection';
 import type { Burst, BurstGrouping } from '../lib/bursts';
@@ -213,6 +213,7 @@ function BurstBand({
   fullySelected: boolean;
   onSelect: () => void;
 }) {
+  const timeFormat = useStore((s) => s.timeFormat);
   return (
     <div
       className={`flex items-center gap-2 px-3 h-full border-b border-rule ${
@@ -220,7 +221,7 @@ function BurstBand({
       }`}
     >
       <span className="text-[11px] font-mono text-inkSoft truncate">
-        Burst {burst.id + 1} · {burst.size} img · {burstSpan(burst)}
+        Burst {burst.id + 1} · {burst.size} img · {burstSpan(burst, timeFormat)}
       </span>
       <button
         onClick={onSelect}
@@ -462,7 +463,7 @@ function speciesDropProps(index: number, onDropSpecies?: (i: number, tag: Applie
   };
 }
 
-function burstSpan(b: Burst): string {
-  const t = (iso: string) => (iso ? iso.slice(11, 19) : '—');
+function burstSpan(b: Burst, timeFormat: TimeFormat): string {
+  const t = (iso: string) => (iso ? formatTime(iso, timeFormat, { seconds: true }) : '—');
   return b.startTs === b.endTs ? t(b.startTs) : `${t(b.startTs)}–${t(b.endTs)}`;
 }

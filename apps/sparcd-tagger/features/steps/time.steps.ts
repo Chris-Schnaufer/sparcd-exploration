@@ -73,10 +73,10 @@ Then(
   'a sample capture time is shown before and after the shift as the offset changes',
   async ({ page }) => {
     const preview = uploadShiftModal(page).locator('div.border.bg-panel').first();
-    await expect(preview).toContainText('2024-01-10T08:00:00');
-    await expect(preview).toContainText('2024-01-10T08:59:00');
+    await expect(preview).toContainText('2024-01-10 08:00:00');
+    await expect(preview).toContainText('2024-01-10 08:59:00');
     await uploadShiftModal(page).getByRole('button', { name: 'Increase Min' }).click();
-    await expect(preview).toContainText('2024-01-10T09:00:00');
+    await expect(preview).toContainText('2024-01-10 09:00:00');
   },
 );
 
@@ -270,7 +270,7 @@ Then('the preview is anchored on the earliest selected frame', async ({ page }) 
   await page.getByRole('button', { name: 'Shift selection' }).click();
   await expect(selectionShiftModal(page)).toContainText('Preview · earliest selected');
   await expect(selectionShiftModal(page).locator('div.line-through')).toContainText(
-    '2024-01-10T09:30:00',
+    '2024-01-10 09:30:00',
   );
   await selectionShiftModal(page).getByRole('button', { name: 'Cancel' }).click();
 });
