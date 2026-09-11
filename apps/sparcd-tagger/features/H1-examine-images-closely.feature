@@ -94,6 +94,14 @@ Feature: Examine an image closely enough to catch every species
     And the displayed image changes to match
     And a marker shows that the adjustments are no longer neutral
 
+  @unmapped
+  Scenario: Adjustment controls avoid covering the focused image
+    Given the focused item is a still image
+    When the adjustment panel is opened
+    Then the adjustment panel is left of the focused image when space permits
+    And it moves right when the left side is constrained
+    And it stays in the viewport when neither side fits
+
   @H1
   Scenario: Display adjustments never change the stored image
     Given the display adjustments have been changed

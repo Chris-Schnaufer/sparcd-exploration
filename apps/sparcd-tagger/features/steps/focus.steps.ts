@@ -331,6 +331,38 @@ When('the adjustment panel is opened', async ({ page }) => {
   await expect(page.getByLabel('Brightness')).toBeVisible();
 });
 
+const adjustmentPanel = (page: Page): Locator => page.getByRole('region', { name: 'Image adjustments' });
+const focusedImage = (page: Page): Locator => page.locator('.react-transform-component img');
+
+Then('the adjustment panel is left of the focused image when space permits', async ({ page }) => {
+  const [panel, image] = await Promise.all([adjustmentPanel(page).boundingBox(), focusedImage(page).boundingBox()]);
+  expect(panel).not.toBeNull();
+  expect(image).not.toBeNull();
+  expect(panel!.x + panel!.width).toBeLessThanOrEqual(image!.x);
+});
+
+Then('it moves right when the left side is constrained', async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 860 });
+  await page.reload();
+  await page.getByRole('button', { name: 'Focus', exact: true }).click();
+  await adjustToggle(page).click();
+  const [panel, image] = await Promise.all([adjustmentPanel(page).boundingBox(), focusedImage(page).boundingBox()]);
+  expect(panel).not.toBeNull();
+  expect(image).not.toBeNull();
+  expect(panel!.x).toBeGreaterThanOrEqual(image!.x + image!.width);
+});
+
+Then('it stays in the viewport when neither side fits', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 860 });
+  await page.reload();
+  await page.getByRole('button', { name: 'Focus', exact: true }).click();
+  await adjustToggle(page).click();
+  const panel = await adjustmentPanel(page).boundingBox();
+  expect(panel).not.toBeNull();
+  expect(panel!.x).toBeGreaterThanOrEqual(0);
+  expect(panel!.x + panel!.width).toBeLessThanOrEqual(320);
+});
+
 Then(
   'brightness, contrast, hue and saturation can each be moved across their range',
   async ({ page }) => {
@@ -411,4 +443,3 @@ Then('leaving the Focus view returns the adjustments to neutral', async ({ page 
   const style = await page.locator('.react-transform-component img').first().getAttribute('style');
   expect(style ?? '').toContain('brightness(100%) contrast(100%) hue-rotate(0deg) saturate(100%)');
 });
-
