@@ -43,6 +43,10 @@ function dateParts(timestamp: string): Record<'year' | 'month' | 'day' | 'hour' 
   };
 }
 
+function normalizeDatePart(part: 'year' | 'month' | 'day' | 'hour' | 'minute', value: string): string {
+  return !value || part === 'year' ? value : value.padStart(2, '0');
+}
+
 export function matchesImageFilter(image: FilterableImage, filter: ImageFilter): boolean {
   const tagged = image.observations.length > 0;
   if (filter.tagged === 'tagged' && !tagged) return false;
@@ -50,11 +54,11 @@ export function matchesImageFilter(image: FilterableImage, filter: ImageFilter):
 
   const date = dateParts(image.timestamp);
   const requestedDateParts = {
-    year: filter.year,
-    month: filter.month,
-    day: filter.day,
-    hour: filter.hour,
-    minute: filter.minute,
+    year: normalizeDatePart('year', filter.year),
+    month: normalizeDatePart('month', filter.month),
+    day: normalizeDatePart('day', filter.day),
+    hour: normalizeDatePart('hour', filter.hour),
+    minute: normalizeDatePart('minute', filter.minute),
   };
   if (
     Object.entries(requestedDateParts).some(
