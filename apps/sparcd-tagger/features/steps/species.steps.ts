@@ -681,7 +681,7 @@ When('the stale tagger tab regains focus', async ({ page, s3, scratch }) => {
   scratch.speciesReads = s3.readCount(SPECIES_KEY);
   await page.clock.install({ time: new Date() });
   await page.clock.fastForward(SPECIES_STALE_MS);
-  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
   await expect.poll(() => s3.readCount(SPECIES_KEY)).toBeGreaterThan(
     scratch.speciesReads as number,
   );
