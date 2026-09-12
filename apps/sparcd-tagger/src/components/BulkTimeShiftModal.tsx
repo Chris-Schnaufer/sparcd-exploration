@@ -131,7 +131,7 @@ export function BulkTimeShiftModal({
                     Original
                   </div>
                   <div className="font-mono text-[15px] text-inkSoft line-through decoration-rule break-all">
-                    {formatDateTime(anchorTimestamp, dateFormat, timeFormat, { seconds: true })}
+                    {formatDateTime(anchorTimestamp, dateFormat, timeFormat)}
                   </div>
                 </div>
                 <div className="text-center font-mono text-[16px] text-accent">→</div>
@@ -140,7 +140,7 @@ export function BulkTimeShiftModal({
                     Corrected
                   </div>
                   <div className="font-mono text-[15px] font-[600] text-ink break-all">
-                    {formatDateTime(corrected, dateFormat, timeFormat, { seconds: true })}
+                    {formatDateTime(corrected, dateFormat, timeFormat)}
                   </div>
                 </div>
               </div>

@@ -92,7 +92,7 @@ export function PerImageTime({
       <span className="flex flex-col leading-tight">
         <span className="font-mono text-[13.5px] font-[600] text-ink">
           {corrected
-            ? formatDateTime(corrected, dateFormat, timeFormat, { seconds: true })
+            ? formatDateTime(corrected, dateFormat, timeFormat)
             : '— no timestamp —'}
           {overridden ? (
             <span className="ml-2 font-body text-[10px] font-[600] tracking-[0.08em] uppercase text-accent border border-accent px-1">
@@ -108,7 +108,7 @@ export function PerImageTime({
         </span>
         {corrected !== original && original && (
           <span className="font-mono text-[11px] text-inkMute line-through decoration-ruleSoft">
-            was {formatDateTime(original, dateFormat, timeFormat, { seconds: true })}
+            was {formatDateTime(original, dateFormat, timeFormat)}
           </span>
         )}
       </span>

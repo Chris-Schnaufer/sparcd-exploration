@@ -4,24 +4,23 @@
 Feature: Choose how dates, times and distances are displayed
 
   """
-  As-built: date and time format are per-browser display preferences in
-  Settings — they never touch the stored ISO timestamps, only how the Focus
-  view and the Overview list render them. A distance-units preference is also
-  offered, ahead of a location/elevation display that does not exist yet.
+  Date and time styles use the browser's language and regional conventions.
+  They, together with distance units, are saved in this browser and never alter
+  the ISO timestamps stored in media.csv.
   """
 
   Background:
     Given an upload is open in the tagging workspace
 
   @unmapped
-  Scenario: Dates and times default to a plain ISO-style display
+  Scenario: Dates and times use the required defaults
     When Settings is opened
-    Then the date format defaults to YYYY-MM-DD
+    Then the date format defaults to ISO local date
     And the time format defaults to 24-hour
 
   @unmapped
   Scenario: Switching the date format changes every displayed timestamp
-    Given the date format is switched to MM/DD/YYYY in Settings
+    Given the date format is switched to Numeric date in Settings
     And an image is focused
     When the enlarged Focus view is opened
     Then the focused image's corrected time is shown in that date order
@@ -46,6 +45,15 @@ Feature: Choose how dates, times and distances are displayed
     Given burst grouping is switched on in Settings
     And the time format is switched to 12-hour in Settings
     Then burst bands show their time span with an AM/PM marker
+
+  @unmapped
+  Scenario: Display preferences persist after a browser reload
+    Given the date format is switched to Month Day Short Year in Settings
+    And the time format is switched to 12-hour with seconds in Settings
+    And distance units are switched to feet in Settings
+    When the browser is reloaded
+    And Settings is opened
+    Then the selected display preferences are retained
 
   @unmapped
   Scenario: A distance-units choice is offered ahead of a location display

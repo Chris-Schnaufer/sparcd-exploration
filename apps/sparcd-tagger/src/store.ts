@@ -14,7 +14,7 @@ import type { DateFormat, TimeFormat } from './lib/formatting';
 
 export type Section = 'browse' | 'tag' | 'history' | 'settings';
 export type { Theme };
-export type ElevationUnit = 'meters' | 'feet';
+export type DistanceUnit = 'meters' | 'feet';
 
 /** Top-bar sync state. P0 is read-only, so live values are `local-only`; the
  *  rest of the union exists so the pill is built once and P4 just feeds it. */
@@ -49,7 +49,7 @@ type TaggerState = {
   burstThresholdSec: number; // sequence grouping threshold (5–600s), used when enabled
   dateFormat: DateFormat; // display only — media.csv col 4 is always stored as full ISO
   timeFormat: TimeFormat; // display only, ditto
-  elevationUnit: ElevationUnit; // not yet consumed — no location/elevation display exists
+  distanceUnit: DistanceUnit; // not yet consumed — no location/elevation display exists
 
   connect: (config: S3Config, remember: boolean) => void;
   disconnect: () => void;
@@ -66,7 +66,7 @@ type TaggerState = {
   setBurstThreshold: (value: number) => void;
   setDateFormat: (value: DateFormat) => void;
   setTimeFormat: (value: TimeFormat) => void;
-  setElevationUnit: (value: ElevationUnit) => void;
+  setDistanceUnit: (value: DistanceUnit) => void;
 };
 
 // This tab's own session, if it has one — same tab, so a BrandSwitcher hop to
@@ -76,6 +76,42 @@ type TaggerState = {
 const initialSession = loadSessionConnection();
 
 const LEGACY_THEME_KEY = 'sparcd-tagger-session';
+const DISPLAY_PREFERENCES_KEY = 'sparcd-tagger-display-preferences';
+
+type DisplayPreferences = Pick<TaggerState, 'dateFormat' | 'timeFormat' | 'distanceUnit'>;
+
+const defaultDisplayPreferences: DisplayPreferences = {
+  dateFormat: 'iso-local',
+  timeFormat: '24h',
+  distanceUnit: 'meters',
+};
+
+function loadDisplayPreferences(): DisplayPreferences {
+  try {
+    const stored = JSON.parse(localStorage.getItem(DISPLAY_PREFERENCES_KEY) ?? '{}') as Partial<DisplayPreferences>;
+    return {
+      dateFormat: ['long', 'short', 'numeric', 'iso-local'].includes(stored.dateFormat ?? '')
+        ? stored.dateFormat as DisplayPreferences['dateFormat']
+        : defaultDisplayPreferences.dateFormat,
+      timeFormat: ['24h', '24h-seconds', '12h', '12h-seconds'].includes(stored.timeFormat ?? '')
+        ? stored.timeFormat as DisplayPreferences['timeFormat']
+        : defaultDisplayPreferences.timeFormat,
+      distanceUnit: stored.distanceUnit === 'feet' ? 'feet' : defaultDisplayPreferences.distanceUnit,
+    };
+  } catch {
+    return defaultDisplayPreferences;
+  }
+}
+
+function saveDisplayPreferences(preferences: DisplayPreferences) {
+  localStorage.setItem(DISPLAY_PREFERENCES_KEY, JSON.stringify(preferences));
+}
+
+function clearDisplayPreferences() {
+  localStorage.removeItem(DISPLAY_PREFERENCES_KEY);
+}
+
+const initialDisplayPreferences = loadDisplayPreferences();
 
 /** The choice this tool persisted for itself before the shared home existed. */
 function legacyTheme(): Theme | null {
@@ -121,9 +157,7 @@ export const useStore = create<TaggerState>()(
     dryRun: true,
     burstGroupingEnabled: false,
     burstThresholdSec: 60,
-    dateFormat: 'iso',
-    timeFormat: '24h',
-    elevationUnit: 'meters',
+    ...initialDisplayPreferences,
 
     connect: (config, remember) => {
       clearClientCache();
@@ -138,6 +172,7 @@ export const useStore = create<TaggerState>()(
     disconnect: () => {
       clearClientCache();
       clearSharedConnection();
+      clearDisplayPreferences();
       set((s) => ({
         s3Config: null,
         connectionId: s.connectionId + 1,
@@ -145,6 +180,7 @@ export const useStore = create<TaggerState>()(
         selectedCollectionKey: null,
         selectedUploadPrefix: null,
         taggerUser: '',
+        ...defaultDisplayPreferences,
       }));
     },
     setSection: (section) => set({ section }),
@@ -176,9 +212,24 @@ export const useStore = create<TaggerState>()(
     setDryRun: (value) => set({ dryRun: value }),
     setBurstGrouping: (value) => set({ burstGroupingEnabled: value }),
     setBurstThreshold: (value) => set({ burstThresholdSec: value }),
-    setDateFormat: (value) => set({ dateFormat: value }),
-    setTimeFormat: (value) => set({ timeFormat: value }),
-    setElevationUnit: (value) => set({ elevationUnit: value }),
+    setDateFormat: (dateFormat) =>
+      set((s) => {
+        const preferences = { dateFormat, timeFormat: s.timeFormat, distanceUnit: s.distanceUnit };
+        saveDisplayPreferences(preferences);
+        return { dateFormat };
+      }),
+    setTimeFormat: (timeFormat) =>
+      set((s) => {
+        const preferences = { dateFormat: s.dateFormat, timeFormat, distanceUnit: s.distanceUnit };
+        saveDisplayPreferences(preferences);
+        return { timeFormat };
+      }),
+    setDistanceUnit: (distanceUnit) =>
+      set((s) => {
+        const preferences = { dateFormat: s.dateFormat, timeFormat: s.timeFormat, distanceUnit };
+        saveDisplayPreferences(preferences);
+        return { distanceUnit };
+      }),
   }),
 );
 

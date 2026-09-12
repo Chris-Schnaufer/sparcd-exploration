@@ -464,6 +464,6 @@ function speciesDropProps(index: number, onDropSpecies?: (i: number, tag: Applie
 }
 
 function burstSpan(b: Burst, timeFormat: TimeFormat): string {
-  const t = (iso: string) => (iso ? formatTime(iso, timeFormat, { seconds: true }) : '—');
+  const t = (iso: string) => (iso ? formatTime(iso, timeFormat) : '—');
   return b.startTs === b.endTs ? t(b.startTs) : `${t(b.startTs)}–${t(b.endTs)}`;
 }
