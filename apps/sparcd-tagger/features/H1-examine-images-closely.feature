@@ -102,6 +102,13 @@ Feature: Examine an image closely enough to catch every species
     And it stays in the viewport when neither side fits
 
   @H1
+  Scenario: Adjustment controls dismiss when attention moves away
+    Given the focused item is a still image
+    When the adjustment panel is opened
+    Then clicking outside the adjustment panel dismisses it
+    And focusing another control dismisses it
+
+  @H1
   Scenario: Display adjustments never change the stored image
     Given the display adjustments have been changed
     Then the stored image, its identifications and its capture time are unaffected

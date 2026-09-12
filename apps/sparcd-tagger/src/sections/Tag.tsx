@@ -1016,6 +1016,7 @@ function FocusPane({
               onChange={setAdjustments}
               onReset={() => setAdjustments(NEUTRAL)}
               getMediaRect={() => dropRef.current?.querySelector('img')?.getBoundingClientRect() ?? null}
+              mediaKey={current.key}
             />
           </div>
         )}

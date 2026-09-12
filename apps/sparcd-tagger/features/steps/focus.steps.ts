@@ -342,11 +342,37 @@ Then('the adjustment panel is left of the focused image when space permits', asy
 });
 
 Then('it stays in the viewport when neither side fits', async ({ page }) => {
-  await page.setViewportSize({ width: 320, height: 860 });
-  const panel = await adjustmentPanel(page).boundingBox();
-  expect(panel).not.toBeNull();
-  expect(panel!.x).toBeGreaterThanOrEqual(0);
-  expect(panel!.x + panel!.width).toBeLessThanOrEqual(320);
+  try {
+    await page.setViewportSize({ width: 320, height: 150 });
+    await expect(adjustmentPanel(page)).toBeVisible();
+    const viewport = await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
+    await expect.poll(async () => {
+      const panel = await adjustmentPanel(page).boundingBox();
+      return panel ? panel.y + panel.height : Infinity;
+    }).toBeLessThanOrEqual(viewport.height - 8);
+    const panel = await adjustmentPanel(page).boundingBox();
+    expect(panel).not.toBeNull();
+    expect(panel!.x).toBeGreaterThanOrEqual(8);
+    expect(panel!.x + panel!.width).toBeLessThanOrEqual(viewport.width - 8);
+    expect(panel!.y).toBeGreaterThanOrEqual(8);
+    expect(panel!.y + panel!.height).toBeLessThanOrEqual(viewport.height - 8);
+  } finally {
+    await page.keyboard.press('Escape');
+    await expect(adjustmentPanel(page)).toHaveCount(0);
+    await page.setViewportSize({ width: 1440, height: 950 });
+  }
+});
+
+Then('clicking outside the adjustment panel dismisses it', async ({ page }) => {
+  await page.mouse.click(2, 2);
+  await expect(adjustmentPanel(page)).toHaveCount(0);
+  await adjustToggle(page).click();
+  await expect(adjustmentPanel(page)).toBeVisible();
+});
+
+Then('focusing another control dismisses it', async ({ page }) => {
+  await page.getByRole('button', { name: 'Overview', exact: true }).focus();
+  await expect(adjustmentPanel(page)).toHaveCount(0);
 });
 
 Then(
@@ -410,6 +436,8 @@ When('another image is opened in the Focus view', async ({ page, scratch }) => {
     .locator('.react-transform-component img')
     .first()
     .getAttribute('style');
+  await page.keyboard.press('Escape');
+  await expect(adjustmentPanel(page)).toHaveCount(0);
   await page.locator('button').filter({ hasText: 'IMG002.JPG' }).first().click();
   await expect(page.locator('.react-transform-component img')).toBeVisible();
 });
