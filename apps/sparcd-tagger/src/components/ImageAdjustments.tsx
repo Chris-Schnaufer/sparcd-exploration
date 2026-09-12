@@ -28,6 +28,7 @@ export function ImageAdjustments({
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const neutral = isNeutral(value);
 
   useLayoutEffect(() => {
@@ -50,13 +51,16 @@ export function ImageAdjustments({
     };
     place();
     window.addEventListener('resize', place);
-    return () => window.removeEventListener('resize', place);
+    const observer = new ResizeObserver(place);
+    const media = document.querySelector('[data-testid="focus-drop-zone"] img');
+    if (media) observer.observe(media);
+    return () => { window.removeEventListener('resize', place); observer.disconnect(); };
   }, [getMediaRect, open]);
 
   return (
     <div className="flex flex-col items-start gap-2">
       {open && createPortal(
-        <div ref={panelRef} id="image-adjustments" role="region" aria-label="Image adjustments" style={{ position: 'fixed', left: Math.max(8, Math.min(position?.left ?? 0, window.innerWidth - 232)), top: position?.top ?? 0, visibility: position ? 'visible' : 'hidden', zIndex: 50 }} className="w-56 bg-panel/95 border border-rule shadow-sm p-3 flex flex-col gap-2.5">
+        <div ref={panelRef} id="image-adjustments" role="region" aria-label="Image adjustments" onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); setOpen(false); requestAnimationFrame(() => triggerRef.current?.focus()); } }} style={{ position: 'fixed', left: Math.max(8, Math.min(position?.left ?? 0, window.innerWidth - 232)), top: position?.top ?? 0, visibility: position ? 'visible' : 'hidden', zIndex: 50 }} className="w-56 bg-panel/95 border border-rule shadow-sm p-3 flex flex-col gap-2.5">
           {FIELDS.map((f) => (
             <label key={f.key} className="flex flex-col gap-1">
               <span className="flex items-center justify-between">
@@ -88,9 +92,12 @@ export function ImageAdjustments({
         </div>, document.body
       )}
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-pressed={open}
+        aria-expanded={open}
+        aria-controls="image-adjustments"
         className="text-[12px] font-mono border border-rule bg-panel/95 px-3 py-2.5 min-h-[44px] sm:px-2 sm:py-0.5 sm:min-h-0 text-inkSoft hover:text-ink hover:border-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
         title="View-only image adjustments (does not change the file)"
       >
