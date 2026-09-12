@@ -5,7 +5,7 @@ const ISO = '2026-09-11T13:24:05.000Z';
 
 describe('formatDate', () => {
   it('renders an ISO local date without timezone conversion', () => {
-    expect(formatDate(ISO, 'iso-local', 'en-US')).toBe('2026-9-11');
+    expect(formatDate(ISO, 'iso-local', 'en-US')).toBe('2026-09-11');
   });
 
   it('uses the browser locale for long, short and numeric dates', () => {
@@ -20,7 +20,7 @@ describe('formatDate', () => {
 
   it('preserves a wall-clock time that falls in a daylight-saving gap', () => {
     const dstGap = '2026-03-08T02:30:00.000Z';
-    expect(formatDateTime(dstGap, 'iso-local', '24h', 'en-US')).toBe('2026-3-8 02:30');
+    expect(formatDateTime(dstGap, 'iso-local', '24h', 'en-US')).toBe('2026-03-08 02:30');
   });
 });
 
