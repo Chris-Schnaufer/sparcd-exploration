@@ -17,8 +17,7 @@ function displayDateFromIso(iso: string): Date {
 /** Formats the date in the browser's locale, except for the portable ISO local form. */
 export function formatDate(iso: string, fmt: DateFormat, locale?: string | string[]): string {
   if (fmt === 'iso-local') {
-    const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
-    return `${y}-${m}-${d}`;
+    return iso.slice(0, 10);
   }
   const options: Intl.DateTimeFormatOptions =
     fmt === 'long'
