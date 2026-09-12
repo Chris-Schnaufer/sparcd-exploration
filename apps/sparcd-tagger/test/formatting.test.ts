@@ -17,6 +17,11 @@ describe('formatDate', () => {
   it('uses locale-specific order and punctuation', () => {
     expect(formatDate(ISO, 'long', 'de-DE')).toBe('11. September 2026');
   });
+
+  it('preserves a wall-clock time that falls in a daylight-saving gap', () => {
+    const dstGap = '2026-03-08T02:30:00.000Z';
+    expect(formatDateTime(dstGap, 'iso-local', '24h', 'en-US')).toBe('2026-3-8 02:30');
+  });
 });
 
 describe('formatTime', () => {
