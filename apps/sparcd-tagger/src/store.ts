@@ -132,7 +132,19 @@ function loadAutoAdvance(): boolean {
 }
 
 function saveAutoAdvance(value: boolean) {
-  localStorage.setItem(AUTO_ADVANCE_KEY, String(value));
+  try {
+    localStorage.setItem(AUTO_ADVANCE_KEY, String(value));
+  } catch {
+    // Storage can be unavailable or full; the in-memory choice still applies.
+  }
+}
+
+function clearAutoAdvance() {
+  try {
+    localStorage.removeItem(AUTO_ADVANCE_KEY);
+  } catch {
+    // Disconnect still clears the active connection and in-memory preference.
+  }
 }
 
 const initialDisplayPreferences = loadDisplayPreferences();
@@ -198,7 +210,7 @@ export const useStore = create<TaggerState>()(
       clearClientCache();
       clearSharedConnection();
       clearDisplayPreferences();
-      localStorage.removeItem(AUTO_ADVANCE_KEY);
+      clearAutoAdvance();
       set((s) => ({
         s3Config: null,
         connectionId: s.connectionId + 1,
