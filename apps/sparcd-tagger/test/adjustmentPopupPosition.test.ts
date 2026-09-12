@@ -27,6 +27,15 @@ it('uses the clamped side with the least media overlap when neither side fits', 
   expect(position.left).toBe(88);
 });
 
+it('keeps constrained placement off the navigation rail', () => {
+  expect(adjustmentPopupPosition(
+    { left: 100, right: 1_000, top: 40, width: 900, height: 500 },
+    { left: 0, right: 224, top: 0, width: 224, height: 260 },
+    { width: 1_000, height: 700 },
+    [{ left: 0, right: 280, top: 0, width: 280, height: 700 }],
+  ).left).toBe(768);
+});
+
 it('keeps a short viewport placement inside its gutters', () => {
   expect(adjustmentPopupPosition(
     { left: 300, right: 540, top: 120, width: 240, height: 180 },

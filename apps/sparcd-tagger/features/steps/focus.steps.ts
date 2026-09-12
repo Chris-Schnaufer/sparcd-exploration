@@ -12,6 +12,7 @@ import {
   sectionTab,
 } from './support/world';
 import { BUCKET, PREFIX_A, mediaCsv, MEDIA_A, mediaKey } from './support/data';
+import { adjustmentPopupPosition } from '../../src/lib/adjustmentPopupPosition';
 
 // --- react-zoom-pan-pinch introspection -------------------------------------
 
@@ -385,17 +386,34 @@ Then('focusing another control dismisses it', async ({ page }) => {
 
 When('the focused image moves while the adjustment panel is open', async ({ page, scratch }) => {
   scratch.adjustmentBeforeMove = await adjustmentPanel(page).boundingBox();
-  await page.locator('[data-testid="focus-drop-zone"]').evaluate((element) => {
-    (element as HTMLElement).style.transform = 'translateX(40px)';
+  await transformContent(page.locator('body')).first().evaluate((element) => {
+    (element as HTMLElement).style.transform = 'translate(40px, 0px) scale(1)';
   });
 });
 
 Then('the adjustment panel follows the focused image', async ({ page, scratch }) => {
   const before = scratch.adjustmentBeforeMove as { x: number; y: number };
   await expect.poll(async () => {
-    const panel = await adjustmentPanel(page).boundingBox();
-    return panel ? Math.abs(panel.x - before.x) + Math.abs(panel.y - before.y) : 0;
-  }).toBeGreaterThan(5);
+    const [panel, media, focus, viewport] = await Promise.all([
+      adjustmentPanel(page).boundingBox(),
+      focusedImage(page).boundingBox(),
+      page.locator('[data-testid="focus-drop-zone"]').boundingBox(),
+      page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight })),
+    ]);
+    if (!panel || !media) return Infinity;
+    const blocked = focus && focus.x > 0
+      ? [{ left: 0, right: focus.x, top: focus.y, width: focus.x, height: focus.height }]
+      : [];
+    const expected = adjustmentPopupPosition(
+      { left: media.x, right: media.x + media.width, top: media.y, width: media.width, height: media.height },
+      { left: 0, right: panel.width, top: 0, width: panel.width, height: panel.height },
+      viewport,
+      blocked,
+    );
+    return Math.abs(panel.x - expected.left) + Math.abs(panel.y - expected.top);
+  }).toBeLessThanOrEqual(1);
+  const after = await adjustmentPanel(page).boundingBox();
+  expect(Math.abs(after!.x - before.x) + Math.abs(after!.y - before.y)).toBeGreaterThan(5);
 });
 
 Then('keyboard focus enters the adjustment panel', async ({ page }) => {

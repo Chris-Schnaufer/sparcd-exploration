@@ -29,7 +29,23 @@ export function adjustmentPopupPosition(
   const mediaBottom = media.top + media.height;
   const panelBottom = top + panel.height;
   const verticalOverlap = Math.max(0, Math.min(panelBottom, mediaBottom) - Math.max(top, media.top));
-  const overlap = (candidate: number) =>
+  const mediaOverlap = (candidate: number) =>
     Math.max(0, Math.min(candidate + panel.width, media.right) - Math.max(candidate, media.left)) * verticalOverlap;
-  return { left: candidates.reduce((best, candidate) => overlap(candidate) < overlap(best) ? candidate : best), top };
+  const blockedOverlap = (candidate: number) => {
+    const popup = { left: candidate, right: candidate + panel.width, top, width: panel.width, height: panel.height };
+    return blocked.reduce((area, rect) => {
+      const width = Math.max(0, Math.min(popup.right, rect.right) - Math.max(popup.left, rect.left));
+      const height = Math.max(0, Math.min(popup.top + popup.height, rect.top + rect.height) - Math.max(popup.top, rect.top));
+      return area + width * height;
+    }, 0);
+  };
+  return {
+    left: candidates.reduce((best, candidate) =>
+      blockedOverlap(candidate) < blockedOverlap(best) ||
+      (blockedOverlap(candidate) === blockedOverlap(best) && mediaOverlap(candidate) < mediaOverlap(best))
+        ? candidate
+        : best,
+    ),
+    top,
+  };
 }
