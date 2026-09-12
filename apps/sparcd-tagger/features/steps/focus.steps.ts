@@ -331,14 +331,22 @@ When('the adjustment panel is opened', async ({ page }) => {
   await expect(page.getByLabel('Brightness')).toBeVisible();
 });
 
-const adjustmentPanel = (page: Page): Locator => page.getByRole('region', { name: 'Image adjustments' });
+const adjustmentPanel = (page: Page): Locator => page.getByRole('dialog', { name: 'Image adjustments' });
 const focusedImage = (page: Page): Locator => page.locator('.react-transform-component img');
 
-Then('the adjustment panel is left of the focused image when space permits', async ({ page }) => {
-  const [panel, image] = await Promise.all([adjustmentPanel(page).boundingBox(), focusedImage(page).boundingBox()]);
+Then('the adjustment panel leaves the Focus navigation usable', async ({ page }) => {
+  const [panel, navigation] = await Promise.all([
+    adjustmentPanel(page).boundingBox(),
+    page.locator('button').filter({ hasText: 'IMG002.JPG' }).first().boundingBox(),
+  ]);
   expect(panel).not.toBeNull();
-  expect(image).not.toBeNull();
-  expect(panel!.x + panel!.width).toBeLessThanOrEqual(image!.x);
+  expect(navigation).not.toBeNull();
+  expect(panel!.x + panel!.width <= navigation!.x || navigation!.x + navigation!.width <= panel!.x).toBe(true);
+  const hit = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('button')?.getAttribute('aria-label'), {
+    x: navigation!.x + navigation!.width / 2,
+    y: navigation!.y + navigation!.height / 2,
+  });
+  expect(hit).toContain('IMG002.JPG');
 });
 
 Then('it stays in the viewport when neither side fits', async ({ page }) => {
@@ -373,6 +381,31 @@ Then('clicking outside the adjustment panel dismisses it', async ({ page }) => {
 Then('focusing another control dismisses it', async ({ page }) => {
   await page.getByRole('button', { name: 'Overview', exact: true }).focus();
   await expect(adjustmentPanel(page)).toHaveCount(0);
+});
+
+When('the focused image moves while the adjustment panel is open', async ({ page, scratch }) => {
+  scratch.adjustmentBeforeMove = await adjustmentPanel(page).boundingBox();
+  await page.locator('[data-testid="focus-drop-zone"]').evaluate((element) => {
+    (element as HTMLElement).style.transform = 'translateX(40px)';
+  });
+});
+
+Then('the adjustment panel follows the focused image', async ({ page, scratch }) => {
+  const before = scratch.adjustmentBeforeMove as { x: number; y: number };
+  await expect.poll(async () => {
+    const panel = await adjustmentPanel(page).boundingBox();
+    return panel ? Math.abs(panel.x - before.x) + Math.abs(panel.y - before.y) : 0;
+  }).toBeGreaterThan(5);
+});
+
+Then('keyboard focus enters the adjustment panel', async ({ page }) => {
+  await expect(page.getByLabel('Brightness')).toBeFocused();
+});
+
+Then('Escape closes the adjustment panel and returns focus to Adjust', async ({ page }) => {
+  await page.keyboard.press('Escape');
+  await expect(adjustmentPanel(page)).toHaveCount(0);
+  await expect(adjustToggle(page)).toBeFocused();
 });
 
 Then(

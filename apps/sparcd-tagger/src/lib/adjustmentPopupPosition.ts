@@ -1,14 +1,26 @@
 export type Rect = { left: number; right: number; top: number; width: number; height: number };
 
-export function adjustmentPopupPosition(media: Rect, panel: Rect, viewport: { width: number; height: number }) {
+const overlaps = (a: Rect, b: Rect) =>
+  a.left < b.right && a.right > b.left && a.top < b.top + b.height && a.top + a.height > b.top;
+
+export function adjustmentPopupPosition(
+  media: Rect,
+  panel: Rect,
+  viewport: { width: number; height: number },
+  blocked: Rect[] = [],
+) {
   const gutter = 8;
   const gap = 12;
   const maxLeft = Math.max(gutter, viewport.width - panel.width - gutter);
   const top = Math.max(gutter, Math.min(media.top, viewport.height - panel.height - gutter));
   const left = media.left - panel.width - gap;
-  if (left >= gutter) return { left, top };
+  const isBlocked = (candidate: number) => {
+    const popup = { left: candidate, right: candidate + panel.width, top, width: panel.width, height: panel.height };
+    return blocked.some((rect) => overlaps(popup, rect));
+  };
+  if (left >= gutter && !isBlocked(left)) return { left, top };
   const right = media.right + gap;
-  if (right <= maxLeft) return { left: right, top };
+  if (right <= maxLeft && !isBlocked(right)) return { left: right, top };
 
   // Neither side fits. Clamp both candidates and use the one which obscures the
   // least of the focused media. Keeping the left candidate first preserves the

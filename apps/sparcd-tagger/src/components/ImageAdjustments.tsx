@@ -20,12 +20,14 @@ export function ImageAdjustments({
   onChange,
   onReset,
   getMediaRect,
+  getBlockedRects,
   mediaKey,
 }: {
   value: Adjustments;
   onChange: (next: Adjustments) => void;
   onReset: () => void;
   getMediaRect: () => DOMRect | null;
+  getBlockedRects: () => DOMRect[];
   mediaKey: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -46,7 +48,7 @@ export function ImageAdjustments({
       const media = getMediaRect();
       const panel = panelRef.current?.getBoundingClientRect();
       if (!media || !panel) return;
-      setPosition(adjustmentPopupPosition(media, panel, { width: window.innerWidth, height: window.innerHeight }));
+      setPosition(adjustmentPopupPosition(media, panel, { width: window.innerWidth, height: window.innerHeight }, getBlockedRects()));
     };
     const schedulePlace = () => {
       if (frame === undefined) frame = requestAnimationFrame(place);
@@ -68,7 +70,12 @@ export function ImageAdjustments({
       observer.disconnect();
       mutations.disconnect();
     };
-  }, [getMediaRect, open]);
+  }, [getBlockedRects, getMediaRect, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    requestAnimationFrame(() => panelRef.current?.querySelector<HTMLInputElement>('input')?.focus());
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -99,7 +106,7 @@ export function ImageAdjustments({
   return (
     <div className="flex flex-col items-start gap-2">
       {open && createPortal(
-        <div ref={panelRef} id="image-adjustments" role="region" aria-label="Image adjustments" style={{ position: 'fixed', left: position?.left ?? 0, top: position?.top ?? 0, visibility: position ? 'visible' : 'hidden', zIndex: 50, maxHeight: Math.max(0, window.innerHeight - 16) }} className="box-border w-56 max-w-[calc(100vw-16px)] overflow-y-auto bg-panel/95 border border-rule shadow-sm p-3 flex flex-col gap-2.5">
+        <div ref={panelRef} id="image-adjustments" role="dialog" aria-label="Image adjustments" style={{ position: 'fixed', left: position?.left ?? 0, top: position?.top ?? 0, visibility: position ? 'visible' : 'hidden', zIndex: 50, maxHeight: Math.max(0, window.innerHeight - 16) }} className="box-border w-56 max-w-[calc(100vw-16px)] overflow-y-auto bg-panel/95 border border-rule shadow-sm p-3 flex flex-col gap-2.5">
           {FIELDS.map((f) => (
             <label key={f.key} className="flex flex-col gap-1">
               <span className="flex items-center justify-between">
@@ -137,6 +144,7 @@ export function ImageAdjustments({
         aria-pressed={open}
         aria-expanded={open}
         aria-controls="image-adjustments"
+        aria-haspopup="dialog"
         className="text-[12px] font-mono border border-rule bg-panel/95 px-3 py-2.5 min-h-[44px] sm:px-2 sm:py-0.5 sm:min-h-0 text-inkSoft hover:text-ink hover:border-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
         title="View-only image adjustments (does not change the file)"
       >

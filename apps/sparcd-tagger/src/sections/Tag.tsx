@@ -1016,6 +1016,12 @@ function FocusPane({
               onChange={setAdjustments}
               onReset={() => setAdjustments(NEUTRAL)}
               getMediaRect={() => dropRef.current?.querySelector('img')?.getBoundingClientRect() ?? null}
+              getBlockedRects={() => {
+                const focus = dropRef.current?.getBoundingClientRect();
+                return focus && focus.left > 0
+                  ? [new DOMRect(0, focus.top, focus.left, focus.height)]
+                  : [];
+              }}
               mediaKey={current.key}
             />
           </div>
