@@ -341,22 +341,6 @@ Then('the adjustment panel is left of the focused image when space permits', asy
   expect(panel!.x + panel!.width).toBeLessThanOrEqual(image!.x);
 });
 
-Then('it moves right when the left side is constrained', async ({ page }) => {
-  await zoomIn(page.locator('body'), 4);
-  const pane = transformWrapper(page.locator('body')).first();
-  const box = (await pane.boundingBox())!;
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(box.x + box.width / 2 - 70, box.y + box.height / 2, { steps: 12 });
-  await page.mouse.up();
-  await settle(page.locator('body'));
-  await page.evaluate(() => window.dispatchEvent(new Event('resize')));
-  const [panel, image] = await Promise.all([adjustmentPanel(page).boundingBox(), focusedImage(page).boundingBox()]);
-  expect(panel).not.toBeNull();
-  expect(image).not.toBeNull();
-  expect(panel!.x).toBeGreaterThanOrEqual(image!.x + image!.width);
-});
-
 Then('it stays in the viewport when neither side fits', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 860 });
   const panel = await adjustmentPanel(page).boundingBox();

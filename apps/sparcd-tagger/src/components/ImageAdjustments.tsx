@@ -1,6 +1,7 @@
 import { createPortal } from 'react-dom';
 import { useLayoutEffect, useRef, useState } from 'react';
 import { isNeutral, type Adjustments } from '../lib/adjustments';
+import { adjustmentPopupPosition } from '../lib/adjustmentPopupPosition';
 
 // A small, collapsible control panel that drives view-only CSS filters on the
 // focused image (brightness / contrast / hue / saturation). It only edits the
@@ -37,17 +38,7 @@ export function ImageAdjustments({
       const media = getMediaRect();
       const panel = panelRef.current?.getBoundingClientRect();
       if (!media || !panel) return;
-      const gutter = 8;
-      const top = Math.max(gutter, Math.min(media.top, window.innerHeight - panel.height - gutter));
-      const left = media.left - panel.width - 12;
-      const right = media.right + 12;
-      if (left >= gutter) setPosition({ left, top });
-      else if (right + panel.width <= window.innerWidth - gutter) setPosition({ left: right, top });
-      else {
-        const candidates = [gutter, Math.max(gutter, window.innerWidth - panel.width - gutter)];
-        const overlap = (x: number) => Math.max(0, Math.min(x + panel.width, media.right) - Math.max(x, media.left));
-        setPosition({ left: overlap(candidates[0]) <= overlap(candidates[1]) ? candidates[0] : candidates[1], top });
-      }
+      setPosition(adjustmentPopupPosition(media, panel, { width: window.innerWidth, height: window.innerHeight }));
     };
     place();
     window.addEventListener('resize', place);
