@@ -22,8 +22,8 @@ export function Settings() {
   const setDateFormat = useStore((s) => s.setDateFormat);
   const timeFormat = useStore((s) => s.timeFormat);
   const setTimeFormat = useStore((s) => s.setTimeFormat);
-  const elevationUnit = useStore((s) => s.elevationUnit);
-  const setElevationUnit = useStore((s) => s.setElevationUnit);
+  const distanceUnit = useStore((s) => s.distanceUnit);
+  const setDistanceUnit = useStore((s) => s.setDistanceUnit);
   const cfg = useStore((s) => s.s3Config);
   const disconnect = useStore((s) => s.disconnect);
   const setSection = useStore((s) => s.setSection);
@@ -127,9 +127,10 @@ export function Settings() {
         <div className="flex flex-wrap gap-x-5 gap-y-1.5">
           {(
             [
-              { value: 'iso', label: 'YYYY-MM-DD' },
-              { value: 'us', label: 'MM/DD/YYYY' },
-              { value: 'eu', label: 'DD/MM/YYYY' },
+              { value: 'long', label: 'Month Day Year' },
+              { value: 'short', label: 'Month Day Short Year' },
+              { value: 'numeric', label: 'Numeric date' },
+              { value: 'iso-local', label: 'ISO local date' },
             ] as const
           ).map((opt) => (
             <label
@@ -143,7 +144,7 @@ export function Settings() {
                 checked={dateFormat === opt.value}
                 onChange={() => setDateFormat(opt.value)}
               />
-              <span className="font-mono">{opt.label}</span>
+              {opt.label}
             </label>
           ))}
         </div>
@@ -155,7 +156,9 @@ export function Settings() {
           {(
             [
               { value: '24h', label: '24-hour' },
+              { value: '24h-seconds', label: '24-hour with seconds' },
               { value: '12h', label: '12-hour (AM/PM)' },
+              { value: '12h-seconds', label: '12-hour with seconds (AM/PM)' },
             ] as const
           ).map((opt) => (
             <label
@@ -190,10 +193,10 @@ export function Settings() {
             >
               <input
                 type="radio"
-                name="elevationUnit"
+                name="distanceUnit"
                 className="w-5 h-5 md:w-4 md:h-4 accent-accent"
-                checked={elevationUnit === opt.value}
-                onChange={() => setElevationUnit(opt.value)}
+                checked={distanceUnit === opt.value}
+                onChange={() => setDistanceUnit(opt.value)}
               />
               {opt.label}
             </label>
