@@ -72,7 +72,7 @@ Given('an image is shown in the Focus view', async ({ page }) => {
 
 // Used as both the action and the precondition ("Given the image is zoomed in").
 When('the image is zoomed in', async ({ page }) => {
-  await zoomIn(page.locator('body'), 4);
+  await zoomIn(page.locator('body'), 1);
   expect((await readTransform(page.locator('body'))).scale).toBeGreaterThan(1);
 });
 
@@ -347,7 +347,7 @@ Then('it moves right when the left side is constrained', async ({ page }) => {
   const box = (await pane.boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
-  await page.mouse.move(box.x + box.width / 2 - 280, box.y + box.height / 2, { steps: 12 });
+  await page.mouse.move(box.x + box.width / 2 - 70, box.y + box.height / 2, { steps: 12 });
   await page.mouse.up();
   await settle(page.locator('body'));
   await page.evaluate(() => window.dispatchEvent(new Event('resize')));
