@@ -17,6 +17,7 @@ Feature: Assign species to images in an upload
   Background:
     Given an upload is open in the tagging workspace
     And the species vocabulary has loaded
+    And auto-advance is switched off in Settings
 
   @H2
   Scenario: The species list is browsable, not only searchable

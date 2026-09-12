@@ -104,7 +104,8 @@ Feature: Move through an upload and choose which images an action applies to
 
   @unmapped
   Scenario: Accelerators stand down while text is being typed
-    Given the cursor is in a text field
+    Given auto-advance is switched off in Settings
+    And the cursor is in a text field
     Then letter keys type into that field rather than applying species
     And pressing Enter in the species filter applies the top match and leaves the field
     And pressing Enter in the image search moves to the next match instead of tagging
