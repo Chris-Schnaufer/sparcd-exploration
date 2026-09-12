@@ -104,11 +104,19 @@ function loadDisplayPreferences(): DisplayPreferences {
 }
 
 function saveDisplayPreferences(preferences: DisplayPreferences) {
-  localStorage.setItem(DISPLAY_PREFERENCES_KEY, JSON.stringify(preferences));
+  try {
+    localStorage.setItem(DISPLAY_PREFERENCES_KEY, JSON.stringify(preferences));
+  } catch {
+    // Storage can be unavailable or full; the in-memory choice still applies.
+  }
 }
 
 function clearDisplayPreferences() {
-  localStorage.removeItem(DISPLAY_PREFERENCES_KEY);
+  try {
+    localStorage.removeItem(DISPLAY_PREFERENCES_KEY);
+  } catch {
+    // Disconnect still clears the active connection and in-memory preferences.
+  }
 }
 
 const initialDisplayPreferences = loadDisplayPreferences();
