@@ -15,7 +15,7 @@ Given('the date format is switched to Numeric date in Settings', async ({ page }
 
 Given('the time format is switched to 12-hour in Settings', async ({ page }) => {
   await openSettings(page);
-  await settingsRadio(page, '12-hour').check();
+  await settingsRadio(page, '12-hour (AM/PM)').check();
   await sectionTab(page, 'Tag').click();
 });
 
@@ -51,12 +51,12 @@ Then('the time format defaults to 24-hour', async ({ page }) => {
 });
 
 Then("the focused image's corrected time is shown in that date order", async ({ page }) => {
-  await expect(correctedTimeText(page)).toContainText('01/10/2024');
+  await expect(correctedTimeText(page)).toContainText('1/10/2024');
 });
 
 Then('the Overview list shows capture times in that date order', async ({ page }) => {
   await expect(listRow(page, 'IMG002.JPG').locator('[data-column="timestamp"]')).toContainText(
-    '01/10/2024',
+    '1/10/2024',
   );
 });
 
