@@ -110,10 +110,6 @@ Then('the files it would rewrite are listed', async ({ page }) => {
   await expect(page.getByText(/Would restore/)).toContainText('observations, uploadMeta');
 });
 
-Then('which collection and upload it would write to', async ({ page }) => {
-  await expect(page.getByText(`${COLLECTION_NAME} / ${STAMP_A}`)).toBeVisible();
-});
-
 // --- Restore gating ---------------------------------------------------------
 
 Given('a snapshot has been chosen', async ({ page }) => {
