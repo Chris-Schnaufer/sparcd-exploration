@@ -493,6 +493,7 @@ export function Tag() {
     showCheatsheet,
     setShowCheatsheet,
     filterRef,
+    imgSearchRef,
     speciesList,
     filter,
     view,
@@ -1423,6 +1424,7 @@ type HandlerState = {
   showCheatsheet: boolean;
   setShowCheatsheet: (v: boolean) => void;
   filterRef: React.RefObject<HTMLInputElement>;
+  imgSearchRef: React.RefObject<HTMLInputElement>;
   speciesList: Species[];
   filter: string;
   view: View;
@@ -1581,6 +1583,10 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
     case 'PageUp':
       e.preventDefault();
       gotoBurst(s, -1);
+      return;
+    case '/':
+      e.preventDefault();
+      s.imgSearchRef.current?.focus();
       return;
     case ' ':
       e.preventDefault();
