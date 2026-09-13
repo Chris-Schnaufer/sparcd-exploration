@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { useStore } from '../store';
 import { useDraftStore, type UploadCtx } from '../lib/drafts';
 import { performRestore } from '../lib/syncRunner';
-import { useCollections } from '../lib/queries';
-import { listSnapshots, type SnapshotRef } from '../lib/s3';
+import { useCollections, useUploadSnapshots } from '../lib/queries';
+import type { SnapshotRef } from '../lib/s3';
 import type { SyncResult } from '../lib/sync';
 
 // Upload prefixes are stamped `YYYY.MM.DD.HH.MM.SS_user` — the folder name
@@ -28,13 +28,7 @@ export function SnapshotsDialog({ ctx, onClose }: { ctx: UploadCtx; onClose: () 
   const connectionId = useStore((s) => s.connectionId);
   const collectionKey = useStore((s) => s.selectedCollectionKey);
 
-  const snapshots = useQuery<SnapshotRef[]>({
-    queryKey: ['snapshots', connectionId, collectionKey, ctx.uploadPrefix],
-    queryFn: () => listSnapshots(cfg!, ctx.bucket, ctx.uploadPrefix),
-    enabled: !!cfg && !!ctx.bucket && !!ctx.uploadPrefix,
-    staleTime: 30 * 1000,
-    retry: 1,
-  });
+  const snapshots = useUploadSnapshots(cfg, connectionId, collectionKey, ctx.uploadPrefix);
 
   const [picked, setPicked] = useState<SnapshotRef | null>(null);
   // A live restore must not be dismissable mid-write (it would keep writing
