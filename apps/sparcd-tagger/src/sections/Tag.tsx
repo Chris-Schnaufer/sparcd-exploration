@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import { useStore } from '../store';
-import { useTagImages, useSpecies } from '../lib/queries';
+import { useTagImages, useSpecies, useCollections, uploadNameOf, useUploadSnapshots } from '../lib/queries';
 import { useMediaUrl } from '../lib/useMediaUrl';
 import { parseCollectionKey } from '../lib/s3';
 import { correctedTimestamp, shiftTimestamp } from '@sparcd/camtrap';
@@ -86,6 +86,10 @@ export function Tag() {
 
   const images = useTagImages(cfg, connectionId, collectionKey, uploadPrefix);
   const species = useSpecies(cfg, connectionId);
+  const collections = useCollections(cfg, connectionId);
+  const collection = collections.data?.find((c) => c.key === collectionKey);
+  const snapshots = useUploadSnapshots(cfg, connectionId, collectionKey, uploadPrefix);
+  const hasSnapshot = (snapshots.data?.length ?? 0) > 0;
 
   const localImages = useMemo(
     () => (localRecord ? localTagImages(localRecord) : EMPTY),
@@ -93,6 +97,8 @@ export function Tag() {
   );
 
   const { bucket } = collectionKey ? parseCollectionKey(collectionKey) : { bucket: '' };
+  const collectionName = collection?.name ?? collection?.bucket ?? bucket;
+  const uploadName = uploadPrefix ? uploadNameOf(uploadPrefix) : '';
   // Drafts are scoped by bucket + upload, and a local batch has neither — its
   // own id stands in, so re-entering the same hand-off resumes where it left off
   // and two batches never share draft rows.
@@ -144,7 +150,6 @@ export function Tag() {
   const [bulkTime, setBulkTime] = useState<{
     targets: BulkTimeTarget[];
     anchor: string;
-    scope: 'focused-frame' | 'selection';
     requestedCount: number;
   } | null>(null);
   const [zoomSpecies, setZoomSpecies] = useState<Species | null>(null);
@@ -160,18 +165,17 @@ export function Tag() {
     modalOpenRef.current = false;
     setZoomSpecies(null);
   };
-  // The scoped time-shift modal acts on a snapshotted selection, or on the
-  // focused frame when no selection exists. Suppress tagger hotkeys behind it.
+  // The scoped time-shift modal acts on a snapshotted selection. Suppress
+  // tagger hotkeys behind it.
   const openBulkTime = () => {
+    if (selected.size === 0) return;
     const targets = bulkTimeTargets;
     if (!targets.length) return;
-    const scope = selected.size > 0 ? 'selection' : 'focused-frame';
     modalOpenRef.current = true;
     setBulkTime({
       targets,
       anchor: earliestCorrected(targets),
-      scope,
-      requestedCount: scope === 'selection' ? selected.size : 1,
+      requestedCount: selected.size,
     });
   };
   const closeBulkTime = () => {
@@ -408,7 +412,7 @@ export function Tag() {
   // override. Frames without a capture time have nothing to correct, so skip them.
   const bulkTimeTargets = useMemo(
     () =>
-      (selected.size > 0 ? [...selected].map((i) => list[i]) : current ? [current] : [])
+      [...selected].map((i) => list[i])
         .filter((img) => img && img.baseTimestamp)
         .map((img) => ({
           mediaPath: img.key,
@@ -420,12 +424,12 @@ export function Tag() {
             drafts[img.key]?.timeOverride ?? null,
           ),
         })),
-    [selected, current, list, drafts, timeOffset],
+    [selected, list, drafts, timeOffset],
   );
   const scopedTimeApplicableCount = bulkTimeTargets.length;
-  const scopedTimeUnavailableReason = selected.size > 0
-    ? 'None of the selected frames has a capture time to shift'
-    : 'This frame has no capture time to shift';
+  const scopedTimeUnavailableReason = selected.size === 0
+    ? 'Select one or more images to time shift'
+    : 'None of the selected frames has a capture time to shift';
 
   // --- Mouse selection gestures (single / Shift-range / Cmd-additive). --------
   const pick = (i: number, mods: PickMods) => {
@@ -504,6 +508,7 @@ export function Tag() {
     showCheatsheet,
     setShowCheatsheet,
     filterRef,
+    imgSearchRef,
     speciesList,
     filter,
     view,
@@ -576,6 +581,13 @@ export function Tag() {
 
   return (
     <div className="h-[100dvh] lg:h-full flex flex-col min-h-0">
+      {/* Reminds the user which collection and upload they're tagging — lost
+          otherwise once Browse's own "Uploads in X" heading is left behind. */}
+      {!localRecord && (
+        <div className="shrink-0 px-3 py-1 border-b border-ruleSoft bg-paper font-mono text-[11px] text-inkMute truncate">
+          {collectionName} / {uploadName}
+        </div>
+      )}
       {/* Workspace toolbar: mode + view switches, position, selection, save */}
       <div className="shrink-0 min-h-10 border-b border-rule bg-panel flex flex-wrap items-center gap-3 gap-y-2 px-3">
         <Segmented
@@ -645,29 +657,38 @@ export function Tag() {
           {hasUploadShift ? `clock ${formatOffsetDelta(timeOffset)}` : 'Time shift'}
         </button>
 
-        {/* Shift only the selected frames (or the focused frame when nothing is
-            selected) — e.g. one mis-set camera in a mixed upload. Stored as
-            per-image corrections, so it stacks on the upload offset. */}
+        {/* Shift only explicitly selected frames — e.g. one mis-set camera in a
+            mixed upload. Stored as per-image corrections, so it stacks on the
+            upload offset. */}
         {!!current && (
           <>
             <button
               onClick={openBulkTime}
-              aria-disabled={scopedTimeApplicableCount === 0}
-              aria-describedby={scopedTimeApplicableCount === 0 ? 'scoped-time-unavailable' : undefined}
-              className="inline-flex items-center gap-1.5 text-[11.5px] font-mono px-2 py-1 border border-rule text-inkSoft hover:text-ink hover:border-ink aria-disabled:opacity-40 aria-disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              disabled={selected.size === 0 || scopedTimeApplicableCount === 0}
+              aria-describedby={
+                selected.size === 0 || scopedTimeApplicableCount === 0
+                  ? 'scoped-time-unavailable'
+                  : undefined
+              }
+              className="inline-flex items-center gap-1.5 text-[11.5px] font-mono px-2 py-1 border border-rule text-inkSoft hover:text-ink hover:border-ink disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
               title={
-                scopedTimeApplicableCount === 0
+                selected.size === 0 || scopedTimeApplicableCount === 0
                   ? scopedTimeUnavailableReason
-                  : selected.size > 0
-                  ? `Shift the ${selected.size} selected frame(s) by a signed offset`
-                  : 'Shift this frame by a signed offset'
+                  : `Time shift the ${selected.size} selected ${
+                      selected.size === 1 ? 'frame' : 'frames'
+                    } by a signed offset`
               }
             >
               <span aria-hidden>◷</span>
-              {selected.size > 0 ? 'Shift selection' : 'Shift this frame'}
+              Time shift selection
             </button>
-            {scopedTimeApplicableCount === 0 && (
-              <span id="scoped-time-unavailable" className="sr-only">
+            {(selected.size === 0 || scopedTimeApplicableCount === 0) && (
+              <span
+                id="scoped-time-unavailable"
+                role="status"
+                aria-live="polite"
+                className="text-[11px] font-mono text-inkSoft"
+              >
                 {scopedTimeUnavailableReason}
               </span>
             )}
@@ -772,8 +793,13 @@ export function Tag() {
             <>
               <button
                 onClick={() => setShowSnapshots(true)}
-                className="text-[12px] font-mono border border-rule px-2.5 py-1 text-inkSoft hover:text-ink hover:border-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-                title="Browse and restore prior canonical snapshots of this upload"
+                disabled={!hasSnapshot}
+                className="text-[12px] font-mono border border-rule px-2.5 py-1 text-inkSoft hover:text-ink hover:border-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-inkSoft disabled:hover:border-rule"
+                title={
+                  hasSnapshot
+                    ? 'Browse and restore prior canonical snapshots of this upload'
+                    : 'No snapshots yet — a snapshot is taken the first time this upload is synced'
+                }
               >
                 Snapshots…
               </button>
@@ -890,7 +916,6 @@ export function Tag() {
         <BulkTimeShiftModal
           count={bulkTime.targets.length}
           requestedCount={bulkTime.requestedCount}
-          scope={bulkTime.scope}
           anchorTimestamp={bulkTime.anchor}
           onApply={(delta) => applyTimeOffsetToSelectionFn(ctx, bulkTime.targets, delta)}
           onClose={closeBulkTime}
@@ -1083,7 +1108,7 @@ function FocusPane({
               </span>
             )}
             {/* The applied species themselves render in the SpeciesPanel header
-                strip on the right; the footer keeps only questionable + Detag. */}
+                strip on the right; the footer keeps only questionable + Clear Species. */}
             {/* Touch toggle mirrors Shift+Space; desktop relies on the hotkey
                 and the display-only badge above. */}
             <button
@@ -1101,7 +1126,7 @@ function FocusPane({
               className="text-[13px] border border-rule px-2.5 py-1 text-inkSoft hover:text-ink hover:border-ink disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
               title="Remove every species from this image"
             >
-              Detag
+              Clear Species
             </button>
           </div>
         </div>
@@ -1189,19 +1214,47 @@ function FocusImage({
   isVideo: boolean;
   filter?: string;
 }) {
-  const { url, isError } = useMediaUrl(objectKey);
+  const { url, isError, markLoaded } = useMediaUrl(objectKey, 'high');
   if (isError)
     return <div className="text-[13px] font-mono text-warn">Could not load this image.</div>;
-  if (!url) return <div className="text-[13px] font-mono text-inkMute">…</div>;
-  if (isVideo) return <FocusVideo src={url} alt={alt} resetKey={objectKey} />;
-  return <ZoomableImage src={url} alt={alt} resetKey={objectKey} filter={filter} />;
+  if (!url)
+    return (
+      <div className="w-full h-full grid place-items-center">
+        <img
+          src={`${import.meta.env.BASE_URL}loading.gif`}
+          alt="Loading focused image"
+          className="w-48 h-48 object-contain"
+        />
+      </div>
+    );
+  if (isVideo)
+    return <FocusVideo src={url} alt={alt} resetKey={objectKey} onLoaded={markLoaded} />;
+  return (
+    <ZoomableImage
+      src={url}
+      alt={alt}
+      resetKey={objectKey}
+      filter={filter}
+      onLoaded={markLoaded}
+    />
+  );
 }
 
 // Video media plays with native controls. No zoom/pan/Lightbox: the
 // react-zoom-pan-pinch wrapper captures wheel/pointer events and would fight
 // native scrubbing. `key={resetKey}` recreates the element on navigation so the
 // prior clip's playback/seek state never bleeds into the next one.
-function FocusVideo({ src, alt, resetKey }: { src: string; alt: string; resetKey: string }) {
+function FocusVideo({
+  src,
+  alt,
+  resetKey,
+  onLoaded,
+}: {
+  src: string;
+  alt: string;
+  resetKey: string;
+  onLoaded: () => void;
+}) {
   return (
     <video
       key={resetKey}
@@ -1210,6 +1263,8 @@ function FocusVideo({ src, alt, resetKey }: { src: string; alt: string; resetKey
       controls
       playsInline
       preload="metadata"
+      onLoadedMetadata={onLoaded}
+      onError={onLoaded}
       className="w-full h-full object-contain"
     />
   );
@@ -1231,11 +1286,13 @@ function ZoomableImage({
   alt,
   resetKey,
   filter,
+  onLoaded,
 }: {
   src: string;
   alt: string;
   resetKey: string;
   filter?: string;
+  onLoaded: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [zoomed, setZoomed] = useState(false);
@@ -1256,7 +1313,10 @@ function ZoomableImage({
               <img
                 src={src}
                 alt={alt}
+                fetchPriority="high"
                 draggable={false}
+                onLoad={onLoaded}
+                onError={onLoaded}
                 style={filter ? { filter } : undefined}
                 className="w-full h-full object-contain select-none"
               />
@@ -1440,6 +1500,7 @@ type HandlerState = {
   showCheatsheet: boolean;
   setShowCheatsheet: (v: boolean) => void;
   filterRef: React.RefObject<HTMLInputElement>;
+  imgSearchRef: React.RefObject<HTMLInputElement>;
   speciesList: Species[];
   filter: string;
   view: View;
@@ -1622,6 +1683,10 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
     case 'PageUp':
       e.preventDefault();
       gotoBurst(s, -1);
+      return;
+    case '/':
+      e.preventDefault();
+      s.imgSearchRef.current?.focus();
       return;
     case ' ':
       e.preventDefault();
