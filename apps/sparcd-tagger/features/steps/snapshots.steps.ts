@@ -20,6 +20,8 @@ import {
   PARTIAL_SNAPSHOT_PREFIX,
   SNAPSHOT_STAMP,
   SNAPSHOT_USER,
+  COLLECTION_NAME,
+  STAMP_A,
 } from './support/data';
 import { readStore, settingsDryRunCheckbox, waitForDirtyDrafts } from './support/flows';
 
@@ -73,11 +75,17 @@ Given('no sync has ever been run for this upload', async ({ page, s3 }) => {
   await expect(gridCell(page, 'FOX001.JPG')).toBeVisible();
 });
 
-Then('it states that snapshots are created the first time the upload is synced', async ({ page }) => {
-  await expect(
-    page.getByText('No snapshots yet. They are created the first time you sync this upload.'),
-  ).toBeVisible();
-});
+Then(
+  'the Snapshots button is disabled, explaining that a snapshot is taken on first sync',
+  async ({ page }) => {
+    const button = page.getByRole('button', { name: 'Snapshots…' });
+    await expect(button).toBeDisabled();
+    await expect(button).toHaveAttribute(
+      'title',
+      'No snapshots yet — a snapshot is taken the first time this upload is synced',
+    );
+  },
+);
 
 // --- Restore preview --------------------------------------------------------
 
@@ -102,10 +110,8 @@ Then('the files it would rewrite are listed', async ({ page }) => {
   await expect(page.getByText(/Would restore/)).toContainText('observations, uploadMeta');
 });
 
-Then('where the pre-restore snapshot would be filed is shown', async ({ page }) => {
-  await expect(page.getByText(/current state snapshotted →/)).toContainText(
-    `${PREFIX_A}.sparcd-tagger-snapshots/jgonzalez/`,
-  );
+Then('which collection and upload it would write to', async ({ page }) => {
+  await expect(page.getByText(`${COLLECTION_NAME} / ${STAMP_A}`)).toBeVisible();
 });
 
 // --- Restore gating ---------------------------------------------------------

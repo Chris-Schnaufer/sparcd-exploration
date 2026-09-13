@@ -1,10 +1,18 @@
 import { useEffect, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { useStore } from '../store';
 import { useDraftStore, type UploadCtx } from '../lib/drafts';
 import { performRestore } from '../lib/syncRunner';
-import { listSnapshots, type SnapshotRef } from '../lib/s3';
+import { useCollections, useUploadSnapshots } from '../lib/queries';
+import type { SnapshotRef } from '../lib/s3';
 import type { SyncResult } from '../lib/sync';
+
+// Upload prefixes are stamped `YYYY.MM.DD.HH.MM.SS_user` — the folder name
+// under Uploads/ is the closest thing this data model has to an upload name.
+function uploadNameOf(uploadPrefix: string): string {
+  const segments = uploadPrefix.split('/').filter(Boolean);
+  return segments[segments.length - 1] ?? uploadPrefix;
+}
 
 // P5 snapshot/version recovery. Every sync/restore writes an immutable
 // pre-change snapshot of the canonical files; this dialog lists the recoverable
@@ -20,13 +28,7 @@ export function SnapshotsDialog({ ctx, onClose }: { ctx: UploadCtx; onClose: () 
   const connectionId = useStore((s) => s.connectionId);
   const collectionKey = useStore((s) => s.selectedCollectionKey);
 
-  const snapshots = useQuery<SnapshotRef[]>({
-    queryKey: ['snapshots', connectionId, collectionKey, ctx.uploadPrefix],
-    queryFn: () => listSnapshots(cfg!, ctx.bucket, ctx.uploadPrefix),
-    enabled: !!cfg && !!ctx.bucket && !!ctx.uploadPrefix,
-    staleTime: 30 * 1000,
-    retry: 1,
-  });
+  const snapshots = useUploadSnapshots(cfg, connectionId, collectionKey, ctx.uploadPrefix);
 
   const [picked, setPicked] = useState<SnapshotRef | null>(null);
   // A live restore must not be dismissable mid-write (it would keep writing
@@ -136,6 +138,11 @@ function RestorePane({
   const setDryRun = useStore((s) => s.setDryRun);
   const setSyncState = useStore((s) => s.setSyncState);
   const connectionId = useStore((s) => s.connectionId);
+  const collectionKey = useStore((s) => s.selectedCollectionKey);
+  const collections = useCollections(cfg, connectionId);
+  const collection = collections.data?.find((c) => c.key === collectionKey);
+  const collectionName = collection?.name ?? collection?.bucket ?? ctx.bucket;
+  const uploadName = uploadNameOf(ctx.uploadPrefix);
   const discardUpload = useDraftStore((s) => s.discardUpload);
   const queryClient = useQueryClient();
 
@@ -236,7 +243,15 @@ function RestorePane({
           </p>
         )}
 
-        {result && <RestoreResultBody result={result} dryRun={dryRun} live={phase === 'done'} />}
+        {result && (
+          <RestoreResultBody
+            result={result}
+            dryRun={dryRun}
+            live={phase === 'done'}
+            collectionName={collectionName}
+            uploadName={uploadName}
+          />
+        )}
 
         {!isConflict && !isNoop && !error && (
           <label className="flex items-center gap-2.5 border-t border-ruleSoft pt-3">
@@ -281,10 +296,14 @@ function RestoreResultBody({
   result,
   dryRun,
   live,
+  collectionName,
+  uploadName,
 }: {
   result: SyncResult;
   dryRun: boolean;
   live: boolean;
+  collectionName: string;
+  uploadName: string;
 }) {
   switch (result.status) {
     case 'noop':
@@ -309,7 +328,7 @@ function RestoreResultBody({
             {result.writes.map((w) => w.role).join(', ') || '—'}.
           </p>
           <p className="text-[12px] text-inkMute font-mono break-all">
-            current state snapshotted → {result.snapshotPrefix}
+            {collectionName} / {uploadName}
           </p>
           {live && <p className="text-accent text-[13px]">Dry-run complete — nothing was written.</p>}
         </div>
