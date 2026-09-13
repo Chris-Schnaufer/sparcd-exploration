@@ -220,6 +220,13 @@ export function Tag() {
   useEffect(() => {
     if (selected.size > 1) setSpeciesCountPrefix('');
   }, [selected.size]);
+
+  // A pending count belongs to the image it was typed on, so any change of
+  // focused image drops it — arrows, mouse pick, filename jump, or new upload.
+  const focusedImageKey = list[focus]?.key;
+  useEffect(() => {
+    setSpeciesCountPrefix('');
+  }, [focusedImageKey, uploadPrefix]);
   const matches = useMemo(() => findFilenameMatches(list, imgQuery), [list, imgQuery]);
 
   const jumpToMatch = (pos: number) => {
@@ -1523,7 +1530,6 @@ function isMediaTarget(t: EventTarget | null): boolean {
 
 /** Move focus to image `i`, clearing selection and re-anchoring range-select. */
 function focusMove(s: HandlerState, i: number): void {
-  s.setSpeciesCountPrefix('');
   const clamped = Math.max(0, Math.min(i, s.list.length - 1));
   s.setFocus(clamped);
   s.setAnchor(clamped);
@@ -1605,12 +1611,15 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
     return;
   }
 
-  if (s.selected.size <= 1 && /^\d$/.test(e.key)) {
+  // Cmd/Ctrl/Alt digits belong to the browser (tab switching), so only a plain
+  // digit starts or extends a count prefix.
+  const unmodified = !e.metaKey && !e.ctrlKey && !e.altKey;
+  if (unmodified && s.selected.size <= 1 && /^\d$/.test(e.key)) {
     e.preventDefault();
     if (!e.repeat) s.setSpeciesCountPrefix(appendSpeciesCountDigit(s.speciesCountPrefix, e.key));
     return;
   }
-  if (s.speciesCountPrefix && e.key === 'Backspace') {
+  if (unmodified && s.speciesCountPrefix && e.key === 'Backspace') {
     e.preventDefault();
     s.setSpeciesCountPrefix(removeSpeciesCountDigit(s.speciesCountPrefix));
     return;
