@@ -156,6 +156,7 @@ Then('which collection and upload it would write to', async ({ page }) => {
 
 Given('the dry-run setting is on', async ({ page }) => {
   await sectionTab(page, 'Settings').click();
+  await settingsDryRunCheckbox(page).check();
   await expect(settingsDryRunCheckbox(page)).toBeChecked();
   await sectionTab(page, 'Tag').click();
 });
