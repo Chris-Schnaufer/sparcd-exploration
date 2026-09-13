@@ -68,7 +68,10 @@ function bucketTicks(
 export function sequenceSpread(startText: string, spacingText: string): SpreadOptions | undefined {
   const start = inputValueToNaive(startText);
   const spacingSeconds = Number(spacingText);
-  return start && spacingSeconds > 0 ? { kind: 'sequence', start, spacingSeconds } : undefined;
+  // Whole seconds, at most a year apart: a number input still accepts "1.5"
+  // and "1e300", and the latter overflows Date for every later file.
+  const valid = Number.isInteger(spacingSeconds) && spacingSeconds > 0 && spacingSeconds <= 366 * 86_400;
+  return start && valid ? { kind: 'sequence', start, spacingSeconds } : undefined;
 }
 
 function Thumb({ blob }: { blob?: Blob }) {

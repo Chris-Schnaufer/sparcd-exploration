@@ -62,7 +62,7 @@ describe('sequenceSpread', () => {
     expect(sequenceSpread('', '30')).toBeUndefined();
   });
 
-  it.each(['', '0', 'abc'])('gives nothing for a spacing of %o', (spacing) => {
+  it.each(['', '0', 'abc', '1.5', '1e300', String(367 * 86_400)])('gives nothing for a spacing of %o', (spacing) => {
     expect(sequenceSpread(start, spacing)).toBeUndefined();
   });
 });
