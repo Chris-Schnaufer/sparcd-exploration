@@ -149,7 +149,7 @@ Then('which stored files would be rewritten', async ({ page }) => {
 });
 
 Then('which collection and upload it would write to', async ({ page }) => {
-  await expect(page.getByText(`${COLLECTION_NAME} / ${STAMP_A}`)).toBeVisible();
+  await expect(page.locator('p', { hasText: `${COLLECTION_NAME} / ${STAMP_A}` })).toBeVisible();
 });
 
 // --- Dry-run gate -----------------------------------------------------------
