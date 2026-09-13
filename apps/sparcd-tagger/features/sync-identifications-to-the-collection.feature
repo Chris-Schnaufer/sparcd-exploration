@@ -33,7 +33,7 @@ Feature: Publish local identifications back to the collection
     Then it reports how many images gain, change or lose identifications
     And how many images have a corrected capture time
     And which stored files would be rewritten
-    And where the pre-change snapshot would be filed
+    And which collection and upload it would write to
 
   @unmapped
   Scenario: A real write requires switching off the dry-run setting
@@ -124,7 +124,7 @@ Feature: Publish local identifications back to the collection
   Scenario: Detagging an image and syncing writes a blank placeholder row rather than removing the row
     Given the dry-run setting has been switched off
     And the focused image carries at least one species
-    When "Detag" is used
+    When Clear Species is used
     And the sync is run
     Then the detagged image's slot in observations.csv is a blank placeholder, not absent
 

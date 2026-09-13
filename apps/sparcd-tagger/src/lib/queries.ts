@@ -9,6 +9,7 @@ import {
   listUploads,
   listUploadImages,
   listCollectionSnapshots,
+  listSnapshots,
   loadCanonicalState,
   loadUploadSummary,
   parseCollectionKey,
@@ -17,6 +18,7 @@ import {
   type UploadImage,
   type UploadSnapshots,
   type UploadSummary,
+  type SnapshotRef,
 } from './s3';
 import { fetchSpecies, type SpeciesResult } from './species';
 import { buildTagImages, type TagImage } from './workspace';
@@ -29,6 +31,13 @@ import {
   type UploadDraftState,
 } from './db';
 import { useDraftStore, dirtyCount } from './drafts';
+
+/** Upload prefixes are stamped `YYYY.MM.DD.HH.MM.SS_user` — the folder name
+ *  under Uploads/ is the closest thing this data model has to an upload name. */
+export function uploadNameOf(uploadPrefix: string): string {
+  const segments = uploadPrefix.split('/').filter(Boolean);
+  return segments[segments.length - 1] ?? uploadPrefix;
+}
 
 export function useCollections(cfg: S3Config | null, connectionId: number) {
   return useQuery<CollectionRef[]>({
@@ -169,6 +178,27 @@ export function useCollectionSnapshots(
       return listCollectionSnapshots(cfg!, bucket, uuid);
     },
     enabled: !!cfg && !!collectionKey,
+    staleTime: 30 * 1000,
+    retry: 1,
+  });
+}
+
+/** Recoverable snapshots for one upload — shared by the Snapshots button's
+ *  availability check and the Snapshots dialog itself, so opening the dialog
+ *  never re-fetches what the button already loaded. */
+export function useUploadSnapshots(
+  cfg: S3Config | null,
+  connectionId: number,
+  collectionKey: string | null,
+  uploadPrefix: string | null,
+) {
+  return useQuery<SnapshotRef[]>({
+    queryKey: ['snapshots', connectionId, collectionKey, uploadPrefix],
+    queryFn: () => {
+      const { bucket } = parseCollectionKey(collectionKey!);
+      return listSnapshots(cfg!, bucket, uploadPrefix!);
+    },
+    enabled: !!cfg && !!collectionKey && !!uploadPrefix,
     staleTime: 30 * 1000,
     retry: 1,
   });
