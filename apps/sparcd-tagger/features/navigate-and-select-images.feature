@@ -126,7 +126,8 @@ Feature: Move through an upload and choose which images an action applies to
     And while the sync, snapshots or time-shift dialog is open no image behind it is tagged or navigated
 
   @unmapped
-  Scenario: The Adjust popup only claims arrow keys, so species keys still tag
+  Scenario: The Adjust popup reserves native range keys while Tagger shortcuts still work
     Given a slider in the Adjust popup is focused
     Then a species key still applies that species to the focused image
-    And an arrow key still adjusts the slider rather than navigating images
+    And Home, End, Page Up, Page Down, and arrow keys adjust the slider rather than navigating images
+    And command- or control-S still saves while the slider is focused

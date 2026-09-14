@@ -612,12 +612,31 @@ Then('a species key still applies that species to the focused image', async ({ p
   await expect(listRow(page, 'IMG002.JPG')).toContainText('Mule Deer');
 });
 
-Then('an arrow key still adjusts the slider rather than navigating images', async ({ page }) => {
+Then('Home, End, Page Up, Page Down, and arrow keys adjust the slider rather than navigating images', async ({ page }) => {
   const position = await positionReadout(page).textContent();
-  const before = await page.getByLabel('Brightness').inputValue();
+  const slider = page.getByLabel('Brightness');
+
+  await page.keyboard.press('Home');
+  await expect(slider).toHaveValue('0');
+  await page.keyboard.press('End');
+  await expect(slider).toHaveValue('100');
+
+  await page.keyboard.press('PageDown');
+  const afterPageDown = Number(await slider.inputValue());
+  expect(afterPageDown).toBeLessThan(100);
+  await page.keyboard.press('PageUp');
+  expect(Number(await slider.inputValue())).toBeGreaterThan(afterPageDown);
+
+  const beforeArrow = Number(await slider.inputValue());
   // ArrowDown is also the next-image hotkey — proves the slider claims it
   // instead of the tagger navigating away.
   await page.keyboard.press('ArrowDown');
-  await expect(page.getByLabel('Brightness')).not.toHaveValue(before);
+  expect(Number(await slider.inputValue())).toBeLessThan(beforeArrow);
   await expect(positionReadout(page)).toHaveText(position!);
+});
+
+Then('command- or control-S still saves while the slider is focused', async ({ page }) => {
+  await page.keyboard.press('ControlOrMeta+s');
+  await expect(page.getByText('saved ✓').first()).toBeVisible();
+  await expect(page.getByLabel('Brightness')).toBeFocused();
 });
