@@ -34,12 +34,17 @@ const MEDIA_WIDTH = 11;
 const OBS_WIDTH = 20;
 const DEPLOY_WIDTH = 23;
 
-export type MediaSpec = { file: string; timestamp: string; mime: string };
+export type MediaSpec = { file: string; timestamp: string; mime: string; comments?: string };
 
 /** Upload A — the workhorse: six frames, mixed tagging, one clip, one untimed. */
 export const MEDIA_A: MediaSpec[] = [
   { file: 'IMG001.JPG', timestamp: '2024-01-10T08:00:00', mime: 'image/jpeg' },
-  { file: 'IMG002.JPG', timestamp: '2024-01-10T08:00:30', mime: 'image/jpeg' },
+  {
+    file: 'IMG002.JPG',
+    timestamp: '2024-01-10T08:00:30',
+    mime: 'image/jpeg',
+    comments: '[TIMESTAMP:interpolated]',
+  },
   { file: 'IMG003.JPG', timestamp: '2024-01-10T22:15:00', mime: 'image/jpeg' },
   { file: 'IMG004.JPG', timestamp: '2024-01-11T06:00:00', mime: 'image/jpeg' },
   { file: 'IMG005.JPG', timestamp: '2024-01-11T06:00:30', mime: 'image/jpeg' },
@@ -68,7 +73,7 @@ export function mediaCsv(prefix: string, specs: MediaSpec[]): string {
       cells[7] = m.mime;
       cells[8] = '';
       cells[9] = 'false';
-      cells[10] = '';
+      cells[10] = m.comments ?? '';
       return row(cells, MEDIA_WIDTH);
     })
     .join('\n');
