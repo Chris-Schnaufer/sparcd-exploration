@@ -210,11 +210,11 @@ Then('each tab explains on hover what it filters to', async ({ page }) => {
   );
   await expect(page.getByRole('button', { name: /^In progress\b/ })).toHaveAttribute(
     'title',
-    'Uploads with untagged or partially tagged images',
+    'Uploads still being tagged',
   );
   await expect(page.getByRole('button', { name: /^Done\b/ })).toHaveAttribute(
     'title',
-    'Uploads where every image has at least one species tagged',
+    'Uploads that are fully tagged',
   );
 });
 

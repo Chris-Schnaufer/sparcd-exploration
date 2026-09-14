@@ -187,14 +187,14 @@ export function Browse() {
                     n={counts['in-progress']}
                     active={tab === 'in-progress'}
                     onClick={() => setTab('in-progress')}
-                    title="Uploads with untagged or partially tagged images"
+                    title="Uploads still being tagged"
                   />
                   <TabButton
                     label="Done"
                     n={counts.done}
                     active={tab === 'done'}
                     onClick={() => setTab('done')}
-                    title="Uploads where every image has at least one species tagged"
+                    title="Uploads that are fully tagged"
                   />
                 </div>
               )}
