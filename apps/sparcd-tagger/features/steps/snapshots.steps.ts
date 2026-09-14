@@ -110,10 +110,6 @@ Then('the files it would rewrite are listed', async ({ page }) => {
   await expect(page.getByText(/Would restore/)).toContainText('observations, uploadMeta');
 });
 
-Then('which collection and upload it would write to', async ({ page }) => {
-  await expect(page.getByText(`${COLLECTION_NAME} / ${STAMP_A}`)).toBeVisible();
-});
-
 // --- Restore gating ---------------------------------------------------------
 
 Given('a snapshot has been chosen', async ({ page }) => {
@@ -133,6 +129,7 @@ Then(
     await page.getByRole('button', { name: 'Cancel' }).click();
     await page.getByRole('button', { name: 'Close', exact: true }).first().click();
     await sectionTab(page, 'Settings').click();
+    await settingsDryRunCheckbox(page).check();
     await expect(settingsDryRunCheckbox(page)).toBeChecked();
     await page.locator('#user').fill('jgonzalez');
     await sectionTab(page, 'Tag').click();

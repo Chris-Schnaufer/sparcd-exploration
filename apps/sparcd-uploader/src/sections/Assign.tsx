@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { OfflineBanner, useOnline } from '@sparcd/auth-ui';
+import { Connection, OfflineBanner, loadPersistedConnection, useOnline } from '@sparcd/auth-ui';
 import { useStore } from '../store';
 import { Spinner } from '../components/Spinner';
 import { useLocations } from '../lib/useLocations';
@@ -12,10 +12,13 @@ import { CaptureTimeEditor } from '../components/CaptureTimeEditor';
 import { sanitizeUploaderUser } from '../lib/normalize';
 import { supportedTimeZones } from '../lib/exifTime';
 import { timeZoneForCoords } from '../lib/coords';
-import { captureTimeComplete } from '../lib/validation';
 
 const sectionLabel =
   'font-[600] text-[11px] tracking-[0.16em] uppercase text-inkSoft mb-2';
+
+// Same remembered non-secret prefill as the initial connect screen — a
+// deferred login reaching this step still gets its endpoint/access key back.
+const connectPrefill = { ...loadPersistedConnection() };
 
 /** Section heading with a refresh control that re-pulls the backing S3 data,
  *  bypassing the query cache — for when the registry or a collection's
@@ -61,6 +64,7 @@ function LocationsState({ message, tone }: { message: string; tone: 'mute' | 'wa
 export function Assign() {
   const s3Config = useStore((s) => s.s3Config);
   const connectionId = useStore((s) => s.connectionId);
+  const connect = useStore((s) => s.connect);
   const setStep = useStore((s) => s.setStep);
   const uploaderUser = useStore((s) => s.uploaderUser);
   const setUploaderUser = useStore((s) => s.setUploaderUser);
@@ -129,7 +133,7 @@ export function Assign() {
   const online = useOnline();
   const wasOffline = useRef(!online);
   useEffect(() => {
-    if (online && wasOffline.current) {
+    if (online && wasOffline.current && s3Config) {
       void refetchLocations();
       void collections.refetch();
       if (collection) void deployments.refetch();
@@ -175,13 +179,12 @@ export function Assign() {
   const needsCaptureTime = files.some(
     (f) => f.processState === 'ready' && !f.exifNaive,
   );
-  const captureComplete = captureTimeComplete(files);
   // Gate is everything the USER needs to supply — deployment, collection,
   // identity, and a capture time for whatever's finished Inspect so far.
   // Background processing finishing is no longer part of this gate: Upload
   // streams blobs as files individually become ready and only publishes once
   // processing genuinely completes, so there's nothing to wait for here.
-  const baseReady = !!selectedLocationKey && !!slug && !!collection && captureComplete;
+  const baseReady = !!selectedLocationKey && !!slug && !!collection;
 
   function handleContinue() {
     if (!baseReady) return;
@@ -193,6 +196,28 @@ export function Assign() {
     const all = supportedTimeZones();
     return all.includes(uploadTimeZone) ? all : [uploadTimeZone, ...all];
   }, [uploadTimeZone]);
+
+  // A deferred login reaches here eventually — picking a collection and a
+  // deployment location both need to list S3, so ask for a connection now
+  // rather than showing empty pickers with no way to fill them.
+  if (!s3Config) {
+    return (
+      <div className="max-w-[440px] mx-auto space-y-6">
+        <Connection
+          toolName="Uploader"
+          initialConfig={connectPrefill}
+          onConnect={connect}
+          embedded
+        />
+        <button
+          onClick={() => setStep('inspect')}
+          className="border border-ink text-ink px-3.5 py-1.5 text-[14px] font-body hover:bg-paperHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+        >
+          Back
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl mx-auto space-y-8">
@@ -319,7 +344,7 @@ export function Assign() {
 
       {needsCaptureTime && (
         <section>
-          <h2 className={sectionLabel}>Capture time</h2>
+          <h2 className={sectionLabel}>Capture times</h2>
           <CaptureTimeEditor files={files} />
         </section>
       )}
@@ -360,9 +385,7 @@ export function Assign() {
                 ? 'Select a deployment location first'
                 : !collection
                   ? 'Select a target collection first'
-                  : !slug
-                    ? 'Set an uploader identity first'
-                    : 'Set a capture time for every file missing one'
+                  : 'Set an uploader identity first'
               : 'Continue to upload'
           }
           className={`bg-ink text-paper border border-ink px-3.5 py-1.5 text-[14px] font-body font-[600] focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 ${
