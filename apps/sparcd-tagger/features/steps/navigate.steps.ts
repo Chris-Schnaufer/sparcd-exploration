@@ -598,3 +598,24 @@ Then(
     await expect(gridCell(page, 'IMG002.JPG')).not.toContainText('Mule Deer');
   },
 );
+
+Given('a slider in the Adjust popup is focused', async ({ page }) => {
+  await focusFrame(page, 'IMG002.JPG');
+  await enterFocusView(page);
+  await page.getByRole('button', { name: 'Adjust ▾' }).click();
+  await page.getByLabel('Brightness').focus();
+  await expect(page.getByLabel('Brightness')).toBeFocused();
+});
+
+Then('a species key still applies that species to the focused image', async ({ page }) => {
+  await page.keyboard.press('d');
+  await expect(listRow(page, 'IMG002.JPG')).toContainText('Mule Deer');
+});
+
+Then('an arrow key still adjusts the slider rather than navigating images', async ({ page }) => {
+  const position = await positionReadout(page).textContent();
+  const before = await page.getByLabel('Brightness').inputValue();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByLabel('Brightness')).not.toHaveValue(before);
+  await expect(positionReadout(page)).toHaveText(position!);
+});

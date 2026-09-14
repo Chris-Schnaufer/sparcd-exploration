@@ -1498,6 +1498,17 @@ function isMediaTarget(t: EventTarget | null): boolean {
   return !!el && (el.tagName === 'VIDEO' || el.tagName === 'AUDIO');
 }
 
+// A focused <input type="range"> — the Adjust popup's brightness/contrast/hue/
+// saturation sliders — needs its own arrow keys for slider navigation, but
+// unlike other inputs it shouldn't swallow everything else: a species letter
+// key must still reach the tagger while a slider has focus (#270).
+function isRangeTarget(t: EventTarget | null): boolean {
+  const el = t as HTMLInputElement | null;
+  return !!el && el.tagName === 'INPUT' && el.type === 'range';
+}
+
+const RANGE_NAV_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+
 /** Move focus to image `i`, clearing selection and re-anchoring range-select. */
 function focusMove(s: HandlerState, i: number): void {
   const clamped = Math.max(0, Math.min(i, s.list.length - 1));
@@ -1550,13 +1561,16 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
   // tagger hotkey fire while the user is scrubbing or playing.
   if (isMediaTarget(e.target)) return;
 
-  const typing = isTypingTarget(e.target);
-
-  // Any focused text input suppresses the tagger hotkeys. The Escape/Enter
-  // species-filter behavior is scoped to the species filter input ONLY — other
-  // inputs (e.g. the find-image-by-name box) own their own keys, so Enter there
-  // never applies a species tag.
-  if (typing) {
+  // A focused range slider only needs arrow keys for its own navigation —
+  // every other key, including species hotkeys, falls through below instead
+  // of being swallowed like a text input's.
+  if (isRangeTarget(e.target)) {
+    if (RANGE_NAV_KEYS.has(e.key)) return;
+  } else if (isTypingTarget(e.target)) {
+    // Any other focused text input suppresses the tagger hotkeys. The
+    // Escape/Enter species-filter behavior is scoped to the species filter
+    // input ONLY — other inputs (e.g. the find-image-by-name box) own their
+    // own keys, so Enter there never applies a species tag.
     if (e.target === s.filterRef.current) {
       if (e.key === 'Escape') s.filterRef.current?.blur();
       if (e.key === 'Enter') {
