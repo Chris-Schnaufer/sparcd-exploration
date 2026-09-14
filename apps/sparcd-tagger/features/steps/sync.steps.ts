@@ -149,6 +149,7 @@ Then('which stored files would be rewritten', async ({ page }) => {
 });
 
 Then('which collection and upload it would write to', async ({ page }) => {
+  // The Tag header shows the same label in a div; the dialog's copy is a <p>.
   await expect(page.locator('p', { hasText: `${COLLECTION_NAME} / ${STAMP_A}` })).toBeVisible();
 });
 
