@@ -52,6 +52,8 @@ export interface FlipFile {
   // must not come home looking like EXIF.
   /** The camera's own capture time, from EXIF or the video container. */
   exifTimestamp?: string;
+  /** EXIF ModifyDate is metadata-edit time, retained even after a manual correction. */
+  exifTimestampSource?: 'exif-modify';
   /** A capture time entered by hand for a file the camera left blank. */
   manualTimestamp?: string;
   estimatedTimestamp?: string;
@@ -74,7 +76,7 @@ export interface FlipFile {
  * tagger shows the same value the upload will carry.
  */
 export const captureTimestampOf = (file: FlipFile): string | undefined =>
-  file.timestampSource === 'exif-modify' && file.manualTimestamp
+  file.exifTimestampSource === 'exif-modify' && file.manualTimestamp
     ? file.manualTimestamp
     : file.exifTimestamp ?? file.manualTimestamp ?? file.estimatedTimestamp;
 

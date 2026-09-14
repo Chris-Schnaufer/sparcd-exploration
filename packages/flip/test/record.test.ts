@@ -95,7 +95,7 @@ describe('capture time', () => {
 
   it('lets a hand entry override an EXIF ModifyDate candidate', () => {
     expect(captureTimestampOf(inspected({
-      timestampSource: 'exif-modify', manualTimestamp: '2020-01-01T00:00:00',
+      exifTimestampSource: 'exif-modify', timestampSource: 'manual', manualTimestamp: '2020-01-01T00:00:00',
     }))).toBe('2020-01-01T00:00:00');
   });
 

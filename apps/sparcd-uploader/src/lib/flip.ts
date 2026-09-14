@@ -46,6 +46,7 @@ const toFlipFile = (f: FileEntry, estimate: CaptureEstimate | undefined): FlipFi
   // but an entered time as the user's own correction, so collapsing the two
   // would bring a manual entry home disguised as EXIF.
   exifTimestamp: f.exifNaive ? formatNaive(f.exifNaive) : undefined,
+  exifTimestampSource: f.exifTimestampSource,
   manualTimestamp: f.manualNaive ? formatNaive(f.manualNaive) : undefined,
   estimatedTimestamp: estimate ? formatNaive(estimate.naive) : undefined,
   timestampSource: f.exifTimestampSource === 'exif-modify' && !f.manualNaive
@@ -96,7 +97,10 @@ const toFileEntry = (f: FlipFile, file: File, record: FlipRecord): FileEntry => 
   processState: 'ready',
   sha256: f.sha256,
   exifNaive: parseNaive(f.exifTimestamp),
-  exifTimestampSource: f.timestampSource === 'exif-modify' ? 'exif-modify' : undefined,
+  // `timestampSource` is the effective publishing source. Keep the underlying
+  // ModifyDate provenance separately so a manual correction remains stronger
+  // than the stale EXIF candidate when the batch comes back from the Tagger.
+  exifTimestampSource: f.exifTimestampSource ?? (f.timestampSource === 'exif-modify' ? 'exif-modify' : undefined),
   manualNaive: parseNaive(f.manualTimestamp),
   manualSource: f.timestampSource === 'manual' || f.timestampSource === 'spread' ? f.timestampSource : undefined,
   mimeType: f.mimeType,
