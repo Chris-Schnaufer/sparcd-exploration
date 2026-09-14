@@ -816,7 +816,7 @@ export function Tag() {
                 e.stopPropagation();
                 closeImageFilter();
               }}
-              className="absolute left-0 top-full z-40 mt-1 w-80 max-w-[calc(100vw-2rem)] space-y-3 border border-rule bg-panel p-3 shadow-lg"
+              className="absolute left-0 top-full z-40 mt-1 w-80 max-w-[calc(100vw-2rem)] space-y-3 border border-rule bg-panel p-3 shadow-lg max-sm:fixed max-sm:inset-x-2 max-sm:top-14 max-sm:mt-0 max-sm:w-auto"
             >
               <label className="block text-[11px] font-mono text-inkSoft">
                 Match text
