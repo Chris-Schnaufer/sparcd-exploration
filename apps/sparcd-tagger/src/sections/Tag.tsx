@@ -1499,15 +1499,28 @@ function isMediaTarget(t: EventTarget | null): boolean {
 }
 
 // A focused <input type="range"> — the Adjust popup's brightness/contrast/hue/
-// saturation sliders — needs its own arrow keys for slider navigation, but
-// unlike other inputs it shouldn't swallow everything else: a species letter
-// key must still reach the tagger while a slider has focus (#270).
+// saturation sliders — needs its own navigation keys, but unlike other inputs
+// it shouldn't swallow everything else: a species letter key must still reach
+// the tagger while a slider has focus (#270).
 function isRangeTarget(t: EventTarget | null): boolean {
   const el = t as HTMLInputElement | null;
   return !!el && el.tagName === 'INPUT' && el.type === 'range';
 }
 
-const RANGE_NAV_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+// Every key a native range input responds to itself: arrows step by one,
+// Home/End jump to min/max, Page Up/Down step by a larger increment. Two of
+// these (Page Up/Down) are also tagger burst-navigation hotkeys, so a range
+// input must claim them first or the slider's own paging never fires.
+const RANGE_NAV_KEYS = new Set([
+  'ArrowUp',
+  'ArrowDown',
+  'ArrowLeft',
+  'ArrowRight',
+  'Home',
+  'End',
+  'PageUp',
+  'PageDown',
+]);
 
 /** Move focus to image `i`, clearing selection and re-anchoring range-select. */
 function focusMove(s: HandlerState, i: number): void {

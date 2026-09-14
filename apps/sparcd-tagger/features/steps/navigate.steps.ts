@@ -615,7 +615,9 @@ Then('a species key still applies that species to the focused image', async ({ p
 Then('an arrow key still adjusts the slider rather than navigating images', async ({ page }) => {
   const position = await positionReadout(page).textContent();
   const before = await page.getByLabel('Brightness').inputValue();
-  await page.keyboard.press('ArrowRight');
+  // ArrowDown is also the next-image hotkey — proves the slider claims it
+  // instead of the tagger navigating away.
+  await page.keyboard.press('ArrowDown');
   await expect(page.getByLabel('Brightness')).not.toHaveValue(before);
   await expect(positionReadout(page)).toHaveText(position!);
 });
