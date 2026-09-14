@@ -97,6 +97,7 @@ Feature: Publish local identifications back to the collection
     When the estimated timestamp is corrected
     And the sync is run
     Then the corrected timestamp is stored with a manual source marker
+    And the deployment retains its timestamp issue marker
     And the reloaded Focus view identifies it as entered by hand
 
   @unmapped

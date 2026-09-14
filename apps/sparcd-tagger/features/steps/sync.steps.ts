@@ -405,6 +405,12 @@ Then('the corrected timestamp is stored with a manual source marker', async ({ s
   expect(corrected.comments).toBe('[TIMESTAMP:manual]');
 });
 
+Then('the deployment retains its timestamp issue marker', async ({ s3 }) => {
+  const deployment = s3.text(BUCKET, `${PREFIX_A}deployments.csv`).split(',');
+  expect(deployment[15]).toBe('"true"');
+  expect(canonicalPuts(s3.puts).map((put) => put.key)).not.toContain(`${PREFIX_A}deployments.csv`);
+});
+
 Then('the reloaded Focus view identifies it as entered by hand', async ({ page }) => {
   await page.reload();
   await openWorkspace(page);

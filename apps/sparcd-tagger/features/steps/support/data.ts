@@ -194,7 +194,7 @@ export function blankObservationsCsv(prefix: string, specs: MediaSpec[]): string
     .join('\n');
 }
 
-export function deploymentsCsv(): string {
+export function deploymentsCsv(timestampIssues = false): string {
   const cells: string[] = [];
   cells[0] = DEPLOYMENT;
   cells[1] = 'SAN15';
@@ -202,6 +202,7 @@ export function deploymentsCsv(): string {
   cells[3] = '-110.200000';
   cells[4] = '31.500000';
   cells[12] = '1200.000000';
+  cells[15] = timestampIssues ? 'true' : 'false';
   return row(cells, DEPLOY_WIDTH);
 }
 
@@ -311,7 +312,7 @@ export function seedFixtures(s3: MockS3): void {
   // --- Upload A: partially tagged, has a deployment file and a snapshot ------
   s3.put(BUCKET, `${PREFIX_A}media.csv`, mediaCsv(PREFIX_A, MEDIA_A), 'text/csv');
   s3.put(BUCKET, `${PREFIX_A}observations.csv`, observationsCsv(PREFIX_A, OBS_A), 'text/csv');
-  s3.put(BUCKET, `${PREFIX_A}deployments.csv`, deploymentsCsv(), 'text/csv');
+  s3.put(BUCKET, `${PREFIX_A}deployments.csv`, deploymentsCsv(true), 'text/csv');
   s3.put(
     BUCKET,
     `${PREFIX_A}UploadMeta.json`,
