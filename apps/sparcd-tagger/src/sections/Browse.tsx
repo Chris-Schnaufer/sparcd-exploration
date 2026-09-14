@@ -175,14 +175,27 @@ export function Browse() {
 
               {uploadCount > 0 && (
                 <div className="flex flex-wrap gap-2">
-                  <TabButton label="All" n={uploadCount} active={tab === 'all'} onClick={() => setTab('all')} />
+                  <TabButton
+                    label="All"
+                    n={uploadCount}
+                    active={tab === 'all'}
+                    onClick={() => setTab('all')}
+                    title="Every upload in this collection"
+                  />
                   <TabButton
                     label="In progress"
                     n={counts['in-progress']}
                     active={tab === 'in-progress'}
                     onClick={() => setTab('in-progress')}
+                    title="Uploads with untagged or partially tagged images"
                   />
-                  <TabButton label="Done" n={counts.done} active={tab === 'done'} onClick={() => setTab('done')} />
+                  <TabButton
+                    label="Done"
+                    n={counts.done}
+                    active={tab === 'done'}
+                    onClick={() => setTab('done')}
+                    title="Uploads where every image has at least one species tagged"
+                  />
                 </div>
               )}
             </div>
@@ -319,11 +332,24 @@ function SyncPill({ state }: { state: UploadDraftState | 'local-only' }) {
   );
 }
 
-function TabButton({ label, n, active, onClick }: { label: string; n: number; active: boolean; onClick: () => void }) {
+function TabButton({
+  label,
+  n,
+  active,
+  onClick,
+  title,
+}: {
+  label: string;
+  n: number;
+  active: boolean;
+  onClick: () => void;
+  title: string;
+}) {
   return (
     <button
       onClick={onClick}
       aria-pressed={active}
+      title={title}
       className={`px-3 min-h-11 py-2.5 sm:min-h-0 sm:py-1.5 text-[13px] border focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
         active ? 'bg-ink text-paper border-ink font-[600]' : 'bg-panel text-inkSoft border-rule hover:bg-panelHover'
       }`}

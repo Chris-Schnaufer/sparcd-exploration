@@ -203,6 +203,21 @@ Then(
   },
 );
 
+Then('each tab explains on hover what it filters to', async ({ page }) => {
+  await expect(page.getByRole('button', { name: /^All\b/ })).toHaveAttribute(
+    'title',
+    'Every upload in this collection',
+  );
+  await expect(page.getByRole('button', { name: /^In progress\b/ })).toHaveAttribute(
+    'title',
+    'Uploads with untagged or partially tagged images',
+  );
+  await expect(page.getByRole('button', { name: /^Done\b/ })).toHaveAttribute(
+    'title',
+    'Uploads where every image has at least one species tagged',
+  );
+});
+
 Then('the header states how many uploads, images and tagged images it holds', async ({ page }) => {
   const header = page.locator('main p').filter({ hasText: /uploads?\b/ }).first();
   await expect(header).toContainText('3 uploads');
