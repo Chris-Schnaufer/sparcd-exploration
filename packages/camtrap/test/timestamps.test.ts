@@ -32,5 +32,5 @@ it('changes an estimated timestamp marker to manual without losing other comment
   const row = parseMedia(merged)[0];
   expect(row.timestamp).toBe('new');
   expect(row.comments).toBe('[TIMESTAMP:manual] note [UPLOADER:kept]');
-  expect(timestampSourceFromComments(row.comments)).toBe('manual');
+  expect(timestampSourceFromComments(row.comments ?? '')).toBe('manual');
 });
