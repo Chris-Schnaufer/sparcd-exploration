@@ -52,6 +52,11 @@ describe('a producer that never populates observation_type (col 5)', () => {
     expect(obs.observationType).toBe('blank');
   });
 
+  it('does not infer an animal from a named zero-count row', () => {
+    const [obs] = parseObservations(row('', 'Aves', '0'));
+    expect(obs.observationType).toBe('blank');
+  });
+
   it('keeps an explicit non-animal observation type distinct from a blank column', () => {
     const [obs] = parseObservations(row('human', 'Homo sapiens', '1'));
     expect(obs.observationType).toBe('blank');
