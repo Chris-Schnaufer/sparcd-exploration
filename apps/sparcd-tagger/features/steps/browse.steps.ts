@@ -161,6 +161,16 @@ Then(
   },
 );
 
+Then('wide Browse gives tagging progress usable space', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const tagged = uploadRow(page, 'priortagger').locator('[data-column="tagged"]');
+
+  await expect(tagged).toBeVisible();
+  await expect(tagged).toContainText('3 / 6');
+  await expect(tagged.locator('[style*="width"]')).toBeVisible();
+  await expect.poll(async () => (await tagged.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(130);
+});
+
 Then('mobile Browse keeps tagging progress aligned', async ({ page }) => {
   await page.setViewportSize({ width: 767, height: 900 });
   const tagged = uploadRow(page, 'priortagger').locator('[data-column="tagged"]');

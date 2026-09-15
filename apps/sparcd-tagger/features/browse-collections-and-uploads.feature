@@ -46,6 +46,7 @@ Feature: Find the upload that needs tagging
     Given a collection is selected
     Then at 1297px Browse retains upload names while supporting columns yield
     And at 1017px Browse retains upload names while supporting columns yield
+    And wide Browse gives tagging progress usable space
     And mobile Browse keeps tagging progress aligned
 
   @unmapped
