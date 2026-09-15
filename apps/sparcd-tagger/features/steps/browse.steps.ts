@@ -132,6 +132,35 @@ Then(
   },
 );
 
+Then('at 1297px Browse hides image counts before it narrows upload names', async ({ page }) => {
+  await page.setViewportSize({ width: 1297, height: 900 });
+  const row = uploadRow(page, 'priortagger');
+  const upload = row.locator('[data-column="upload"]');
+
+  await expect(upload).toBeVisible();
+  await expect(upload).toContainText('priortagger');
+  await expect(row.locator('[data-column="images"]')).toBeHidden();
+  await expect(row.locator('[data-column="tagged"]')).toBeVisible();
+  await expect(row.locator('[data-column="sync"]')).toBeVisible();
+  await expect.poll(async () => (await upload.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(256);
+});
+
+Then(
+  'at 1017px Browse hides image, tagging, and sync details before upload names',
+  async ({ page }) => {
+    await page.setViewportSize({ width: 1017, height: 900 });
+    const row = uploadRow(page, 'priortagger');
+    const upload = row.locator('[data-column="upload"]');
+
+    await expect(upload).toBeVisible();
+    await expect(upload).toContainText('priortagger');
+    await expect(row.locator('[data-column="images"]')).toBeHidden();
+    await expect(row.locator('[data-column="tagged"]')).toBeHidden();
+    await expect(row.locator('[data-column="sync"]')).toBeHidden();
+    await expect.poll(async () => (await upload.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(256);
+  },
+);
+
 Given('an upload has no readable deployment file', async ({ page, s3 }) => {
   expect(s3.has(BUCKET, `${PREFIX_B}deployments.csv`)).toBe(false);
   await openAppConnected(page);
@@ -300,4 +329,3 @@ Then(
     await expect(gridCell(page, 'IMG004.JPG')).toContainText('Mountain Lion +1');
   },
 );
-

@@ -13,6 +13,12 @@ import {
 
 const kicker = 'font-body text-[11px] font-[600] tracking-[0.16em] uppercase text-inkSoft';
 
+// Keep Upload wide enough to identify its owner while narrow windows shed the
+// supporting image, progress, and sync columns in that order. The header and
+// each row use this same track list so their remaining columns stay aligned.
+const uploadGridColumns =
+  'md:grid-cols-[120px_minmax(16rem,1fr)_160px_70px] min-[1018px]:grid-cols-[120px_minmax(16rem,1fr)_160px_140px_70px] min-[1118px]:grid-cols-[120px_minmax(16rem,1fr)_160px_minmax(0,1.2fr)_140px_70px] min-[1298px]:grid-cols-[120px_minmax(16rem,1fr)_160px_90px_minmax(0,1.2fr)_140px_70px]';
+
 // Upload prefixes are stamped `YYYY.MM.DD.HH.MM.SS_user` (the user is the SPARC'd
 // account that uploaded; older stamps may omit it). Split it so the list can show
 // a real date column and surface who uploaded.
@@ -192,13 +198,13 @@ export function Browse() {
             {!uploads.isError && uploadCount > 0 && (
               <div className="bg-panel border border-rule">
                 {/* Column header */}
-                <div className="hidden md:grid grid-cols-[120px_1fr_160px_90px_1.2fr_140px_70px] gap-4 px-4 py-2.5 border-b border-rule text-[11px] font-[600] tracking-[0.14em] uppercase text-inkSoft">
-                  <span>Date</span>
-                  <span>Upload</span>
-                  <span>Deployment</span>
-                  <span className="text-right">Images</span>
-                  <span>Tagged</span>
-                  <span>Sync</span>
+                <div className={`hidden md:grid ${uploadGridColumns} gap-4 px-4 py-2.5 border-b border-rule text-[11px] font-[600] tracking-[0.14em] uppercase text-inkSoft`}>
+                  <span data-column="date">Date</span>
+                  <span data-column="upload">Upload</span>
+                  <span data-column="deployment">Deployment</span>
+                  <span data-column="images" className="hidden min-[1298px]:block text-right">Images</span>
+                  <span data-column="tagged" className="hidden min-[1118px]:block">Tagged</span>
+                  <span data-column="sync" className="hidden min-[1018px]:block">Sync</span>
                   <span />
                 </div>
 
@@ -245,24 +251,24 @@ function UploadRow({
   return (
     <button
       onClick={onOpen}
-      className="w-full text-left grid grid-cols-[1fr] md:grid-cols-[120px_1fr_160px_90px_1.2fr_140px_70px] gap-2 md:gap-4 items-center px-4 py-3 border-b border-ruleSoft border-l-2 border-l-transparent hover:bg-panelHover hover:border-l-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent group"
+      className={`w-full text-left grid grid-cols-[1fr] ${uploadGridColumns} gap-2 md:gap-4 items-center px-4 py-3 border-b border-ruleSoft border-l-2 border-l-transparent hover:bg-panelHover hover:border-l-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent group`}
     >
-      <span className="font-mono text-[12.5px] text-inkSoft">{date}</span>
+      <span data-column="date" className="font-mono text-[12.5px] text-inkSoft">{date}</span>
 
-      <span className="min-w-0">
+      <span data-column="upload" className="min-w-0">
         <span className="block font-mono text-[13px] text-ink truncate">{user ?? stamp}</span>
         {time && <span className="block font-mono text-[11px] text-inkMute">{time}</span>}
       </span>
 
-      <span className="font-mono text-[13px] text-inkSoft truncate">
+      <span data-column="deployment" className="font-mono text-[13px] text-inkSoft truncate">
         {loading ? <Skeleton w="w-24" /> : s?.deployments.length ? s.deployments.join(', ') : '—'}
       </span>
 
-      <span className="font-mono text-[13px] text-ink text-right">
+      <span data-column="images" className="hidden min-[1298px]:block font-mono text-[13px] text-ink text-right">
         {loading ? <Skeleton w="w-12" /> : query?.isError ? '—' : s!.imageCount.toLocaleString()}
       </span>
 
-      <span className="flex items-center gap-2.5">
+      <span data-column="tagged" className="hidden min-[1118px]:flex items-center gap-2.5">
         {loading || query?.isError || !s ? (
           <Skeleton w="w-full" />
         ) : (
@@ -277,7 +283,7 @@ function UploadRow({
         )}
       </span>
 
-      <span>
+      <span data-column="sync" className="hidden min-[1018px]:block">
         <SyncPill state={draftState ?? 'local-only'} />
       </span>
 
