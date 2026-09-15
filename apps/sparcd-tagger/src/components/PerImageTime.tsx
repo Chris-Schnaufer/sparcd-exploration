@@ -5,13 +5,17 @@
 // original is never rewritten locally.
 
 import { useState } from 'react';
+import type { TimestampSource } from '@sparcd/camtrap';
 import { normalizeTimestampInput } from '../lib/timeshift';
+import { formatDateTime } from '../lib/formatting';
+import { useStore } from '../store';
 
 export function PerImageTime({
   original,
   corrected,
   hasUploadShift,
   overridden,
+  timestampSource,
   onSet,
   onClear,
 }: {
@@ -19,9 +23,12 @@ export function PerImageTime({
   corrected: string; // resolved corrected time (offset + any override)
   hasUploadShift: boolean; // an upload-level offset is active
   overridden: boolean; // this image carries a per-image override
+  timestampSource?: TimestampSource; // set when the camera wrote no time
   onSet: (iso: string) => void;
   onClear: () => void;
 }) {
+  const dateFormat = useStore((s) => s.dateFormat);
+  const timeFormat = useStore((s) => s.timeFormat);
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(corrected);
   const [invalid, setInvalid] = useState(false);
@@ -87,7 +94,9 @@ export function PerImageTime({
     <span className="inline-flex flex-wrap items-center gap-2.5 min-w-0">
       <span className="flex flex-col leading-tight">
         <span className="font-mono text-[13.5px] font-[600] text-ink">
-          {corrected || '— no timestamp —'}
+          {corrected
+            ? formatDateTime(corrected, dateFormat, timeFormat)
+            : '— no timestamp —'}
           {overridden ? (
             <span className="ml-2 font-body text-[10px] font-[600] tracking-[0.08em] uppercase text-accent border border-accent px-1">
               image override
@@ -99,10 +108,22 @@ export function PerImageTime({
               </span>
             )
           )}
+          {timestampSource && (
+            <span
+              className="ml-2 font-body text-[10px] font-[600] tracking-[0.08em] uppercase text-inkSoft border border-rule px-1"
+              title={
+                timestampSource === 'manual'
+                  ? 'Entered by hand in the uploader.'
+                  : 'Estimated by the uploader — the camera wrote no time. Set the real time here if you know it.'
+              }
+            >
+              {timestampSource === 'manual' ? 'entered by hand' : 'estimated'}
+            </span>
+          )}
         </span>
         {corrected !== original && original && (
           <span className="font-mono text-[11px] text-inkMute line-through decoration-ruleSoft">
-            was {original}
+            was {formatDateTime(original, dateFormat, timeFormat)}
           </span>
         )}
       </span>

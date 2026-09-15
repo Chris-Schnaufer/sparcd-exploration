@@ -33,7 +33,7 @@ Feature: Publish local identifications back to the collection
     Then it reports how many images gain, change or lose identifications
     And how many images have a corrected capture time
     And which stored files would be rewritten
-    And where the pre-change snapshot would be filed
+    And which collection and upload it would write to
 
   @unmapped
   Scenario: A real write requires switching off the dry-run setting
@@ -92,6 +92,14 @@ Feature: Publish local identifications back to the collection
     And any whole-upload time shift is cleared, because it is now part of the stored capture times
     And the workspace reloads the upload from the newly stored files
 
+  @H3
+  Scenario: Correcting an estimated capture time preserves manual provenance
+    When the estimated timestamp is corrected
+    And the sync is run
+    Then the corrected timestamp is stored with a manual source marker
+    And the deployment retains its timestamp issue marker
+    And the reloaded Focus view identifies it as entered by hand
+
   @unmapped
   Scenario: The dialog cannot be dismissed while a write is in flight
     Given a sync is running
@@ -124,7 +132,7 @@ Feature: Publish local identifications back to the collection
   Scenario: Detagging an image and syncing writes a blank placeholder row rather than removing the row
     Given the dry-run setting has been switched off
     And the focused image carries at least one species
-    When "Detag" is used
+    When Clear Species is used
     And the sync is run
     Then the detagged image's slot in observations.csv is a blank placeholder, not absent
 

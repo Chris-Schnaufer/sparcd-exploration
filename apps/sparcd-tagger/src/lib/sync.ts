@@ -12,7 +12,7 @@
 //      injected `SyncIO`, so the conflict / snapshot-collision / partial-resume
 //      behaviour is testable with fakes and never touches a real bucket.
 //
-// Dry-run is the default (see the store): a dry-run returns the planned writes
+// Dry-run is opt-in (see the store): a dry-run returns the planned writes
 // and touches nothing — not even a snapshot.
 
 import {
@@ -119,6 +119,10 @@ export function buildSyncPlan(
 
     const corrected = correctedTimestamp(img.baseTimestamp, offset, d?.timeOverride ?? null);
     const timeChanged = !!img.baseTimestamp && corrected !== img.baseTimestamp;
+    // A Tagger correction replaces an uploader estimate with a user-provided
+    // time. Keep the marker so downstream readers still know the camera did
+    // not supply it, but make its source accurately say "manual".
+    const timestampSource = timeChanged && img.timestampSource ? 'manual' : undefined;
     const tagChanged = !observationsEqual(obs, img.baseObservations);
 
     if (timeChanged) summary.timeCorrections++;
@@ -135,6 +139,7 @@ export function buildSyncPlan(
         deploymentId: img.deploymentId,
         timestamp: corrected,
         mediaTimestamp: timeChanged ? corrected : undefined,
+        timestampSource,
         observations: obs.map((o) => ({
           scientificName: o.scientificName,
           count: Math.max(1, o.count),
@@ -151,6 +156,7 @@ export function buildSyncPlan(
         deploymentId: img.deploymentId,
         timestamp: corrected,
         mediaTimestamp: corrected,
+        timestampSource,
         observations: [],
       });
     }

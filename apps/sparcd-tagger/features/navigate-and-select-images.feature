@@ -33,6 +33,10 @@ Feature: Move through an upload and choose which images an action applies to
     And the Focus strip keeps filename and species but omits the detail columns
 
   @unmapped
+  Scenario: The workspace reminds the tagger which collection and upload they're viewing
+    Then the collection name and upload name are shown
+
+  @unmapped
   Scenario: Images can be stepped through from the keyboard
     When the next-image or previous-image key is pressed
     Then focus moves one image in that direction
@@ -67,6 +71,12 @@ Feature: Move through an upload and choose which images an action applies to
     And the number of matches and the current match position are shown
     And the matches can be cycled forwards and backwards
     And clearing the search leaves the upload's order untouched
+
+  @unmapped
+  Scenario: The / key focuses the image search from anywhere in the workspace
+    Given the image search is not focused
+    When "/" is pressed
+    Then the image search has the keyboard focus
 
   @unmapped
   Scenario: Images are selected by clicking, extending or adding

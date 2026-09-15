@@ -8,6 +8,7 @@ import {
   focusFrame,
   gridCell,
   connect,
+  openWorkspace,
   selectCollection,
   sectionTab,
 } from './support/world';
@@ -67,6 +68,25 @@ const lightbox = (page: Page): Locator =>
 Given('an image is shown in the Focus view', async ({ page }) => {
   await enterFocusView(page);
   await expect(page.locator('.react-transform-component img')).toBeVisible();
+});
+
+Given('filmstrip thumbnail downloads are delayed', async ({ page, s3 }) => {
+  for (const image of MEDIA_A.slice(1)) s3.delay(mediaKey(PREFIX_A, image.file), 2_000);
+  await page.reload();
+  await openWorkspace(page);
+  await enterFocusView(page);
+});
+
+Then('the Focus image is requested at high priority', async ({ page }) => {
+  const image = page.locator('.react-transform-component img');
+  await expect(image).toHaveAttribute('fetchpriority', 'high');
+  await expect.poll(() => image.evaluate((el) => el.complete && el.naturalWidth > 0)).toBe(true);
+});
+
+Then('the filmstrip thumbnails are requested at low priority', async ({ page }) => {
+  const thumbs = page.locator('img[fetchpriority="low"]');
+  await expect(thumbs.first()).toBeVisible();
+  await expect.poll(() => thumbs.evaluateAll((images) => images.some((image) => !image.complete))).toBe(true);
 });
 
 // --- Zoom -------------------------------------------------------------------
@@ -134,7 +154,11 @@ Then('it cannot be dragged beyond the edges of the image', async ({ page }) => {
     expect(t.x).toBeLessThanOrEqual(1);
     expect(t.y).toBeLessThanOrEqual(1);
     expect(t.x).toBeGreaterThanOrEqual(-(t.scale - 1) * box.width - 1);
-    expect(t.y).toBeGreaterThanOrEqual(-(t.scale - 1) * box.height - 1);
+    // A couple more px than the x fudge: the workspace header (collection/
+    // upload name) trims the pane's available height, not its width, so the
+    // library's own bound settles a hair tighter here than the formula's
+    // exact math predicts.
+    expect(t.y).toBeGreaterThanOrEqual(-(t.scale - 1) * box.height - 3);
   }
 });
 

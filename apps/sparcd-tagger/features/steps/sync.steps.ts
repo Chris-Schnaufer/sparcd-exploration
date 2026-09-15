@@ -17,6 +17,8 @@ import {
   PREFIX_A,
   OBS_A,
   MEDIA_A,
+  COLLECTION_NAME,
+  STAMP_A,
   observationsCsv,
   mediaCsv,
 } from './support/data';
@@ -146,16 +148,16 @@ Then('which stored files would be rewritten', async ({ page }) => {
   await expect(page.getByText(/Would write 2 file\(s\)/)).toContainText('observations, uploadMeta');
 });
 
-Then('where the pre-change snapshot would be filed', async ({ page }) => {
-  await expect(page.getByText(/snapshot →/)).toContainText(
-    `${PREFIX_A}.sparcd-tagger-snapshots/jgonzalez/`,
-  );
+Then('which collection and upload it would write to', async ({ page }) => {
+  // The Tag header shows the same label in a div; the dialog's copy is a <p>.
+  await expect(page.locator('p', { hasText: `${COLLECTION_NAME} / ${STAMP_A}` })).toBeVisible();
 });
 
 // --- Dry-run gate -----------------------------------------------------------
 
 Given('the dry-run setting is on', async ({ page }) => {
   await sectionTab(page, 'Settings').click();
+  await settingsDryRunCheckbox(page).check();
   await expect(settingsDryRunCheckbox(page)).toBeChecked();
   await sectionTab(page, 'Tag').click();
 });
@@ -354,7 +356,7 @@ Then('columns the tagger does not use are carried through unchanged', async ({ s
 // --- Post-sync consistency --------------------------------------------------
 
 Given('a sync completed and wrote the changes', async ({ page }) => {
-  await page.getByRole('button', { name: 'Time shift' }).click();
+  await page.getByRole('button', { name: 'Time shift', exact: true }).click();
   await page.getByRole('button', { name: 'Increase Hour' }).click();
   await page.getByRole('button', { name: /^Apply to all/ }).click();
   await expect(page.getByText(/clock \+1h/)).toBeVisible();
@@ -374,7 +376,7 @@ Then(
   'any whole-upload time shift is cleared, because it is now part of the stored capture times',
   async ({ page }) => {
     await expect(page.getByText(/clock \+1h/)).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Time shift' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Time shift', exact: true })).toBeVisible();
     const uploads = (await readStore(page, 'uploads')) as { timeOffset: unknown }[];
     expect(uploads.every((u) => u.timeOffset === null)).toBe(true);
   },
@@ -385,7 +387,36 @@ Then('the workspace reloads the upload from the newly stored files', async ({ pa
   const shifted = media.find((m) => m.mediaId.endsWith('IMG001.JPG'))!;
   expect(shifted.timestamp).toBe('2024-01-10T09:00:00.000Z');
   await page.getByRole('button', { name: 'Focus', exact: true }).click();
-  await expect(page.getByText('2024-01-10T09:00:00')).toBeVisible();
+  await expect(page.getByText('2024-01-10 09:00')).toBeVisible();
+});
+
+When('the estimated timestamp is corrected', async ({ page }) => {
+  await focusFrame(page, 'IMG002.JPG');
+  await page.getByRole('button', { name: 'Focus', exact: true }).click();
+  await page.getByRole('button', { name: 'Adjust time' }).click();
+  await page.getByLabel('Corrected timestamp for this image').fill('2024-01-10 09:15:00');
+  await page.getByRole('button', { name: 'Set', exact: true }).click();
+});
+
+Then('the corrected timestamp is stored with a manual source marker', async ({ s3 }) => {
+  const media = parseMedia(s3.text(BUCKET, `${PREFIX_A}media.csv`));
+  const corrected = media.find((m) => m.mediaId.endsWith('IMG002.JPG'))!;
+  expect(corrected.timestamp).toBe('2024-01-10T09:15:00.000Z');
+  expect(corrected.comments).toBe('[TIMESTAMP:manual]');
+});
+
+Then('the deployment retains its timestamp issue marker', async ({ s3 }) => {
+  const deployment = s3.text(BUCKET, `${PREFIX_A}deployments.csv`).split(',');
+  expect(deployment[15]).toBe('"true"');
+  expect(canonicalPuts(s3.puts).map((put) => put.key)).not.toContain(`${PREFIX_A}deployments.csv`);
+});
+
+Then('the reloaded Focus view identifies it as entered by hand', async ({ page }) => {
+  await page.reload();
+  await openWorkspace(page);
+  await focusFrame(page, 'IMG002.JPG');
+  await page.getByRole('button', { name: 'Focus', exact: true }).click();
+  await expect(page.getByText('entered by hand')).toBeVisible();
 });
 
 // --- Busy dialog ------------------------------------------------------------

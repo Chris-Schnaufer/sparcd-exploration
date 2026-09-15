@@ -16,6 +16,7 @@ import {
   focusFrame,
   enterFocusView,
 } from './support/world';
+import { COLLECTION_NAME, STAMP_A } from './support/data';
 
 const TOUCH = { width: 900, height: 860 };
 const DESKTOP = { width: 1440, height: 950 };
@@ -32,6 +33,10 @@ Then('the Overview can be switched between a grid of tiles and a list of rows', 
   await expect(gridCell(page, 'IMG001.JPG')).toHaveCount(0);
   await page.getByRole('button', { name: '▦ Grid' }).click();
   await expect(gridCell(page, 'IMG001.JPG')).toBeVisible();
+});
+
+Then('the collection name and upload name are shown', async ({ page }) => {
+  await expect(page.getByText(`${COLLECTION_NAME} / ${STAMP_A}`)).toBeVisible();
 });
 
 Then('the workspace shows the position of the focused image within the upload', async ({ page }) => {
@@ -128,7 +133,9 @@ Then('a narrow Overview keeps filenames visible in its compact rows', async ({ p
   const row = listRow(page, 'IMG002.JPG');
   const filename = row.locator('[data-column="filename"]');
   await expect(filename).toBeVisible();
-  expect((await filename.boundingBox())?.width).toBeGreaterThan(80);
+  // ResizeObserver updates the compact-row layout after the viewport resize.
+  await expect.poll(async () => (await filename.boundingBox())?.width ?? 0)
+    .toBeGreaterThan(80);
   await expect(row.locator('[data-column="species"]')).toBeVisible();
   await expect(row.locator('[data-column="media-type"]')).toHaveCount(0);
   await expect(row.locator('[data-column="timestamp"]')).toHaveCount(0);
@@ -328,6 +335,19 @@ Then("clearing the search leaves the upload's order untouched", async ({ page })
   expect(await tileOrder(page)).toEqual(before);
 });
 
+Given('the image search is not focused', async ({ page }) => {
+  await gridCell(page, 'IMG001.JPG').click();
+  await expect(imageSearch(page)).not.toBeFocused();
+});
+
+When('{string} is pressed', async ({ page }, key: string) => {
+  await page.keyboard.press(key);
+});
+
+Then('the image search has the keyboard focus', async ({ page }) => {
+  await expect(imageSearch(page)).toBeFocused();
+});
+
 // --- Mouse selection --------------------------------------------------------
 
 When('an image is clicked', async ({ page }) => {
@@ -402,8 +422,8 @@ Then(
 );
 
 Then('each band states how many images it holds and the time it spans', async ({ page }) => {
-  await expect(page.getByText(/^Burst 1 ·/)).toHaveText('Burst 1 · 2 img · 08:00:00–08:00:30');
-  await expect(page.getByText(/^Burst 2 ·/)).toHaveText('Burst 2 · 1 img · 22:15:00');
+  await expect(page.getByText(/^Burst 1 ·/)).toHaveText('Burst 1 · 2 img · 08:00–08:00');
+  await expect(page.getByText(/^Burst 2 ·/)).toHaveText('Burst 2 · 1 img · 22:15');
 });
 
 Then('the whole band can be selected in one action', async ({ page }) => {
@@ -567,7 +587,7 @@ Then(
       ['Snapshots…', 'Close'],
       ['Time shift', 'Cancel'],
     ] as const) {
-      await page.getByRole('button', { name: open }).click();
+      await page.getByRole('button', { name: open, exact: true }).click();
       await page.keyboard.press('d');
       await page.keyboard.press('ArrowDown');
       await expect(page.getByText(/unsaved · discard/)).toHaveCount(0);

@@ -1,8 +1,6 @@
 import { defineConfig } from '@playwright/test';
 import { defineBddConfig } from 'playwright-bdd';
 
-const port = Number(process.env.TAGGER_TEST_PORT ?? 5312);
-
 // As-built verification harness: the .feature files under `features/` describe
 // what this app does today. `bddgen` turns them into Playwright specs against
 // the step definitions in `features/steps/`, which drive the real app with all
@@ -12,6 +10,8 @@ const testDir = defineBddConfig({
   steps: 'features/steps/**/*.ts',
   tags: 'not @manual',
 });
+const testPort = Number(process.env.TAGGER_TEST_PORT ?? 5312);
+const testOrigin = `http://localhost:${testPort}`;
 
 export default defineConfig({
   testDir,
@@ -24,8 +24,8 @@ export default defineConfig({
   webServer: {
     // pnpm 10 forwards trailing args as-is, so a literal `--` would reach Vite's
     // CLI and turn `--port` into a positional. Same effect, without the sentinel.
-    command: `./node_modules/.bin/vite --port ${port} --strictPort`,
-    url: `http://localhost:${port}/sparcd-exploration/tagger/`,
+    command: `pnpm dev --port ${testPort} --strictPort`,
+    url: `${testOrigin}/sparcd-exploration/tagger/`,
     reuseExistingServer: false,
     timeout: 120_000,
     stdout: 'ignore',
@@ -35,7 +35,7 @@ export default defineConfig({
     env: { VITE_SPARCD_S3_ENDPOINT: '' },
   },
   use: {
-    baseURL: `http://localhost:${port}`,
+    baseURL: testOrigin,
     headless: true,
     viewport: { width: 1440, height: 950 },
     trace: 'off',
