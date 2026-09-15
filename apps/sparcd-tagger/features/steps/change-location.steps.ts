@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import { Given, When, Then, expect, enterFocusView } from './support/world';
-import { LOCATION_NAME, NEW_LOCATION_NAME, NEW_LOCATION_ID } from './support/data';
-import { openSyncDialog, runLiveSync } from './support/flows';
+import { BUCKET, PREFIX_A, LOCATION_NAME, NEW_LOCATION_NAME, NEW_LOCATION_ID } from './support/data';
+import { openSyncDialog, runLiveSync, writeStore, makeLocalEdit, waitForDirtyDrafts } from './support/flows';
 
 const changeLocationButton = (page: Page) =>
   page
@@ -112,4 +112,44 @@ When('the sync is run live', async ({ page }) => {
 Then("every image's deployment is the new location", async ({ page }) => {
   await enterFocusView(page);
   await expect(page.locator('body')).toContainText(NEW_LOCATION_ID);
+});
+
+// --- Backward compatibility: a session grounded before location tracking ----
+
+Given('a local edit has been made', async ({ page }) => {
+  await makeLocalEdit(page);
+  await waitForDirtyDrafts(page, 1);
+});
+
+Given(
+  'the local session was grounded before location tracking existed',
+  async ({ page, s3 }) => {
+    // The exact shape a real `uploads` Dexie record had before this feature
+    // shipped: media/observations/uploadMeta grounded, no `deploymentsETag` /
+    // `deploymentsHash` / `pendingLocation` fields at all (not even `undefined`
+    // — they never existed on disk). Overwrites the record the background's
+    // workspace load already grounded in full, standing in for a browser that
+    // still has its pre-upgrade IndexedDB state.
+    const at = (name: string) => `${PREFIX_A}${name}`;
+    const quotedEtag = (key: string) => `"${s3.etag(BUCKET, key)}"`;
+    await writeStore(page, 'uploads', {
+      id: `${BUCKET}::${PREFIX_A}`,
+      bucket: BUCKET,
+      uploadPrefix: PREFIX_A,
+      loadedAt: '2024-01-01T00:00:00.000Z',
+      timeOffset: null,
+      mediaETag: quotedEtag(at('media.csv')),
+      mediaHash: s3.hash(BUCKET, at('media.csv')),
+      observationsETag: quotedEtag(at('observations.csv')),
+      observationsHash: s3.hash(BUCKET, at('observations.csv')),
+      uploadMetaETag: quotedEtag(at('UploadMeta.json')),
+      uploadMetaHash: s3.hash(BUCKET, at('UploadMeta.json')),
+    });
+  },
+);
+
+Then('no conflict is reported', async ({ page }) => {
+  await expect(page.getByText(/Conflict —/)).toHaveCount(0);
+  await expect(page.getByText(/Would write \d+ file\(s\)/)).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel' }).click();
 });

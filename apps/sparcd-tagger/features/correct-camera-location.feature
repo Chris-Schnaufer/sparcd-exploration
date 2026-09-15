@@ -53,3 +53,10 @@ Feature: Correct the camera location recorded for an upload
     When the sync is run live
     Then every image's deployment is the new location
     And the workspace toolbar no longer shows a pending location change
+
+  @unmapped
+  Scenario: A session grounded before location tracking existed syncs without a false conflict
+    Given a local edit has been made
+    And the local session was grounded before location tracking existed
+    When the sync dialog is opened
+    Then no conflict is reported

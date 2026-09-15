@@ -38,9 +38,13 @@ export async function performSync(args: SyncArgs): Promise<SyncResult> {
   const { cfg, bucket, uploadPrefix, user, images, drafts, dryRun } = args;
 
   // The workspace grounds on load; ground here too as a fallback so a sync is
-  // never run against a missing base.
+  // never run against a missing base. `deploymentsETag === undefined` (as
+  // opposed to '', which means "grounded, no deployments.csv exists") catches
+  // a record grounded before this role existed — without this, its base would
+  // default to '' and mismatch a real remote deployments.csv, reporting a
+  // false conflict on a sync that touches nothing location-related.
   let base = await getUpload(bucket, uploadPrefix);
-  if (!base?.mediaETag) {
+  if (!base?.mediaETag || base.deploymentsETag === undefined) {
     const state = await loadCanonicalState(cfg, bucket, uploadPrefix);
     await groundUpload(bucket, uploadPrefix, state);
     base = await getUpload(bucket, uploadPrefix);

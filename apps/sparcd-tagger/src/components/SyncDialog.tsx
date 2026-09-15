@@ -49,13 +49,17 @@ export function SyncDialog({
   const markUploadSynced = useDraftStore((s) => s.markUploadSynced);
   const setTimeOffset = useDraftStore((s) => s.setTimeOffset);
   const setPendingLocation = useDraftStore((s) => s.setPendingLocation);
-  const pendingLocation = useDraftStore((s) => s.pendingLocation);
   const discardUpload = useDraftStore((s) => s.discardUpload);
   const queryClient = useQueryClient();
 
   const [phase, setPhase] = useState<Phase>('previewing');
   const [result, setResult] = useState<SyncResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Snapshotted once, not read live: a successful sync clears the store's
+  // `pendingLocation` as part of its own cleanup, which would otherwise blank
+  // this dialog's "Location → X" confirmation the instant it has something to
+  // confirm. What the preview computed against is what stays displayed.
+  const [previewedLocation] = useState(() => useDraftStore.getState().pendingLocation);
 
   const args = () => ({
     cfg: cfg!,
@@ -108,6 +112,7 @@ export function SyncDialog({
         setTimeOffset(ctx, null);
         setPendingLocation(ctx, null);
         await queryClient.invalidateQueries({ queryKey: ['tagImages', connectionId] });
+        await queryClient.invalidateQueries({ queryKey: ['currentDeployment', connectionId] });
       }
     } catch (e) {
       setError((e as Error).message);
@@ -165,7 +170,7 @@ export function SyncDialog({
               live={phase === 'done'}
               collectionName={collectionName}
               uploadName={uploadName}
-              pendingLocation={pendingLocation}
+              pendingLocation={previewedLocation}
             />
           )}
 

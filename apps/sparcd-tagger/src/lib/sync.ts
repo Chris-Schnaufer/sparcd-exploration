@@ -1,9 +1,9 @@
 // The compatibility sync — the tagger's only S3 write path (P4). It turns local
 // drafts into the canonical Camtrap output the Java app, sparcd-web, and the
 // marimo explorer already read: it replaces upload-level `media.csv`,
-// `observations.csv`, and `UploadMeta.json` in place, guarded by `IfMatch`
-// against the ETags the user reviewed, after writing an immutable pre-change
-// snapshot.
+// `observations.csv`, `deployments.csv`, and `UploadMeta.json` in place,
+// guarded by `IfMatch` against the ETags the user reviewed, after writing an
+// immutable pre-change snapshot.
 //
 // Two layers:
 //   1. Pure planning — `buildSyncPlan` diffs drafts against the canonical base
@@ -566,7 +566,8 @@ export type RestoreParams = {
 
 /**
  * Restore a prior snapshot: write its `media.csv` / `observations.csv` /
- * `UploadMeta.json` back verbatim through the same conditional-replacement flow
+ * `deployments.csv` / `UploadMeta.json` back verbatim through the same
+ * conditional-replacement flow
  * a sync uses. The snapshot bytes are restored exactly (no merge, no re-derived
  * `UploadMeta` tally) — an exact rollback — and `IfMatch` is taken against the
  * *current* remote ETags, so a concurrent write since the restore was started is
