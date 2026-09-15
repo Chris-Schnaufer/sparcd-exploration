@@ -128,7 +128,8 @@ Feature: Move through an upload and choose which images an action applies to
 
   @unmapped
   Scenario: The Adjust popup reserves native range keys while Tagger shortcuts still work
-    Given a slider in the Adjust popup is focused
+    Given auto-advance is switched off in Settings
+    And a slider in the Adjust popup is focused
     Then a species key still applies that species to the focused image
     And Home, End, Page Up, Page Down, and arrow keys adjust the slider rather than navigating images
     And command- or control-S still saves while the slider is focused
