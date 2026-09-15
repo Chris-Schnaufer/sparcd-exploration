@@ -35,6 +35,12 @@ Feature: Correct the camera location recorded for an upload
     Then applying is disabled because nothing would change
 
   @unmapped
+  Scenario: A different registry location sharing the same ID can be selected
+    When the change-location dialog is opened
+    And a same-id alternate location is picked and applied
+    Then the workspace toolbar shows the same-id pending location change
+
+  @unmapped
   Scenario: A pending location change can be cleared before it is synced
     Given a location change is pending
     When the pending change is cleared

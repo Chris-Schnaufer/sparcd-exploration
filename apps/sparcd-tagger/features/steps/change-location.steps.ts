@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { Given, When, Then, expect, enterFocusView } from './support/world';
-import { BUCKET, PREFIX_A, LOCATION_NAME, NEW_LOCATION_NAME, NEW_LOCATION_ID } from './support/data';
+import { BUCKET, PREFIX_A, LOCATION_NAME, NEW_LOCATION_NAME, NEW_LOCATION_ID, SAME_ID_LOCATION_NAME } from './support/data';
 import { openSyncDialog, runLiveSync, writeStore, makeLocalEdit, waitForDirtyDrafts } from './support/flows';
 
 const changeLocationButton = (page: Page) =>
@@ -24,7 +24,8 @@ async function openChangeLocation(page: Page): Promise<void> {
 async function pickLocation(page: Page, name: string): Promise<void> {
   const dialog = changeLocationDialog(page);
   await locationPickerTrigger(page).click();
-  await dialog.getByRole('option', { name: new RegExp(name) }).click();
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  await page.getByRole('option', { name: new RegExp(`^${escaped}(?:\\s|$)`) }).click();
 }
 
 When('the change-location dialog is opened', async ({ page }) => {
@@ -66,7 +67,9 @@ Then('the workspace toolbar shows the pending location change', async ({ page })
 });
 
 When('the current location is picked again', async ({ page }) => {
-  await pickLocation(page, LOCATION_NAME);
+  const dialog = changeLocationDialog(page);
+  await locationPickerTrigger(page).click();
+  await page.getByRole('option', { selected: true }).click();
 });
 
 Then('applying is disabled because nothing would change', async ({ page }) => {
@@ -74,6 +77,15 @@ Then('applying is disabled because nothing would change', async ({ page }) => {
     changeLocationDialog(page).getByRole('button', { name: /^Apply to all/ }),
   ).toBeDisabled();
   await changeLocationDialog(page).getByRole('button', { name: 'Cancel' }).click();
+});
+
+When('a same-id alternate location is picked and applied', async ({ page }) => {
+  await pickLocation(page, SAME_ID_LOCATION_NAME);
+  await changeLocationDialog(page).getByRole('button', { name: /^Apply to all/ }).click();
+});
+
+Then('the workspace toolbar shows the same-id pending location change', async ({ page }) => {
+  await expect(changeLocationButton(page)).toContainText(`location → ${SAME_ID_LOCATION_NAME}`);
 });
 
 Given('a location change is pending', async ({ page }) => {

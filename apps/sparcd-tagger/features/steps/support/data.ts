@@ -27,6 +27,7 @@ export const DEPLOYMENT = `${UUID}:SAN15`;
 export const LOCATION_NAME = 'San Pedro 15';
 export const NEW_LOCATION_ID = 'SAN22';
 export const NEW_LOCATION_NAME = 'San Pedro 22';
+export const SAME_ID_LOCATION_NAME = 'San Pedro 15 alternate';
 
 const q = (v: string): string => `"${v.replace(/"/g, '""')}"`;
 const row = (cells: string[], width: number): string =>
@@ -292,6 +293,13 @@ export const LOCATIONS_JSON = JSON.stringify(
       latProperty: 31.7,
       lngProperty: -110.4,
       elevationProperty: 1300,
+    },
+    {
+      nameProperty: SAME_ID_LOCATION_NAME,
+      idProperty: 'SAN15',
+      latProperty: 31.6,
+      lngProperty: -110.3,
+      elevationProperty: 1250,
     },
   ],
   null,
