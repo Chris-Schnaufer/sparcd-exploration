@@ -35,6 +35,7 @@ import {
   type TagTarget,
   type BulkTimeTarget,
   type UploadCtx,
+  GHOST,
 } from '../lib/drafts';
 import {
   activeKeyProfile,
@@ -49,6 +50,11 @@ import { DEFAULT_SPECIES } from '../lib/defaultSpecies';
 import type { Species } from '../lib/species';
 import { isVideoImage, type TagImage } from '../lib/workspace';
 import type { DraftRecord } from '../lib/db';
+import {
+  appendSpeciesCountDigit,
+  removeSpeciesCountDigit,
+  speciesCountFromPrefix,
+} from '../lib/speciesCountPrefix';
 
 const RECENT_LIMIT = 12;
 const EMPTY: TagImage[] = []; // stable ref so memos don't churn before data loads
@@ -207,8 +213,20 @@ export function Tag() {
   // the species filter (a separate concern in SpeciesPanel). Jump-only — never
   // filters `list`, which would renumber the positional burst/selection indices.
   const [imgQuery, setImgQuery] = useState('');
+  const [speciesCountPrefix, setSpeciesCountPrefix] = useState('');
   const [matchPos, setMatchPos] = useState(0);
   const imgSearchRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (selected.size > 1) setSpeciesCountPrefix('');
+  }, [selected.size]);
+
+  // A pending count belongs to the image it was typed on, so any change of
+  // focused image drops it — arrows, mouse pick, filename jump, or new upload.
+  const focusedImageKey = list[focus]?.key;
+  useEffect(() => {
+    setSpeciesCountPrefix('');
+  }, [focusedImageKey, uploadPrefix]);
   const matches = useMemo(() => findFilenameMatches(list, imgQuery), [list, imgQuery]);
 
   const jumpToMatch = (pos: number) => {
@@ -487,6 +505,8 @@ export function Tag() {
     captureKey,
     apply,
     applyIncrement,
+    speciesCountPrefix,
+    setSpeciesCountPrefix,
     targetsOf,
     setQuestionableMany: setQuestionableManyFn,
     drafts,
@@ -605,6 +625,15 @@ export function Tag() {
             </>
           )}
         </span>
+
+        {speciesCountPrefix && selected.size <= 1 && (
+          <span
+            className="border border-accent px-2 py-0.5 text-[12px] font-mono text-accent"
+            role="status"
+          >
+            Count: {speciesCountPrefix}
+          </span>
+        )}
 
         {/* Touch path for building a multi-select set (desktop uses Shift/Cmd
             click). Toggles the focused image in/out of the selection. */}
@@ -1479,6 +1508,8 @@ type HandlerState = {
   captureKey: (sci: string, key: string) => void;
   apply: (tag: AppliedTag) => void;
   applyIncrement: (tag: AppliedTag) => void;
+  speciesCountPrefix: string;
+  setSpeciesCountPrefix: (value: string) => void;
   targetsOf: () => TagTarget[];
   setQuestionableMany: (ctx: UploadCtx, targets: TagTarget[], value: boolean) => void;
   drafts: Record<string, DraftRecord>;
@@ -1548,6 +1579,10 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
       return;
     }
     const key = normalizeBindableEventKey(e);
+    if (key && /^\d$/.test(key)) {
+      e.preventDefault();
+      return;
+    }
     if (key) {
       e.preventDefault();
       s.captureKey(s.capturingFor, key);
@@ -1587,9 +1622,23 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
     return;
   }
 
-  // User-assigned printable species keys take precedence over built-in
-  // single-character shortcuts. This makes every alphanumeric and symbol key
-  // usable; assigning `?` intentionally displaces that app shortcut.
+  // Cmd/Ctrl/Alt digits belong to the browser (tab switching), so only a plain
+  // digit starts or extends a count prefix.
+  const unmodified = !e.metaKey && !e.ctrlKey && !e.altKey;
+  if (unmodified && s.selected.size <= 1 && /^\d$/.test(e.key)) {
+    e.preventDefault();
+    if (!e.repeat) s.setSpeciesCountPrefix(appendSpeciesCountDigit(s.speciesCountPrefix, e.key));
+    return;
+  }
+  if (unmodified && s.speciesCountPrefix && e.key === 'Backspace') {
+    e.preventDefault();
+    s.setSpeciesCountPrefix(removeSpeciesCountDigit(s.speciesCountPrefix));
+    return;
+  }
+
+  // User-assigned non-digit printable species keys take precedence over built-in
+  // single-character shortcuts. Digits are reserved for count prefixes;
+  // assigning `?` intentionally displaces that app shortcut.
   const current = s.list[s.focus];
   const printableKey = normalizeBindableEventKey(e);
   const speciesAction = printableKey
@@ -1598,11 +1647,19 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
   if (speciesAction && current) {
     e.preventDefault();
     if (e.repeat) return;
-    s.applyIncrement({
+    const prefix = speciesCountFromPrefix(s.speciesCountPrefix);
+    s.setSpeciesCountPrefix('');
+    const tag = {
       scientificName: speciesAction.species.scientificName,
       commonName: speciesAction.species.commonName,
-      count: 1,
-    });
+      count: prefix ?? 1,
+    };
+    const alreadyApplied = effectiveOf(current, s.drafts[current.key]).observations.some(
+      (observation) => observation.scientificName === tag.scientificName,
+    );
+    if (prefix && s.selected.size <= 1 && !alreadyApplied && tag.scientificName !== GHOST.label)
+      s.apply(tag);
+    else s.applyIncrement({ ...tag, count: 1 });
     return;
   }
 
@@ -1670,6 +1727,10 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
       }
       return;
     case 'Escape':
+      if (s.speciesCountPrefix) {
+        s.setSpeciesCountPrefix('');
+        return;
+      }
       if (s.selected.size) s.setSelected(new Set());
       return;
   }
