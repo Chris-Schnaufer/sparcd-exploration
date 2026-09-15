@@ -499,8 +499,13 @@ Then('the close and cancel controls are unavailable until it finishes', async ({
   await expect(page.getByText('Synced — canonical files replaced.')).toBeVisible({
     timeout: 30000,
   });
-  await expect(dialogClose(page)).toBeEnabled();
+  // The delayed write has completed. Release the test-only latency before the
+  // post-sync refresh so this scenario exercises the busy controls, not the
+  // separate delayed-cleanup behavior covered above.
   s3.delays.clear();
+  // A successful live sync now closes the dialog itself; it must never offer
+  // an enabled dismissal control while the delayed write is still in flight.
+  await waitForSyncDialogClosed(page);
 });
 
 // --- Resume an interrupted sync ---------------------------------------------
