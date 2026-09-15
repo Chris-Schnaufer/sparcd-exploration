@@ -241,6 +241,11 @@ export function Tag() {
     imageFilter.day !== '' ||
     imageFilter.hour !== '' ||
     imageFilter.minute !== '';
+  const visibleIndexSet = useMemo(() => new Set(visibleIndices), [visibleIndices]);
+  const selectedForActions = useMemo(
+    () => (imageFilterActive ? [...selected].filter((i) => visibleIndexSet.has(i)) : [...selected]),
+    [imageFilterActive, selected, visibleIndexSet],
+  );
 
   const closeImageFilter = () => {
     setShowImageFilter(false);
@@ -258,6 +263,11 @@ export function Tag() {
     setFocus(visibleIndices[0]);
     setAnchor(visibleIndices[0]);
   }, [focus, imageFilterActive, visibleIndices]);
+
+  useEffect(() => {
+    if (!imageFilterActive) return;
+    setSelected((prior) => new Set([...prior].filter((i) => visibleIndexSet.has(i))));
+  }, [imageFilterActive, visibleIndexSet]);
 
   const jumpToMatch = (pos: number) => {
     if (!matches.length) return;
@@ -396,7 +406,7 @@ export function Tag() {
 
   // Operations target the selection when one exists, else the focused image.
   const targetsOf = (): TagTarget[] => {
-    const idx = selected.size ? [...selected].sort((a, b) => a - b) : current ? [focus] : [];
+    const idx = selected.size ? selectedForActions.sort((a, b) => a - b) : current ? [focus] : [];
     return idx
       .map((i) => list[i])
       .filter(Boolean)
@@ -449,7 +459,7 @@ export function Tag() {
   // override. Frames without a capture time have nothing to correct, so skip them.
   const bulkTimeTargets = useMemo(
     () =>
-      [...selected].map((i) => list[i])
+      selectedForActions.map((i) => list[i])
         .filter((img) => img && img.baseTimestamp)
         .map((img) => ({
           mediaPath: img.key,
@@ -461,7 +471,7 @@ export function Tag() {
             drafts[img.key]?.timeOverride ?? null,
           ),
         })),
-    [selected, list, drafts, timeOffset],
+    [selectedForActions, list, drafts, timeOffset],
   );
   const scopedTimeApplicableCount = bulkTimeTargets.length;
   const scopedTimeUnavailableReason = selected.size === 0
