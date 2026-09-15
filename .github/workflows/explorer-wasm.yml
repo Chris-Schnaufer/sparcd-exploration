@@ -14,6 +14,7 @@ jobs:
       - run: uv sync --locked
         working-directory: apps/sparcd-explorer
       - name: Generate the Pages WASM notebook
+        working-directory: apps/sparcd-explorer
         run: |
           set -euo pipefail
           {
