@@ -57,6 +57,13 @@ Then("each image's tile shows the species already recorded for it", async ({ pag
   await expect(gridCell(page, 'IMG004.JPG')).toContainText('Mountain Lion');
 });
 
+Then('images without observations remain untagged', async ({ page }) => {
+  await showList(page);
+  for (const fileName of ['IMG002.JPG', 'IMG005.JPG', 'VID001.MP4']) {
+    await expect(listRow(page, fileName)).toContainText('untagged');
+  }
+});
+
 Then('an image with several species shows the first with a count of the rest', async ({ page }) => {
   await expect(gridCell(page, 'IMG004.JPG')).toContainText('Mountain Lion +1');
 });
