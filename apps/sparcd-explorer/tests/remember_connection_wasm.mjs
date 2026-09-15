@@ -39,11 +39,19 @@ try {
     await mkdir(artifactDirectory, { recursive: true });
     await page.screenshot({ path: join(artifactDirectory, 'remember-connection-startup-failure.png'), fullPage: true });
     const body = await page.locator('body').innerText().catch(() => '<body unavailable>');
+    const sidebarControls = await page.locator('aside.app-sidebar input, aside.app-sidebar [role="checkbox"]').evaluateAll((controls) => controls.map((control) => ({
+      tag: control.tagName,
+      type: control.getAttribute('type'),
+      role: control.getAttribute('role'),
+      ariaLabel: control.getAttribute('aria-label'),
+      value: control.getAttribute('value'),
+      visible: Boolean(control.offsetWidth || control.offsetHeight || control.getClientRects().length),
+    }))).catch(() => '<sidebar controls unavailable>');
     await writeFile(
       join(artifactDirectory, 'remember-connection-startup-failure.txt'),
-      `WASM diagnostics:\n${diagnostics.join('\n') || '<none>'}\nPage body:\n${body}`,
+      `WASM diagnostics:\n${diagnostics.join('\n') || '<none>'}\nSidebar controls:\n${JSON.stringify(sidebarControls)}\nPage body:\n${body}`,
     );
-    throw new Error(`${error.message}\nWASM diagnostics:\n${diagnostics.join('\n') || '<none>'}\nPage body:\n${body}`);
+    throw new Error(`${error.message}\nWASM diagnostics:\n${diagnostics.join('\n') || '<none>'}\nSidebar controls:\n${JSON.stringify(sidebarControls)}\nPage body:\n${body}`);
   }
   await assert.doesNotReject(() => expectValue(endpoint, 'shared.example'));
   await assert.doesNotReject(() => expectValue(page.getByRole('textbox', { name: 'Access key', exact: true }), 'shared-access'));
