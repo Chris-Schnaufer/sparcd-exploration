@@ -615,6 +615,7 @@ Then('a species key still applies that species to the focused image', async ({ p
 Then('Home, End, Page Up, Page Down, and arrow keys adjust the slider rather than navigating images', async ({ page }) => {
   const position = await positionReadout(page).textContent();
   const slider = page.getByLabel('Brightness');
+  const expectSameFocus = () => expect(positionReadout(page)).toHaveText(position!);
 
   await page.keyboard.press('Home');
   await expect(slider).toHaveValue('0');
@@ -631,8 +632,23 @@ Then('Home, End, Page Up, Page Down, and arrow keys adjust the slider rather tha
   // ArrowDown is also the next-image hotkey — proves the slider claims it
   // instead of the tagger navigating away.
   await page.keyboard.press('ArrowDown');
-  expect(Number(await slider.inputValue())).toBeLessThan(beforeArrow);
-  await expect(positionReadout(page)).toHaveText(position!);
+  const afterArrowDown = Number(await slider.inputValue());
+  expect(afterArrowDown).toBeLessThan(beforeArrow);
+  await expectSameFocus();
+
+  await page.keyboard.press('ArrowUp');
+  const afterArrowUp = Number(await slider.inputValue());
+  expect(afterArrowUp).toBeGreaterThan(afterArrowDown);
+  await expectSameFocus();
+
+  await page.keyboard.press('ArrowLeft');
+  const afterArrowLeft = Number(await slider.inputValue());
+  expect(afterArrowLeft).toBeLessThan(afterArrowUp);
+  await expectSameFocus();
+
+  await page.keyboard.press('ArrowRight');
+  expect(Number(await slider.inputValue())).toBeGreaterThan(afterArrowLeft);
+  await expectSameFocus();
 });
 
 Then('command- or control-S still saves while the slider is focused', async ({ page }) => {
