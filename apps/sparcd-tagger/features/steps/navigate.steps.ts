@@ -69,6 +69,11 @@ Then('only IMG005.JPG remains in the Overview', async ({ page }) => {
   await expect(gridCell(page, 'IMG001.JPG')).toHaveCount(0);
 });
 
+Then('no hidden images remain selected for bulk actions', async ({ page }) => {
+  await expect(selectedTiles(page)).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Time shift selection', exact: true })).toBeDisabled();
+});
+
 When('the image filter searches all fields for {string}', async ({ page }, query: string) => {
   if (!(await page.getByLabel('Match text').isVisible()))
     await page.getByRole('button', { name: 'Filter' }).click();

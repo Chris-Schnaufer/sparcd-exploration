@@ -54,6 +54,12 @@ Feature: Move through an upload and choose which images an action applies to
     Then only IMG005.JPG remains in the Overview
 
   @unmapped
+  Scenario: Filtering clears a selection with no visible images
+    Given several images are selected
+    When the image filter limits capture time to 2024-01-11 06 and untagged images
+    Then no hidden images remain selected for bulk actions
+
+  @unmapped
   Scenario: Text filtering covers filenames and timestamps and can be restricted
     When the image filter searches all fields for "IMG002"
     Then only "IMG002.JPG" remains in the Overview
