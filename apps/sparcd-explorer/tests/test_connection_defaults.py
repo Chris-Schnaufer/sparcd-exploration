@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "notebooks"))
 
-from connection_defaults import initial_connection
+from hello import initial_connection
 
 
 class InitialConnectionTest(unittest.TestCase):
@@ -37,6 +37,24 @@ class InitialConnectionTest(unittest.TestCase):
 
         self.assertEqual(connection["endpoint"], "remembered.example")
         self.assertEqual(connection["access"], "remembered-access")
+        self.assertEqual(connection["secret"], "")
+        self.assertTrue(connection["secure"])
+        self.assertTrue(connection["remember"])
+
+    def test_partial_environment_endpoint_is_retained_without_its_secret(self):
+        connection = initial_connection("environment.example", "", "environment-secret", False, self.remembered)
+
+        self.assertEqual(connection["endpoint"], "environment.example")
+        self.assertEqual(connection["access"], "remembered-access")
+        self.assertEqual(connection["secret"], "")
+        self.assertFalse(connection["secure"])
+        self.assertTrue(connection["remember"])
+
+    def test_partial_environment_access_key_is_retained_without_its_secret(self):
+        connection = initial_connection("", "environment-access", "environment-secret", False, self.remembered)
+
+        self.assertEqual(connection["endpoint"], "remembered.example")
+        self.assertEqual(connection["access"], "environment-access")
         self.assertEqual(connection["secret"], "")
         self.assertTrue(connection["secure"])
         self.assertTrue(connection["remember"])

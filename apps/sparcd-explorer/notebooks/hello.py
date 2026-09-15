@@ -1,5 +1,35 @@
 import marimo
 
+
+def initial_connection(default_endpoint, default_access, default_secret, default_secure, remembered):
+    """Choose browser form defaults without combining a partial secret source.
+
+    A complete local environment connection is self-contained. For a partial
+    environment configuration, retain any usable non-secret fields and use the
+    remembered record only to fill missing non-secret fields. Its secret is
+    deliberately never reused, and a partial environment secret is left blank.
+    """
+    has_default_connection = bool(default_endpoint and default_access and default_secret)
+    if has_default_connection:
+        return {
+            "endpoint": default_endpoint,
+            "access": default_access,
+            "secret": default_secret,
+            "secure": default_secure,
+            "remember": False,
+        }
+
+    uses_remembered_endpoint = not default_endpoint and bool(remembered.endpoint)
+    uses_remembered_access = not default_access and bool(remembered.access_key)
+    return {
+        "endpoint": default_endpoint or remembered.endpoint,
+        "access": default_access or remembered.access_key,
+        "secret": "",
+        "secure": default_secure if default_endpoint else remembered.secure,
+        "remember": uses_remembered_endpoint or uses_remembered_access,
+    }
+
+
 __generated_with = "0.23.8"
 app = marimo.App(
     width="full",
@@ -527,8 +557,6 @@ def _(DEFAULT_ACCESS, DEFAULT_ENDPOINT, DEFAULT_SECRET, DEFAULT_SECURE, mo, reme
     # local .env connects without submitting; failing that, from a remembered
     # browser connection. Deployed users sign in via the form (rendered in the
     # sidebar). This cell only defines the form; it does not display.
-    from connection_defaults import initial_connection
-
     _initial = initial_connection(
         DEFAULT_ENDPOINT,
         DEFAULT_ACCESS,

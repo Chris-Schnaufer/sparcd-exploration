@@ -66,8 +66,8 @@ jobs:
 
       - name: Verify Explorer remembered connection in WASM
         run: |
-          pnpm exec playwright install --with-deps chromium
-          node apps/sparcd-explorer/tests/remember_connection_wasm.mjs apps/sparcd-explorer/dist
+          pnpm --filter @sparcd/sparcd-explorer exec playwright install --with-deps chromium
+          pnpm --filter @sparcd/sparcd-explorer exec node tests/remember_connection_wasm.mjs dist
 
       - name: Build uploader
         run: pnpm --filter sparcd-uploader build
