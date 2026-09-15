@@ -7,8 +7,11 @@ import { chromium } from '@playwright/test';
 const root = process.argv[2];
 if (!root) throw new Error('Usage: node remember_connection_wasm.mjs <exported-wasm-directory>');
 const server = createServer(async (req, res) => {
-  const path = normalize(join(root, req.url === '/' ? 'index.html' : req.url)).replace(root, root);
-  try { const body = await readFile(path); res.end(body); } catch { res.writeHead(404).end(); }
+  const pathname = new URL(req.url, 'http://localhost').pathname;
+  const path = normalize(join(root, pathname === '/' ? 'index.html' : pathname));
+  if (!path.startsWith(normalize(root))) return res.writeHead(403).end();
+  const types = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.wasm': 'application/wasm', '.css': 'text/css', '.json': 'application/json' };
+  try { const body = await readFile(path); res.writeHead(200, { 'Content-Type': types[extname(path)] ?? 'application/octet-stream' }).end(body); } catch { res.writeHead(404).end(); }
 });
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const url = `http://127.0.0.1:${server.address().port}`;
