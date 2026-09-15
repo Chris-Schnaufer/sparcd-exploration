@@ -11,9 +11,16 @@ import {
   sectionTab,
   positionReadout,
   openUpload,
+  selectCollection,
 } from './support/world';
-import { BUCKET, PREFIX_A, MEDIA_A, mediaCsv } from './support/data';
-import { openSyncDialog, setSyncDryRun, readStore, waitForDirtyDrafts } from './support/flows';
+import { BUCKET, PREFIX_A, PREFIX_D, MEDIA_A, mediaCsv } from './support/data';
+import {
+  openSyncDialog,
+  setSyncDryRun,
+  readStore,
+  waitForDirtyDrafts,
+  writeStore,
+} from './support/flows';
 
 const timeShiftButton = (page: Page) =>
   page
@@ -143,6 +150,29 @@ Then('the whole-upload time shift is disabled with an explanation', async ({ pag
   const button = timeShiftButton(page);
   await expect(button).toBeDisabled();
   await expect(button).toHaveAttribute('title', 'No image in this upload has a capture time to shift');
+  await expect(button).toHaveAttribute('aria-describedby', 'upload-time-unavailable');
+  await expect(page.locator('#upload-time-unavailable')).toHaveText(
+    'No image in this upload has a capture time to shift',
+  );
+  await expect(page.locator('#upload-time-unavailable')).toBeVisible();
+});
+
+Given('a persisted whole-upload shift exists for an upload with no capture times', async ({ page }) => {
+  await sectionTab(page, 'Browse').click();
+  await openUpload(page, 'camerauser');
+  const upload = (await readStore(page, 'uploads')).find(
+    (row): row is Record<string, unknown> =>
+      typeof row === 'object' && row !== null && row.uploadPrefix === PREFIX_D,
+  );
+  if (!upload) throw new Error('Expected the untimed upload to be grounded locally');
+  await writeStore(page, 'uploads', {
+    ...upload,
+    timeOffset: { years: 0, months: 0, days: 0, hours: 1, minutes: 0, seconds: 0 },
+  });
+  await page.reload();
+  await selectCollection(page);
+  await openUpload(page, 'camerauser');
+  await expect(page.getByRole('button', { name: 'clock +1h' })).toBeVisible();
 });
 
 // --- Selection-scoped shift -------------------------------------------------

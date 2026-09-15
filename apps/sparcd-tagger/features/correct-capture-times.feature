@@ -39,6 +39,12 @@ Feature: Correct capture times on an upload whose camera clock was wrong
     Then the whole-upload time shift is disabled with an explanation
 
   @unmapped
+  Scenario: An active whole-upload shift remains clearable with nothing to shift
+    Given a persisted whole-upload shift exists for an upload with no capture times
+    When the shift is cleared
+    Then the standing shift is cleared afterwards
+
+  @unmapped
   Scenario: Time shift selection requires an explicit selection
     Given a single image is focused with no selection
     Then time shift selection is disabled with an explanation
