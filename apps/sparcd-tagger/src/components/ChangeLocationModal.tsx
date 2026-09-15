@@ -98,8 +98,7 @@ export function ChangeLocationModal({
         <div className="p-5">
           <p className="text-[13px] text-inkSoft font-body max-w-[500px] mb-4">
             Cameras occasionally get logged under the wrong location. This corrects the whole
-            upload — every frame shares one location by convention. Pick the correct location from
-            the shared registry below.
+            upload — every image shares the same location. Select the correct location below.
           </p>
 
           <span className="font-body text-[11px] font-[600] tracking-[0.16em] uppercase text-inkSoft">
@@ -190,7 +189,7 @@ export function ChangeLocationModal({
             disabled={!changed}
             className="text-[13px] border border-ink bg-ink text-paper px-3 py-1.5 hover:bg-inkSoft disabled:opacity-40 disabled:hover:bg-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
           >
-            Apply to all {totalFrames.toLocaleString()} frames →
+            Apply to all {totalFrames.toLocaleString()} images →
           </button>
         </div>
       </div>

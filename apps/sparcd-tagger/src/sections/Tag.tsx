@@ -689,24 +689,6 @@ export function Tag() {
           {selected.has(focus) ? '✓ In selection' : '＋ Select'}
         </button>
 
-        {/* Upload time-shift entry + persistent active-offset indicator (§08). */}
-        <button
-          onClick={() => setShowTimeShift(true)}
-          className={`inline-flex items-center gap-1.5 text-[11.5px] font-mono px-2 py-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
-            hasUploadShift
-              ? 'bg-mark border border-ink text-ink font-[600]'
-              : 'border border-rule text-inkSoft hover:text-ink hover:border-ink'
-          }`}
-          title={
-            hasUploadShift
-              ? 'Upload time shift is active — click to edit'
-              : 'Shift every frame in this upload by a signed offset'
-          }
-        >
-          <span aria-hidden>◷</span>
-          {hasUploadShift ? `clock ${formatOffsetDelta(timeOffset)}` : 'Time shift'}
-        </button>
-
         {/* Change location entry (issue #279) — corrects the whole upload's
             recorded camera location. Not available for a local (offline) batch,
             which has no connection to fetch the shared location registry. */}
@@ -728,6 +710,24 @@ export function Tag() {
             {pendingLocation ? `location → ${pendingLocation.locationName}` : 'Change location'}
           </button>
         )}
+
+        {/* Upload time-shift entry + persistent active-offset indicator (§08). */}
+        <button
+          onClick={() => setShowTimeShift(true)}
+          className={`inline-flex items-center gap-1.5 text-[11.5px] font-mono px-2 py-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
+            hasUploadShift
+              ? 'bg-mark border border-ink text-ink font-[600]'
+              : 'border border-rule text-inkSoft hover:text-ink hover:border-ink'
+          }`}
+          title={
+            hasUploadShift
+              ? 'Upload time shift is active — click to edit'
+              : 'Shift every frame in this upload by a signed offset'
+          }
+        >
+          <span aria-hidden>◷</span>
+          {hasUploadShift ? `clock ${formatOffsetDelta(timeOffset)}` : 'Time shift'}
+        </button>
 
         {/* Shift only explicitly selected frames — e.g. one mis-set camera in a
             mixed upload. Stored as per-image corrections, so it stacks on the
