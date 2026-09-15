@@ -15,7 +15,6 @@ def _():
     from urllib.parse import urlparse
 
     import marimo as mo
-    from minio import Minio
 
     # .env loading: only when python-dotenv is available (i.e. running locally —
     # Pyodide / WASM doesn't have it by default and has no filesystem to read).
@@ -383,7 +382,6 @@ def _():
         DEFAULT_SECRET,
         DEFAULT_SECURE,
         LOGO_DATA_URI,
-        Minio,
         SPARCD_COLLECTION_DATA_CACHE,
         THEME_CSS,
         mo,
@@ -529,24 +527,30 @@ def _(DEFAULT_ACCESS, DEFAULT_ENDPOINT, DEFAULT_SECRET, DEFAULT_SECURE, mo, reme
     # local .env connects without submitting; failing that, from a remembered
     # browser connection. Deployed users sign in via the form (rendered in the
     # sidebar). This cell only defines the form; it does not display.
-    _initial_endpoint = remembered.endpoint or DEFAULT_ENDPOINT
-    _initial_access = remembered.access_key or DEFAULT_ACCESS
-    _initial_remember = bool(remembered.endpoint)
+    from connection_defaults import initial_connection
+
+    _initial = initial_connection(
+        DEFAULT_ENDPOINT,
+        DEFAULT_ACCESS,
+        DEFAULT_SECRET,
+        DEFAULT_SECURE,
+        remembered,
+    )
 
     _endpoint_in = mo.ui.text(
-        value=_initial_endpoint,
+        value=_initial["endpoint"],
         label="Endpoint",
         placeholder="host[:port] or https://host",
         full_width=True,
     )
-    _access_in = mo.ui.text(value=_initial_access, label="Access key", full_width=True)
-    _secret_in = mo.ui.text(value=DEFAULT_SECRET, label="Secret key", kind="password", full_width=True)
+    _access_in = mo.ui.text(value=_initial["access"], label="Access key", full_width=True)
+    _secret_in = mo.ui.text(value=_initial["secret"], label="Secret key", kind="password", full_width=True)
     _secure_in = mo.ui.checkbox(
-        value=remembered.secure if remembered.endpoint else DEFAULT_SECURE,
+        value=_initial["secure"],
         label="Use HTTPS (when no scheme in endpoint)",
     )
     _remember_in = mo.ui.checkbox(
-        value=_initial_remember,
+        value=_initial["remember"],
         label="Remember endpoint & access key on this device",
     )
 
@@ -600,7 +604,6 @@ def _(
     DEFAULT_ENDPOINT,
     DEFAULT_SECRET,
     DEFAULT_SECURE,
-    Minio,
     creds_form,
     mo,
     urlparse,
@@ -634,6 +637,8 @@ def _(
             "<span>Enter S3 credentials in the sidebar to load data.</span></div>"
         )
     else:
+        from minio import Minio
+
         _raw = _creds["endpoint"]
         if "://" in _raw:
             _u = urlparse(_raw)
@@ -665,7 +670,6 @@ def _(client, mo):
     # picker can show human-readable names; surfaces S3 errors as friendly callouts.
     import json as _json
     from html import escape as _esc
-    from minio.error import S3Error as _S3Error
 
     collections_registry = []
     _connection_failed = False
@@ -684,6 +688,8 @@ def _(client, mo):
     # Skip all S3 work in that state so the registry stays empty and NO error callout
     # is shown — the connection chip already tells the user to enter credentials.
     if client is not None:
+        from minio.error import S3Error as _S3Error
+
         try:
             with mo.status.spinner(title="Reading collections…"):
                 _buckets = [b.name for b in client.list_buckets() if b.name.startswith("sparcd-")]

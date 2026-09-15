@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { chromium } from '@playwright/test';
 
@@ -18,16 +18,58 @@ const url = `http://127.0.0.1:${server.address().port}`;
 const browser = await chromium.launch({ headless: true });
 try {
   const page = await browser.newPage();
+  const diagnostics = [];
+  page.on('console', (message) => diagnostics.push(`console ${message.type()}: ${message.text()}`));
+  page.on('pageerror', (error) => diagnostics.push(`pageerror: ${error.stack ?? error.message}`));
+  page.on('requestfailed', (request) => diagnostics.push(`requestfailed: ${request.url()} ${request.failure()?.errorText ?? ''}`));
+  page.on('response', (response) => {
+    if (response.status() >= 400) diagnostics.push(`response ${response.status()}: ${response.url()}`);
+  });
   await page.addInitScript(() => localStorage.setItem('sparcd-connection', JSON.stringify({ endpoint: 'shared.example', accessKey: 'shared-access', secure: true, region: 'us-west-2', forcePathStyle: true })));
-  await page.goto(url);
+  await page.goto(url, { waitUntil: 'domcontentloaded' });
   const endpoint = page.getByLabel('Endpoint');
-  await endpoint.waitFor({ state: 'visible', timeout: 60_000 });
+  try {
+    await endpoint.waitFor({ state: 'visible', timeout: 60_000 });
+  } catch (error) {
+    const artifactDirectory = join(root, 'test-results');
+    await mkdir(artifactDirectory, { recursive: true });
+    await page.screenshot({ path: join(artifactDirectory, 'remember-connection-startup-failure.png'), fullPage: true });
+    const body = await page.locator('body').innerText().catch(() => '<body unavailable>');
+    await writeFile(
+      join(artifactDirectory, 'remember-connection-startup-failure.txt'),
+      `WASM diagnostics:\n${diagnostics.join('\n') || '<none>'}\nPage body:\n${body}`,
+    );
+    throw new Error(`${error.message}\nWASM diagnostics:\n${diagnostics.join('\n') || '<none>'}\nPage body:\n${body}`);
+  }
   await assert.doesNotReject(() => expectValue(endpoint, 'shared.example'));
   await assert.doesNotReject(() => expectValue(page.getByLabel('Access key'), 'shared-access'));
   await assert.equal(await page.getByLabel('Use HTTPS (when no scheme in endpoint)').isChecked(), true);
   await page.getByLabel('Secret key').fill('never-stored');
+  await page.getByRole('button', { name: 'Connect' }).click();
+  await page.waitForFunction(() => {
+    const value = JSON.parse(localStorage.getItem('sparcd-connection') || '{}');
+    return value.endpoint === 'shared.example' && value.accessKey === 'shared-access';
+  });
+  const rememberedAfterSubmit = await page.evaluate(() => JSON.parse(localStorage.getItem('sparcd-connection')));
+  await assert.deepEqual(rememberedAfterSubmit, {
+    endpoint: 'shared.example',
+    accessKey: 'shared-access',
+    secure: true,
+    region: 'us-west-2',
+    forcePathStyle: true,
+  });
   await page.getByLabel('Remember endpoint & access key on this device').uncheck();
   await page.getByRole('button', { name: 'Connect' }).click();
-  await page.waitForFunction(() => localStorage.getItem('sparcd-connection') === null);
-} finally { await browser.close(); await new Promise((resolve) => server.close(resolve)); }
+  try {
+    await page.waitForFunction(() => localStorage.getItem('sparcd-connection') === null, undefined, { timeout: 10_000 });
+  } catch (error) {
+    const stored = await page.evaluate(() => localStorage.getItem('sparcd-connection'));
+    throw new Error(`${error.message}\nRemembered record after unchecked submit: ${stored}\nWASM diagnostics:\n${diagnostics.join('\n') || '<none>'}`);
+  }
+  console.log('Remembered Explorer connection WASM check passed.');
+} finally {
+  await browser.close();
+  server.closeAllConnections();
+  await new Promise((resolve) => server.close(resolve));
+}
 async function expectValue(locator, value) { assert.equal(await locator.inputValue(), value); }

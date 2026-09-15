@@ -16,5 +16,5 @@ jobs:
       - run: uv run marimo export html-wasm notebooks/hello.py -o dist --mode run --force
         working-directory: apps/sparcd-explorer
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter sparcd-explorer-wasm-tests exec playwright install --with-deps chromium
-      - run: node apps/sparcd-explorer/tests/remember_connection_wasm.mjs apps/sparcd-explorer/dist
+      - run: pnpm --filter @sparcd/sparcd-explorer exec playwright install --with-deps chromium
+      - run: pnpm --filter @sparcd/sparcd-explorer exec node tests/remember_connection_wasm.mjs dist

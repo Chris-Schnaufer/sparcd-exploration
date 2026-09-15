@@ -1,1 +1,20 @@
-{"name":"sparcd-explorer-wasm-tests","private":true,"devDependencies":{"@playwright/test":"^1.62.1"}}
+{
+  "name": "@sparcd/sparcd-explorer",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "uv run marimo edit notebooks/hello.py --watch --no-token",
+    "edit": "uv run marimo edit notebooks/hello.py --watch --no-token",
+    "start": "uv run marimo run notebooks/hello.py --no-token",
+    "preview": "uv run marimo edit notebooks/sparcd_preview.py --watch --no-token",
+    "build": "echo \"marimo notebooks are source; no build step\" && exit 0",
+    "check": "uv run python -m compileall -q notebooks",
+    "lint": "uv run python -m compileall -q notebooks",
+    "install:py": "uv sync",
+    "test:wasm": "node tests/remember_connection_wasm.mjs dist",
+    "test:connection": "uv run python -m unittest discover -s tests -p 'test_*.py'"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1"
+  }
+}
