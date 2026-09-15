@@ -6,6 +6,10 @@ import { chromium } from '@playwright/test';
 
 const root = process.argv[2];
 if (!root) throw new Error('Usage: node remember_connection_wasm.mjs <exported-wasm-directory>');
+// A fresh GitHub Actions runner must download and install Pyodide packages before
+// Marimo can render the form. Keep the interaction assertions strict, while
+// allowing that one-time WASM startup to complete.
+const wasmStartupTimeout = 120_000;
 const server = createServer(async (req, res) => {
   const pathname = new URL(req.url, 'http://localhost').pathname;
   const path = normalize(join(root, pathname === '/' ? 'index.html' : pathname));
@@ -29,7 +33,7 @@ try {
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   const endpoint = page.getByRole('textbox', { name: 'Endpoint', exact: true });
   try {
-    await endpoint.waitFor({ state: 'visible', timeout: 60_000 });
+    await endpoint.waitFor({ state: 'visible', timeout: wasmStartupTimeout });
   } catch (error) {
     const artifactDirectory = join(root, 'test-results');
     await mkdir(artifactDirectory, { recursive: true });
