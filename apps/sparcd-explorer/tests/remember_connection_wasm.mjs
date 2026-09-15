@@ -27,7 +27,7 @@ try {
   });
   await page.addInitScript(() => localStorage.setItem('sparcd-connection', JSON.stringify({ endpoint: 'shared.example', accessKey: 'shared-access', secure: true, region: 'us-west-2', forcePathStyle: true })));
   await page.goto(url, { waitUntil: 'domcontentloaded' });
-  const endpoint = page.getByLabel('Endpoint');
+  const endpoint = page.getByRole('textbox', { name: 'Endpoint', exact: true });
   try {
     await endpoint.waitFor({ state: 'visible', timeout: 60_000 });
   } catch (error) {
@@ -42,9 +42,9 @@ try {
     throw new Error(`${error.message}\nWASM diagnostics:\n${diagnostics.join('\n') || '<none>'}\nPage body:\n${body}`);
   }
   await assert.doesNotReject(() => expectValue(endpoint, 'shared.example'));
-  await assert.doesNotReject(() => expectValue(page.getByLabel('Access key'), 'shared-access'));
-  await assert.equal(await page.getByLabel('Use HTTPS (when no scheme in endpoint)').isChecked(), true);
-  await page.getByLabel('Secret key').fill('never-stored');
+  await assert.doesNotReject(() => expectValue(page.getByRole('textbox', { name: 'Access key', exact: true }), 'shared-access'));
+  await assert.equal(await page.getByRole('checkbox', { name: 'Use HTTPS (when no scheme in endpoint)', exact: true }).isChecked(), true);
+  await page.getByRole('textbox', { name: 'Secret key', exact: true }).fill('never-stored');
   await page.getByRole('button', { name: 'Connect' }).click();
   await page.waitForFunction(() => {
     const value = JSON.parse(localStorage.getItem('sparcd-connection') || '{}');
@@ -58,7 +58,7 @@ try {
     region: 'us-west-2',
     forcePathStyle: true,
   });
-  await page.getByLabel('Remember endpoint & access key on this device').uncheck();
+  await page.getByRole('checkbox', { name: 'Remember endpoint & access key on this device', exact: true }).uncheck();
   await page.getByRole('button', { name: 'Connect' }).click();
   try {
     await page.waitForFunction(() => localStorage.getItem('sparcd-connection') === null, undefined, { timeout: 10_000 });

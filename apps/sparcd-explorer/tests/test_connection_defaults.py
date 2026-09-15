@@ -1,11 +1,39 @@
-import sys
+import ast
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-sys.path.insert(0, str(Path(__file__).parents[1] / "notebooks"))
 
-from hello import initial_connection
+def load_initial_connection():
+    """Load the exact helper embedded in its Marimo cell.
+
+    Marimo cells execute independently in the WASM export, so the helper must
+    be returned from a cell instead of defined at module scope. Extracting that
+    nested, dependency-free function keeps this unit test aligned with the
+    exported notebook implementation.
+    """
+    notebook = Path(__file__).parents[1] / "notebooks" / "hello.py"
+    module = ast.parse(notebook.read_text())
+    for cell in ast.walk(module):
+        if not isinstance(cell, ast.FunctionDef) or cell.name != "_":
+            continue
+        helper = next(
+            (
+                statement
+                for statement in cell.body
+                if isinstance(statement, ast.FunctionDef) and statement.name == "initial_connection"
+            ),
+            None,
+        )
+        if helper is not None:
+            ast.fix_missing_locations(helper)
+            namespace = {}
+            exec(compile(ast.Module(body=[helper], type_ignores=[]), str(notebook), "exec"), namespace)
+            return namespace["initial_connection"]
+    raise AssertionError("initial_connection Marimo cell was not found")
+
+
+initial_connection = load_initial_connection()
 
 
 class InitialConnectionTest(unittest.TestCase):
