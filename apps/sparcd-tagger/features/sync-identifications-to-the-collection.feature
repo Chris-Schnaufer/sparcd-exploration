@@ -26,6 +26,7 @@ Feature: Publish local identifications back to the collection
     Given the dry-run setting has been switched off
     When the sync is run
     Then the Sync dialog closes on its own, with no Close click needed
+    And focus returns to the Sync opener
 
   @unmapped
   Scenario: A dry-run's result stays on screen rather than closing

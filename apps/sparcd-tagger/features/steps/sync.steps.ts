@@ -111,14 +111,19 @@ Then('the Sync dialog closes on its own, with no Close click needed', async ({ p
   await waitForSyncDialogClosed(page);
 });
 
+Then('focus returns to the Sync opener', async ({ page }) => {
+  await expect(page.getByRole('button', { name: 'Sync…', exact: true })).toBeFocused();
+});
+
 When('the dry-run is run', async ({ page }) => {
   await page.getByRole('button', { name: 'Run dry-run' }).click();
   await expect(page.getByText('Dry-run complete — nothing was written.')).toBeVisible();
 });
 
 Then('the Sync dialog stays open showing the dry-run result', async ({ page }) => {
-  // A dry-run schedules no auto-close at all (not merely "hasn't fired yet") —
-  // this holds immediately, with nothing to wait out.
+  // Wait past the live-sync close interval. This proves a dry-run does not
+  // merely have a delayed close scheduled.
+  await page.waitForTimeout(1_100);
   await expect(page.getByRole('heading', { name: 'Sync to S3' })).toBeVisible();
   await expect(page.getByText('Dry-run complete — nothing was written.')).toBeVisible();
 });
