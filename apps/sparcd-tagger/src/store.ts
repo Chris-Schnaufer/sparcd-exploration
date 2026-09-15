@@ -149,14 +149,13 @@ function clearAutoAdvance() {
 }
 
 // The identity typed in Settings — stamps the audit-snapshot path and edit
-// comment of every sync. Persisted like the display preferences (issue #305:
-// it used to reset to empty on every reload); cleared when this tab or a
-// sibling tool disconnects, since it is a "who is at this keyboard"
-// attribution rather than a connection detail — a stale identity surviving a
-// logout risks misattributing the next person's edits on a shared machine.
+// comment of every sync. It survives reloads in this browser session (issue
+// #305), but does not outlive the session: it is a "who is at this keyboard"
+// attribution rather than a device preference, so a later operator cannot
+// inherit it on a shared machine.
 function loadTaggerUser(): string {
   try {
-    return localStorage.getItem(TAGGER_IDENTITY_KEY) ?? '';
+    return sessionStorage.getItem(TAGGER_IDENTITY_KEY) ?? '';
   } catch {
     return '';
   }
@@ -164,7 +163,7 @@ function loadTaggerUser(): string {
 
 function saveTaggerUser(value: string) {
   try {
-    localStorage.setItem(TAGGER_IDENTITY_KEY, value);
+    sessionStorage.setItem(TAGGER_IDENTITY_KEY, value);
   } catch {
     // Storage can be unavailable or full; the in-memory choice still applies.
   }
@@ -172,7 +171,7 @@ function saveTaggerUser(value: string) {
 
 function clearTaggerUser() {
   try {
-    localStorage.removeItem(TAGGER_IDENTITY_KEY);
+    sessionStorage.removeItem(TAGGER_IDENTITY_KEY);
   } catch {
     // Disconnect still clears the active connection and in-memory identity.
   }
@@ -209,8 +208,9 @@ export const useStore = create<TaggerState>()(
   // (`subscribeSharedConnection`) supplies one within a message round-trip of
   // mount, and otherwise the user enters the secret. The theme lives in the
   // shared home every SPARC'd tool reads; date/time/distance display prefs,
-  // auto-advance, and the tagger identity persist to their own localStorage
-  // keys (see the loaders above); everything else — selection, sync state,
+  // auto-advance persist to their own localStorage keys, while the tagger
+  // identity persists only for this tab's session (see the loaders above).
+  // Everything else — selection, sync state,
   // pendingSnapshots, dryRun — is transient and dropped on reload by design.
   (set) => ({
     s3Config: initialSession,

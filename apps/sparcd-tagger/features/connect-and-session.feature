@@ -93,6 +93,14 @@ Feature: Connect the tagger to a collection store and manage the session
     Then that identity is retained in Settings
 
   @unmapped
+  Scenario: The tagger identity does not outlive its browser session
+    Given the tagger is connected
+    When a tagger identity is entered in Settings
+    And the tab is closed and the tagger is opened in a new one
+    And the tagger stays on the connection screen until the secret is re-entered
+    Then the reconnected browser session has no tagger identity
+
+  @unmapped
   Scenario: The tagger identity is forgotten on disconnect
     Given the tagger is connected
     When a tagger identity is entered in Settings

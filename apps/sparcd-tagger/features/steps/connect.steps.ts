@@ -203,7 +203,7 @@ Then('the tagger returns to the connection screen', async ({ page }) => {
 Then('after reloading and reconnecting, it has no identity carried over', async ({ page }) => {
   await page.reload();
   await expect(page.getByRole('button', { name: 'Connect', exact: true })).toBeVisible();
-  expect(await page.evaluate(() => localStorage.getItem('sparcd-tagger-identity'))).toBeNull();
+  expect(await page.evaluate(() => sessionStorage.getItem('sparcd-tagger-identity'))).toBeNull();
   await connect(page);
   await openSettings(page);
   await expect(page.locator('#user')).toHaveValue('');
@@ -239,8 +239,14 @@ Then('that identity is retained in Settings', async ({ page }) => {
 
 Then('a fresh connection starts with no identity carried over', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Connect', exact: true })).toBeVisible();
-  expect(await page.evaluate(() => localStorage.getItem('sparcd-tagger-identity'))).toBeNull();
+  expect(await page.evaluate(() => sessionStorage.getItem('sparcd-tagger-identity'))).toBeNull();
   await connect(page);
+  await openSettings(page);
+  await expect(page.locator('#user')).toHaveValue('');
+});
+
+Then('the reconnected browser session has no tagger identity', async ({ page }) => {
+  expect(await page.evaluate(() => sessionStorage.getItem('sparcd-tagger-identity'))).toBeNull();
   await openSettings(page);
   await expect(page.locator('#user')).toHaveValue('');
 });
