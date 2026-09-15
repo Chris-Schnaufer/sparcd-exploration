@@ -196,28 +196,26 @@ const CANONICAL_FILE = {
   uploadMeta: 'UploadMeta.json',
 } as const;
 
-/** Load one canonical object with its ETag + content hash. */
-async function loadObject(
+/** Load one canonical object with its ETag + content hash, preserving raw S3
+ * errors for callers that need to distinguish a missing optional object. */
+async function loadObjectRaw(
   cfg: S3Config,
   bucket: string,
   key: string,
-  what: string,
 ): Promise<{ text: string; etag: string; hash: string }> {
+  // HEAD first for the ETag, then GET the bytes. The ETag is the IfMatch
+  // ground; a concurrent change between the two only risks a spurious sync
+  // conflict (safe-fail), never a bad write — the write re-checks IfMatch.
   const client = getClient(cfg);
-  try {
-    // HEAD first for the ETag, then GET the bytes. The ETag is the IfMatch
-    // ground; a concurrent change between the two only risks a spurious sync
-    // conflict (safe-fail), never a bad write — the write re-checks IfMatch.
-    const stat = await client.statObject(bucket, key);
-    const bytes = await client.getObject(bucket, key);
-    return {
-      text: new TextDecoder().decode(bytes),
-      etag: stat.etag ?? '',
-      hash: await sha256Hex(bytes),
-    };
-  } catch (err) {
-    throw translateReadError(err, what);
-  }
+  const stat = await client.statObject(bucket, key);
+  const bytes = await client.getObject(bucket, key);
+  return { text: new TextDecoder().decode(bytes), etag: stat.etag ?? '', hash: await sha256Hex(bytes) };
+}
+
+/** Load one required canonical object, translating any S3 read failure. */
+async function loadObject(cfg: S3Config, bucket: string, key: string, what: string) {
+  try { return await loadObjectRaw(cfg, bucket, key); }
+  catch (err) { throw translateReadError(err, what); }
 }
 
 /** Load the four canonical files an upload grounds on, with ETags + hashes.
@@ -233,9 +231,9 @@ export async function loadCanonicalState(
   const [media, observations, deployments, uploadMeta] = await Promise.all([
     loadObject(cfg, bucket, `${uploadPrefix}${CANONICAL_FILE.media}`, 'media.csv'),
     loadObject(cfg, bucket, `${uploadPrefix}${CANONICAL_FILE.observations}`, 'observations.csv'),
-    loadObject(cfg, bucket, `${uploadPrefix}${CANONICAL_FILE.deployments}`, 'deployments.csv').catch(
+    loadObjectRaw(cfg, bucket, `${uploadPrefix}${CANONICAL_FILE.deployments}`).catch(
       async (err) => {
-        if (!isNotFound(err)) throw err;
+        if (!isNotFound(err)) throw translateReadError(err, 'deployments.csv');
         return { text: '', etag: '', hash: await sha256Hex('') };
       },
     ),
