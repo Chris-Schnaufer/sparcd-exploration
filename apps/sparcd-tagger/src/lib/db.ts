@@ -189,9 +189,13 @@ export type UploadDraftState = 'unsynced' | 'synced';
 /**
  * One pass over a bucket's drafts → which uploads have local work, and whether
  * it is still `unsynced` (any dirty draft) or `synced` (drafts exist, all pushed).
- * Uploads with no local drafts are absent from the map; the caller treats those
- * as `local-only` — mirroring the design, where an untouched upload is local-only.
- * A full scan (no `bucket` index), but drafts are bounded by local tagging work.
+ * A second pass over `uploads` upgrades any upload with a pending whole-upload
+ * location correction to `unsynced` too — that's local work even when no
+ * per-image draft is dirty (#301 review).
+ * Uploads with neither are absent from the map; the caller treats those as
+ * `local-only` — mirroring the design, where an untouched upload is local-only.
+ * A full scan of each table (no `bucket` index), but both are bounded by local
+ * tagging work.
  */
 export async function uploadDraftStates(bucket: string): Promise<Map<string, UploadDraftState>> {
   const out = new Map<string, UploadDraftState>();
@@ -201,6 +205,9 @@ export async function uploadDraftStates(bucket: string): Promise<Map<string, Upl
       if (out.get(d.uploadPrefix) === 'unsynced') return; // dirty wins, stays unsynced
       out.set(d.uploadPrefix, d.dirty ? 'unsynced' : 'synced');
     });
+  await db.uploads
+    .filter((u) => u.bucket === bucket && u.pendingLocation !== null)
+    .each((u) => out.set(u.uploadPrefix, 'unsynced'));
   return out;
 }
 

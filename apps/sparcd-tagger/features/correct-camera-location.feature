@@ -53,6 +53,15 @@ Feature: Correct the camera location recorded for an upload
     Then the preview states the pending location change
 
   @unmapped
+  Scenario: A pending location change alone marks the upload as unsynced
+    Given a location change is pending
+    Then the top-bar sync status shows unsynced edits
+    When Browse is reopened
+    Then that upload's row is marked as having unsynced edits
+    # A pending location correction is local work even with no per-image
+    # draft dirty — both status surfaces must reflect it (#301 review).
+
+  @unmapped
   Scenario: A synced location change rewrites the upload and is not re-applied
     Given a location change is pending
     And the dry-run setting has been switched off

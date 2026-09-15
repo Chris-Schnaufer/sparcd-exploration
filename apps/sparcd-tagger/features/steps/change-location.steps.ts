@@ -1,7 +1,9 @@
 import type { Page } from '@playwright/test';
-import { Given, When, Then, expect, enterFocusView } from './support/world';
+import { Given, When, Then, expect, enterFocusView, sectionTab } from './support/world';
 import { BUCKET, PREFIX_A, LOCATION_NAME, NEW_LOCATION_NAME, NEW_LOCATION_ID, SAME_ID_LOCATION_NAME } from './support/data';
 import { openSyncDialog, runLiveSync, writeStore, makeLocalEdit, waitForDirtyDrafts } from './support/flows';
+
+const statePill = (page: Page) => page.getByRole('status', { name: /^Sync status: / });
 
 const changeLocationButton = (page: Page) =>
   page
@@ -114,6 +116,14 @@ When('the sync dialog is opened', async ({ page }) => {
 Then('the preview states the pending location change', async ({ page }) => {
   await expect(page.getByText(new RegExp(`Location → ${NEW_LOCATION_NAME}`))).toBeVisible();
   await page.getByRole('button', { name: 'Cancel' }).click();
+});
+
+Then('the top-bar sync status shows unsynced edits', async ({ page }) => {
+  await expect(statePill(page)).toHaveAttribute('aria-label', 'Sync status: unsynced edits');
+});
+
+When('Browse is reopened', async ({ page }) => {
+  await sectionTab(page, 'Browse').click();
 });
 
 When('the sync is run live', async ({ page }) => {
