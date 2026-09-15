@@ -345,7 +345,7 @@ export async function listCollectionSnapshots(
   return out.filter((u) => u.snapshots.length > 0);
 }
 
-function isNotFound(err: unknown): boolean {
+export function isNotFound(err: unknown): boolean {
   const e = err as { name?: string; $metadata?: { httpStatusCode?: number } };
   return e?.name === 'NoSuchKey' || e?.$metadata?.httpStatusCode === 404;
 }

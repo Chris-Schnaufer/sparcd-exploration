@@ -150,10 +150,7 @@ export function useTagImages(
       const store = useDraftStore.getState();
       const memDirty = store.loadedKey === uploadId(bucket, uploadPrefix!)
         && (dirtyCount(store.drafts) > 0 || store.pendingLocation !== null);
-      if (
-        !existing?.mediaETag ||
-        (!memDirty && !(await hasDirtyDraftsForUpload(bucket, uploadPrefix!)) && !existing?.pendingLocation)
-      ) {
+      if (shouldGroundUpload(existing, memDirty, await hasDirtyDraftsForUpload(bucket, uploadPrefix!))) {
         await groundUpload(bucket, uploadPrefix!, state);
       }
       return buildTagImages({
@@ -165,6 +162,16 @@ export function useTagImages(
     staleTime: 60 * 1000,
     retry: 1,
   });
+}
+
+/** Keep the canonical conflict base frozen while any local upload-level or
+ * per-image change is pending. Exported for the focused grounding regression. */
+export function shouldGroundUpload(
+  existing: { mediaETag?: string; pendingLocation?: unknown } | undefined,
+  memoryDirty: boolean,
+  persistedDirty: boolean,
+): boolean {
+  return !existing?.mediaETag || (!memoryDirty && !persistedDirty && !existing.pendingLocation);
 }
 
 /** Every upload in a collection that has a recoverable snapshot — the History
