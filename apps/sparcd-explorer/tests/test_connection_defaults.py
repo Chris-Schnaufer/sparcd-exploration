@@ -7,10 +7,10 @@ from types import SimpleNamespace
 def load_initial_connection():
     """Load the exact helper embedded in its Marimo cell.
 
-    Marimo cells execute independently in the WASM export, so the helper must
-    be returned from a cell instead of defined at module scope. Extracting that
-    nested, dependency-free function keeps this unit test aligned with the
-    exported notebook implementation.
+    Marimo cells execute independently in the WASM export, so the helper stays
+    in the form-rendering cell instead of module scope. Extracting that nested,
+    dependency-free function keeps this unit test aligned with the exported
+    notebook implementation.
     """
     notebook = Path(__file__).parents[1] / "notebooks" / "hello.py"
     module = ast.parse(notebook.read_text())

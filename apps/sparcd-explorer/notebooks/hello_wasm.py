@@ -528,15 +528,13 @@ def _(StoredConnectionReader, mo):
 
 
 @app.cell(hide_code=True)
-def _():
+def _(DEFAULT_ACCESS, DEFAULT_ENDPOINT, DEFAULT_SECRET, DEFAULT_SECURE, mo, remembered):
+    # S3 / MinIO credentials. Values prefill from .env when present, so a working
+    # local .env connects without submitting; failing that, from a remembered
+    # browser connection. Deployed users sign in via the form (rendered in the
+    # sidebar). This cell only defines the form; it does not display.
     def initial_connection(default_endpoint, default_access, default_secret, default_secure, remembered):
-        """Choose browser form defaults without combining a partial secret source.
-
-        A complete local environment connection is self-contained. For a partial
-        environment configuration, retain any usable non-secret fields and use the
-        remembered record only to fill missing non-secret fields. Its secret is
-        deliberately never reused, and a partial environment secret is left blank.
-        """
+        """Choose browser form defaults without combining a partial secret source."""
         has_default_connection = bool(default_endpoint and default_access and default_secret)
         if has_default_connection:
             return {
@@ -557,15 +555,6 @@ def _():
             "remember": uses_remembered_endpoint or uses_remembered_access,
         }
 
-    return (initial_connection,)
-
-
-@app.cell(hide_code=True)
-def _(DEFAULT_ACCESS, DEFAULT_ENDPOINT, DEFAULT_SECRET, DEFAULT_SECURE, initial_connection, mo, remembered):
-    # S3 / MinIO credentials. Values prefill from .env when present, so a working
-    # local .env connects without submitting; failing that, from a remembered
-    # browser connection. Deployed users sign in via the form (rendered in the
-    # sidebar). This cell only defines the form; it does not display.
     _initial = initial_connection(
         DEFAULT_ENDPOINT,
         DEFAULT_ACCESS,
