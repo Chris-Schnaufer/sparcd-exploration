@@ -115,6 +115,47 @@ Then('focus returns to the Sync opener', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Sync…', exact: true })).toBeFocused();
 });
 
+const POST_SYNC_REFRESH_DELAY_MS = 1_500;
+
+Given('the canonical refresh after a sync is delayed', async ({ s3 }) => {
+  // Preview, live planning, and post-write re-grounding read first. Delay only
+  // the fourth read: the invalidated TagImage refresh that determines when
+  // auto-close is safe.
+  s3.delayGetAfter(`${PREFIX_A}observations.csv`, 4, POST_SYNC_REFRESH_DELAY_MS);
+});
+
+Given('the post-sync canonical refresh will fail', async ({ s3 }) => {
+  // The preview, live sync plan, and post-write re-grounding each read this
+  // object before the invalidated TagImage query. Fail that fourth read.
+  s3.failGetsAfter(`${PREFIX_A}observations.csv`, 4);
+});
+
+When('the live sync begins', async ({ page }) => {
+  await openSyncDialog(page);
+  await setSyncDryRun(page, false);
+  await page.getByRole('button', { name: 'Sync now' }).click();
+});
+
+Then(
+  'the Sync dialog waits for the delayed refresh and closes without another delay',
+  async ({ page, s3 }) => {
+    // The post-sync refresh is held for 1.5 seconds. Allow it to finish, then
+    // require a prompt close. A second 900ms timer would leave the completed
+    // dialog present during this short assertion window.
+    await page.waitForTimeout(2_200);
+    await expect(page.getByRole('heading', { name: 'Sync to S3' })).toHaveCount(0, {
+      timeout: 500,
+    });
+  },
+);
+
+Then('the refresh error remains available after the success close window', async ({ page, s3 }) => {
+  await expect(statePill(page)).toHaveAttribute('aria-label', 'Sync status: error');
+  expect(canonicalPuts(s3.puts).map((put) => put.key)).toContain(`${PREFIX_A}observations.csv`);
+  await page.waitForTimeout(1_100);
+  await expect(page.getByText('Failed to read observations.csv (HTTP 503).')).toBeVisible();
+});
+
 When('the dry-run is run', async ({ page }) => {
   await page.getByRole('button', { name: 'Run dry-run' }).click();
   await expect(page.getByText('Dry-run complete — nothing was written.')).toBeVisible();

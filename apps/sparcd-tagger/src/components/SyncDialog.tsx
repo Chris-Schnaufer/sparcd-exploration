@@ -22,6 +22,7 @@ function uploadNameOf(uploadPrefix: string): string {
 // `UploadMeta.json` in place after an immutable snapshot.
 
 type Phase = 'previewing' | 'preview' | 'running' | 'done';
+const AUTO_CLOSE_MS = 900;
 
 export function SyncDialog({
   ctx,
@@ -96,20 +97,30 @@ export function SyncDialog({
     setPhase('running');
     setError(null);
     setSyncState('syncing');
-    let synced = false;
+    let closeDelay: number | null = null;
     try {
       const r = await performSync({ ...args(), dryRun });
       setResult(r);
       setSyncState(syncStateFor(r, dryRun));
       if (r.status === 'synced' && !dryRun) {
-        synced = true;
+        const closeDeadline = Date.now() + AUTO_CLOSE_MS;
+        // Refresh before clearing drafts so a clean draft never renders against
+        // the pre-sync base. A failed refresh retains the draft and prevents
+        // this completed dialog from closing itself.
+        await queryClient.invalidateQueries(
+          { queryKey: ['tagImages', connectionId] },
+          { throwOnError: true },
+        );
         // Clear dirty only on the drafts actually written — questionable-only
         // drafts (no canonical target) stay surfaced as unsaved.
         await markUploadSynced(ctx, r.syncedMediaIds ?? []);
         // The offset was baked into media.csv (performSync cleared it in Dexie);
         // reset the in-memory value too so the active-offset indicator clears.
         setTimeOffset(ctx, null);
-        await queryClient.invalidateQueries({ queryKey: ['tagImages', connectionId] });
+        // Only a fully refreshed and cleaned-up live sync can close itself.
+        // A slow refresh consumes the existing confirmation window instead of
+        // adding another AUTO_CLOSE_MS after it completes.
+        closeDelay = Math.max(0, closeDeadline - Date.now());
       }
     } catch (e) {
       setError((e as Error).message);
@@ -117,12 +128,12 @@ export function SyncDialog({
     } finally {
       setPhase('done');
     }
-    if (synced) {
+    if (closeDelay !== null) {
       // A completed live sync needs no further confirmation here — the
       // toolbar's sync-state pill already shows "synced" outside this dialog.
       // Give the success message a beat to register, then get out of the way
       // (#304) rather than leaving a finished dialog for the user to dismiss.
-      closeTimer.current = setTimeout(onClose, 900);
+      closeTimer.current = setTimeout(onClose, closeDelay);
     }
   };
 
