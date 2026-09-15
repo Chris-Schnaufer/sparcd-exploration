@@ -185,7 +185,7 @@ export async function installS3Mock(page: Page | BrowserContext, s3: MockS3): Pr
   await page.route('**/*', async (route: Route) => {
     const request = route.request();
     const url = new URL(request.url());
-    const testOrigin = `http://localhost:${process.env.TAGGER_TEST_PORT ?? '5312'}`;
+    const testOrigin = `http://localhost:${process.env.SPARCD_E2E_PORT ?? '5312'}`;
     const sameOrigin = url.origin === testOrigin;
 
     // Species reference images point at example.org; serve a placeholder so the
@@ -275,7 +275,6 @@ export async function installS3Mock(page: Page | BrowserContext, s3: MockS3): Pr
           status: 503,
           headers: XML,
           body: errorXml('ServiceUnavailable', `temporary read failure for ${key}`),
-        });
         });
         return;
       }

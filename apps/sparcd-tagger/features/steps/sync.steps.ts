@@ -434,6 +434,33 @@ Then('the tile still shows the species before the sync completes', async ({ page
   s3.delays.clear();
 });
 
+/** The corrected timestamp rendered in the Focus footer for its active frame. */
+async function focusShownTime(page: Page): Promise<string> {
+  const text = (await page.locator('div.mt-1 span.flex.flex-col').first().innerText()) ?? '';
+  return text.match(/\d{4}-\d{1,2}-\d{1,2} \d{2}:\d{2}(?::\d{2})?/)?.[0] ?? text.split('\n')[0].trim();
+}
+
+Given('Focus is showing an image with a shifted capture time', async ({ page }) => {
+  await focusFrame(page, 'IMG001.JPG');
+  await page.getByRole('button', { name: 'Focus', exact: true }).click();
+  await expect.poll(async () => focusShownTime(page)).toBe('2024-01-10 09:00');
+});
+
+Then('the shifted timestamp remains visible before the sync completes', async ({ page, s3 }) => {
+  const footerClose = page.locator('footer').getByRole('button', { name: 'Close', exact: true });
+  const samples: string[] = [];
+  const deadline = Date.now() + REFRESH_DELAY_MS * 2 + 5000;
+  while (Date.now() < deadline) {
+    if (await footerClose.count()) break;
+    samples.push(await focusShownTime(page));
+    await page.waitForTimeout(100);
+  }
+  await expect(footerClose).toBeVisible();
+  expect(samples.length).toBeGreaterThan(0);
+  expect(samples.every((time) => time === '2024-01-10 09:00')).toBe(true);
+  s3.delays.clear();
+});
+
 Given('the post-sync canonical refresh will fail', async ({ s3 }) => {
   // The dialog preview, live sync plan, and post-write re-grounding each read
   // observations.csv before the invalidated TagImage query does. Let those
@@ -449,6 +476,7 @@ When('the sync is run and its refresh fails', async ({ page }) => {
 
 Then('the synced species remains visible as an unsynced edit', async ({ page, s3 }) => {
   await expect(statePill(page)).toHaveAttribute('aria-label', 'Sync status: error');
+  await expect(page.getByText('Failed to read observations.csv (HTTP 503).')).toBeVisible();
   expect(canonicalPuts(s3.puts).map((put) => put.key)).toContain(`${PREFIX_A}observations.csv`);
   await expect(gridCell(page, 'IMG002.JPG')).toContainText('Coyote');
   const drafts = (await readStore(page, 'drafts')) as { mediaPath: string; dirty: boolean }[];

@@ -102,6 +102,14 @@ Feature: Publish local identifications back to the collection
     # briefly (or, on a slow connection, not so briefly) drops out of view.
 
   @unmapped
+  Scenario: A just-synced capture-time correction stays visible while refresh is in flight
+    Given times have been corrected in the workspace
+    And Focus is showing an image with a shifted capture time
+    And the canonical refresh after a sync is held open
+    When the sync is run without waiting for it to finish
+    Then the shifted timestamp remains visible before the sync completes
+
+  @unmapped
   Scenario: A failed post-sync refresh leaves the visible edit unsynced
     Given the post-sync canonical refresh will fail
     When the sync is run and its refresh fails
