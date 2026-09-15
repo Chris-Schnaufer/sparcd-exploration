@@ -11,6 +11,7 @@ import {
   getUpload,
   groundUpload,
   setUploadTimeOffset,
+  setUploadPendingLocation,
   loadSyncJournal,
   saveSyncJournal,
   clearSyncJournal,
@@ -45,7 +46,7 @@ export async function performSync(args: SyncArgs): Promise<SyncResult> {
     base = await getUpload(bucket, uploadPrefix);
   }
 
-  const plan = buildSyncPlan(images, drafts, base?.timeOffset ?? null);
+  const plan = buildSyncPlan(images, drafts, base?.timeOffset ?? null, base?.pendingLocation ?? null);
   const resumeJournal = await loadSyncJournal(bucket, uploadPrefix);
 
   const io = makeSyncIO(cfg, bucket, uploadPrefix, {
@@ -61,6 +62,7 @@ export async function performSync(args: SyncArgs): Promise<SyncResult> {
       base: {
         media: { etag: base?.mediaETag ?? '', hash: base?.mediaHash ?? '' },
         observations: { etag: base?.observationsETag ?? '', hash: base?.observationsHash ?? '' },
+        deployments: { etag: base?.deploymentsETag ?? '', hash: base?.deploymentsHash ?? '' },
         uploadMeta: { etag: base?.uploadMetaETag ?? '', hash: base?.uploadMetaHash ?? '' },
       },
       plan,
@@ -79,6 +81,10 @@ export async function performSync(args: SyncArgs): Promise<SyncResult> {
     // on top of already-corrected timestamps at the next sync (double shift). The
     // offset is relative; per-image overrides are absolute, so they need no reset.
     await setUploadTimeOffset(bucket, uploadPrefix, null);
+    // Same reasoning as the offset clear above: a location correction is baked
+    // into the new canonical `deployments.csv` / media+observation rows, so the
+    // pending correction must not be re-applied on top of the next sync.
+    await setUploadPendingLocation(bucket, uploadPrefix, null);
   }
   return result;
 }
