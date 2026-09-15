@@ -101,6 +101,12 @@ Feature: Publish local identifications back to the collection
     # must be confirmed fresh before the draft goes clean, or the species
     # briefly (or, on a slow connection, not so briefly) drops out of view.
 
+  @unmapped
+  Scenario: A failed post-sync refresh leaves the visible edit unsynced
+    Given the post-sync canonical refresh will fail
+    When the sync is run and its refresh fails
+    Then the synced species remains visible as an unsynced edit
+
   @H3
   Scenario: Correcting an estimated capture time preserves manual provenance
     When the estimated timestamp is corrected

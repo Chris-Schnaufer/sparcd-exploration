@@ -102,7 +102,10 @@ export function SyncDialog({
         // dirty first would open a window where the query cache still holds
         // the pre-sync base, so the species/time just written would briefly
         // (or, on a slow backend, not-so-briefly) vanish from the tile.
-        await queryClient.invalidateQueries({ queryKey: ['tagImages', connectionId] });
+        await queryClient.invalidateQueries(
+          { queryKey: ['tagImages', connectionId] },
+          { throwOnError: true },
+        );
         // Clear dirty only on the drafts actually written — questionable-only
         // drafts (no canonical target) stay surfaced as unsaved.
         await markUploadSynced(ctx, r.syncedMediaIds ?? []);

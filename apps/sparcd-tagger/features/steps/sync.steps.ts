@@ -434,6 +434,27 @@ Then('the tile still shows the species before the sync completes', async ({ page
   s3.delays.clear();
 });
 
+Given('the post-sync canonical refresh will fail', async ({ s3 }) => {
+  // The dialog preview, live sync plan, and post-write re-grounding each read
+  // observations.csv before the invalidated TagImage query does. Let those
+  // three reads through, then fail the refresh (and its retry).
+  s3.failGetsAfter(`${PREFIX_A}observations.csv`, 3);
+});
+
+When('the sync is run and its refresh fails', async ({ page }) => {
+  await openSyncDialog(page);
+  await setSyncDryRun(page, false);
+  await page.getByRole('button', { name: 'Sync now' }).click();
+});
+
+Then('the synced species remains visible as an unsynced edit', async ({ page, s3 }) => {
+  await expect(statePill(page)).toHaveAttribute('aria-label', 'Sync status: error');
+  expect(canonicalPuts(s3.puts).map((put) => put.key)).toContain(`${PREFIX_A}observations.csv`);
+  await expect(gridCell(page, 'IMG002.JPG')).toContainText('Coyote');
+  const drafts = (await readStore(page, 'drafts')) as { mediaPath: string; dirty: boolean }[];
+  expect(drafts.some((draft) => draft.mediaPath.endsWith('IMG002.JPG') && draft.dirty)).toBe(true);
+});
+
 When('the estimated timestamp is corrected', async ({ page }) => {
   await focusFrame(page, 'IMG002.JPG');
   await page.getByRole('button', { name: 'Focus', exact: true }).click();
