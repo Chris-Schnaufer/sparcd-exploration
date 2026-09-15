@@ -436,9 +436,11 @@ export function parseObservations(csv: string): Observation[] {
   return parseCsvRows(csv).map((r) => {
     const rawType = r[OBS_COL.observationType] ?? '';
     const scientificName = r[OBS_COL.scientificName] ?? '';
-    // Some producers (e.g. video ingestion) never populate observationType.
-    // A row naming a species is an animal observation regardless of what — if
-    // anything — that column says; only an empty scientificName means "blank".
+    // Some producers (e.g. video ingestion) never populate observationType at
+    // all, leaving it empty even on rows that name a real species — infer
+    // "animal" from scientificName in that case. An explicit non-'animal'
+    // value (e.g. "human", "vehicle") is trusted as-is and stays 'blank',
+    // since other producers do use it to mean something other than blank.
     const observationType = rawType === 'animal' || (rawType === '' && scientificName !== '') ? 'animal' : 'blank';
     return {
       observationId: r[OBS_COL.observationId] ?? '',
