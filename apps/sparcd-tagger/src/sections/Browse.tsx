@@ -181,13 +181,15 @@ export function Browse() {
                     active={tab === 'all'}
                     onClick={() => setTab('all')}
                     title="Every upload in this collection"
+                    descriptionId="browse-all-tab-description"
                   />
                   <TabButton
                     label="In progress"
                     n={counts['in-progress']}
                     active={tab === 'in-progress'}
                     onClick={() => setTab('in-progress')}
-                    title="Uploads still being tagged"
+                    title="Uploads not yet fully tagged"
+                    descriptionId="browse-in-progress-tab-description"
                   />
                   <TabButton
                     label="Done"
@@ -195,6 +197,7 @@ export function Browse() {
                     active={tab === 'done'}
                     onClick={() => setTab('done')}
                     title="Uploads that are fully tagged"
+                    descriptionId="browse-done-tab-description"
                   />
                 </div>
               )}
@@ -338,24 +341,30 @@ function TabButton({
   active,
   onClick,
   title,
+  descriptionId,
 }: {
   label: string;
   n: number;
   active: boolean;
   onClick: () => void;
   title: string;
+  descriptionId: string;
 }) {
   return (
-    <button
-      onClick={onClick}
-      aria-pressed={active}
-      title={title}
-      className={`px-3 min-h-11 py-2.5 sm:min-h-0 sm:py-1.5 text-[13px] border focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
-        active ? 'bg-ink text-paper border-ink font-[600]' : 'bg-panel text-inkSoft border-rule hover:bg-panelHover'
-      }`}
-    >
-      {label} <span className="font-mono text-[11px] opacity-70 ml-1">{n}</span>
-    </button>
+    <>
+      <button
+        onClick={onClick}
+        aria-pressed={active}
+        aria-describedby={descriptionId}
+        title={title}
+        className={`px-3 min-h-11 py-2.5 sm:min-h-0 sm:py-1.5 text-[13px] border focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
+          active ? 'bg-ink text-paper border-ink font-[600]' : 'bg-panel text-inkSoft border-rule hover:bg-panelHover'
+        }`}
+      >
+        {label} <span className="font-mono text-[11px] opacity-70 ml-1">{n}</span>
+      </button>
+      <span id={descriptionId} className="sr-only">{title}</span>
+    </>
   );
 }
 

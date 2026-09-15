@@ -203,19 +203,17 @@ Then(
   },
 );
 
-Then('each tab explains on hover what it filters to', async ({ page }) => {
-  await expect(page.getByRole('button', { name: /^All\b/ })).toHaveAttribute(
-    'title',
-    'Every upload in this collection',
-  );
-  await expect(page.getByRole('button', { name: /^In progress\b/ })).toHaveAttribute(
-    'title',
-    'Uploads still being tagged',
-  );
-  await expect(page.getByRole('button', { name: /^Done\b/ })).toHaveAttribute(
-    'title',
-    'Uploads that are fully tagged',
-  );
+Then('each tab explains its filter on hover and to assistive technology', async ({ page }) => {
+  const expectDescription = async (name: RegExp, id: string, text: string) => {
+    const tab = page.getByRole('button', { name });
+    await expect(tab).toHaveAttribute('title', text);
+    await expect(tab).toHaveAttribute('aria-describedby', id);
+    await expect(page.locator(`#${id}`)).toHaveText(text);
+  };
+
+  await expectDescription(/^All\b/, 'browse-all-tab-description', 'Every upload in this collection');
+  await expectDescription(/^In progress\b/, 'browse-in-progress-tab-description', 'Uploads not yet fully tagged');
+  await expectDescription(/^Done\b/, 'browse-done-tab-description', 'Uploads that are fully tagged');
 });
 
 Then('the header states how many uploads, images and tagged images it holds', async ({ page }) => {
