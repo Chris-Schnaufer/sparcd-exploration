@@ -206,7 +206,9 @@ export async function uploadDraftStates(bucket: string): Promise<Map<string, Upl
       out.set(d.uploadPrefix, d.dirty ? 'unsynced' : 'synced');
     });
   await db.uploads
-    .filter((u) => u.bucket === bucket && u.pendingLocation !== null)
+    // Records written before location correction have no `pendingLocation`
+    // property. Treat both that legacy `undefined` and null as no correction.
+    .filter((u) => u.bucket === bucket && u.pendingLocation != null)
     .each((u) => out.set(u.uploadPrefix, 'unsynced'));
   return out;
 }
