@@ -42,6 +42,12 @@ Feature: Find the upload that needs tagging
     And it shows the image count and how many of those images already carry a species
 
   @unmapped
+  Scenario: Narrow Browse windows retain the upload column
+    Given a collection is selected
+    Then at 1297px Browse hides image counts before it narrows upload names
+    And at 1017px Browse restores details when the upload table has room
+
+  @unmapped
   Scenario: An upload whose location file cannot be read still lists
     Given an upload has no readable deployment file
     When its row is shown

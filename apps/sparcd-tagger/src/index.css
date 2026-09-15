@@ -61,6 +61,60 @@ body {
   overflow-x: clip;
 }
 
+/* Browse has a 320px collection rail at large viewport widths, so browser
+   breakpoints do not describe the usable width of its upload table. These
+   container queries retain a 16rem Upload track, then add supporting columns
+   only when the table itself can hold them. */
+.browse-upload-table {
+  container: browse-upload / inline-size;
+}
+
+@media (min-width: 768px) {
+  .browse-upload-grid {
+    grid-template-columns: 120px minmax(16rem, 1fr) 160px 70px;
+  }
+
+  .browse-upload-images,
+  .browse-upload-tagged,
+  .browse-upload-sync {
+    display: none;
+  }
+}
+
+@container browse-upload (min-width: 842px) {
+  .browse-upload-grid {
+    grid-template-columns: 120px minmax(16rem, 1fr) 160px 140px 70px;
+  }
+
+  .browse-upload-sync {
+    display: block;
+  }
+}
+
+@container browse-upload (min-width: 900px) {
+  .browse-upload-grid {
+    grid-template-columns: 120px minmax(16rem, 1fr) 160px minmax(0, 1.2fr) 140px 70px;
+  }
+
+  .browse-upload-tagged {
+    display: flex;
+  }
+
+  .browse-upload-header .browse-upload-tagged {
+    display: block;
+  }
+}
+
+@container browse-upload (min-width: 964px) {
+  .browse-upload-grid {
+    grid-template-columns: 120px minmax(16rem, 1fr) 160px 90px minmax(0, 1.2fr) 140px 70px;
+  }
+
+  .browse-upload-images {
+    display: block;
+  }
+}
+
 /* Block iOS focus auto-zoom by keeping every field at >=16px on small screens.
    !important is required to win over Tailwind's text-[Npx] utility classes
    (higher specificity); scoped to <=640px so desktop field sizing is untouched. */

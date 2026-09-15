@@ -82,7 +82,7 @@ export function Browse() {
   const uploadCount = uploads.data?.length ?? 0;
 
   return (
-    <div className="h-full grid grid-cols-1 lg:grid-cols-[320px_1fr] min-h-0">
+    <div className="h-full grid grid-cols-1 xl:grid-cols-[320px_1fr] min-h-0">
       {/* Collection rail */}
       <aside className="border-r border-rule bg-panel flex flex-col min-h-0">
         <div className="p-4 border-b border-rule">
@@ -206,15 +206,15 @@ export function Browse() {
             <Status q={uploads} empty="No uploads in this collection." />
 
             {!uploads.isError && uploadCount > 0 && (
-              <div className="bg-panel border border-rule">
+              <div className="browse-upload-table bg-panel border border-rule">
                 {/* Column header */}
-                <div className="hidden md:grid grid-cols-[120px_1fr_160px_90px_1.2fr_140px_70px] gap-4 px-4 py-2.5 border-b border-rule text-[11px] font-[600] tracking-[0.14em] uppercase text-inkSoft">
-                  <span>Date</span>
-                  <span>Upload</span>
-                  <span>Deployment</span>
-                  <span className="text-right">Images</span>
-                  <span>Tagged</span>
-                  <span>Sync</span>
+                <div className="browse-upload-header browse-upload-grid hidden md:grid gap-4 px-4 py-2.5 border-b border-rule text-[11px] font-[600] tracking-[0.14em] uppercase text-inkSoft">
+                  <span data-column="date">Date</span>
+                  <span data-column="upload">Upload</span>
+                  <span data-column="deployment">Deployment</span>
+                  <span data-column="images" className="browse-upload-images text-right">Images</span>
+                  <span data-column="tagged" className="browse-upload-tagged">Tagged</span>
+                  <span data-column="sync" className="browse-upload-sync">Sync</span>
                   <span />
                 </div>
 
@@ -261,24 +261,24 @@ function UploadRow({
   return (
     <button
       onClick={onOpen}
-      className="w-full text-left grid grid-cols-[1fr] md:grid-cols-[120px_1fr_160px_90px_1.2fr_140px_70px] gap-2 md:gap-4 items-center px-4 py-3 border-b border-ruleSoft border-l-2 border-l-transparent hover:bg-panelHover hover:border-l-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent group"
+      className="browse-upload-grid w-full text-left grid grid-cols-[1fr] md:grid gap-2 md:gap-4 items-center px-4 py-3 border-b border-ruleSoft border-l-2 border-l-transparent hover:bg-panelHover hover:border-l-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent group"
     >
-      <span className="font-mono text-[12.5px] text-inkSoft">{date}</span>
+      <span data-column="date" className="font-mono text-[12.5px] text-inkSoft">{date}</span>
 
-      <span className="min-w-0">
+      <span data-column="upload" className="min-w-0">
         <span className="block font-mono text-[13px] text-ink truncate">{user ?? stamp}</span>
         {time && <span className="block font-mono text-[11px] text-inkMute">{time}</span>}
       </span>
 
-      <span className="font-mono text-[13px] text-inkSoft truncate">
+      <span data-column="deployment" className="font-mono text-[13px] text-inkSoft truncate">
         {loading ? <Skeleton w="w-24" /> : s?.deployments.length ? s.deployments.join(', ') : '—'}
       </span>
 
-      <span className="font-mono text-[13px] text-ink text-right">
+      <span data-column="images" className="browse-upload-images font-mono text-[13px] text-ink text-right">
         {loading ? <Skeleton w="w-12" /> : query?.isError ? '—' : s!.imageCount.toLocaleString()}
       </span>
 
-      <span className="flex items-center gap-2.5">
+      <span data-column="tagged" className="browse-upload-tagged items-center gap-2.5">
         {loading || query?.isError || !s ? (
           <Skeleton w="w-full" />
         ) : (
@@ -293,7 +293,7 @@ function UploadRow({
         )}
       </span>
 
-      <span>
+      <span data-column="sync" className="browse-upload-sync">
         <SyncPill state={draftState ?? 'local-only'} />
       </span>
 
@@ -440,7 +440,7 @@ function CollectionPrompt({
     <div className="relative h-full grid place-items-center px-6">
       {/* Anchored to the panel edge, nudging the eye toward the collection rail. */}
       <div
-        className="fn-rise absolute left-1 top-1/2 -translate-y-1/2 hidden lg:flex items-center gap-2 text-inkMute"
+        className="fn-rise absolute left-1 top-1/2 -translate-y-1/2 hidden xl:flex items-center gap-2 text-inkMute"
         style={{ animationDelay: '0.5s' }}
       >
         <span className="fn-nudge text-accent" aria-hidden>
