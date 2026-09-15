@@ -132,6 +132,35 @@ Then(
   },
 );
 
+Then('at 1297px Browse hides image counts before it narrows upload names', async ({ page }) => {
+  await page.setViewportSize({ width: 1297, height: 900 });
+  const row = uploadRow(page, 'priortagger');
+  const upload = row.locator('[data-column="upload"]');
+
+  await expect(upload).toBeVisible();
+  await expect(upload).toContainText('priortagger');
+  await expect(row.locator('[data-column="images"]')).toBeHidden();
+  await expect(row.locator('[data-column="tagged"]')).toBeVisible();
+  await expect(row.locator('[data-column="sync"]')).toBeVisible();
+  await expect.poll(async () => (await upload.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(256);
+});
+
+Then(
+  'at 1017px Browse restores details when the upload table has room',
+  async ({ page }) => {
+    await page.setViewportSize({ width: 1017, height: 900 });
+    const row = uploadRow(page, 'priortagger');
+    const upload = row.locator('[data-column="upload"]');
+
+    await expect(upload).toBeVisible();
+    await expect(upload).toContainText('priortagger');
+    await expect(row.locator('[data-column="images"]')).toBeVisible();
+    await expect(row.locator('[data-column="tagged"]')).toBeVisible();
+    await expect(row.locator('[data-column="sync"]')).toBeVisible();
+    await expect.poll(async () => (await upload.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(256);
+  },
+);
+
 Given('an upload has no readable deployment file', async ({ page, s3 }) => {
   expect(s3.has(BUCKET, `${PREFIX_B}deployments.csv`)).toBe(false);
   await openAppConnected(page);
@@ -202,6 +231,19 @@ Then(
     s3.delays.clear();
   },
 );
+
+Then('each tab explains its filter on hover and to assistive technology', async ({ page }) => {
+  const expectDescription = async (name: RegExp, id: string, text: string) => {
+    const tab = page.getByRole('button', { name });
+    await expect(tab).toHaveAttribute('title', text);
+    await expect(tab).toHaveAttribute('aria-describedby', id);
+    await expect(page.locator(`#${id}`)).toHaveText(text);
+  };
+
+  await expectDescription(/^All\b/, 'browse-all-tab-description', 'Every upload in this collection');
+  await expectDescription(/^In progress\b/, 'browse-in-progress-tab-description', 'Uploads not yet fully tagged');
+  await expectDescription(/^Done\b/, 'browse-done-tab-description', 'Uploads that are fully tagged');
+});
 
 Then('the header states how many uploads, images and tagged images it holds', async ({ page }) => {
   const header = page.locator('main p').filter({ hasText: /uploads?\b/ }).first();
@@ -300,4 +342,3 @@ Then(
     await expect(gridCell(page, 'IMG004.JPG')).toContainText('Mountain Lion +1');
   },
 );
-

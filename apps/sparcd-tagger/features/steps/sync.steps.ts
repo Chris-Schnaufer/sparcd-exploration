@@ -387,7 +387,36 @@ Then('the workspace reloads the upload from the newly stored files', async ({ pa
   const shifted = media.find((m) => m.mediaId.endsWith('IMG001.JPG'))!;
   expect(shifted.timestamp).toBe('2024-01-10T09:00:00.000Z');
   await page.getByRole('button', { name: 'Focus', exact: true }).click();
-  await expect(page.getByText('2024-01-10T09:00:00')).toBeVisible();
+  await expect(page.getByText('2024-01-10 09:00')).toBeVisible();
+});
+
+When('the estimated timestamp is corrected', async ({ page }) => {
+  await focusFrame(page, 'IMG002.JPG');
+  await page.getByRole('button', { name: 'Focus', exact: true }).click();
+  await page.getByRole('button', { name: 'Adjust time' }).click();
+  await page.getByLabel('Corrected timestamp for this image').fill('2024-01-10 09:15:00');
+  await page.getByRole('button', { name: 'Set', exact: true }).click();
+});
+
+Then('the corrected timestamp is stored with a manual source marker', async ({ s3 }) => {
+  const media = parseMedia(s3.text(BUCKET, `${PREFIX_A}media.csv`));
+  const corrected = media.find((m) => m.mediaId.endsWith('IMG002.JPG'))!;
+  expect(corrected.timestamp).toBe('2024-01-10T09:15:00.000Z');
+  expect(corrected.comments).toBe('[TIMESTAMP:manual]');
+});
+
+Then('the deployment retains its timestamp issue marker', async ({ s3 }) => {
+  const deployment = s3.text(BUCKET, `${PREFIX_A}deployments.csv`).split(',');
+  expect(deployment[15]).toBe('"true"');
+  expect(canonicalPuts(s3.puts).map((put) => put.key)).not.toContain(`${PREFIX_A}deployments.csv`);
+});
+
+Then('the reloaded Focus view identifies it as entered by hand', async ({ page }) => {
+  await page.reload();
+  await openWorkspace(page);
+  await focusFrame(page, 'IMG002.JPG');
+  await page.getByRole('button', { name: 'Focus', exact: true }).click();
+  await expect(page.getByText('entered by hand')).toBeVisible();
 });
 
 // --- Busy dialog ------------------------------------------------------------
