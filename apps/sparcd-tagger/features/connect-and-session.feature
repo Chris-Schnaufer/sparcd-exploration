@@ -61,6 +61,14 @@ Feature: Connect the tagger to a collection store and manage the session
     And it no longer shows the previous connection's collections or images
 
   @unmapped
+  Scenario: A disconnect from a sibling tool forgets the tagger identity
+    Given the tagger is connected
+    And a tagger identity is entered in Settings
+    When a sibling tool disconnects the shared session
+    Then the tagger returns to the connection screen
+    And after reloading and reconnecting, it has no identity carried over
+
+  @unmapped
   Scenario: The tagging workspace is unreachable until an upload is chosen
     Given the tagger is connected
     When no upload has been opened from Browse

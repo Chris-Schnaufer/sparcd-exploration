@@ -179,6 +179,36 @@ Then("it no longer shows the previous connection's collections or images", async
   await expect(second.getByText(COLLECTION_NAME)).toHaveCount(0);
 });
 
+When('a sibling tool disconnects the shared session', async ({ context }) => {
+  // A same-origin static page models another SPARC'd tool's disconnect relay
+  // without mounting a second Tagger that could answer the connection request
+  // and race the disconnect with a fresh connect message.
+  const sibling = await context.newPage();
+  await sibling.route('**/sibling-disconnect', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Sibling tool</title>' }),
+  );
+  await sibling.goto(`${ENDPOINT}/sibling-disconnect`);
+  await sibling.evaluate(async () => {
+    const channel = new BroadcastChannel('sparcd-connection-live');
+    channel.postMessage({ type: 'disconnect' });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    channel.close();
+  });
+});
+
+Then('the tagger returns to the connection screen', async ({ page }) => {
+  await expect(page.getByRole('button', { name: 'Connect', exact: true })).toBeVisible();
+});
+
+Then('after reloading and reconnecting, it has no identity carried over', async ({ page }) => {
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Connect', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('sparcd-tagger-identity'))).toBeNull();
+  await connect(page);
+  await openSettings(page);
+  await expect(page.locator('#user')).toHaveValue('');
+});
+
 // --- Tag gate ---------------------------------------------------------------
 
 When('no upload has been opened from Browse', async ({ page }) => {

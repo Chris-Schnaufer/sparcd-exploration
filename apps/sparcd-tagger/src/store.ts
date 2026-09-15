@@ -150,8 +150,8 @@ function clearAutoAdvance() {
 
 // The identity typed in Settings — stamps the audit-snapshot path and edit
 // comment of every sync. Persisted like the display preferences (issue #305:
-// it used to reset to empty on every reload); cleared on an explicit
-// disconnect (not a sibling tab's), since it is a "who is at this keyboard"
+// it used to reset to empty on every reload); cleared when this tab or a
+// sibling tool disconnects, since it is a "who is at this keyboard"
 // attribution rather than a connection detail — a stale identity surviving a
 // logout risks misattributing the next person's edits on a shared machine.
 function loadTaggerUser(): string {
@@ -318,6 +318,7 @@ export const useStore = create<TaggerState>()(
 // Also answers a sibling tab's own request with our current s3Config, if any.
 subscribeSharedConnection((cfg) => {
   clearClientCache();
+  if (!cfg) clearTaggerUser();
   useStore.setState((s) => ({
     s3Config: cfg,
     connectionId: s.connectionId + 1,
