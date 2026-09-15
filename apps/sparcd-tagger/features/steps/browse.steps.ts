@@ -203,6 +203,19 @@ Then(
   },
 );
 
+Then('each tab explains its filter on hover and to assistive technology', async ({ page }) => {
+  const expectDescription = async (name: RegExp, id: string, text: string) => {
+    const tab = page.getByRole('button', { name });
+    await expect(tab).toHaveAttribute('title', text);
+    await expect(tab).toHaveAttribute('aria-describedby', id);
+    await expect(page.locator(`#${id}`)).toHaveText(text);
+  };
+
+  await expectDescription(/^All\b/, 'browse-all-tab-description', 'Every upload in this collection');
+  await expectDescription(/^In progress\b/, 'browse-in-progress-tab-description', 'Uploads not yet fully tagged');
+  await expectDescription(/^Done\b/, 'browse-done-tab-description', 'Uploads that are fully tagged');
+});
+
 Then('the header states how many uploads, images and tagged images it holds', async ({ page }) => {
   const header = page.locator('main p').filter({ hasText: /uploads?\b/ }).first();
   await expect(header).toContainText('3 uploads');
