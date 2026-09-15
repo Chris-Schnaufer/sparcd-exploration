@@ -155,7 +155,7 @@ type DraftState = {
   /** Set (or clear with null) the upload-level pending location correction.
    *  Persists to the `uploads` record so the next sync rewrites deployments.csv
    *  and every media/observation row's deployment id. */
-  setPendingLocation: (ctx: UploadCtx, location: Deployment | null) => void;
+  setPendingLocation: (ctx: UploadCtx, location: Deployment | null) => Promise<void>;
   /** Set (or clear with null) one image's per-image corrected timestamp, on top
    *  of the upload offset. Seeds a fresh draft from base so time-only edits never
    *  drop existing canonical species rows. */
@@ -326,9 +326,9 @@ export const useDraftStore = create<DraftState>((set, get) => {
       void setUploadTimeOffset(ctx.bucket, ctx.uploadPrefix, offset);
     },
 
-    setPendingLocation: (ctx, location) => {
+    setPendingLocation: async (ctx, location) => {
       set({ pendingLocation: location });
-      void setUploadPendingLocation(ctx.bucket, ctx.uploadPrefix, location);
+      await setUploadPendingLocation(ctx.bucket, ctx.uploadPrefix, location);
     },
 
     setTimeOverride: (ctx, mediaPath, deploymentId, base, iso) =>

@@ -148,11 +148,11 @@ export function useTagImages(
       // optimistic edit already flips its record dirty there — so a refetch that
       // resolves inside that window can't re-ground the base under active edits.
       const store = useDraftStore.getState();
-      const memDirty =
-        store.loadedKey === uploadId(bucket, uploadPrefix!) && dirtyCount(store.drafts) > 0;
+      const memDirty = store.loadedKey === uploadId(bucket, uploadPrefix!)
+        && (dirtyCount(store.drafts) > 0 || store.pendingLocation !== null);
       if (
         !existing?.mediaETag ||
-        (!memDirty && !(await hasDirtyDraftsForUpload(bucket, uploadPrefix!)))
+        (!memDirty && !(await hasDirtyDraftsForUpload(bucket, uploadPrefix!)) && !existing?.pendingLocation)
       ) {
         await groundUpload(bucket, uploadPrefix!, state);
       }

@@ -234,7 +234,10 @@ export async function loadCanonicalState(
     loadObject(cfg, bucket, `${uploadPrefix}${CANONICAL_FILE.media}`, 'media.csv'),
     loadObject(cfg, bucket, `${uploadPrefix}${CANONICAL_FILE.observations}`, 'observations.csv'),
     loadObject(cfg, bucket, `${uploadPrefix}${CANONICAL_FILE.deployments}`, 'deployments.csv').catch(
-      async () => ({ text: '', etag: '', hash: await sha256Hex('') }),
+      async (err) => {
+        if (!isNotFound(err)) throw err;
+        return { text: '', etag: '', hash: await sha256Hex('') };
+      },
     ),
     loadObject(cfg, bucket, `${uploadPrefix}${CANONICAL_FILE.uploadMeta}`, 'UploadMeta.json'),
   ]);

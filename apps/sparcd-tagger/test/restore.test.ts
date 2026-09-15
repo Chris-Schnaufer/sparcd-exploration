@@ -162,6 +162,19 @@ describe('runRestore — noop when the snapshot equals current', () => {
   });
 });
 
+describe('runRestore — legacy snapshots without deployments.csv', () => {
+  it('refuses a restore that would leave media pointing at a missing deployment', async () => {
+    const cur = await canonical();
+    const replacement = { ...CURRENT_DEPLOYMENT, deploymentId: 'uuid:SAN22', locationId: 'SAN22' };
+    cur.deployments = { text: serializeDeployments([replacement]), etag: '"dep-2"', hash: 'changed' };
+    const { io } = fakeIO(cur);
+    await expect(runRestore(
+      { bucket: 'sparcd-x', uploadPrefix: PREFIX, user: 'jg', bodies: { media: CUR_MEDIA, observations: SNAP_OBS, uploadMeta: SNAP_META }, dryRun: false },
+      io,
+    )).rejects.toThrow(/cannot be restored safely/);
+  });
+});
+
 describe('runRestore — live write path', () => {
   it('snapshots current state (manifest last), restores differing bodies against current ETags', async () => {
     const cur = await canonical();

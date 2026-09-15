@@ -28,6 +28,10 @@ import {
   rewriteMediaDeploymentId,
   rewriteObservationsDeploymentId,
   serializeDeployments,
+  parseDeployments,
+  parseCsvRows,
+  MEDIA_COL,
+  OBS_COL,
   type MediaEdit,
   type TimeOffset,
   type Deployment,
@@ -582,6 +586,20 @@ export async function runRestore(params: RestoreParams, io: SyncIO): Promise<Syn
   if (resumed) return resumed;
 
   const current = await io.loadCanonical();
+  // Legacy snapshots predate deployments.csv. They are safe only when every
+  // deployment referenced by their media/observations still exists in the
+  // current deployment file; otherwise restoring them would create dangling
+  // references after a later location correction.
+  if (bodies.deployments === undefined && current.deployments.text) {
+    const available = new Set(parseDeployments(current.deployments.text).map((deployment) => deployment.deploymentId));
+    const referenced = new Set([
+      ...parseCsvRows(bodies.media ?? '').map((row) => row[MEDIA_COL.deploymentId]),
+      ...parseCsvRows(bodies.observations ?? '').map((row) => row[OBS_COL.deploymentId]),
+    ].filter(Boolean));
+    if ([...referenced].some((deploymentId) => !available.has(deploymentId))) {
+      throw new Error('This snapshot predates deployment records and cannot be restored safely after a location change.');
+    }
+  }
   const writes = await prepareWrites(current, bodies);
   if (writes.length === 0) return { status: 'noop' };
 

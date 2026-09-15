@@ -36,7 +36,7 @@ export function ChangeLocationModal({
   locations: Location[];
   collectionUuid: string;
   totalFrames: number;
-  onApply: (location: Deployment | null) => void;
+  onApply: (location: Deployment | null) => Promise<void>;
   onClose: () => void;
 }) {
   const distanceUnit = useStore((s) => s.distanceUnit);
@@ -50,17 +50,22 @@ export function ChangeLocationModal({
     [locations, selectedKey],
   );
 
-  const selectedDeploymentId = selected ? `${collectionUuid}:${selected.id}` : null;
+  const sameLocation = (location: Deployment | null, candidate: Location | null) => !!location && !!candidate
+    && location.locationId === candidate.id
+    && location.locationName === candidate.name
+    && location.latitude === candidate.latitude
+    && location.longitude === candidate.longitude
+    && location.elevation === candidate.elevation;
   // Disabled when the pick matches what's already in effect — nothing to apply.
-  const changed = !!selectedDeploymentId && selectedDeploymentId !== effective?.deploymentId;
+  const changed = !!selected && !sameLocation(effective, selected);
   // Re-picking the untouched canonical location while a correction is pending
   // clears the correction rather than queuing a same-as-current no-op edit.
-  const revertsToCanonical = selectedDeploymentId === canonicalCurrent?.deploymentId;
+  const revertsToCanonical = sameLocation(canonicalCurrent, selected);
 
-  const apply = () => {
+  const apply = async () => {
     if (!changed) return;
     if (revertsToCanonical || !selected) {
-      onApply(null);
+      await onApply(null);
       onClose();
       return;
     }
@@ -68,7 +73,7 @@ export function ChangeLocationModal({
     // Preserve the canonical row's `timestampIssues` flag — a location
     // correction shouldn't silently reset whether the camera supplied a
     // timestamp.
-    onApply({ ...next, timestampIssues: canonicalCurrent?.timestampIssues });
+    await onApply({ ...next, timestampIssues: canonicalCurrent?.timestampIssues });
     onClose();
   };
 
@@ -169,8 +174,7 @@ export function ChangeLocationModal({
           {pending && (
             <button
               onClick={() => {
-                onApply(null);
-                onClose();
+                void onApply(null).then(onClose);
               }}
               className="text-[13px] border border-rule px-3 py-1.5 text-inkSoft hover:text-ink hover:border-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
             >

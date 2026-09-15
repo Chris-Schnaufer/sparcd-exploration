@@ -88,7 +88,7 @@ export async function performSync(args: SyncArgs): Promise<SyncResult> {
     // Same reasoning as the offset clear above: a location correction is baked
     // into the new canonical `deployments.csv` / media+observation rows, so the
     // pending correction must not be re-applied on top of the next sync.
-    await setUploadPendingLocation(bucket, uploadPrefix, null);
+    if (plan.locationEdit) await setUploadPendingLocation(bucket, uploadPrefix, null);
   }
   return result;
 }
