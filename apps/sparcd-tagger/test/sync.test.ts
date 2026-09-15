@@ -312,6 +312,22 @@ describe('buildSyncPlan → mergeObservations round trip', () => {
     const mediaRowOut = parseCsvRows(mergedMedia).find((r) => r[MEDIA_COL.mediaId] === KX)!;
     expect(mediaRowOut[MEDIA_COL.timestamp]).toBe('2024-01-10T09:00:00');
   });
+
+  it('marks a corrected estimated timestamp as manual', () => {
+    const estimated = { ...IMAGES[1], timestampSource: 'interpolated' as const };
+    const plan = buildSyncPlan(
+      [estimated],
+      { [K2]: draft({ mediaPath: K2, timeOverride: '2024-01-10T09:00:00' }) },
+      null,
+    );
+    expect(plan.timeEdits[0].timestampSource).toBe('manual');
+
+    const row = mediaRow(K2, '2024-01-10T08:00:30');
+    row[MEDIA_COL.comments] = '[TIMESTAMP:interpolated][UPLOADER:kept]';
+    const merged = mergeMedia(serializeCsvRows([row]), plan.timeEdits);
+    const output = parseCsvRows(merged)[0];
+    expect(output[MEDIA_COL.comments]).toBe('[TIMESTAMP:manual][UPLOADER:kept]');
+  });
 });
 
 describe('runSync — dry-run default writes nothing', () => {

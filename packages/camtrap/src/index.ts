@@ -532,6 +532,8 @@ export type MediaEdit = {
   deploymentId: string;
   timestamp: string; // ISO stamped on new observation rows
   mediaTimestamp?: string; // if set, overwrite media.csv col 4 for this image
+  /** When a flagged capture time is corrected, replace its source marker in col 10. */
+  timestampSource?: TimestampSource;
   observations: ObservationInput[];
 };
 
@@ -579,17 +581,28 @@ function buildBlankObservationRow(edit: MediaEdit, observationId: string): strin
 
 /**
  * Merge time corrections into `media.csv`. Only rows whose media id appears in
- * an edit with a `mediaTimestamp` are touched (col 4); every other byte —
- * including media rows for un-edited images — is preserved.
+ * an edit with a `mediaTimestamp` are touched (col 4). A source update replaces
+ * that row's `[TIMESTAMP:…]` marker in col 10 without disturbing other comment
+ * text or markers; every un-edited row is preserved.
  */
 export function mergeMedia(canonicalMediaCsv: string, edits: MediaEdit[]): string {
-  const newTs = new Map<string, string>();
-  for (const e of edits) if (e.mediaTimestamp !== undefined) newTs.set(e.mediaId, e.mediaTimestamp);
-  if (newTs.size === 0) return canonicalMediaCsv;
+  const changes = new Map<string, { timestamp: string; source?: TimestampSource }>();
+  for (const e of edits) {
+    if (e.mediaTimestamp !== undefined)
+      changes.set(e.mediaId, { timestamp: e.mediaTimestamp, source: e.timestampSource });
+  }
+  if (changes.size === 0) return canonicalMediaCsv;
   const rows = parseCsvRows(canonicalMediaCsv);
   for (const row of rows) {
-    const ts = newTs.get(row[MEDIA_COL.mediaId]);
-    if (ts !== undefined) row[MEDIA_COL.timestamp] = ts;
+    const change = changes.get(row[MEDIA_COL.mediaId]);
+    if (!change) continue;
+    row[MEDIA_COL.timestamp] = change.timestamp;
+    if (change.source) {
+      row[MEDIA_COL.comments] = (row[MEDIA_COL.comments] ?? '').replace(
+        /\[TIMESTAMP:[^\]]*\]/g,
+        `[TIMESTAMP:${change.source}]`,
+      );
+    }
   }
   return serializeCsvRows(rows);
 }

@@ -19,3 +19,18 @@ it('preserves media comments through merge, parse, append and re-serialization',
   expect(merged.replace('"new"', '"old"')).toBe(csv);
   expect(serializeMedia(rows)).toBe(merged);
 });
+
+it('changes an estimated timestamp marker to manual without losing other comments', () => {
+  const comments = '[TIMESTAMP:interpolated] note [UPLOADER:kept]';
+  const csv = serializeMedia([
+    { mediaId: 'a', mediaPath: 'a', deploymentId: 'd', fileName: 'a', timestamp: 'old', mimeType: 'image/jpeg', comments },
+  ]);
+  const merged = mergeMedia(csv, [
+    { mediaId: 'a', deploymentId: 'd', timestamp: 'new', mediaTimestamp: 'new', timestampSource: 'manual', observations: [] },
+  ]);
+
+  const row = parseMedia(merged)[0];
+  expect(row.timestamp).toBe('new');
+  expect(row.comments).toBe('[TIMESTAMP:manual] note [UPLOADER:kept]');
+  expect(timestampSourceFromComments(row.comments ?? '')).toBe('manual');
+});
