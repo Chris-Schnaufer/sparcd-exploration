@@ -455,14 +455,16 @@ def _():
           }
           model.set("endpoint", stored.endpoint || "");
           model.set("access_key", stored.accessKey || "");
+          model.set("secure", typeof stored.secure === "boolean" ? stored.secure : false);
           model.save_changes();
         }
         export default { render };
         """
 
-        storage_key = traitlets.Unicode("sparcd-explorer-connection").tag(sync=True)
+        storage_key = traitlets.Unicode("sparcd-connection").tag(sync=True)
         endpoint = traitlets.Unicode("").tag(sync=True)
         access_key = traitlets.Unicode("").tag(sync=True)
+        secure = traitlets.Bool(False).tag(sync=True)
 
     class StoredConnectionWriter(anywidget.AnyWidget):
         """Persists (or clears) the remembered connection fields whenever the
@@ -474,11 +476,15 @@ def _():
             const key = model.get("storage_key");
             try {
               if (model.get("remember")) {
+                const raw = localStorage.getItem(key);
+                const stored = raw ? JSON.parse(raw) : {};
                 localStorage.setItem(
                   key,
                   JSON.stringify({
+                    ...stored,
                     endpoint: model.get("endpoint"),
                     accessKey: model.get("access_key"),
+                    secure: model.get("secure"),
                   }),
                 );
               } else {
@@ -495,14 +501,16 @@ def _():
           sync();
           model.on("change:endpoint", sync);
           model.on("change:access_key", sync);
+          model.on("change:secure", sync);
           model.on("change:remember", sync);
         }
         export default { render };
         """
 
-        storage_key = traitlets.Unicode("sparcd-explorer-connection").tag(sync=True)
+        storage_key = traitlets.Unicode("sparcd-connection").tag(sync=True)
         endpoint = traitlets.Unicode("").tag(sync=True)
         access_key = traitlets.Unicode("").tag(sync=True)
+        secure = traitlets.Bool(False).tag(sync=True)
         remember = traitlets.Bool(False).tag(sync=True)
 
     return StoredConnectionReader, StoredConnectionWriter
@@ -533,7 +541,10 @@ def _(DEFAULT_ACCESS, DEFAULT_ENDPOINT, DEFAULT_SECRET, DEFAULT_SECURE, mo, reme
     )
     _access_in = mo.ui.text(value=_initial_access, label="Access key", full_width=True)
     _secret_in = mo.ui.text(value=DEFAULT_SECRET, label="Secret key", kind="password", full_width=True)
-    _secure_in = mo.ui.checkbox(value=DEFAULT_SECURE, label="Use HTTPS (when no scheme in endpoint)")
+    _secure_in = mo.ui.checkbox(
+        value=remembered.secure if remembered.endpoint else DEFAULT_SECURE,
+        label="Use HTTPS (when no scheme in endpoint)",
+    )
     _remember_in = mo.ui.checkbox(
         value=_initial_remember,
         label="Remember endpoint & access key on this device",
@@ -575,6 +586,7 @@ def _(StoredConnectionWriter, creds_form, mo):
             StoredConnectionWriter(
                 endpoint=_submitted["endpoint"] if _submitted.get("remember") else "",
                 access_key=_submitted["access"] if _submitted.get("remember") else "",
+                secure=bool(_submitted.get("secure")),
                 remember=bool(_submitted.get("remember")),
             )
         )

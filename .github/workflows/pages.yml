@@ -64,6 +64,11 @@ jobs:
       - name: Install JS deps
         run: pnpm install --frozen-lockfile
 
+      - name: Verify Explorer remembered connection in WASM
+        run: |
+          pnpm exec playwright install --with-deps chromium
+          node apps/sparcd-explorer/tests/remember_connection_wasm.mjs apps/sparcd-explorer/dist
+
       - name: Build uploader
         run: pnpm --filter sparcd-uploader build
 
