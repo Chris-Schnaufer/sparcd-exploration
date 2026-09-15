@@ -13,12 +13,6 @@ import {
 
 const kicker = 'font-body text-[11px] font-[600] tracking-[0.16em] uppercase text-inkSoft';
 
-// Keep Upload wide enough to identify its owner while narrow windows shed the
-// supporting image, progress, and sync columns in that order. The header and
-// each row use this same track list so their remaining columns stay aligned.
-const uploadGridColumns =
-  'md:grid-cols-[120px_minmax(16rem,1fr)_160px_70px] min-[1018px]:grid-cols-[120px_minmax(16rem,1fr)_160px_140px_70px] min-[1118px]:grid-cols-[120px_minmax(16rem,1fr)_160px_minmax(0,1.2fr)_140px_70px] min-[1298px]:grid-cols-[120px_minmax(16rem,1fr)_160px_90px_minmax(0,1.2fr)_140px_70px]';
-
 // Upload prefixes are stamped `YYYY.MM.DD.HH.MM.SS_user` (the user is the SPARC'd
 // account that uploaded; older stamps may omit it). Split it so the list can show
 // a real date column and surface who uploaded.
@@ -88,7 +82,7 @@ export function Browse() {
   const uploadCount = uploads.data?.length ?? 0;
 
   return (
-    <div className="h-full grid grid-cols-1 lg:grid-cols-[320px_1fr] min-h-0">
+    <div className="h-full grid grid-cols-1 xl:grid-cols-[320px_1fr] min-h-0">
       {/* Collection rail */}
       <aside className="border-r border-rule bg-panel flex flex-col min-h-0">
         <div className="p-4 border-b border-rule">
@@ -196,15 +190,15 @@ export function Browse() {
             <Status q={uploads} empty="No uploads in this collection." />
 
             {!uploads.isError && uploadCount > 0 && (
-              <div className="bg-panel border border-rule">
+              <div className="browse-upload-table bg-panel border border-rule">
                 {/* Column header */}
-                <div className={`hidden md:grid ${uploadGridColumns} gap-4 px-4 py-2.5 border-b border-rule text-[11px] font-[600] tracking-[0.14em] uppercase text-inkSoft`}>
+                <div className="browse-upload-header browse-upload-grid hidden md:grid gap-4 px-4 py-2.5 border-b border-rule text-[11px] font-[600] tracking-[0.14em] uppercase text-inkSoft">
                   <span data-column="date">Date</span>
                   <span data-column="upload">Upload</span>
                   <span data-column="deployment">Deployment</span>
-                  <span data-column="images" className="hidden min-[1298px]:block text-right">Images</span>
-                  <span data-column="tagged" className="hidden min-[1118px]:block">Tagged</span>
-                  <span data-column="sync" className="hidden min-[1018px]:block">Sync</span>
+                  <span data-column="images" className="browse-upload-images text-right">Images</span>
+                  <span data-column="tagged" className="browse-upload-tagged">Tagged</span>
+                  <span data-column="sync" className="browse-upload-sync">Sync</span>
                   <span />
                 </div>
 
@@ -251,7 +245,7 @@ function UploadRow({
   return (
     <button
       onClick={onOpen}
-      className={`w-full text-left grid grid-cols-[1fr] ${uploadGridColumns} gap-2 md:gap-4 items-center px-4 py-3 border-b border-ruleSoft border-l-2 border-l-transparent hover:bg-panelHover hover:border-l-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent group`}
+      className="browse-upload-grid w-full text-left grid grid-cols-[1fr] md:grid gap-2 md:gap-4 items-center px-4 py-3 border-b border-ruleSoft border-l-2 border-l-transparent hover:bg-panelHover hover:border-l-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent group"
     >
       <span data-column="date" className="font-mono text-[12.5px] text-inkSoft">{date}</span>
 
@@ -264,11 +258,11 @@ function UploadRow({
         {loading ? <Skeleton w="w-24" /> : s?.deployments.length ? s.deployments.join(', ') : '—'}
       </span>
 
-      <span data-column="images" className="hidden min-[1298px]:block font-mono text-[13px] text-ink text-right">
+      <span data-column="images" className="browse-upload-images font-mono text-[13px] text-ink text-right">
         {loading ? <Skeleton w="w-12" /> : query?.isError ? '—' : s!.imageCount.toLocaleString()}
       </span>
 
-      <span data-column="tagged" className="hidden min-[1118px]:flex items-center gap-2.5">
+      <span data-column="tagged" className="browse-upload-tagged items-center gap-2.5">
         {loading || query?.isError || !s ? (
           <Skeleton w="w-full" />
         ) : (
@@ -283,7 +277,7 @@ function UploadRow({
         )}
       </span>
 
-      <span data-column="sync" className="hidden min-[1018px]:block">
+      <span data-column="sync" className="browse-upload-sync">
         <SyncPill state={draftState ?? 'local-only'} />
       </span>
 
@@ -411,7 +405,7 @@ function CollectionPrompt({
     <div className="relative h-full grid place-items-center px-6">
       {/* Anchored to the panel edge, nudging the eye toward the collection rail. */}
       <div
-        className="fn-rise absolute left-1 top-1/2 -translate-y-1/2 hidden lg:flex items-center gap-2 text-inkMute"
+        className="fn-rise absolute left-1 top-1/2 -translate-y-1/2 hidden xl:flex items-center gap-2 text-inkMute"
         style={{ animationDelay: '0.5s' }}
       >
         <span className="fn-nudge text-accent" aria-hidden>

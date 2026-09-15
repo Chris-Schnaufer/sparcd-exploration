@@ -146,7 +146,7 @@ Then('at 1297px Browse hides image counts before it narrows upload names', async
 });
 
 Then(
-  'at 1017px Browse hides image, tagging, and sync details before upload names',
+  'at 1017px Browse restores details when the upload table has room',
   async ({ page }) => {
     await page.setViewportSize({ width: 1017, height: 900 });
     const row = uploadRow(page, 'priortagger');
@@ -154,9 +154,9 @@ Then(
 
     await expect(upload).toBeVisible();
     await expect(upload).toContainText('priortagger');
-    await expect(row.locator('[data-column="images"]')).toBeHidden();
-    await expect(row.locator('[data-column="tagged"]')).toBeHidden();
-    await expect(row.locator('[data-column="sync"]')).toBeHidden();
+    await expect(row.locator('[data-column="images"]')).toBeVisible();
+    await expect(row.locator('[data-column="tagged"]')).toBeVisible();
+    await expect(row.locator('[data-column="sync"]')).toBeVisible();
     await expect.poll(async () => (await upload.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(256);
   },
 );

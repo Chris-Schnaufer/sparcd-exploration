@@ -45,7 +45,7 @@ Feature: Find the upload that needs tagging
   Scenario: Narrow Browse windows retain the upload column
     Given a collection is selected
     Then at 1297px Browse hides image counts before it narrows upload names
-    And at 1017px Browse hides image, tagging, and sync details before upload names
+    And at 1017px Browse restores details when the upload table has room
 
   @unmapped
   Scenario: An upload whose location file cannot be read still lists
