@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ConditionalReplaceConflictError, type SafeS3Client } from '@sparcd/s3-safe'
-import { validationError } from './validation'
+import { changedRecordsValidationError } from './validation'
 
 export type Registry = { key: string; value: unknown[]; etag: string; bucket: string }
 
@@ -95,7 +95,7 @@ export function RegistryEditor({ title, registry, client, reload, actor }: {
 
   const modifiedCount = changedRecordCount(items, registry.value)
   const save = async () => {
-    const invalid = validationError(title, items, selected)
+    const invalid = changedRecordsValidationError(title, items, registry.value)
     if (invalid) {
       setMessage(invalid)
       return

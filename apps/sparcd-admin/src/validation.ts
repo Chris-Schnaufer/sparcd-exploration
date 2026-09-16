@@ -16,3 +16,20 @@ export function validationError(kind: 'Species' | 'Locations', items: Entry[], i
   }
   return null;
 }
+
+/**
+ * Validate records that this editor would write. Existing legacy records are
+ * deliberately skipped unless the administrator has changed them.
+ */
+export function changedRecordsValidationError(
+  kind: 'Species' | 'Locations',
+  items: Entry[],
+  initial: unknown[],
+): string | null {
+  for (let index = 0; index < items.length; index += 1) {
+    if (JSON.stringify(items[index]) === JSON.stringify(initial[index])) continue
+    const error = validationError(kind, items, index)
+    if (error) return `${kind === 'Species' ? 'Species' : 'Location'} ${index + 1}: ${error}`
+  }
+  return null
+}
