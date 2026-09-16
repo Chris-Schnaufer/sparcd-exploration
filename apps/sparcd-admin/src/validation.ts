@@ -5,12 +5,15 @@ export function validationError(kind: 'Species' | 'Locations', items: Entry[], i
   if (kind === 'Species') {
     const name = String(item.name ?? '').trim();
     const scientificName = String(item.scientificName ?? '').trim();
-    if (!name || !scientificName) return 'Common and scientific names are required.';
+    const keyBinding = String(item.keyBinding ?? '').trim();
+    if (!name || !scientificName || !keyBinding) return 'Common name, scientific name, and shortcut key are required.';
     if (items.some((entry, i) => i !== index && entry.scientificName === scientificName))
       return 'Scientific name is already used by another official species.';
   } else {
     const locationId = String(item.idProperty ?? '').trim();
-    if (!locationId || !String(item.nameProperty ?? '').trim()) return 'Location ID and name are required.';
+    const requiredLocationFields = ['nameProperty', 'idProperty', 'latProperty', 'lngProperty', 'elevationProperty'];
+    if (requiredLocationFields.some((field) => String(item[field] ?? '').trim() === ''))
+      return 'Name, Location ID, latitude, longitude, and elevation are required.';
     if (items.some((entry, i) => i !== index && entry.idProperty === locationId))
       return 'Location ID is already used by another official location.';
   }

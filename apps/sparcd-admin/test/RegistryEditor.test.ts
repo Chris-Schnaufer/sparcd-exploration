@@ -18,7 +18,11 @@ it('retires a species without removing its historical identity', () => {
 });
 
 it('rejects duplicate official location IDs', () => {
-  expect(validationError('Locations', [{ idProperty: 'A', nameProperty: 'One' }, { idProperty: 'A', nameProperty: 'Two' }], 1)).toMatch(/already used/);
+  const locations = [
+    { idProperty: 'A', nameProperty: 'One', latProperty: 1, lngProperty: 1, elevationProperty: 1 },
+    { idProperty: 'A', nameProperty: 'Two', latProperty: 2, lngProperty: 2, elevationProperty: 2 },
+  ];
+  expect(validationError('Locations', locations, 1)).toMatch(/already used/);
 });
 
 
@@ -41,15 +45,15 @@ it('counts added and changed registry records for the save label', () => {
 
 it('validates every changed record before saving a registry', () => {
   const before = [
-    { scientificName: 'Canis latrans', name: 'Coyote' },
-    { scientificName: 'Puma concolor', name: 'Puma' },
+    { scientificName: 'Canis latrans', name: 'Coyote', keyBinding: 'C' },
+    { scientificName: 'Puma concolor', name: 'Puma', keyBinding: 'P' },
   ];
   const changed = [
-    { scientificName: 'Canis latrans', name: 'Coyote updated' },
-    { scientificName: 'Puma concolor', name: '' },
+    { scientificName: 'Canis latrans', name: 'Coyote updated', keyBinding: 'C' },
+    { scientificName: 'Puma concolor', name: '', keyBinding: 'P' },
   ];
   expect(changedRecordsValidationError('Species', changed, before)).toBe(
-    'Species “Puma concolor”: Common and scientific names are required.',
+    'Species “Puma concolor”: Common name, scientific name, and shortcut key are required.',
   );
 });
 
@@ -57,12 +61,12 @@ it('names an invalid location in a multi-record validation error', () => {
   const before = [{ idProperty: 'A', nameProperty: 'Alpha' }];
   const changed = [{ idProperty: '', nameProperty: 'North gate' }];
   expect(changedRecordsValidationError('Locations', changed, before)).toBe(
-    'Location “North gate”: Location ID and name are required.',
+    'Location “North gate”: Name, Location ID, latitude, longitude, and elevation are required.',
   );
 });
 
 it('does not reject an unchanged legacy record while validating changes', () => {
-  const before = [{ scientificName: '', name: '' }, { scientificName: 'Puma concolor', name: 'Puma' }];
-  const changed = [{ scientificName: '', name: '' }, { scientificName: 'Puma concolor', name: 'Mountain lion' }];
+  const before = [{ scientificName: '', name: '' }, { scientificName: 'Puma concolor', name: 'Puma', keyBinding: 'P' }];
+  const changed = [{ scientificName: '', name: '' }, { scientificName: 'Puma concolor', name: 'Mountain lion', keyBinding: 'P' }];
   expect(changedRecordsValidationError('Species', changed, before)).toBeNull();
 });

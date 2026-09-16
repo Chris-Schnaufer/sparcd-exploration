@@ -15,6 +15,10 @@ const labels: Record<string, string> = {
   nameProperty: 'Name', idProperty: 'Location ID', latProperty: 'Latitude', lngProperty: 'Longitude', elevationProperty: 'Elevation',
   status: 'Status', sensitive: 'Sensitive',
 }
+const requiredFields: Record<'Species' | 'Locations', readonly string[]> = {
+  Species: ['name', 'scientificName', 'keyBinding'],
+  Locations: ['nameProperty', 'idProperty', 'latProperty', 'lngProperty', 'elevationProperty'],
+}
 
 export function updateItem(items: Record<string, unknown>[], at: number, next: Record<string, unknown>) {
   return items.map((value, index) => (index === at ? next : value))
@@ -191,9 +195,13 @@ export function RegistryEditor({ title, registry, client, reload, actor }: {
           <legend className="px-1 text-sm font-semibold text-ink">Edit {label(item)}</legend>
           {fields[title].map((key) => (
             <label key={key} className="grid gap-1 text-sm font-medium text-ink">
-              {labels[key]}
+              <span>
+                {labels[key]}
+                {requiredFields[title].includes(key) && <><span aria-hidden="true" className="ml-1 text-warn">*</span><span className="sr-only"> (required)</span></>}
+              </span>
               <input
                 aria-label={labels[key]}
+                required={requiredFields[title].includes(key)}
                 className="min-h-10 border border-rule bg-paper px-2 text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
                 value={String(item[key] ?? '')}
                 onChange={(event) => change(key, event.target.value)}
