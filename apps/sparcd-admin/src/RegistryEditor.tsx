@@ -16,7 +16,7 @@ const labels: Record<string, string> = {
   status: 'Status', sensitive: 'Sensitive',
 }
 const requiredFields: Record<'Species' | 'Locations', readonly string[]> = {
-  Species: ['name', 'scientificName', 'keyBinding'],
+  Species: ['name', 'scientificName'],
   Locations: ['nameProperty', 'idProperty', 'latProperty', 'lngProperty', 'elevationProperty'],
 }
 

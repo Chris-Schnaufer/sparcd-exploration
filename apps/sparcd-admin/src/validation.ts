@@ -5,8 +5,7 @@ export function validationError(kind: 'Species' | 'Locations', items: Entry[], i
   if (kind === 'Species') {
     const name = String(item.name ?? '').trim();
     const scientificName = String(item.scientificName ?? '').trim();
-    const keyBinding = String(item.keyBinding ?? '').trim();
-    if (!name || !scientificName || !keyBinding) return 'Common name, scientific name, and shortcut key are required.';
+    if (!name || !scientificName) return 'Common name and scientific name are required.';
     if (items.some((entry, i) => i !== index && entry.scientificName === scientificName))
       return 'Scientific name is already used by another official species.';
   } else {

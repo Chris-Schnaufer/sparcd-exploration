@@ -54,7 +54,7 @@ it('validates every changed record before saving a registry', () => {
     { scientificName: 'Puma concolor', name: '', keyBinding: 'P' },
   ];
   expect(changedRecordsValidationError('Species', changed, before)).toBe(
-    'Species “Puma concolor”: Common name, scientific name, and shortcut key are required.',
+    'Species “Puma concolor”: Common name and scientific name are required.',
   );
 });
 
