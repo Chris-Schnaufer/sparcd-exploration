@@ -73,6 +73,7 @@ export function RegistryEditor({ title, registry, client, reload, actor }: {
   }, [registry])
 
   const item = items[selected] ?? {}
+  const noun = title === 'Species' ? 'species' : 'location'
   const label = (value: Record<string, unknown>) =>
     String(value.name ?? value.nameProperty ?? value.scientificName ?? 'New record')
   const recordOption = (value: Record<string, unknown>) => {
@@ -151,11 +152,11 @@ export function RegistryEditor({ title, registry, client, reload, actor }: {
       </div>
       <div className="p-4">
         <div className="mb-4 grid max-w-md gap-1 text-sm font-medium text-ink">
-          <label htmlFor={`${title.toLowerCase()}-selector`}>Select {title.slice(0, -1)}</label>
+          <label htmlFor={`${title.toLowerCase()}-selector`}>Select {noun}</label>
           <div className="flex items-center gap-1">
             <input
               id={`${title.toLowerCase()}-selector`}
-            aria-label={`Select ${title.slice(0, -1)}`}
+            aria-label={`Select ${noun}`}
             list={`${title.toLowerCase()}-records`}
             value={recordSearch ?? recordOption(item)}
             onChange={(event) => {
@@ -183,18 +184,21 @@ export function RegistryEditor({ title, registry, client, reload, actor }: {
             {items.map((value, index) => <option value={recordOption(value)} key={index} />)}
           </datalist>
         </div>
-        <button type="button" className="border border-rule px-3 py-2 text-sm text-ink hover:bg-paperHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent" onClick={() => {
-          if (draftIndex !== null) {
-            setSelected(draftIndex)
-            return
-          }
-          setItems([...items, {}])
-          setSelected(items.length)
-          setDraftIndex(items.length)
-          setRecordSearch(null)
-        }}>
-          Add {title.slice(0, -1)}
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <button type="button" aria-describedby={title === 'Species' ? 'species-add-help' : undefined} className="border border-rule px-3 py-2 text-sm text-ink hover:bg-paperHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent" onClick={() => {
+            if (draftIndex !== null) {
+              setSelected(draftIndex)
+              return
+            }
+            setItems([...items, {}])
+            setSelected(items.length)
+            setDraftIndex(items.length)
+            setRecordSearch(null)
+          }}>
+            {title === 'Species' ? 'Add species' : 'Add location'}
+          </button>
+          {title === 'Species' && <p id="species-add-help" className="m-0 text-sm text-inkSoft">Add a species, complete the required fields, then save.</p>}
+        </div>
         <fieldset className="mt-4 grid gap-3 border border-rule p-4 sm:grid-cols-2">
           <legend className="px-1 text-sm font-semibold text-ink">Edit {label(item)}</legend>
           {fields[title].map((key) => (
