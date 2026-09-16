@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { FileEntry } from '../src/store';
 import { inputValueToNaive } from '../src/lib/exifTime';
-import { CaptureTimeEditor, sequenceSpread } from '../src/components/CaptureTimeEditor';
+import { CaptureTimeEditor, sequenceSpread, spreadStartFor } from '../src/components/CaptureTimeEditor';
 
 const state = vi.hoisted(() => ({
   files: [] as FileEntry[], uploadTimeZone: 'UTC',
@@ -64,5 +64,23 @@ describe('sequenceSpread', () => {
 
   it.each(['', '0', 'abc', '1.5', '1e300', String(367 * 86_400)])('gives nothing for a spacing of %o', (spacing) => {
     expect(sequenceSpread(start, spacing)).toBeUndefined();
+  });
+});
+
+// The exact value `applySpread` stamps onto every touched file as
+// `manualSpreadStart` — the persisted ground truth "spread from" reads back
+// from, instead of re-deriving it batch-wide after the fact (#256).
+describe('spreadStartFor', () => {
+  it('is the typed start for a sequence spread', () => {
+    const options = sequenceSpread('2026-07-01T08:00:00', '30')!;
+    expect(spreadStartFor(options)).toEqual(at('2026-07-01T08:00:00'));
+  });
+
+  it('is undefined for a file-modified spread — no single start to report', () => {
+    expect(spreadStartFor({ kind: 'file-modified', timeZone: 'UTC' })).toBeUndefined();
+  });
+
+  it('is undefined when nothing describes a spread yet', () => {
+    expect(spreadStartFor(undefined)).toBeUndefined();
   });
 });

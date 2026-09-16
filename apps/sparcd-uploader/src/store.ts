@@ -51,6 +51,12 @@ export type FileEntry = ScannedFile & {
   exifNaive?: NaiveDateTime; // naive wall-clock components, no zone
   manualSource?: 'manual' | 'spread';
   manualNaive?: NaiveDateTime; // user-entered wall-clock for files with no EXIF/container time
+  // The literal start typed for the Spread that set `manualNaive`, stamped at
+  // application time so display never has to re-derive "spread from X" after
+  // the fact — a derivation that can't tell two folders' spreads apart, or
+  // handle one spread applied across several folders in a single action.
+  // Unset for a `file-modified` spread, which has no single start to report.
+  manualSpreadStart?: NaiveDateTime;
   exifCamera?: string;
   gps?: { lat: number; lon: number };
   width?: number;
@@ -163,7 +169,11 @@ type UploaderState = {
   setThumbnail: (id: string, thumbnail: Blob) => void;
   removeFile: (id: string) => void;
   setManualNaive: (id: string, naive: NaiveDateTime | null, source?: 'manual' | 'spread') => void;
-  setManualNaiveMany: (entries: { id: string; naive: NaiveDateTime }[], source: 'manual' | 'spread') => void;
+  setManualNaiveMany: (
+    entries: { id: string; naive: NaiveDateTime }[],
+    source: 'manual' | 'spread',
+    spreadStart?: NaiveDateTime,
+  ) => void;
   resetBatch: () => void;
   setUploaderUser: (value: string) => void;
   setSelectedLocationKey: (key: string | null) => void;
@@ -577,16 +587,23 @@ export const useStore = create<UploaderState>()(
       setManualNaive: (id, naive, source = 'manual') =>
         set((s) => {
           const files = s.files.map((f) =>
-            f.id === id ? { ...f, manualNaive: naive ?? undefined, manualSource: naive ? source : undefined } : f,
+            f.id === id
+              ? {
+                  ...f,
+                  manualNaive: naive ?? undefined,
+                  manualSource: naive ? source : undefined,
+                  manualSpreadStart: undefined,
+                }
+              : f,
           );
           return { files, validations: validateBatch(files) };
         }),
 
-      setManualNaiveMany: (entries, source) =>
+      setManualNaiveMany: (entries, source, spreadStart) =>
         set((s) => {
           const byId = new Map(entries.map((e) => [e.id, e.naive]));
           const files = s.files.map((f) => byId.has(f.id)
-            ? { ...f, manualNaive: byId.get(f.id)!, manualSource: source } : f);
+            ? { ...f, manualNaive: byId.get(f.id)!, manualSource: source, manualSpreadStart: spreadStart } : f);
           return { files, validations: validateBatch(files) };
         }),
 

@@ -41,15 +41,10 @@ const baseName = (relPath: string): string => relPath.split('/').pop() ?? relPat
 
 const shortNaive = (n: NaiveDateTime): string => formatNaive(n).replace('T', ' ');
 
-/** Earliest spread time in the batch — the start a Spread was applied from. */
-export function spreadStartOf(files: FileEntry[]): NaiveDateTime | undefined {
-  return files
-    .filter((f) => f.manualSource === 'spread' && f.manualNaive)
-    .map((f) => f.manualNaive!)
-    .sort((a, b) => formatNaive(a).localeCompare(formatNaive(b)))[0];
-}
-
-/** One line saying how this file's time was arrived at. */
+/** One line saying how this file's time was arrived at. `spreadStart` is the
+ *  file's own `manualSpreadStart` — stamped at the time its Spread was
+ *  applied, not re-derived, so two folders spread from different times (or
+ *  one spread applied across several folders at once) each report correctly. */
 export function methodLine(
   f: FileEntry,
   estimate: CaptureEstimate | undefined,
