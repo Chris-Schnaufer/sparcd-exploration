@@ -99,12 +99,17 @@ export function CollectionEditor({ collections, client, actor, reload }: {
     <div className="border-b border-rule px-4 py-3"><h1 id="collections-heading" className="m-0 text-lg font-semibold">Collections</h1><p className="mb-0 mt-1 text-sm text-inkSoft">Update collection metadata without changing its bucket or unique ID (UUID).</p></div>
     <div className="p-4">
       <div className="mb-4 grid w-full max-w-4xl gap-1 text-sm font-medium"><label htmlFor="collection-selector">Select collection</label>
+        <div id="collection-selection-summary" className="rounded-none border border-ruleSoft bg-paper px-3 py-2 text-sm font-normal text-ink break-words">
+          <span className="block">{selected.name ?? selected.bucket}</span>
+          <span className="block font-mono text-xs text-inkMute break-all">{selected.uuid}</span>
+        </div>
         <div className="flex w-full items-center gap-1">
         <input
           id="collection-selector"
           aria-label="Select collection"
+          aria-describedby="collection-selection-summary"
           list="collection-records"
-          value={collectionSearch ?? `${selected.name ?? selected.bucket} — ${selected.uuid}`}
+          value={collectionSearch ?? ''}
           onChange={(event) => {
             const value = event.target.value
             setCollectionSearch(value)
@@ -115,7 +120,7 @@ export function CollectionEditor({ collections, client, actor, reload }: {
           placeholder="Type to filter collections"
           className="min-h-10 min-w-0 flex-1 border border-rule bg-paper px-2 text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
         />
-        {collectionSearch !== '' && <button
+        {collectionSearch !== null && collectionSearch !== '' && <button
           type="button"
           aria-label="Clear collection search"
           title="Clear collection search"
