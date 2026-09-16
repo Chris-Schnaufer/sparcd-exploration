@@ -8,7 +8,7 @@ const json = (value: unknown) => JSON.stringify(value, null, 2)
 const id = () => crypto.randomUUID()
 const fields = {
   Species: ['name', 'scientificName', 'genus', 'species', 'keyBinding'],
-  Locations: ['nameProperty', 'idProperty', 'latProperty', 'lngProperty', 'elevationProperty', 'status', 'sensitive'],
+  Locations: ['nameProperty', 'idProperty', 'latProperty', 'lngProperty', 'elevationProperty'],
 } as const
 const labels: Record<string, string> = {
   name: 'Common name', scientificName: 'Scientific name', genus: 'Genus', species: 'Species', keyBinding: 'Shortcut key',
@@ -108,22 +108,17 @@ export function RegistryEditor({ title, registry, client, reload, actor }: {
         {title === 'Locations' && <p className="mb-0 mt-1 text-sm text-inkSoft">Changed IDs apply to new uploads; Explorer retains historic IDs as legacy values.</p>}
       </div>
       <div className="p-4">
-        <div className="mb-4 flex flex-wrap gap-2" role="list" aria-label={`${title} records`}>
-          {items.map((value, index) => (
-            <button
-              type="button"
-              role="listitem"
-              aria-current={index === selected ? 'true' : undefined}
-              onClick={() => setSelected(index)}
-              key={index}
-              className={`border px-3 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
-                index === selected ? 'border-ink bg-paper text-ink font-semibold' : 'border-rule bg-panel text-inkSoft hover:bg-paperHover hover:text-ink'
-              }`}
-            >
-              {label(value)}
-            </button>
-          ))}
-        </div>
+        <label className="mb-4 grid max-w-md gap-1 text-sm font-medium text-ink">
+          Select {title.slice(0, -1)}
+          <select
+            aria-label={`Select ${title.slice(0, -1)}`}
+            value={selected}
+            onChange={(event) => setSelected(Number(event.target.value))}
+            className="min-h-10 border border-rule bg-paper px-2 text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+          >
+            {items.map((value, index) => <option value={index} key={index}>{label(value)}</option>)}
+          </select>
+        </label>
         <button type="button" className="border border-rule px-3 py-2 text-sm text-ink hover:bg-paperHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent" onClick={() => {
           setItems([...items, {}])
           setSelected(items.length)
