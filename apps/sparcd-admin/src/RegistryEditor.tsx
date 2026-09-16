@@ -185,7 +185,7 @@ export function RegistryEditor({ title, registry, client, reload, actor }: {
           </datalist>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <button type="button" aria-describedby={title === 'Species' ? 'species-add-help' : undefined} className="border border-rule px-3 py-2 text-sm text-ink hover:bg-paperHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent" onClick={() => {
+          <button type="button" aria-describedby={`${title.toLowerCase()}-add-help`} className="border border-rule px-3 py-2 text-sm text-ink hover:bg-paperHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent" onClick={() => {
             if (draftIndex !== null) {
               setSelected(draftIndex)
               return
@@ -197,7 +197,7 @@ export function RegistryEditor({ title, registry, client, reload, actor }: {
           }}>
             {title === 'Species' ? 'Add species' : 'Add location'}
           </button>
-          {title === 'Species' && <p id="species-add-help" className="m-0 text-sm text-inkSoft">Add a species and complete the required fields, then save, select a species to edit, or add another.</p>}
+          <p id={`${title.toLowerCase()}-add-help`} className="m-0 text-sm text-inkSoft">Add a {noun} and complete the required fields, then save, select a {noun} to edit, or add another.</p>
         </div>
         <fieldset className="mt-4 grid gap-3 border border-rule p-4 sm:grid-cols-2">
           <legend className="px-1 text-sm font-semibold text-ink">Edit {label(item)}</legend>
