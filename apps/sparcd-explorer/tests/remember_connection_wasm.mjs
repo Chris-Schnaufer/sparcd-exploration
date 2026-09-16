@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
-import { chromium } from '@playwright/test';
+import { chromium, expect } from '@playwright/test';
 
 const root = process.argv[2];
 if (!root) throw new Error('Usage: node remember_connection_wasm.mjs <exported-wasm-directory>');
@@ -31,7 +31,14 @@ try {
   });
   await page.addInitScript(() => localStorage.setItem('sparcd-connection', JSON.stringify({ endpoint: 'shared.example', accessKey: 'shared-access', secure: true, region: 'us-west-2', forcePathStyle: true })));
   await page.goto(url, { waitUntil: 'domcontentloaded' });
-  const endpoint = page.getByRole('textbox', { name: 'Endpoint', exact: true });
+  // Marimo's WASM renderer renders the supplied labels visually, but omits them
+  // from the exported DOM's accessible tree. Scope to the native form around
+  // Connect and assert its control shape before selecting its controls.
+  const sidebar = page.locator('aside.app-sidebar');
+  const connectionForm = sidebar.getByRole('button', { name: 'Connect', exact: true }).locator('xpath=ancestor::form');
+  const textFields = connectionForm.locator('input[type="text"]');
+  const checkboxes = connectionForm.getByRole('checkbox');
+  const endpoint = textFields.nth(0);
   try {
     await endpoint.waitFor({ state: 'visible', timeout: wasmStartupTimeout });
   } catch (error) {
@@ -53,10 +60,12 @@ try {
     );
     throw new Error(`${error.message}\nWASM diagnostics:\n${diagnostics.join('\n') || '<none>'}\nSidebar controls:\n${JSON.stringify(sidebarControls)}\nPage body:\n${body}`);
   }
-  await assert.doesNotReject(() => expectValue(endpoint, 'shared.example'));
-  await assert.doesNotReject(() => expectValue(page.getByRole('textbox', { name: 'Access key', exact: true }), 'shared-access'));
-  await assert.equal(await page.getByRole('checkbox', { name: 'Use HTTPS (when no scheme in endpoint)', exact: true }).isChecked(), true);
-  await page.getByRole('textbox', { name: 'Secret key', exact: true }).fill('never-stored');
+  await assert.equal(await textFields.count(), 2, 'the connection form has endpoint and access-key fields');
+  await assert.equal(await checkboxes.count(), 2, 'the connection form has HTTPS and remember controls');
+  await expect(textFields.nth(0)).toHaveValue('shared.example', { timeout: wasmStartupTimeout });
+  await expect(textFields.nth(1)).toHaveValue('shared-access', { timeout: wasmStartupTimeout });
+  await assert.equal(await checkboxes.nth(0).isChecked(), true);
+  await connectionForm.locator('input[type="password"]').fill('never-stored');
   await page.getByRole('button', { name: 'Connect' }).click();
   await page.waitForFunction(() => {
     const value = JSON.parse(localStorage.getItem('sparcd-connection') || '{}');
@@ -70,7 +79,7 @@ try {
     region: 'us-west-2',
     forcePathStyle: true,
   });
-  await page.getByRole('checkbox', { name: 'Remember endpoint & access key on this device', exact: true }).uncheck();
+  await checkboxes.nth(1).uncheck();
   await page.getByRole('button', { name: 'Connect' }).click();
   try {
     await page.waitForFunction(() => localStorage.getItem('sparcd-connection') === null, undefined, { timeout: 10_000 });
@@ -84,4 +93,3 @@ try {
   server.closeAllConnections();
   await new Promise((resolve) => server.close(resolve));
 }
-async function expectValue(locator, value) { assert.equal(await locator.inputValue(), value); }
