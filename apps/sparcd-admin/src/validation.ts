@@ -29,7 +29,14 @@ export function changedRecordsValidationError(
   for (let index = 0; index < items.length; index += 1) {
     if (JSON.stringify(items[index]) === JSON.stringify(initial[index])) continue
     const error = validationError(kind, items, index)
-    if (error) return `${kind === 'Species' ? 'Species' : 'Location'} ${index + 1}: ${error}`
+    if (error) {
+      const item = items[index]
+      const name = kind === 'Species'
+        ? (String(item.name ?? '').trim() || String(item.scientificName ?? '').trim())
+        : (String(item.nameProperty ?? '').trim() || String(item.idProperty ?? '').trim())
+      const fallback = `${kind === 'Species' ? 'Species' : 'Location'} ${index + 1}`
+      return `${kind === 'Species' ? 'Species' : 'Location'} “${name || fallback}”: ${error}`
+    }
   }
   return null
 }

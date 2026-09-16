@@ -150,8 +150,12 @@ function App() {
       }}
     >
       <div className="max-w-6xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
-        {section === 'species' && <RegistryEditor title="Species" registry={data.species} client={data.client} actor={actor} reload={() => void authorize(config)} />}
-        {section === 'locations' && <RegistryEditor title="Locations" registry={data.locations} client={data.client} actor={actor} reload={() => void authorize(config)} />}
+        <div className={section === 'species' ? '' : 'hidden'}>
+          <RegistryEditor title="Species" registry={data.species} client={data.client} actor={actor} reload={() => void authorize(config)} />
+        </div>
+        <div className={section === 'locations' ? '' : 'hidden'}>
+          <RegistryEditor title="Locations" registry={data.locations} client={data.client} actor={actor} reload={() => void authorize(config)} />
+        </div>
         {section === 'settings' && <section className="max-w-2xl border border-rule bg-panel p-4" aria-labelledby="settings-heading">
           <h1 id="settings-heading" className="m-0 text-lg font-semibold text-ink">Settings</h1>
           <p className="mt-1 text-sm text-inkSoft">This identity is recorded with configuration changes.</p>

@@ -49,7 +49,15 @@ it('validates every changed record before saving a registry', () => {
     { scientificName: 'Puma concolor', name: '' },
   ];
   expect(changedRecordsValidationError('Species', changed, before)).toBe(
-    'Species 2: Common and scientific names are required.',
+    'Species “Puma concolor”: Common and scientific names are required.',
+  );
+});
+
+it('names an invalid location in a multi-record validation error', () => {
+  const before = [{ idProperty: 'A', nameProperty: 'Alpha' }];
+  const changed = [{ idProperty: '', nameProperty: 'North gate' }];
+  expect(changedRecordsValidationError('Locations', changed, before)).toBe(
+    'Location “North gate”: Location ID and name are required.',
   );
 });
 
