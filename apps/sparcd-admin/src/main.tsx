@@ -1,6 +1,7 @@
 import { StrictMode, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { RegistryEditor } from './RegistryEditor'
+import { CollectionEditor, type CollectionRecord } from './CollectionEditor'
 import { Chrome, type AdminSection } from './Chrome'
 import {
   clearSharedConnection,
@@ -14,7 +15,7 @@ import {
   type Theme,
 } from '@sparcd/auth-ui'
 import type { S3Config } from '@sparcd/types'
-import { SafeS3Client } from '@sparcd/s3-safe'
+import { listCollections, SafeS3Client } from '@sparcd/s3-safe'
 import './style.css'
 
 const LOCATIONS_KEY = 'Settings/locations.json'
@@ -49,7 +50,14 @@ async function loadRegistries(config: S3Config) {
       bucket,
     }
   }
-  return { client, species: await read(SPECIES_KEY), locations: await read(LOCATIONS_KEY) }
+  const collections: CollectionRecord[] = []
+  for (const collection of await listCollections(client)) {
+    const key = `Collections/${collection.uuid}/collection.json`
+    const stat = await client.statObject(collection.bucket, key)
+    const document = JSON.parse(new TextDecoder().decode(await client.getObject(collection.bucket, key))) as Record<string, unknown>
+    collections.push({ ...collection, etag: stat.etag!, document })
+  }
+  return { client, species: await read(SPECIES_KEY), locations: await read(LOCATIONS_KEY), collections }
 }
 
 async function verifyWriteAccess(config: S3Config) {
@@ -155,6 +163,9 @@ function App() {
         </div>
         <div className={section === 'locations' ? '' : 'hidden'}>
           <RegistryEditor title="Locations" registry={data.locations} client={data.client} actor={actor} reload={() => void authorize(config)} />
+        </div>
+        <div className={section === 'collections' ? '' : 'hidden'}>
+          <CollectionEditor collections={data.collections} client={data.client} actor={actor} reload={() => void authorize(config)} />
         </div>
         {section === 'settings' && <section className="max-w-2xl border border-rule bg-panel p-4" aria-labelledby="settings-heading">
           <h1 id="settings-heading" className="m-0 text-lg font-semibold text-ink">Settings</h1>

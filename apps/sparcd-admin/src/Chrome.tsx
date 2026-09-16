@@ -1,11 +1,12 @@
 import { type ReactNode } from 'react'
 import { BrandSwitcher, ConnectionChip, type Theme } from '@sparcd/auth-ui'
 
-export type AdminSection = 'species' | 'locations' | 'settings'
+export type AdminSection = 'species' | 'locations' | 'collections' | 'settings'
 
 const sections: { id: AdminSection; label: string }[] = [
   { id: 'species', label: 'Species' },
   { id: 'locations', label: 'Locations' },
+  { id: 'collections', label: 'Collections' },
   { id: 'settings', label: 'Settings' },
 ]
 

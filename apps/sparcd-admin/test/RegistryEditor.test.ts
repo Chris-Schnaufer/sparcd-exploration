@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { changedRecordCount, discardBlankDraft, retireItem, updateItem } from '../src/RegistryEditor';
 import { changedRecordsValidationError, validationError } from '../src/validation';
+import { collectionValidationError } from '../src/CollectionEditor';
 
 describe('registry mutation', () => {
   it('replaces only the selected species record', () => {
@@ -69,4 +70,9 @@ it('does not reject an unchanged legacy record while validating changes', () => 
   const before = [{ scientificName: '', name: '' }, { scientificName: 'Puma concolor', name: 'Puma', keyBinding: 'P' }];
   const changed = [{ scientificName: '', name: '' }, { scientificName: 'Puma concolor', name: 'Mountain lion', keyBinding: 'P' }];
   expect(changedRecordsValidationError('Species', changed, before)).toBeNull();
+});
+
+it('requires every collection metadata field', () => {
+  expect(collectionValidationError({ nameProperty: 'Field site', organizationProperty: 'Lab', contactInfoProperty: 'a@lab.example', descriptionProperty: '' })).toBe('Description is required.');
+  expect(collectionValidationError({ nameProperty: 'Field site', organizationProperty: 'Lab', contactInfoProperty: 'a@lab.example', descriptionProperty: 'Study' })).toBeNull();
 });
