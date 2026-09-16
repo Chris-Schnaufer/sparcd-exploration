@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { discardBlankDraft, retireItem, updateItem } from '../src/RegistryEditor';
+import { changedRecordCount, discardBlankDraft, retireItem, updateItem } from '../src/RegistryEditor';
 import { validationError } from '../src/validation';
 
 describe('registry mutation', () => {
@@ -30,4 +30,10 @@ it('discards an empty added record when an existing record is selected', () => {
 it('keeps a newly added record once it contains a value', () => {
   const records = [{ name: 'Coyote' }, { name: 'Puma' }, { name: 'Jaguar' }];
   expect(discardBlankDraft(records, 2)).toEqual(records);
+});
+
+
+it('counts added and changed registry records for the save label', () => {
+  const before = [{ name: 'Coyote' }, { name: 'Puma' }];
+  expect(changedRecordCount([{ name: 'Coyote' }, { name: 'Mountain lion' }, { name: 'Jaguar' }], before)).toBe(2);
 });

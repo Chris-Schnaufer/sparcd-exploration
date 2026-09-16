@@ -34,6 +34,13 @@ export function discardBlankDraft(items: Record<string, unknown>[], draftIndex: 
     : items
 }
 
+export function changedRecordCount(items: Record<string, unknown>[], initial: unknown[]) {
+  const count = Math.max(items.length, initial.length)
+  return Array.from({ length: count }, (_, index) =>
+    JSON.stringify(items[index]) !== JSON.stringify(initial[index]),
+  ).filter(Boolean).length
+}
+
 export function RegistryEditor({ title, registry, client, reload, actor }: {
   title: 'Species'
   registry: Registry
@@ -52,12 +59,13 @@ export function RegistryEditor({ title, registry, client, reload, actor }: {
   const [message, setMessage] = useState('')
   const [retryApplied, setRetryApplied] = useState<(() => Promise<void>) | null>(null)
   const [draftIndex, setDraftIndex] = useState<number | null>(null)
-  const [recordSearch, setRecordSearch] = useState('')
+  const [recordSearch, setRecordSearch] = useState<string | null>(null)
 
   useEffect(() => {
     setItems(registry.value as Record<string, unknown>[])
     setSelected((current) => Math.min(current, Math.max(registry.value.length - 1, 0)))
     setDraftIndex(null)
+    setRecordSearch(null)
   }, [registry])
 
   const item = items[selected] ?? {}
@@ -81,10 +89,11 @@ export function RegistryEditor({ title, registry, client, reload, actor }: {
     setItems(nextItems)
     setDraftIndex(null)
     setSelected(nextSelected)
-    setRecordSearch(recordOption(nextItems[nextSelected] ?? {}))
+    setRecordSearch(null)
   }
 
 
+  const modifiedCount = changedRecordCount(items, registry.value)
   const save = async () => {
     const invalid = validationError(title, items, selected)
     if (invalid) {
@@ -142,17 +151,26 @@ export function RegistryEditor({ title, registry, client, reload, actor }: {
           <input
             aria-label={`Select ${title.slice(0, -1)}`}
             list={`${title.toLowerCase()}-records`}
-            value={recordSearch || recordOption(item)}
+            value={recordSearch ?? recordOption(item)}
             onChange={(event) => {
               const value = event.target.value
               setRecordSearch(value)
               const found = items.findIndex((record) => recordOption(record) === value)
               if (found >= 0) selectRecord(found)
             }}
-            onBlur={() => setRecordSearch('')}
+            onBlur={() => setRecordSearch(null)}
             placeholder={`Type to filter ${title.toLowerCase()}`}
             className="min-h-10 border border-rule bg-paper px-2 text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
           />
+          {recordSearch !== '' && <button
+            type="button"
+            aria-label={`Clear ${title.toLowerCase()} search`}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => setRecordSearch('')}
+            className="-mt-9 mr-1 mb-1 ml-auto grid h-8 w-8 place-items-center text-inkSoft hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+          >
+            <span aria-hidden className="text-lg leading-none">×</span>
+          </button>}
           <datalist id={`${title.toLowerCase()}-records`}>
             {items.map((value, index) => <option value={recordOption(value)} key={index} />)}
           </datalist>
@@ -165,7 +183,7 @@ export function RegistryEditor({ title, registry, client, reload, actor }: {
           setItems([...items, {}])
           setSelected(items.length)
           setDraftIndex(items.length)
-          setRecordSearch('')
+          setRecordSearch(null)
         }}>
           Add {title.slice(0, -1)}
         </button>
@@ -185,7 +203,7 @@ export function RegistryEditor({ title, registry, client, reload, actor }: {
         </fieldset>
         <div className="mt-4 flex flex-wrap gap-2">
           {title === 'Species' && <button type="button" className="border border-rule px-3 py-2 text-sm text-ink hover:bg-paperHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent" onClick={() => setItems(retireItem(items, selected))}>Retire species</button>}
-          <button type="button" className="border border-ink bg-ink px-3 py-2 text-sm font-semibold text-paper hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2" onClick={() => void save()}>Save {title}</button>
+          <button type="button" disabled={modifiedCount === 0} className="border border-ink bg-ink px-3 py-2 text-sm font-semibold text-paper hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2" onClick={() => void save()}>{modifiedCount === 0 ? `Save ${title.toLowerCase()}` : `Save ${modifiedCount} ${modifiedCount === 1 ? title.slice(0, -1).toLowerCase() : title.toLowerCase()}`}</button>
           {retryApplied && <button type="button" className="border border-warn px-3 py-2 text-sm text-warn focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent" onClick={() => void retryApplied().then(() => {
             setRetryApplied(null)
             setMessage('Applied audit record recovered.')
