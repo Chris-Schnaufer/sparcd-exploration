@@ -41,21 +41,22 @@ const baseName = (relPath: string): string => relPath.split('/').pop() ?? relPat
 
 const shortNaive = (n: NaiveDateTime): string => formatNaive(n).replace('T', ' ');
 
-/** One line saying how this file's time was arrived at. `spreadStart` is the
- *  file's own `manualSpreadStart` — stamped at the time its Spread was
- *  applied, not re-derived, so two folders spread from different times (or
- *  one spread applied across several folders at once) each report correctly. */
+/** One line saying how this file's time was arrived at. A sequence spread's
+ * start lives on the file itself, rather than being re-derived from the batch,
+ * so two folders spread independently each retain their own provenance. */
 export function methodLine(
   f: FileEntry,
   estimate: CaptureEstimate | undefined,
   timeZone: string,
-  spreadStart?: NaiveDateTime,
 ): string {
   if (f.exifNaive) return 'camera time';
   if (f.manualNaive) {
-    return f.manualSource === 'spread' && spreadStart
-      ? `spread from ${shortNaive(spreadStart)}`
-      : 'set by hand';
+    if (f.manualSource === 'spread') {
+      return f.manualSpreadStart
+        ? `spread from ${shortNaive(f.manualSpreadStart)}`
+        : `spread from file modified times (${timeZone})`;
+    }
+    return 'set by hand';
   }
   if (!estimate) return '';
   if (estimate.method === 'interpolated')

@@ -47,6 +47,7 @@ const toFlipFile = (f: FileEntry, estimate: CaptureEstimate | undefined): FlipFi
   // would bring a manual entry home disguised as EXIF.
   exifTimestamp: f.exifNaive ? formatNaive(f.exifNaive) : undefined,
   manualTimestamp: f.manualNaive ? formatNaive(f.manualNaive) : undefined,
+  manualSpreadStart: f.manualSpreadStart ? formatNaive(f.manualSpreadStart) : undefined,
   estimatedTimestamp: estimate ? formatNaive(estimate.naive) : undefined,
   timestampSource: f.exifNaive ? undefined : f.manualNaive ? f.manualSource ?? 'manual' : estimate?.method,
   mimeType: f.mimeType,
@@ -96,6 +97,7 @@ const toFileEntry = (f: FlipFile, file: File, record: FlipRecord): FileEntry => 
   exifNaive: parseNaive(f.exifTimestamp),
   manualNaive: parseNaive(f.manualTimestamp),
   manualSource: f.timestampSource === 'manual' || f.timestampSource === 'spread' ? f.timestampSource : undefined,
+  manualSpreadStart: parseNaive(f.manualSpreadStart),
   mimeType: f.mimeType,
   exifCamera: f.exifCamera,
   gps: f.gps,

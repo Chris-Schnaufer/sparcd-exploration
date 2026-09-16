@@ -130,7 +130,7 @@ function Row({
   // override typed over it. The tag says which, so the column is never a lie.
   const { naive, source } = effectiveTime(entry, estimates);
   const how = source
-    ? methodLine(entry, estimates.get(entry.id), timeZone, entry.manualSpreadStart)
+    ? methodLine(entry, estimates.get(entry.id), timeZone)
     : undefined;
   return (
     <div

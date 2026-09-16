@@ -106,7 +106,11 @@ it('carries every kind of capture time out to the tagger and home into media.csv
     files: [
       entry('1-camera.jpg', { exifNaive: at(12, 0) }),
       entry('2-manual.jpg', { manualNaive: at(12, 5), manualSource: 'manual' }),
-      entry('3-spread.jpg', { manualNaive: at(12, 6), manualSource: 'spread' }),
+      entry('3-spread.jpg', {
+        manualNaive: at(12, 6),
+        manualSource: 'spread',
+        manualSpreadStart: at(12, 5),
+      }),
       entry('4-none.jpg', {}),
     ],
   });
@@ -114,12 +118,16 @@ it('carries every kind of capture time out to the tagger and home into media.csv
   await handOffToTagger();
   const record = stored.record!;
   expect(record.files.map((f) => f.relPath)).toEqual(NAMES.map((n) => `trip/${n}`));
+  expect(record.files.find((f) => f.fileName === '3-spread.jpg')?.manualSpreadStart)
+    .toBe('2026-07-01T12:05:00');
   // Only file with no time of its own: 30 minutes past the one camera time,
   // three ten-minute steps down the gap it opens.
   expect(captureTimestampOf(record.files[3])).toBe('2026-07-01T12:30:00');
 
   useStore.setState({ files: [], dirHandle: null });
   expect(await resumeFromFlip(record.id)).toEqual({ kind: 'restored' });
+  expect(useStore.getState().files.find((f) => f.fileName === '3-spread.jpg')?.manualSpreadStart)
+    .toEqual(at(12, 5));
 
   const bundle = await buildBundle({
     location: { key: 'SAN15|31.5,-110.2', id: 'SAN15', name: 'San Pedro 15', latitude: 31.5, longitude: -110.2, elevation: 1200 },

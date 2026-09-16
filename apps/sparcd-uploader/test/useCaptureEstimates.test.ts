@@ -21,17 +21,17 @@ describe('methodLine — "spread from" reflects the file\'s own spread, not the 
     // batch-wide earliest one.
     const folderA = spreadFile(8, 8);
     const folderB = spreadFile(14, 14);
-    expect(methodLine(folderA, undefined, 'UTC', folderA.manualSpreadStart)).toBe(
+    expect(methodLine(folderA, undefined, 'UTC')).toBe(
       'spread from 2026-07-01 08:00:00',
     );
-    expect(methodLine(folderB, undefined, 'UTC', folderB.manualSpreadStart)).toBe(
+    expect(methodLine(folderB, undefined, 'UTC')).toBe(
       'spread from 2026-07-01 14:00:00',
     );
   });
 
-  it('falls back to "set by hand" for a file-modified spread, which has no single start', () => {
+  it('identifies a file-modified spread rather than calling it a hand entry', () => {
     const fileModified = spreadFile(9, undefined);
-    expect(methodLine(fileModified, undefined, 'UTC', fileModified.manualSpreadStart)).toBe('set by hand');
+    expect(methodLine(fileModified, undefined, 'UTC')).toBe('spread from file modified times (UTC)');
   });
 
   it('reports "set by hand" for a plain manual override (not a spread)', () => {

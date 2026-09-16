@@ -402,6 +402,9 @@ it('sets and clears manual sources, and applies a spread in one store update', (
   expect(useStore.getState().files[0].manualNaive).toBeUndefined();
   expect(useStore.getState().files[0].manualSource).toBeUndefined();
   expect(useStore.getState().files[0].manualSpreadStart).toBeUndefined();
+  // The optional third argument is meaningful only for a sequence spread.
+  state.setManualNaiveMany([{ id: 'b', naive: NAIVE }], 'manual', SPREAD_START);
+  expect(useStore.getState().files[1].manualSpreadStart).toBeUndefined();
 });
 
 it('keeps two separately-spread folders\' starts distinct (#256)', () => {

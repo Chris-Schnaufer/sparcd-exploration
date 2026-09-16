@@ -479,15 +479,18 @@ export function CaptureTimeEditor({ files }: { files: FileEntry[] }) {
                   )}
                   <span className="font-body text-[11px] leading-snug text-inkMute min-w-0">
                     {f.manualNaive && estimate ? (
-                      <button
-                        type="button"
-                        onClick={() => setManualNaive(f.id, null)}
-                        className="text-inkMute hover:text-warn focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-                      >
-                        ✕ back to estimate ({shortNaive(estimate.naive)})
-                      </button>
+                      <>
+                        {methodLine(f, estimate, uploadTimeZone)}{' '}
+                        <button
+                          type="button"
+                          onClick={() => setManualNaive(f.id, null)}
+                          className="text-inkMute hover:text-warn focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                        >
+                          · ✕ back to estimate ({shortNaive(estimate.naive)})
+                        </button>
+                      </>
                     ) : (
-                      methodLine(f, estimate, uploadTimeZone, f.manualSpreadStart)
+                      methodLine(f, estimate, uploadTimeZone)
                     )}
                   </span>
                 </div>

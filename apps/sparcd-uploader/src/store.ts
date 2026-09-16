@@ -603,7 +603,12 @@ export const useStore = create<UploaderState>()(
         set((s) => {
           const byId = new Map(entries.map((e) => [e.id, e.naive]));
           const files = s.files.map((f) => byId.has(f.id)
-            ? { ...f, manualNaive: byId.get(f.id)!, manualSource: source, manualSpreadStart: spreadStart } : f);
+            ? {
+                ...f,
+                manualNaive: byId.get(f.id)!,
+                manualSource: source,
+                manualSpreadStart: source === 'spread' ? spreadStart : undefined,
+              } : f);
           return { files, validations: validateBatch(files) };
         }),
 
