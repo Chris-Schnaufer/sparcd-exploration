@@ -1,12 +1,17 @@
 import { StrictMode, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { RegistryEditor } from './RegistryEditor'
+import { Chrome } from './Chrome'
 import {
+  clearSharedConnection,
   Connection,
   loadPersistedConnection,
   loadSessionConnection,
   saveSharedConnection,
   subscribeSharedConnection,
+  loadSharedTheme,
+  saveSharedTheme,
+  type Theme,
 } from '@sparcd/auth-ui'
 import type { S3Config } from '@sparcd/types'
 import { SafeS3Client } from '@sparcd/s3-safe'
@@ -63,6 +68,7 @@ function App() {
   const [connecting, setConnecting] = useState(false)
   const [error, setError] = useState('')
   const [identity, setIdentity] = useState('')
+  const [theme, setTheme] = useState<Theme>(() => loadSharedTheme() ?? 'light')
 
   const authorize = async (nextConfig: S3Config, remember = true) => {
     setConnecting(true)
@@ -82,6 +88,10 @@ function App() {
       setConnecting(false)
     }
   }
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', theme === 'dark')
+  }, [theme])
 
   useEffect(() => {
     const sessionConfig = loadSessionConnection()
@@ -118,18 +128,45 @@ function App() {
   }
   const actor = identity.trim() || config.accessKey
 
+  const toggleTheme = () => {
+    const nextTheme: Theme = theme === 'light' ? 'dark' : 'light'
+    setTheme(nextTheme)
+    saveSharedTheme(nextTheme)
+  }
+
   return (
-    <main>
-      <h1>SPARC'd · Admin</h1>
-      <p>Connected credentials have configuration-write access.</p>
-      <label>
-        Administrator identity
-        <input value={identity} onChange={(event) => setName(event.target.value)} />
-      </label>
-      {!identity.trim() && <p role="alert">Identity is blank; audit records use login ID {config.accessKey}.</p>}
-      <RegistryEditor title="Species" registry={data.species} client={data.client} actor={actor} reload={() => void authorize(config)} />
-      <RegistryEditor title="Locations" registry={data.locations} client={data.client} actor={actor} reload={() => void authorize(config)} />
-    </main>
+    <Chrome
+      identity={actor}
+      theme={theme}
+      onToggleTheme={toggleTheme}
+      onDisconnect={() => {
+        clearSharedConnection()
+        setConfig(null)
+        setData(null)
+      }}
+    >
+      <div className="max-w-6xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
+        <div className="mb-6 border-b border-rule pb-5">
+          <h1 className="m-0 font-display text-2xl font-semibold text-ink">Configuration</h1>
+          <p className="mt-2 mb-0 text-inkSoft">Manage the shared species and location registries.</p>
+        </div>
+        <section className="mb-6 bg-accentSoft border border-rule px-4 py-3 text-sm text-inkSoft" aria-label="Administrator identity">
+          <label className="block max-w-md font-medium text-ink">
+            Administrator identity
+            <input
+              className="mt-1 block w-full border border-rule bg-panel px-3 py-2 text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              value={identity}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </label>
+          {!identity.trim() && <p role="alert" className="mb-0">Identity is blank; audit records use login ID {config.accessKey}.</p>}
+        </section>
+        <div className="grid gap-6 xl:grid-cols-2">
+          <RegistryEditor title="Species" registry={data.species} client={data.client} actor={actor} reload={() => void authorize(config)} />
+          <RegistryEditor title="Locations" registry={data.locations} client={data.client} actor={actor} reload={() => void authorize(config)} />
+        </div>
+      </div>
+    </Chrome>
   )
 }
 
