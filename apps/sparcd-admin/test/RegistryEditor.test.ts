@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { changedRecordCount, discardBlankDraft, retireItem, updateItem } from '../src/RegistryEditor';
 import { changedRecordsValidationError, validationError } from '../src/validation';
-import { assignmentDiscrepancies, assignmentHasMinimum, assignmentLabel, collectionHasChanges, collectionValidationError, missingAssignments } from '../src/CollectionEditor';
+import { assignmentDiscrepancies, assignmentHasMinimum, assignmentLabel, collectionHasChanges, collectionValidationError, makeAppliedAuditRetry, missingAssignments } from '../src/CollectionEditor';
 import { settingsBucketCandidates } from '../src/settingsBucket';
 
 describe('registry mutation', () => {
@@ -102,4 +102,13 @@ it('labels retired records Defunct and keeps unmatched records Missing', () => {
   expect(missingAssignments('locations', [{ idProperty: 'old' }], [{ idProperty: 'new' }])).toHaveLength(1);
   expect(assignmentHasMinimum([{ idProperty: 'old' }])).toBe(true);
   expect(assignmentHasMinimum([])).toBe(false);
+});
+
+it('exposes an applied-audit retry that succeeds after a transient failure', async () => {
+  let attempts = 0;
+  const client = { writeImmutable: async () => { attempts += 1; if (attempts === 1) throw new Error('temporary failure') } } as any;
+  const retry = makeAppliedAuditRetry(client, 'sparcd-test', 'audit.applied.json', { eventId: 'event-1' }, 'etag-1');
+  await expect(retry()).rejects.toThrow('temporary failure');
+  await expect(retry()).resolves.toBeUndefined();
+  expect(attempts).toBe(2);
 });

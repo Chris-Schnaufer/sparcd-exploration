@@ -8,6 +8,9 @@ const requiredFields = new Set(['nameProperty', 'organizationProperty', 'descrip
 const keyOf = (kind: 'species' | 'locations', v: Record<string, unknown>) => String(v[kind === 'species' ? 'scientificName' : 'idProperty'] ?? '').trim().toLocaleLowerCase()
 const withoutKey = (kind: 'species' | 'locations', v: Record<string, unknown>) => { const c = { ...v }; delete c[kind === 'species' ? 'scientificName' : 'idProperty']; return c }
 const json = (v: unknown) => JSON.stringify(v, null, 2)
+export function makeAppliedAuditRetry(client: SafeS3Client, bucket: string, key: string, event: Record<string, unknown>, afterETag?: string) {
+  return () => client.writeImmutable(bucket, key, json({ ...event, appliedAt: new Date().toISOString(), afterETag }), { contentType: 'application/json' })
+}
 export function assignmentDiscrepancies(kind: 'species' | 'locations', assigned: unknown[], registry: unknown[]) { const truth = new Map(registry.map((e) => [keyOf(kind, e as Record<string, unknown>), e as Record<string, unknown>])); return assigned.flatMap((e, index) => { const current = e as Record<string, unknown>; const found = truth.get(keyOf(kind, current)); return !found || JSON.stringify(withoutKey(kind, current)) === JSON.stringify(withoutKey(kind, found)) ? [] : [{ index, current, truth: found }] }) }
 export function missingAssignments(kind: 'species' | 'locations', assigned: unknown[], registry: unknown[]) { const keys = new Set(registry.map((e) => keyOf(kind, e as Record<string, unknown>))); return assigned.filter((e) => !keys.has(keyOf(kind, e as Record<string, unknown>))) }
 export function assignmentLabel(kind: 'species' | 'locations', e: Record<string, unknown>) { const n = String(e[kind === 'species' ? 'name' : 'nameProperty'] ?? e[kind === 'species' ? 'scientificName' : 'idProperty'] ?? 'Unnamed'); return e.retired === true ? `${n} — Defunct` : n }
