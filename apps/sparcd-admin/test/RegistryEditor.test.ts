@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { changedRecordCount, discardBlankDraft, retireItem, updateItem } from '../src/RegistryEditor';
 import { changedRecordsValidationError, validationError } from '../src/validation';
 import { collectionHasChanges, collectionValidationError } from '../src/CollectionEditor';
+import { settingsBucketCandidates } from '../src/settingsBucket';
 
 describe('registry mutation', () => {
   it('replaces only the selected species record', () => {
@@ -81,4 +82,10 @@ it('enables collection save only when metadata changed', () => {
   const original = { nameProperty: 'Field site', organizationProperty: 'Lab', descriptionProperty: 'Study' };
   expect(collectionHasChanges({ ...original }, original)).toBe(false);
   expect(collectionHasChanges({ ...original, descriptionProperty: 'Updated study' }, original)).toBe(true);
+});
+
+it('prioritizes named settings buckets and uses sparcd as legacy fallback', () => {
+  expect(settingsBucketCandidates(['unrelated', 'sparcd', 'sparcd-settings-z', 'sparcd-settings-a'])).toEqual([
+    'sparcd-settings-a', 'sparcd-settings-z', 'sparcd',
+  ]);
 });

@@ -16,6 +16,7 @@ import {
 } from '@sparcd/auth-ui'
 import type { S3Config } from '@sparcd/types'
 import { listCollections, SafeS3Client } from '@sparcd/s3-safe'
+import { settingsBucketCandidates } from './settingsBucket'
 import './style.css'
 
 const LOCATIONS_KEY = 'Settings/locations.json'
@@ -27,7 +28,9 @@ const json = (value: unknown) => JSON.stringify(value, null, 2)
 const id = () => crypto.randomUUID()
 
 async function settingsBucket(client: SafeS3Client) {
-  for (const bucket of await client.listBuckets()) {
+  const visible = await client.listBuckets()
+  const candidates = settingsBucketCandidates(visible)
+  for (const bucket of candidates) {
     try {
       await client.statObject(bucket, LOCATIONS_KEY)
       return bucket
@@ -35,7 +38,7 @@ async function settingsBucket(client: SafeS3Client) {
       // Try the next bucket. A settings bucket must contain locations.json.
     }
   }
-  throw Error('No readable settings bucket.')
+  throw Error('No readable conventional settings bucket (sparcd-settings-* or sparcd).')
 }
 
 async function loadRegistries(config: S3Config) {
