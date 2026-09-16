@@ -114,6 +114,7 @@ function App() {
       <>
         <Connection
           toolName="Admin"
+          defaultRemember
           initialConfig={loadPersistedConnection() ?? undefined}
           onConnect={(nextConfig, remember) => void authorize(nextConfig, remember)}
         />
