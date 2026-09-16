@@ -10,11 +10,15 @@ const fields = { Species: ['name', 'scientificName', 'genus', 'species', 'keyBin
 export function updateItem(items: Record<string, unknown>[], at: number, next: Record<string, unknown>) {
   return items.map((value, index) => index === at ? next : value);
 }
+export function retireItem(items: Record<string, unknown>[], at: number) {
+  return updateItem(items, at, { ...items[at], retired: true });
+}
 
 export function RegistryEditor({ title, registry, client, reload, actor }: { title: 'Species' | 'Locations'; registry: Registry; client: SafeS3Client; reload: () => void; actor: string }) {
   const [items, setItems] = useState(registry.value as Record<string, unknown>[]);
   const [selected, setSelected] = useState(0);
   const [message, setMessage] = useState('');
+  const [retryApplied, setRetryApplied] = useState<(() => Promise<void>) | null>(null);
   const item = items[selected] ?? {};
   const label = (value: Record<string, unknown>) => String(value.name ?? value.nameProperty ?? value.scientificName ?? 'New record');
   const change = (key: string, value: string) => setItems(updateItem(items, selected, { ...item, [key]: ['latProperty', 'lngProperty', 'elevationProperty'].includes(key) ? Number(value) : value }));
@@ -23,8 +27,9 @@ export function RegistryEditor({ title, registry, client, reload, actor }: { tit
     try { const at = new Date().toISOString(), eventId = id(), base = `Settings/audit/config/${at.slice(0, 10)}/${eventId}`, event = { schemaVersion: 1, eventId, occurredAt: at, actor, action: `${title.toLowerCase()}.updated`, target: { registryKey: registry.key }, before: registry.value, after: items };
       await client.writeImmutable(registry.bucket, `${base}.prepared.json`, json(event), { contentType: 'application/json' });
       const write = await client.replaceIfUnchanged(registry.bucket, registry.key, json(items), { etag: registry.etag, contentType: 'application/json' });
-      await client.writeImmutable(registry.bucket, `${base}.applied.json`, json({ ...event, appliedAt: new Date().toISOString(), afterETag: write.etag }), { contentType: 'application/json' }); setMessage('Saved and audited.'); reload();
+      const applied = () => client.writeImmutable(registry.bucket, `${base}.applied.json`, json({ ...event, appliedAt: new Date().toISOString(), afterETag: write.etag }), { contentType: 'application/json' });
+      try { await applied(); setMessage('Saved and audited.'); reload(); } catch { setRetryApplied(() => applied); setMessage('Saved, but its applied audit record needs retrying.'); }
     } catch (error) { setMessage(error instanceof ConditionalReplaceConflictError ? 'The registry changed elsewhere. Reload and review it before saving.' : (error as Error).message); }
   };
-  return <section><h2>{title}</h2>{title === 'Locations' && <p>Changed IDs apply to new uploads; Explorer retains historic IDs as legacy values (issue #189).</p>}<div className="records" role="list">{items.map((value, index) => <button role="listitem" aria-current={index === selected} onClick={() => setSelected(index)} key={index}>{label(value)}</button>)}</div><button onClick={() => { setItems([...items, {}]); setSelected(items.length); }}>Add {title.slice(0, -1)}</button><fieldset><legend>Edit {label(item)}</legend>{fields[title].map(key => <label key={key}>{key}<input aria-label={key} value={String(item[key] ?? '')} onChange={e => change(key, e.target.value)} /></label>)}</fieldset><button onClick={() => void save()}>Save {title}</button><p role="status">{message}</p></section>;
+  return <section><h2>{title}</h2>{title === 'Locations' && <p>Changed IDs apply to new uploads; Explorer retains historic IDs as legacy values (issue #189).</p>}<div className="records" role="list">{items.map((value, index) => <button role="listitem" aria-current={index === selected} onClick={() => setSelected(index)} key={index}>{label(value)}</button>)}</div><button onClick={() => { setItems([...items, {}]); setSelected(items.length); }}>Add {title.slice(0, -1)}</button><fieldset><legend>Edit {label(item)}</legend>{fields[title].map(key => <label key={key}>{key}<input aria-label={key} value={String(item[key] ?? '')} onChange={e => change(key, e.target.value)} /></label>)}</fieldset>{title === 'Species' && <button onClick={() => setItems(retireItem(items, selected))}>Retire species</button>}<button onClick={() => void save()}>Save {title}</button>{retryApplied && <button onClick={() => void retryApplied().then(() => { setRetryApplied(null); setMessage('Applied audit record recovered.'); reload(); })}>Retry audit record</button>}<p role="status">{message}</p></section>;
 }

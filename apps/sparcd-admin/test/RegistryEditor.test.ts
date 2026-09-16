@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { updateItem } from '../src/RegistryEditor';
+import { retireItem, updateItem } from '../src/RegistryEditor';
 import { validationError } from '../src/validation';
 
 describe('registry mutation', () => {
@@ -9,6 +9,12 @@ describe('registry mutation', () => {
       before[0], { scientificName: 'Puma concolor', name: 'Puma' },
     ]);
   });
+});
+
+it('retires a species without removing its historical identity', () => {
+  expect(retireItem([{ scientificName: 'Canis latrans', name: 'Coyote' }], 0)).toEqual([
+    { scientificName: 'Canis latrans', name: 'Coyote', retired: true },
+  ]);
 });
 
 it('rejects duplicate official location IDs', () => {
