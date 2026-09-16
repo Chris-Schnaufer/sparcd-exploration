@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { changedRecordCount, discardBlankDraft, retireItem, updateItem } from '../src/RegistryEditor';
 import { changedRecordsValidationError, validationError } from '../src/validation';
-import { collectionHasChanges, collectionValidationError } from '../src/CollectionEditor';
+import { assignmentDiscrepancies, assignmentHasMinimum, assignmentLabel, collectionHasChanges, collectionValidationError, missingAssignments } from '../src/CollectionEditor';
 import { settingsBucketCandidates } from '../src/settingsBucket';
 
 describe('registry mutation', () => {
@@ -88,4 +88,18 @@ it('prioritizes named settings buckets and uses sparcd as legacy fallback', () =
   expect(settingsBucketCandidates(['unrelated', 'sparcd', 'sparcd-settings-z', 'sparcd-settings-a'])).toEqual([
     'sparcd-settings-a', 'sparcd-settings-z', 'sparcd',
   ]);
+});
+
+it('matches collection assignments case-insensitively and detects non-key changes', () => {
+  const assigned = [{ scientificName: ' Puma concolor ', name: 'Old name' }];
+  const registry = [{ scientificName: 'puma concolor', name: 'Mountain lion' }];
+  expect(assignmentDiscrepancies('species', assigned, registry)).toHaveLength(1);
+  expect(missingAssignments('species', assigned, registry)).toHaveLength(0);
+});
+
+it('labels retired records Defunct and keeps unmatched records Missing', () => {
+  expect(assignmentLabel('species', { name: 'Coyote', retired: true })).toBe('Coyote — Defunct');
+  expect(missingAssignments('locations', [{ idProperty: 'old' }], [{ idProperty: 'new' }])).toHaveLength(1);
+  expect(assignmentHasMinimum([{ idProperty: 'old' }])).toBe(true);
+  expect(assignmentHasMinimum([])).toBe(false);
 });

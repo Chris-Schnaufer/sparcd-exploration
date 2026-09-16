@@ -23,6 +23,7 @@ const LOCATIONS_KEY = 'Settings/locations.json'
 const SPECIES_KEY = 'Settings/species.json'
 
 type Registry = { key: string; value: unknown[]; etag: string; bucket: string }
+type CollectionAssignment = { values: unknown[]; etag: string | null }
 
 const json = (value: unknown) => JSON.stringify(value, null, 2)
 const id = () => crypto.randomUUID()
@@ -58,7 +59,18 @@ async function loadRegistries(config: S3Config) {
     const key = `Collections/${collection.uuid}/collection.json`
     const stat = await client.statObject(collection.bucket, key)
     const document = JSON.parse(new TextDecoder().decode(await client.getObject(collection.bucket, key))) as Record<string, unknown>
-    collections.push({ ...collection, etag: stat.etag!, document })
+    const assignment = async (name: 'species' | 'locations'): Promise<CollectionAssignment> => {
+      const assignmentKey = `Collections/${collection.uuid}/${name}.json`
+      try {
+        const assignmentStat = await client.statObject(collection.bucket, assignmentKey)
+        const value = JSON.parse(new TextDecoder().decode(await client.getObject(collection.bucket, assignmentKey)))
+        return { values: Array.isArray(value) ? value : [], etag: assignmentStat.etag ?? null }
+      } catch {
+        return { values: [], etag: null }
+      }
+    }
+    const [speciesAssignment, locationsAssignment] = await Promise.all([assignment('species'), assignment('locations')])
+    collections.push({ ...collection, etag: stat.etag!, document, speciesAssignment, locationsAssignment })
   }
   return { client, species: await read(SPECIES_KEY), locations: await read(LOCATIONS_KEY), collections }
 }
@@ -168,7 +180,7 @@ function App() {
           <RegistryEditor title="Locations" registry={data.locations} client={data.client} actor={actor} reload={() => void authorize(config)} />
         </div>
         <div className={section === 'collections' ? '' : 'hidden'}>
-          <CollectionEditor collections={data.collections} client={data.client} actor={actor} reload={() => void authorize(config)} />
+          <CollectionEditor collections={data.collections} client={data.client} actor={actor} speciesRegistry={data.species.value} locationsRegistry={data.locations.value} reload={() => void authorize(config)} />
         </div>
         {section === 'settings' && <section className="max-w-2xl border border-rule bg-panel p-4" aria-labelledby="settings-heading">
           <h1 id="settings-heading" className="m-0 text-lg font-semibold text-ink">Settings</h1>
