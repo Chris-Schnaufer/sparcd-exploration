@@ -12,9 +12,10 @@ const fields = [
   ['contactInfoProperty', 'Contact'],
   ['descriptionProperty', 'Description'],
 ] as const
+const requiredFields = new Set(['nameProperty', 'organizationProperty', 'descriptionProperty'])
 
 export function collectionValidationError(collection: Record<string, unknown>) {
-  const missing = fields.find(([key]) => String(collection[key] ?? '').trim() === '')
+  const missing = fields.find(([key]) => requiredFields.has(key) && String(collection[key] ?? '').trim() === '')
   return missing ? `${missing[1]} is required.` : null
 }
 
@@ -95,7 +96,7 @@ export function CollectionEditor({ collections, client, actor, reload }: {
         </select>
       </label>
       <fieldset className="grid gap-3 border border-rule p-4 sm:grid-cols-2"><legend className="px-1 text-sm font-semibold">Edit {selected.name ?? selected.uuid}</legend>
-        {fields.map(([key, label]) => <label key={key} className="grid gap-1 text-sm font-medium">{label}<span aria-hidden="true" className="ml-1 text-warn">*</span><input required aria-label={label} value={String(draft[key] ?? '')} onChange={(event) => change(key, event.target.value)} className="min-h-10 border border-rule bg-paper px-2 text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent" /></label>)}
+        {fields.map(([key, label]) => <label key={key} className="grid gap-1 text-sm font-medium"><span>{label}{requiredFields.has(key) && <><span aria-hidden="true" className="ml-1 text-warn">*</span><span className="sr-only"> (required)</span></>}</span><input required={requiredFields.has(key)} aria-label={label} value={String(draft[key] ?? '')} onChange={(event) => change(key, event.target.value)} className="min-h-10 border border-rule bg-paper px-2 text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent" /></label>)}
       </fieldset>
       <div className="mt-4 flex flex-wrap gap-2">
         <button type="button" onClick={() => void save()} className="border border-ink bg-ink px-3 py-2 text-sm font-semibold text-paper hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">Save collection</button>

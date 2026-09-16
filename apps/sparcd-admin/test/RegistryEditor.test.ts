@@ -72,7 +72,7 @@ it('does not reject an unchanged legacy record while validating changes', () => 
   expect(changedRecordsValidationError('Species', changed, before)).toBeNull();
 });
 
-it('requires every collection metadata field', () => {
-  expect(collectionValidationError({ nameProperty: 'Field site', organizationProperty: 'Lab', contactInfoProperty: 'a@lab.example', descriptionProperty: '' })).toBe('Description is required.');
-  expect(collectionValidationError({ nameProperty: 'Field site', organizationProperty: 'Lab', contactInfoProperty: 'a@lab.example', descriptionProperty: 'Study' })).toBeNull();
+it('requires collection name, organization, and description while allowing contact blank', () => {
+  expect(collectionValidationError({ nameProperty: 'Field site', organizationProperty: 'Lab', contactInfoProperty: '', descriptionProperty: '' })).toBe('Description is required.');
+  expect(collectionValidationError({ nameProperty: 'Field site', organizationProperty: 'Lab', contactInfoProperty: '', descriptionProperty: 'Study' })).toBeNull();
 });
