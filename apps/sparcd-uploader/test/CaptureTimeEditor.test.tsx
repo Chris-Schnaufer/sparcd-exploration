@@ -56,12 +56,14 @@ it('shows each folder\'s own spread start on its rendered capture-time card (#25
       mediaKind: 'image', processState: 'ready', file: new File(['x'], '1.jpg'),
       manualNaive: at('2026-07-01T08:00:00'), manualSource: 'spread',
       manualSpreadStart: at('2026-07-01T08:00:00'),
+      manualSpreadMethod: 'sequence',
     },
     {
       id: 'folder-b/1.jpg', relPath: 'folder-b/1.jpg', fileName: '1.jpg', size: 1,
       mediaKind: 'image', processState: 'ready', file: new File(['x'], '1.jpg'),
       manualNaive: at('2026-07-01T14:00:00'), manualSource: 'spread',
       manualSpreadStart: at('2026-07-01T14:00:00'),
+      manualSpreadMethod: 'sequence',
     },
   ] as FileEntry[];
 

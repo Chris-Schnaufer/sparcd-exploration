@@ -52,9 +52,13 @@ export function methodLine(
   if (f.exifNaive) return 'camera time';
   if (f.manualNaive) {
     if (f.manualSource === 'spread') {
-      return f.manualSpreadStart
-        ? `spread from ${shortNaive(f.manualSpreadStart)}`
-        : `spread from file modified times (${timeZone})`;
+      if (f.manualSpreadMethod === 'sequence')
+        return f.manualSpreadStart
+          ? `spread from ${shortNaive(f.manualSpreadStart)}`
+          : 'spread from sequence (start unavailable)';
+      if (f.manualSpreadMethod === 'file-modified')
+        return `spread from file modified times (${f.manualSpreadTimeZone ?? timeZone})`;
+      return 'spread (provenance unavailable)';
     }
     return 'set by hand';
   }

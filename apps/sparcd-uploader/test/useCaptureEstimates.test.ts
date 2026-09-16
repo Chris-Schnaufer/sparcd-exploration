@@ -5,13 +5,18 @@ import { methodLine } from '../src/lib/useCaptureEstimates';
 
 const naive = (hour: number): NaiveDateTime => ({ year: 2026, month: 7, day: 1, hour, minute: 0, second: 0 });
 
-const spreadFile = (manualHour: number, spreadStartHour?: number): FileEntry =>
+const spreadFile = (
+  manualHour: number,
+  spread: { method: 'sequence'; startHour: number } | { method: 'file-modified'; timeZone: string } | undefined,
+): FileEntry =>
   ({
     id: 'x', relPath: 'x.jpg', fileName: 'x.jpg', size: 1, mediaKind: 'image', processState: 'ready',
     file: new File(['x'], 'x.jpg'),
     manualNaive: naive(manualHour),
     manualSource: 'spread',
-    manualSpreadStart: spreadStartHour !== undefined ? naive(spreadStartHour) : undefined,
+    manualSpreadStart: spread?.method === 'sequence' ? naive(spread.startHour) : undefined,
+    manualSpreadMethod: spread?.method,
+    manualSpreadTimeZone: spread?.method === 'file-modified' ? spread.timeZone : undefined,
   }) as FileEntry;
 
 describe('methodLine — "spread from" reflects the file\'s own spread, not the batch', () => {
@@ -19,8 +24,8 @@ describe('methodLine — "spread from" reflects the file\'s own spread, not the 
     // Two folders spread independently: folder A from 08:00, folder B from
     // 14:00. Each file must report its own folder's start, not the
     // batch-wide earliest one.
-    const folderA = spreadFile(8, 8);
-    const folderB = spreadFile(14, 14);
+    const folderA = spreadFile(8, { method: 'sequence', startHour: 8 });
+    const folderB = spreadFile(14, { method: 'sequence', startHour: 14 });
     expect(methodLine(folderA, undefined, 'UTC')).toBe(
       'spread from 2026-07-01 08:00:00',
     );
@@ -30,8 +35,20 @@ describe('methodLine — "spread from" reflects the file\'s own spread, not the 
   });
 
   it('identifies a file-modified spread rather than calling it a hand entry', () => {
-    const fileModified = spreadFile(9, undefined);
-    expect(methodLine(fileModified, undefined, 'UTC')).toBe('spread from file modified times (UTC)');
+    const fileModified = spreadFile(9, { method: 'file-modified', timeZone: 'America/Phoenix' });
+    expect(methodLine(fileModified, undefined, 'UTC')).toBe('spread from file modified times (America/Phoenix)');
+  });
+
+  it('keeps the file-modified timezone used when the spread was applied', () => {
+    const fileModified = spreadFile(9, { method: 'file-modified', timeZone: 'America/Phoenix' });
+    expect(methodLine(fileModified, undefined, 'Europe/London')).toBe(
+      'spread from file modified times (America/Phoenix)',
+    );
+  });
+
+  it('does not invent file-modified provenance for a legacy spread', () => {
+    const legacy = spreadFile(9, undefined);
+    expect(methodLine(legacy, undefined, 'UTC')).toBe('spread (provenance unavailable)');
   });
 
   it('reports "set by hand" for a plain manual override (not a spread)', () => {

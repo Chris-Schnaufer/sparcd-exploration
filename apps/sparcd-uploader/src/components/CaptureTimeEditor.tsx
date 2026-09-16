@@ -162,7 +162,9 @@ export function CaptureTimeEditor({ files }: { files: FileEntry[] }) {
     setManualNaiveMany(
       [...spread].map(([id, naive]) => ({ id, naive })),
       'spread',
-      spreadStartFor(spreadOptions),
+      useModified
+        ? { method: 'file-modified', timeZone: uploadTimeZone }
+        : { method: 'sequence', start: spreadStartFor(spreadOptions)! },
     );
   };
 
