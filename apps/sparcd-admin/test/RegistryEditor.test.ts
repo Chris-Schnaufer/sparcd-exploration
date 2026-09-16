@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { retireItem, updateItem } from '../src/RegistryEditor';
+import { discardBlankDraft, retireItem, updateItem } from '../src/RegistryEditor';
 import { validationError } from '../src/validation';
 
 describe('registry mutation', () => {
@@ -19,4 +19,15 @@ it('retires a species without removing its historical identity', () => {
 
 it('rejects duplicate official location IDs', () => {
   expect(validationError('Locations', [{ idProperty: 'A', nameProperty: 'One' }, { idProperty: 'A', nameProperty: 'Two' }], 1)).toMatch(/already used/);
+});
+
+
+it('discards an empty added record when an existing record is selected', () => {
+  const existing = [{ name: 'Coyote' }, { name: 'Puma' }];
+  expect(discardBlankDraft([...existing, {}], 2)).toEqual(existing);
+});
+
+it('keeps a newly added record once it contains a value', () => {
+  const records = [{ name: 'Coyote' }, { name: 'Puma' }, { name: 'Jaguar' }];
+  expect(discardBlankDraft(records, 2)).toEqual(records);
 });

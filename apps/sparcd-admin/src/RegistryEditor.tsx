@@ -24,6 +24,16 @@ export function retireItem(items: Record<string, unknown>[], at: number) {
   return updateItem(items, at, { ...items[at], retired: true })
 }
 
+export function hasRecordData(record: Record<string, unknown>) {
+  return Object.values(record).some((value) => value !== '' && value !== undefined && value !== null)
+}
+
+export function discardBlankDraft(items: Record<string, unknown>[], draftIndex: number | null) {
+  return draftIndex !== null && !hasRecordData(items[draftIndex])
+    ? items.filter((_, index) => index !== draftIndex)
+    : items
+}
+
 export function RegistryEditor({ title, registry, client, reload, actor }: {
   title: 'Species'
   registry: Registry
@@ -41,20 +51,39 @@ export function RegistryEditor({ title, registry, client, reload, actor }: {
   const [selected, setSelected] = useState(0)
   const [message, setMessage] = useState('')
   const [retryApplied, setRetryApplied] = useState<(() => Promise<void>) | null>(null)
+  const [draftIndex, setDraftIndex] = useState<number | null>(null)
+  const [recordSearch, setRecordSearch] = useState('')
 
   useEffect(() => {
     setItems(registry.value as Record<string, unknown>[])
     setSelected((current) => Math.min(current, Math.max(registry.value.length - 1, 0)))
+    setDraftIndex(null)
   }, [registry])
 
   const item = items[selected] ?? {}
   const label = (value: Record<string, unknown>) =>
     String(value.name ?? value.nameProperty ?? value.scientificName ?? 'New record')
-  const change = (key: string, value: string) =>
-    setItems(updateItem(items, selected, {
+  const recordOption = (value: Record<string, unknown>) => {
+    const primary = label(value)
+    const detail = value.scientificName ?? value.idProperty
+    return detail && detail !== primary ? `${primary} — ${detail}` : primary
+  }
+  const change = (key: string, value: string) => {
+    const next = {
       ...item,
-      [key]: ['latProperty', 'lngProperty', 'elevationProperty'].includes(key) ? Number(value) : value,
-    }))
+      [key]: ['latProperty', 'lngProperty', 'elevationProperty'].includes(key) && value !== '' ? Number(value) : value,
+    }
+    setItems(updateItem(items, selected, next))
+    if (draftIndex === selected && hasRecordData(next)) setDraftIndex(null)
+  }
+  const selectRecord = (nextSelected: number) => {
+    const nextItems = discardBlankDraft(items, draftIndex)
+    setItems(nextItems)
+    setDraftIndex(null)
+    setSelected(nextSelected)
+    setRecordSearch(recordOption(nextItems[nextSelected] ?? {}))
+  }
+
 
   const save = async () => {
     const invalid = validationError(title, items, selected)
@@ -110,18 +139,33 @@ export function RegistryEditor({ title, registry, client, reload, actor }: {
       <div className="p-4">
         <label className="mb-4 grid max-w-md gap-1 text-sm font-medium text-ink">
           Select {title.slice(0, -1)}
-          <select
+          <input
             aria-label={`Select ${title.slice(0, -1)}`}
-            value={selected}
-            onChange={(event) => setSelected(Number(event.target.value))}
+            list={`${title.toLowerCase()}-records`}
+            value={recordSearch || recordOption(item)}
+            onChange={(event) => {
+              const value = event.target.value
+              setRecordSearch(value)
+              const found = items.findIndex((record) => recordOption(record) === value)
+              if (found >= 0) selectRecord(found)
+            }}
+            onBlur={() => setRecordSearch('')}
+            placeholder={`Type to filter ${title.toLowerCase()}`}
             className="min-h-10 border border-rule bg-paper px-2 text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-          >
-            {items.map((value, index) => <option value={index} key={index}>{label(value)}</option>)}
-          </select>
+          />
+          <datalist id={`${title.toLowerCase()}-records`}>
+            {items.map((value, index) => <option value={recordOption(value)} key={index} />)}
+          </datalist>
         </label>
         <button type="button" className="border border-rule px-3 py-2 text-sm text-ink hover:bg-paperHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent" onClick={() => {
+          if (draftIndex !== null) {
+            setSelected(draftIndex)
+            return
+          }
           setItems([...items, {}])
           setSelected(items.length)
+          setDraftIndex(items.length)
+          setRecordSearch('')
         }}>
           Add {title.slice(0, -1)}
         </button>
