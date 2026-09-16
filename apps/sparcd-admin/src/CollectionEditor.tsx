@@ -96,7 +96,7 @@ export function CollectionEditor({ collections, client, actor, reload }: {
   }
 
   return <section className="border border-rule bg-panel" aria-labelledby="collections-heading">
-    <div className="border-b border-rule px-4 py-3"><h1 id="collections-heading" className="m-0 text-lg font-semibold">Collections</h1><p className="mb-0 mt-1 text-sm text-inkSoft">Update collection metadata without changing its bucket or UUID.</p></div>
+    <div className="border-b border-rule px-4 py-3"><h1 id="collections-heading" className="m-0 text-lg font-semibold">Collections</h1><p className="mb-0 mt-1 text-sm text-inkSoft">Update collection metadata without changing its bucket or unique ID (UUID).</p></div>
     <div className="p-4">
       <div className="mb-4 grid w-full max-w-4xl gap-1 text-sm font-medium"><label htmlFor="collection-selector">Select collection</label>
         <div className="flex w-full items-center gap-1">
