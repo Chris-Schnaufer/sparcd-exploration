@@ -29,6 +29,7 @@ export function CollectionEditor({ collections, client, actor, reload }: {
   const [draft, setDraft] = useState<Record<string, unknown>>(collections[0]?.document ?? {})
   const [message, setMessage] = useState('')
   const [retryApplied, setRetryApplied] = useState<(() => Promise<void>) | null>(null)
+  const [collectionSearch, setCollectionSearch] = useState<string | null>(null)
   const selected = useMemo(() => collections.find((item) => item.key === selectedKey) ?? null, [collections, selectedKey])
 
   useEffect(() => {
@@ -37,6 +38,7 @@ export function CollectionEditor({ collections, client, actor, reload }: {
     setDraft(next?.document ?? {})
     setMessage('')
     setRetryApplied(null)
+    setCollectionSearch(null)
   }, [collections])
 
   if (!selected) {
@@ -49,6 +51,7 @@ export function CollectionEditor({ collections, client, actor, reload }: {
     setSelectedKey(key)
     setDraft(next.document)
     setMessage('')
+    setCollectionSearch(null)
   }
   const change = (key: string, value: string) => setDraft((current) => ({ ...current, [key]: value }))
   const save = async () => {
@@ -91,9 +94,30 @@ export function CollectionEditor({ collections, client, actor, reload }: {
     <div className="border-b border-rule px-4 py-3"><h1 id="collections-heading" className="m-0 text-lg font-semibold">Collections</h1><p className="mb-0 mt-1 text-sm text-inkSoft">Update collection metadata without changing its bucket or UUID.</p></div>
     <div className="p-4">
       <label className="mb-4 grid max-w-md gap-1 text-sm font-medium">Select collection
-        <select value={selectedKey} onChange={(event) => selectCollection(event.target.value)} className="min-h-10 border border-rule bg-paper px-2 text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
-          {collections.map((item) => <option key={item.key} value={item.key}>{item.name ?? item.bucket} — {item.uuid}</option>)}
-        </select>
+        <input
+          aria-label="Select collection"
+          list="collection-records"
+          value={collectionSearch ?? `${selected.name ?? selected.bucket} — ${selected.uuid}`}
+          onChange={(event) => {
+            const value = event.target.value
+            setCollectionSearch(value)
+            const match = collections.find((item) => `${item.name ?? item.bucket} — ${item.uuid}` === value)
+            if (match) selectCollection(match.key)
+          }}
+          onBlur={() => setCollectionSearch(null)}
+          placeholder="Type to filter collections"
+          className="min-h-10 border border-rule bg-paper px-2 text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+        />
+        {collectionSearch !== '' && <button
+          type="button"
+          aria-label="Clear collection search"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => setCollectionSearch('')}
+          className="-mt-9 mr-1 mb-1 ml-auto grid h-8 w-8 place-items-center text-inkSoft hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+        ><span aria-hidden className="text-lg leading-none">×</span></button>}
+        <datalist id="collection-records">
+          {collections.map((item) => <option key={item.key} value={`${item.name ?? item.bucket} — ${item.uuid}`} />)}
+        </datalist>
       </label>
       <fieldset className="grid gap-3 border border-rule p-4 sm:grid-cols-2"><legend className="px-1 text-sm font-semibold">Edit {selected.name ?? selected.uuid}</legend>
         {fields.map(([key, label]) => <label key={key} className="grid gap-1 text-sm font-medium"><span>{label}{requiredFields.has(key) && <><span aria-hidden="true" className="ml-1 text-warn">*</span><span className="sr-only"> (required)</span></>}</span><input required={requiredFields.has(key)} aria-label={label} value={String(draft[key] ?? '')} onChange={(event) => change(key, event.target.value)} className="min-h-10 border border-rule bg-paper px-2 text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent" /></label>)}
