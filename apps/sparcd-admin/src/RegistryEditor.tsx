@@ -197,7 +197,7 @@ export function RegistryEditor({ title, registry, client, reload, actor }: {
           }}>
             {title === 'Species' ? 'Add species' : 'Add location'}
           </button>
-          {title === 'Species' && <p id="species-add-help" className="m-0 text-sm text-inkSoft">Add a species, complete the required fields, then save.</p>}
+          {title === 'Species' && <p id="species-add-help" className="m-0 text-sm text-inkSoft">Add a species, complete the required fields, then save, select a species to edit, or add another.</p>}
         </div>
         <fieldset className="mt-4 grid gap-3 border border-rule p-4 sm:grid-cols-2">
           <legend className="px-1 text-sm font-semibold text-ink">Edit {label(item)}</legend>
