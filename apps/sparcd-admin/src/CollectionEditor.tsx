@@ -19,6 +19,10 @@ export function collectionValidationError(collection: Record<string, unknown>) {
   return missing ? `${missing[1]} is required.` : null
 }
 
+export function collectionHasChanges(draft: Record<string, unknown>, original: Record<string, unknown>) {
+  return JSON.stringify(draft) !== JSON.stringify(original)
+}
+
 export function CollectionEditor({ collections, client, actor, reload }: {
   collections: CollectionRecord[]
   client: SafeS3Client
@@ -31,6 +35,7 @@ export function CollectionEditor({ collections, client, actor, reload }: {
   const [retryApplied, setRetryApplied] = useState<(() => Promise<void>) | null>(null)
   const [collectionSearch, setCollectionSearch] = useState<string | null>(null)
   const selected = useMemo(() => collections.find((item) => item.key === selectedKey) ?? null, [collections, selectedKey])
+  const hasChanges = selected ? collectionHasChanges(draft, selected.document) : false
 
   useEffect(() => {
     const next = collections.find((item) => item.key === selectedKey) ?? collections[0]
@@ -127,7 +132,7 @@ export function CollectionEditor({ collections, client, actor, reload }: {
         {fields.map(([key, label]) => <label key={key} className="grid gap-1 text-sm font-medium"><span>{label}{requiredFields.has(key) && <><span aria-hidden="true" className="ml-1 text-warn">*</span><span className="sr-only"> (required)</span></>}</span><input required={requiredFields.has(key)} aria-label={label} value={String(draft[key] ?? '')} onChange={(event) => change(key, event.target.value)} className="min-h-10 border border-rule bg-paper px-2 text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent" /></label>)}
       </fieldset>
       <div className="mt-4 flex flex-wrap gap-2">
-        <button type="button" onClick={() => void save()} className="border border-ink bg-ink px-3 py-2 text-sm font-semibold text-paper hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">Save collection</button>
+        <button type="button" disabled={!hasChanges} onClick={() => void save()} className="border border-ink bg-ink px-3 py-2 text-sm font-semibold text-paper hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">Save collection</button>
         {retryApplied && <button type="button" onClick={() => void retryApplied().then(() => {
           setRetryApplied(null)
           setMessage('Applied audit record recovered.')

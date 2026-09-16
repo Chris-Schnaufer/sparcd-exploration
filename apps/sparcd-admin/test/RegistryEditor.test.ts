@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { changedRecordCount, discardBlankDraft, retireItem, updateItem } from '../src/RegistryEditor';
 import { changedRecordsValidationError, validationError } from '../src/validation';
-import { collectionValidationError } from '../src/CollectionEditor';
+import { collectionHasChanges, collectionValidationError } from '../src/CollectionEditor';
 
 describe('registry mutation', () => {
   it('replaces only the selected species record', () => {
@@ -75,4 +75,10 @@ it('does not reject an unchanged legacy record while validating changes', () => 
 it('requires collection name, organization, and description while allowing contact blank', () => {
   expect(collectionValidationError({ nameProperty: 'Field site', organizationProperty: 'Lab', contactInfoProperty: '', descriptionProperty: '' })).toBe('Description is required.');
   expect(collectionValidationError({ nameProperty: 'Field site', organizationProperty: 'Lab', contactInfoProperty: '', descriptionProperty: 'Study' })).toBeNull();
+});
+
+it('enables collection save only when metadata changed', () => {
+  const original = { nameProperty: 'Field site', organizationProperty: 'Lab', descriptionProperty: 'Study' };
+  expect(collectionHasChanges({ ...original }, original)).toBe(false);
+  expect(collectionHasChanges({ ...original, descriptionProperty: 'Updated study' }, original)).toBe(true);
 });
