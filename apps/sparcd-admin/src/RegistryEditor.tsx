@@ -150,9 +150,11 @@ export function RegistryEditor({ title, registry, client, reload, actor }: {
         {title === 'Locations' && <p className="mb-0 mt-1 text-sm text-inkSoft">Changed IDs apply to new uploads; Explorer retains historic IDs as legacy values.</p>}
       </div>
       <div className="p-4">
-        <label className="mb-4 grid max-w-md gap-1 text-sm font-medium text-ink">
-          Select {title.slice(0, -1)}
-          <input
+        <div className="mb-4 grid max-w-md gap-1 text-sm font-medium text-ink">
+          <label htmlFor={`${title.toLowerCase()}-selector`}>Select {title.slice(0, -1)}</label>
+          <div className="flex items-center gap-1">
+            <input
+              id={`${title.toLowerCase()}-selector`}
             aria-label={`Select ${title.slice(0, -1)}`}
             list={`${title.toLowerCase()}-records`}
             value={recordSearch ?? recordOption(item)}
@@ -164,21 +166,23 @@ export function RegistryEditor({ title, registry, client, reload, actor }: {
             }}
             onBlur={() => setRecordSearch(null)}
             placeholder={`Type to filter ${title.toLowerCase()}`}
-            className="min-h-10 border border-rule bg-paper px-2 text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-          />
-          {recordSearch !== '' && <button
+              className="min-h-10 min-w-0 flex-1 border border-rule bg-paper px-2 text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            />
+            {recordSearch !== '' && <button
             type="button"
             aria-label={`Clear ${title.toLowerCase()} search`}
+            title={`Clear ${title.toLowerCase()} search`}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => setRecordSearch('')}
-            className="-mt-9 mr-1 mb-1 ml-auto grid h-8 w-8 place-items-center text-inkSoft hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            className="grid h-10 w-10 shrink-0 place-items-center border border-rule text-inkSoft hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
           >
             <span aria-hidden className="text-lg leading-none">×</span>
-          </button>}
+            </button>}
+          </div>
           <datalist id={`${title.toLowerCase()}-records`}>
             {items.map((value, index) => <option value={recordOption(value)} key={index} />)}
           </datalist>
-        </label>
+        </div>
         <button type="button" className="border border-rule px-3 py-2 text-sm text-ink hover:bg-paperHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent" onClick={() => {
           if (draftIndex !== null) {
             setSelected(draftIndex)

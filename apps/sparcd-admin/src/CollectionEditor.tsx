@@ -93,8 +93,10 @@ export function CollectionEditor({ collections, client, actor, reload }: {
   return <section className="border border-rule bg-panel" aria-labelledby="collections-heading">
     <div className="border-b border-rule px-4 py-3"><h1 id="collections-heading" className="m-0 text-lg font-semibold">Collections</h1><p className="mb-0 mt-1 text-sm text-inkSoft">Update collection metadata without changing its bucket or UUID.</p></div>
     <div className="p-4">
-      <label className="mb-4 grid max-w-md gap-1 text-sm font-medium">Select collection
+      <div className="mb-4 grid w-full max-w-4xl gap-1 text-sm font-medium"><label htmlFor="collection-selector">Select collection</label>
+        <div className="flex w-full items-center gap-1">
         <input
+          id="collection-selector"
           aria-label="Select collection"
           list="collection-records"
           value={collectionSearch ?? `${selected.name ?? selected.bucket} — ${selected.uuid}`}
@@ -106,19 +108,21 @@ export function CollectionEditor({ collections, client, actor, reload }: {
           }}
           onBlur={() => setCollectionSearch(null)}
           placeholder="Type to filter collections"
-          className="min-h-10 border border-rule bg-paper px-2 text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+          className="min-h-10 min-w-0 flex-1 border border-rule bg-paper px-2 text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
         />
         {collectionSearch !== '' && <button
           type="button"
           aria-label="Clear collection search"
+          title="Clear collection search"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => setCollectionSearch('')}
-          className="-mt-9 mr-1 mb-1 ml-auto grid h-8 w-8 place-items-center text-inkSoft hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+          className="grid h-10 w-10 shrink-0 place-items-center border border-rule text-inkSoft hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
         ><span aria-hidden className="text-lg leading-none">×</span></button>}
+        </div>
         <datalist id="collection-records">
           {collections.map((item) => <option key={item.key} value={`${item.name ?? item.bucket} — ${item.uuid}`} />)}
         </datalist>
-      </label>
+      </div>
       <fieldset className="grid gap-3 border border-rule p-4 sm:grid-cols-2"><legend className="px-1 text-sm font-semibold">Edit {selected.name ?? selected.uuid}</legend>
         {fields.map(([key, label]) => <label key={key} className="grid gap-1 text-sm font-medium"><span>{label}{requiredFields.has(key) && <><span aria-hidden="true" className="ml-1 text-warn">*</span><span className="sr-only"> (required)</span></>}</span><input required={requiredFields.has(key)} aria-label={label} value={String(draft[key] ?? '')} onChange={(event) => change(key, event.target.value)} className="min-h-10 border border-rule bg-paper px-2 text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent" /></label>)}
       </fieldset>
