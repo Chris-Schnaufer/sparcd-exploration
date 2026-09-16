@@ -148,7 +148,7 @@ export function RegistryEditor({ title, registry, client, reload, actor }: {
     <section className="border border-rule bg-panel" aria-labelledby={`${title}-heading`}>
       <div className="border-b border-rule px-4 py-3">
         <h2 id={`${title}-heading`} className="m-0 text-lg font-semibold text-ink">{title}</h2>
-        {title === 'Locations' && <p className="mb-0 mt-1 text-sm text-inkSoft">Changed IDs apply to new uploads; Explorer retains historic IDs as legacy values.</p>}
+        {title === 'Locations' && <p className="mb-0 mt-1 text-sm text-inkSoft">Locations with changed IDs will only affect new uploads. Previously assigned IDs remain intact</p>}
       </div>
       <div className="p-4">
         <div className="mb-4 grid max-w-md gap-1 text-sm font-medium text-ink">
