@@ -74,9 +74,9 @@
 
 | ID | target scenario title | status | as-built scenarios | reason |
 | --- | --- | --- | --- | --- |
-| AL1-1 | An interrupted upload continues on its own when the connection returns | covered | uploader: resume-and-retry.feature: A partial History-resumed run retries automatically when the tab becomes visible again | A partial resumed run retries without user action when connectivity returns. |
+| AL1-1 | An interrupted upload continues on its own when the connection returns | partial | uploader: upload-run.feature: The run monitor shows one offline warning per outage, not one per poll tick | A live run does resume by itself when the network returns, but the scenario only waits for that inside its When step and asserts log lines; no Then states that the upload continued without a manual restart. |
 | AL1-2 | Data already transferred and verified is not sent again | covered | uploader: resume-and-retry.feature: Files already stored and verified are not sent again | Verified objects are skipped; only missing or mismatched objects are sent. |
-| AL1-3 | An unattended upload is found either complete or clearly resumable | covered | uploader: resume-and-retry.feature: An interrupted upload is listed as open, never as complete | History reports open uploads and their completed and failed file counts. |
+| AL1-3 | An unattended upload is found either complete or clearly resumable | partial | uploader: resume-and-retry.feature: An interrupted upload is listed as open, never as complete | Shows the upload as open with done and failed counts, but no named step shows what is needed to carry on. |
 | AL1-4 | An upload is never left in a silent, stuck state | untestable | uploader: resume-and-retry.feature: An interrupted upload is listed as open, never as complete | NOTES.md says no threshold defines when silence becomes stuck. |
 | AL1-5 | Repeated interruptions still end in one finished upload | partial | uploader: resume-and-retry.feature: Retrying the failed files of a partial run completes that same upload | Retry leaves one upload, but repeated connection interruptions are not exercised. |
 | AL1-6 | An interrupted upload is not presented as complete | covered | uploader: resume-and-retry.feature: An interrupted upload is listed as open, never as complete | Only uploads with published metadata are marked complete. |
@@ -89,7 +89,7 @@
 | AL2-2 | The destination ends up with exactly one upload | covered | uploader: resume-and-retry.feature: Retrying the failed files of a partial run completes that same upload | The same folder is published and exactly one upload remains. |
 | AL2-3 | No leftover partial data from the failed attempt remains | partial | uploader: resume-and-retry.feature: Retrying the failed files of a partial run completes that same upload | Stored files remain and the same folder completes, but all failed-attempt residue is not checked. |
 | AL2-4 | Retrying does not require re-entering the location | covered | uploader: resume-and-retry.feature: Retrying does not require choosing the location again | The collection and deployment are not requested again. |
-| AL2-5 | Retrying does not require re-identifying species already tagged | covered | uploader: resume-and-retry.feature: A resumed upload lands in the same place as the original attempt | Recorded observations are reused, so identifications need not be re-entered. |
+| AL2-5 | Retrying does not require re-identifying species already tagged | partial | uploader: resume-and-retry.feature: A resumed upload lands in the same place as the original attempt | Vacuous: the resumed batch has no species identified, so nothing shows identifications surviving a retry. |
 | AL2-6 | A retry cannot be misdirected to a different destination by accident | covered | uploader: resume-and-retry.feature: A resumed upload lands in the same place as the original attempt | The retry cannot silently change its recorded destination. |
 
 ## H1
@@ -125,7 +125,7 @@
 | H3-4 | Harold can remove an existing identification | partial | tagger: H3-review-existing-identifications.feature: A single wrong identification can be removed without losing the others; tagger: sync-identifications-to-the-collection.feature: Detagging an image and syncing writes a blank placeholder row rather than removing the row | Removal is stored, but no removal record is asserted. |
 | H3-5 | A review records who carried it out | partial | tagger: H3-review-existing-identifications.feature: A correction is attributed to the person who synced it | Correction records identity and time; confirmation without change records no reviewer. |
 | H3-6 | The original identifier's work remains attributable | missing | — | No scenario displays original attribution beside a separate review. |
-| H3-7 | A review does not destroy the original uploaded data | covered | tagger: sync-identifications-to-the-collection.feature: The previous state is preserved before anything is replaced; tagger: H3-review-existing-identifications.feature: A correction is attributed to the person who synced it | Together they snapshot the original and attribute the change. |
+| H3-7 | A review does not destroy the original uploaded data | partial | tagger: sync-identifications-to-the-collection.feature: The previous state is preserved before anything is replaced; tagger: H3-review-existing-identifications.feature: A correction is attributed to the person who synced it | The change is traceable, but the stored files are replaced and the upload record is rewritten on sync; the original survives only as a snapshot copy. |
 | H3-8 | Harold can tell reviewed identifications from unreviewed ones | missing | tagger: H3-review-existing-identifications.feature: An image edited locally is distinguishable from one that is not | The marker means unsynced edit, not reviewed versus unreviewed. |
 
 ## Totals
@@ -138,9 +138,9 @@
 | F4 | 0 | 0 | 7 | 3 | 10 |
 | A1 | 4 | 1 | 1 | 0 | 6 |
 | A2 | 1 | 0 | 4 | 0 | 5 |
-| AL1 | 4 | 1 | 0 | 1 | 6 |
-| AL2 | 5 | 1 | 0 | 0 | 6 |
+| AL1 | 2 | 3 | 0 | 1 | 6 |
+| AL2 | 4 | 2 | 0 | 0 | 6 |
 | H1 | 3 | 0 | 1 | 2 | 6 |
 | H2 | 2 | 2 | 2 | 1 | 7 |
-| H3 | 2 | 4 | 2 | 0 | 8 |
-| Overall | 25 | 21 | 20 | 7 | 73 |
+| H3 | 1 | 5 | 2 | 0 | 8 |
+| Overall | 21 | 25 | 20 | 7 | 73 |
