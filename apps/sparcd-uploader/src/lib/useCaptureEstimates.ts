@@ -57,7 +57,7 @@ export function methodLine(
           ? `spread from ${shortNaive(f.manualSpreadStart)}`
           : 'spread from sequence (start unavailable)';
       if (f.manualSpreadMethod === 'file-modified')
-        return `spread from file modified times (${f.manualSpreadTimeZone ?? timeZone})`;
+        return `spread from file modified times (${f.manualSpreadTimeZone ?? 'timezone unavailable'})`;
       return 'spread (provenance unavailable)';
     }
     return 'set by hand';

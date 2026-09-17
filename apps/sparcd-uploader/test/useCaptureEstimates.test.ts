@@ -46,6 +46,17 @@ describe('methodLine — "spread from" reflects the file\'s own spread, not the 
     );
   });
 
+  it('does not substitute the current timezone for a legacy file-modified spread', () => {
+    const legacyFileModified = {
+      ...spreadFile(9, undefined),
+      manualSpreadMethod: 'file-modified',
+      manualSpreadTimeZone: undefined,
+    } as FileEntry;
+    expect(methodLine(legacyFileModified, undefined, 'Europe/London')).toBe(
+      'spread from file modified times (timezone unavailable)',
+    );
+  });
+
   it('does not invent file-modified provenance for a legacy spread', () => {
     const legacy = spreadFile(9, undefined);
     expect(methodLine(legacy, undefined, 'UTC')).toBe('spread (provenance unavailable)');
