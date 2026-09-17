@@ -16,20 +16,20 @@ Feature: Examine an image closely enough to catch every species
     Given an upload is open in the tagging workspace
     And an image is shown in the Focus view
 
-  @H1
+  @H1 @H1-2
   Scenario: An image can be enlarged well beyond its fit-to-screen size
     When the image is zoomed in
     Then it can be enlarged up to six times its fitted size
     And detail beyond the fitted view becomes legible
 
-  @H1
+  @H1 @H1-3
   Scenario: The enlarged image can be moved around
     Given the image is zoomed in
     When it is dragged
     Then the visible part of the image moves with the drag
     And it cannot be dragged beyond the edges of the image
 
-  @H1
+  @H1 @H1-5
   Scenario: Zoom can be driven without a mouse wheel
     Then on-screen zoom-in and zoom-out controls are available over the image
     And double-clicking the image zooms in a step

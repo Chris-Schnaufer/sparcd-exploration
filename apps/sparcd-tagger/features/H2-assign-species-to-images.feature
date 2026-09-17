@@ -19,14 +19,14 @@ Feature: Assign species to images in an upload
     And the species vocabulary has loaded
     And auto-advance is switched off in Settings
 
-  @H2
+  @H2 @H2-2
   Scenario: The species list is browsable, not only searchable
     Then every species in the vocabulary is listed with its common and scientific name
     And each species shows its reference image where one exists
     And each species shows the key bound to it, when it has one
     And Ghost appears exactly once as a species from the vocabulary
 
-  @H2
+  @H2 @H2-5
   Scenario: The species list is labelled "Available species" when an image is focused
     Given an image is focused
     Then the species list is headed "Available species"
