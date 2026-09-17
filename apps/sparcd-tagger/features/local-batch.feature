@@ -14,13 +14,13 @@ Feature: Tag a batch that has not been uploaded yet
   Background:
     Given the Uploader has handed over a batch of images
 
-  @A1
+  @A1 @A1-1
   Scenario: The workspace opens with no connection at all
     Then no connection screen is shown
     And the images are listed ready to tag
     # Requirement A1: Anita tags before she has a connection.
 
-  @A1
+  @A1 @A1-1
   Scenario: The chrome says whose batch this is and how to give it back
     Then the header says it is a local batch from the Uploader, with the file count
     And it offers "Done · back to Uploader"
