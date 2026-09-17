@@ -13,7 +13,7 @@ Feature: Resume an interrupted upload and retry a failed one
   Background:
     Given the uploader is connected
 
-  @AL1 @AL1-3 @AL1-6
+  @AL1
   Scenario: Every real upload is recorded so it can be picked up later
     When a real upload starts
     Then the destination, deployment, uploader, description, timezone and the state of every file are recorded on this machine
@@ -25,7 +25,7 @@ Feature: Resume an interrupted upload and retry a failed one
     Then nothing about it appears in History
     # Nothing was written, so there is nothing to resume.
 
-  @AL1 @F1-5
+  @AL1 @AL1-6
   Scenario: An interrupted upload is listed as open, never as complete
     Given an upload was interrupted before its metadata was published
     When History is opened
@@ -33,7 +33,7 @@ Feature: Resume an interrupted upload and retry a failed one
     And it shows how many of its files are done and how many failed
     And only uploads whose metadata was published are marked complete
 
-  @AL1 @AL1-2 @F1-5
+  @AL1 @F1 @F1-5
   Scenario: An interrupted upload can be continued from where it stopped
     Given an open upload is listed in History
     When it is resumed
@@ -42,21 +42,21 @@ Feature: Resume an interrupted upload and retry a failed one
     # As-built continuation is manual: the user clicks Resume. The tool does not
     # detect connectivity returning and does not restart on its own.
 
-  @AL1
+  @AL1 @F1 @AL1-2 @F1-5
   Scenario: Files already stored and verified are not sent again
     Given a resumed upload has files recorded as already stored
     Then each of those objects is re-checked for its size and recorded fingerprint
     And matching objects are skipped rather than uploaded again
     And an object that is missing or does not match is uploaded again
 
-  @AL2 @AL2-1 @AL2-5 @AL2-6
+  @AL2 @AL2-1 @AL2-6
   Scenario: A resumed upload lands in the same place as the original attempt
     When an interrupted upload is resumed
     Then it writes to the same collection, the same upload folder and the same object paths as the original attempt
     And the deployment, uploader identity and description are taken from the recorded session, not re-entered
     And the resumed upload's observations.csv matches what a fresh upload would have written
 
-  @AL2 @AL1 @AL1-1
+  @AL2
   Scenario: A partial History-resumed run retries automatically when the tab becomes visible again
     Given an open upload is listed in History
     And the user resumes it and the upload lands as partial

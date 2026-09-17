@@ -21,7 +21,7 @@ Feature: Publish local identifications back to the collection
     Then the upload's stored image, observation and metadata files are replaced with the edited versions
     And the identifications are then readable by the other SPARC'd tools that read the same files
 
-  @H3 @H3-7
+  @unmapped
   Scenario: Opening the sync dialog previews the change without writing anything
     When the Sync dialog is opened
     Then the pending change is computed against the currently stored files

@@ -15,7 +15,7 @@ Feature: Identify species before the batch is uploaded
     Given a folder of media has been scanned
     And the New upload section is showing the Inspect step
 
-  @A1 @A1-2
+  @A1
   Scenario: Tagging is offered as soon as the batch is fit to upload
     Then "Tag species first" sits between "Start over" and "Continue"
     And it is available exactly when Continue is
@@ -27,7 +27,7 @@ Feature: Identify species before the batch is uploaded
     # Same gate as Continue: a file the uploader could not examine has no
     # identity to tag against.
 
-  @A1 @A1-3
+  @A1
   Scenario: The batch is handed over whole
     When "Tag species first" is chosen
     Then every examined file is handed over with everything the examination established
@@ -74,7 +74,7 @@ Feature: Identify species before the batch is uploaded
     # A page load is not a user gesture, so the browser is within its rights to
     # refuse; the click is the gesture.
 
-  @A1
+  @A1 @A1-2
   Scenario: The upload carries the images and the identifications together
     Given a batch was tagged in the Tagger and handed back
     When it is published
@@ -97,7 +97,7 @@ Feature: Identify species before the batch is uploaded
     When a dry run of it is started
     Then the hand-off is still on this machine
 
-  @A1
+  @A1 @A1-3
   Scenario: An untagged file is accepted and published as untagged
     Given a batch was tagged in the Tagger and handed back
     When it is published
