@@ -18,7 +18,7 @@ Feature: Review, correct and remove identifications that already exist
   Background:
     Given an upload with existing identifications is open in the tagging workspace
 
-  @H3
+  @H3 @H3-1
   Scenario: Existing identifications are shown on the images that carry them
     Then each image's tile shows the species already recorded for it
     And an image with several species shows the first with a count of the rest
@@ -26,7 +26,7 @@ Feature: Review, correct and remove identifications that already exist
     # Corrected against the app: only the LIST view writes "untagged". A grid
     # tile with no species shows its file name instead. See CORRECTIONS.md.
 
-  @H3
+  @H3 @H3-7
   Scenario: The focused image's identifications and counts are listed in full
     Given an image with existing identifications is focused
     Then each recorded species is shown with its count
