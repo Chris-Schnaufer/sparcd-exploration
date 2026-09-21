@@ -44,6 +44,14 @@ const summaryCell = (page: Page, label: string) =>
 
 const dialogClose = (page: Page) => page.getByRole('button', { name: 'Close', exact: true }).first();
 
+// A live sync is over once its dialog offers Close, or has already closed
+// itself (#304) — a slow refresh uses up the whole auto-close window.
+async function syncFinished(page: Page): Promise<boolean> {
+  const footerClose = page.locator('footer').getByRole('button', { name: 'Close', exact: true });
+  if (await footerClose.count()) return true;
+  return (await page.getByRole('heading', { name: 'Sync to S3' }).count()) === 0;
+}
+
 Given('an upload with local edits is open in the tagging workspace', async ({ page }) => {
   await openWorkspace(page);
   await focusFrame(page, 'IMG002.JPG');
@@ -487,15 +495,14 @@ Then('the tile still shows the species before the sync completes', async ({ page
   // NOT a usable stop condition here. A `toContainText` retry-until-match
   // assertion would also happily wait right past a transient dropout instead
   // of catching it — hence sampling instead of a single check.
-  const footerClose = page.locator('footer').getByRole('button', { name: 'Close', exact: true });
   const samples: string[] = [];
-  const deadline = Date.now() + REFRESH_DELAY_MS * 2 + 5000;
+  const deadline = Date.now() + REFRESH_DELAY_MS * 2 + 10000;
   while (Date.now() < deadline) {
-    if (await footerClose.count()) break;
+    if (await syncFinished(page)) break;
     samples.push((await gridCell(page, 'IMG002.JPG').innerText()) || '(empty)');
     await page.waitForTimeout(100);
   }
-  await expect(footerClose).toBeVisible();
+  expect(await syncFinished(page)).toBe(true);
   expect(samples.length).toBeGreaterThan(0); // the sync must have actually taken a while to observe
   expect(samples.every((s) => s.includes('Coyote'))).toBe(true);
   s3.delays.clear();
@@ -514,15 +521,14 @@ Given('Focus is showing an image with a shifted capture time', async ({ page }) 
 });
 
 Then('the shifted timestamp remains visible before the sync completes', async ({ page, s3 }) => {
-  const footerClose = page.locator('footer').getByRole('button', { name: 'Close', exact: true });
   const samples: string[] = [];
-  const deadline = Date.now() + REFRESH_DELAY_MS * 2 + 5000;
+  const deadline = Date.now() + REFRESH_DELAY_MS * 2 + 10000;
   while (Date.now() < deadline) {
-    if (await footerClose.count()) break;
+    if (await syncFinished(page)) break;
     samples.push(await focusShownTime(page));
     await page.waitForTimeout(100);
   }
-  await expect(footerClose).toBeVisible();
+  expect(await syncFinished(page)).toBe(true);
   expect(samples.length).toBeGreaterThan(0);
   expect(samples.every((time) => time === '2024-01-10 09:00')).toBe(true);
   s3.delays.clear();
