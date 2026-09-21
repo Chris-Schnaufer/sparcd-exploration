@@ -16,17 +16,21 @@ back to the storage endpoint (which is specified at login time) — the differen
 between what's on screen and what's already been saved.
 
 **Location**: The pre-defined place a camera has been put to capture images.
-When referring to the data model, the term "Deployment" is used as substitute
-for a location. Also see Deployment.
+A location `id` is not unique in the registry, since several locations share
+an id with different coordinates or names, so the tools identify a location by
+its id plus its coordinates. When referring to the data model, the term
+"Deployment" is used as substitute for a location. Also see Deployment.
 
 **Observation**: A single species identification recorded against an image — a
-species, a count, and any notes. In the data model the `observations.csv`
-file holds one row per Observation.
+species and a count. In the data model every image file keeps at least one row
+in `observations.csv`: one row per species seen, or a single blank row when
+nothing has been identified.
 
 **Snapshot**: An unchangeable backup of a Collection/Upload's saved metadata
-files (`media.csv`, `observations.csv`, `UploadMeta.json`) — not the image
-files themselves — taken just before a Sync, so the metadata changes made by
-a Sync can be undone.
+files, covering whichever of `deployments.csv`, `media.csv`,
+`observations.csv`, and `UploadMeta.json` the change touches, and never the
+image files themselves. Taken just before a Sync, so the metadata changes made
+by a Sync can be undone.
 
 **Species**: A predefined scientific name paired with a common name. May also
 be used to refer to the list of these name pairs (although using "species
