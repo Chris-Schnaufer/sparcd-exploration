@@ -214,13 +214,14 @@ export function useUploadSnapshots(
   });
 }
 
-/** The species vocabulary, loaded once per connection from the settings bucket. */
-export function useSpecies(cfg: S3Config | null, connectionId: number) {
+/** The selected collection vocabulary, falling back to the settings registry. */
+export function useSpecies(cfg: S3Config | null, connectionId: number, collectionKey: string | null = null) {
   return useQuery<SpeciesResult>({
-    queryKey: ['species', connectionId, cfg?.endpoint],
-    queryFn: () => fetchSpecies(cfg!),
+    queryKey: ['species', connectionId, cfg?.endpoint, collectionKey],
+    queryFn: () => fetchSpecies(cfg!, collectionKey),
     enabled: !!cfg,
-    staleTime: Infinity, // vocabulary is stable for a session
+    staleTime: 15 * 60 * 1000,
+    refetchOnWindowFocus: true,
     retry: 1,
   });
 }

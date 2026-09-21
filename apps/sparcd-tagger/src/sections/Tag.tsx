@@ -95,7 +95,7 @@ export function Tag() {
   const attachOriginals = useLocalBatch((s) => s.attachOriginals);
 
   const images = useTagImages(cfg, connectionId, collectionKey, uploadPrefix);
-  const species = useSpecies(cfg, connectionId);
+  const species = useSpecies(cfg, connectionId, collectionKey);
   const locations = useLocations(cfg, connectionId);
   const currentDeployment = useCurrentDeployment(cfg, connectionId, collectionKey, uploadPrefix);
   const collections = useCollections(cfg, connectionId);
