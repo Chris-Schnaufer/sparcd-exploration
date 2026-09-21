@@ -74,6 +74,28 @@ Then('no hidden images remain selected for bulk actions', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Time shift selection', exact: true })).toBeDisabled();
 });
 
+When('the only visible image is tagged and drops out of the filter', async ({ page }) => {
+  await expect.poll(() => tileOrder(page)).toEqual(['IMG005.JPG']);
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('d');
+  await expect(page.getByText('No images match these filters.', { exact: true })).toBeVisible();
+});
+
+When('another species key is pressed with nothing left visible', async ({ page }) => {
+  await page.keyboard.press('p');
+});
+
+Then(
+  'the image that dropped out carries only the species given while it was visible',
+  async ({ page }) => {
+    await page.getByRole('button', { name: 'Filter' }).click();
+    await page.getByLabel('Tag state').selectOption('all');
+    await expect(gridCell(page, 'IMG005.JPG')).toContainText('Mule Deer');
+    // A tile carrying a second species reads "Mule Deer +1".
+    await expect(gridCell(page, 'IMG005.JPG')).not.toContainText('+1');
+  },
+);
+
 When('the image filter searches all fields for {string}', async ({ page }, query: string) => {
   if (!(await page.getByLabel('Match text').isVisible()))
     await page.getByRole('button', { name: 'Filter' }).click();

@@ -406,7 +406,15 @@ export function Tag() {
 
   // Operations target the selection when one exists, else the focused image.
   const targetsOf = (): TagTarget[] => {
-    const idx = selected.size ? selectedForActions.sort((a, b) => a - b) : current ? [focus] : [];
+    // With no selection the focused image is the target — unless a filter is
+    // hiding it, in which case there is nothing on screen for the action to
+    // land on and it must do nothing at all.
+    const focusTargetable = !!current && (!imageFilterActive || visibleIndexSet.has(focus));
+    const idx = selected.size
+      ? selectedForActions.sort((a, b) => a - b)
+      : focusTargetable
+        ? [focus]
+        : [];
     return idx
       .map((i) => list[i])
       .filter(Boolean)
