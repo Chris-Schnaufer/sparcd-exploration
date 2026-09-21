@@ -90,6 +90,9 @@ export function ImageAdjustments({
     const dismissOnEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       event.preventDefault();
+      // Dismissing the popup is all this Escape does — without this the
+      // workspace handler also sees it and clears the image selection.
+      event.stopPropagation();
       setOpen(false);
       requestAnimationFrame(() => triggerRef.current?.focus());
     };

@@ -133,3 +133,9 @@ Feature: Move through an upload and choose which images an action applies to
     Then a species key still applies that species to the focused image
     And Home, End, Page Up, Page Down, and arrow keys adjust the slider rather than navigating images
     And command- or control-S still saves while the slider is focused
+
+  @unmapped
+  Scenario: Escape from a focused slider closes the Adjust popup and leaves the selection alone
+    Given a burst is selected and a slider in the Adjust popup is focused
+    When Escape is pressed with the slider focused
+    Then the Adjust popup closes and the same images are still selected

@@ -668,3 +668,23 @@ Then('command- or control-S still saves while the slider is focused', async ({ p
   await expect(page.getByText('saved ✓').first()).toBeVisible();
   await expect(page.getByLabel('Brightness')).toBeFocused();
 });
+
+Given('a burst is selected and a slider in the Adjust popup is focused', async ({ page, scratch }) => {
+  await focusFrame(page, 'IMG002.JPG');
+  await enterFocusView(page);
+  await page.keyboard.press('ControlOrMeta+a');
+  await expect(positionReadout(page)).toHaveText(/\d+ selected/);
+  scratch.selectionReadout = await positionReadout(page).textContent();
+  await page.getByRole('button', { name: 'Adjust ▾' }).click();
+  await page.getByLabel('Brightness').focus();
+  await expect(page.getByLabel('Brightness')).toBeFocused();
+});
+
+When('Escape is pressed with the slider focused', async ({ page }) => {
+  await page.keyboard.press('Escape');
+});
+
+Then('the Adjust popup closes and the same images are still selected', async ({ page, scratch }) => {
+  await expect(page.getByRole('dialog', { name: 'Image adjustments' })).toHaveCount(0);
+  await expect(positionReadout(page)).toHaveText(scratch.selectionReadout as string);
+});
