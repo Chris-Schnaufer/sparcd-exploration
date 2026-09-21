@@ -483,6 +483,52 @@ Then('the synced species remains visible as an unsynced edit', async ({ page, s3
   expect(drafts.some((draft) => draft.mediaPath.endsWith('IMG002.JPG') && draft.dirty)).toBe(true);
 });
 
+When('the sync is run and only its own post-sync refresh fails', async ({ page, s3 }) => {
+  const obsKey = `${PREFIX_A}observations.csv`;
+  // `runSyncNow` flips the header pill to "synced" between `performSync`
+  // resolving and its own `invalidateQueries` refetch. Delaying every read of
+  // observations.csv holds that refetch open long enough to arm the failure
+  // against it and against nothing earlier — a fixed read count would instead
+  // land on `performSync`'s own post-write re-grounding read.
+  s3.delay(obsKey, 2000);
+  await openSyncDialog(page);
+  await setSyncDryRun(page, false);
+  await page.getByRole('button', { name: 'Sync now' }).click();
+  await expect(statePill(page)).toHaveAttribute('aria-label', 'Sync status: synced', {
+    timeout: 15_000,
+  });
+  s3.delays.delete(obsKey);
+  s3.failGetsAfter(obsKey, 0);
+});
+
+Then('the sync dialog reports the refresh failure', async ({ page, s3 }) => {
+  await expect(statePill(page)).toHaveAttribute('aria-label', 'Sync status: error');
+  await expect(page.getByText('Failed to read observations.csv (HTTP 503).')).toBeVisible();
+  // One failure is all this scenario needs. Left standing it also poisons the
+  // workspace's own retry of the same query, which strips the whole Tag
+  // section down to a bare error message.
+  s3.getFailures.clear();
+});
+
+When('the refresh recovers and the upload refetches without a reload', async ({ page, s3 }) => {
+  const obsKey = `${PREFIX_A}observations.csv`;
+  const readsBefore = s3.readCount(obsKey);
+  // A reload would re-read the (already cleared) offset from Dexie and hide
+  // the bug; TanStack Query's focus manager refetches in place instead.
+  await page.evaluate(() => {
+    window.dispatchEvent(new Event('visibilitychange'));
+    window.dispatchEvent(new Event('focus'));
+  });
+  await expect.poll(() => s3.readCount(obsKey), { timeout: 15_000 }).toBeGreaterThan(readsBefore);
+  const close = dialogClose(page);
+  if (await close.count()) await close.click();
+});
+
+Then('Focus shows the stored capture time with no whole-upload shift in effect', async ({ page }) => {
+  await expect.poll(async () => focusShownTime(page)).toBe('2024-01-10 09:00');
+  await expect(page.getByText(/clock \+/)).toHaveCount(0);
+});
+
 When('the estimated timestamp is corrected', async ({ page }) => {
   await focusFrame(page, 'IMG002.JPG');
   await page.getByRole('button', { name: 'Focus', exact: true }).click();

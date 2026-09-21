@@ -115,6 +115,18 @@ Feature: Publish local identifications back to the collection
     When the sync is run and its refresh fails
     Then the synced species remains visible as an unsynced edit
 
+  @unmapped
+  Scenario: A whole-upload shift whose post-sync refresh failed is not applied twice
+    Given times have been corrected in the workspace
+    And Focus is showing an image with a shifted capture time
+    When the sync is run and only its own post-sync refresh fails
+    Then the sync dialog reports the refresh failure
+    When the refresh recovers and the upload refetches without a reload
+    Then Focus shows the stored capture time with no whole-upload shift in effect
+    # The shift is already in the stored capture times and cleared from the
+    # upload record, so the standing in-memory shift has to go even when the
+    # refresh that would have reloaded those times failed.
+
   @H3
   Scenario: Correcting an estimated capture time preserves manual provenance
     When the estimated timestamp is corrected

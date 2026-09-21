@@ -102,16 +102,21 @@ export function SyncDialog({
         // dirty first would open a window where the query cache still holds
         // the pre-sync base, so the species/time just written would briefly
         // (or, on a slow backend, not-so-briefly) vanish from the tile.
-        await queryClient.invalidateQueries(
-          { queryKey: ['tagImages', connectionId] },
-          { throwOnError: true },
-        );
-        // Clear dirty only on the drafts actually written — questionable-only
-        // drafts (no canonical target) stay surfaced as unsaved.
-        await markUploadSynced(ctx, r.syncedMediaIds ?? []);
-        // The offset was baked into media.csv (performSync cleared it in Dexie);
-        // reset the in-memory value too so the active-offset indicator clears.
-        setTimeOffset(ctx, null);
+        try {
+          await queryClient.invalidateQueries(
+            { queryKey: ['tagImages', connectionId] },
+            { throwOnError: true },
+          );
+          // Clear dirty only on the drafts actually written — questionable-only
+          // drafts (no canonical target) stay surfaced as unsaved.
+          await markUploadSynced(ctx, r.syncedMediaIds ?? []);
+        } finally {
+          // The offset was baked into media.csv (performSync cleared it in Dexie);
+          // reset the in-memory value too so the active-offset indicator clears.
+          // It has to go even when the refresh failed, or the next refetch
+          // shifts the already-shifted stored times a second time.
+          setTimeOffset(ctx, null);
+        }
       }
     } catch (e) {
       setError((e as Error).message);
