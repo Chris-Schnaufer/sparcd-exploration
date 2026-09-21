@@ -292,7 +292,12 @@ Then('the header shows the endpoint host and a masked form of the access key', a
 });
 
 Then('it shows the uploader identity when one has been set', async ({ app }) => {
-  await expect(app.page.locator('header')).toContainText(ACCESS_KEY);
+  // The identity defaults to the access key, and the header will not print
+  // that twice — only a name the user typed earns its own slot.
+  await expect(app.page.locator('header')).not.toContainText(ACCESS_KEY);
+  await app.gotoSection('Settings');
+  await app.setUploader('Ada Lovelace');
+  await expect(app.page.locator('header')).toContainText('Ada Lovelace');
 });
 
 Then('it never displays the secret key', async ({ app }) => {
@@ -347,7 +352,6 @@ When('a connection is made', async ({ app }) => {
 });
 
 Then('the uploader identity is pre-filled with the connected access key', async ({ app }) => {
-  await expect(app.page.locator('header')).toContainText(ACCESS_KEY);
   await app.gotoSection('Settings');
   await expect(app.page.getByPlaceholder('e.g. John Doe')).toHaveValue(ACCESS_KEY);
 });
