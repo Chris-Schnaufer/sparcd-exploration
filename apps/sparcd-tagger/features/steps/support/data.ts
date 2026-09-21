@@ -20,10 +20,12 @@ export const STAMP_A = '2024.01.15.10.00.00_priortagger';
 export const STAMP_B = '2023.06.01.09.30.00_fielduser';
 export const STAMP_C = '2025.03.10.14.00.00_newuploader';
 export const STAMP_D = '2026.03.27.15.19.44_videoproducer';
+export const STAMP_E = '2025.07.01.08.00.00_camerauser';
 export const PREFIX_A = `Collections/${UUID}/Uploads/${STAMP_A}/`;
 export const PREFIX_B = `Collections/${UUID}/Uploads/${STAMP_B}/`;
 export const PREFIX_C = `Collections/${UUID}/Uploads/${STAMP_C}/`;
 export const PREFIX_D = `Collections/${UUID}/Uploads/${STAMP_D}/`;
+export const PREFIX_E = `Collections/${UUID}/Uploads/${STAMP_E}/`;
 
 export const DEPLOYMENT = `${UUID}:SAN15`;
 export const LOCATION_NAME = 'San Pedro 15';
@@ -59,6 +61,13 @@ export const MEDIA_A: MediaSpec[] = [
 export const MEDIA_B: MediaSpec[] = [
   { file: 'FOX001.JPG', timestamp: '2023-05-30T19:00:00', mime: 'image/jpeg' },
   { file: 'FOX002.JPG', timestamp: '2023-05-30T19:00:20', mime: 'image/jpeg' },
+];
+
+/** Upload E — every frame untimed (issue #302): a camera whose clock never
+ *  recorded a capture time on any of these clips. */
+export const MEDIA_E: MediaSpec[] = [
+  { file: 'CLIP001.MP4', timestamp: '', mime: 'video/mp4' },
+  { file: 'CLIP002.MP4', timestamp: '', mime: 'video/mp4' },
 ];
 
 export const mediaKey = (prefix: string, file: string): string => `${prefix}${file}`;
@@ -469,6 +478,27 @@ export function seedFixtures(s3: MockS3): void {
       makePng(240, 180, i + 60),
       m.mime === 'video/mp4' ? 'video/mp4' : 'image/png',
     );
+  });
+
+  // --- Upload E: every frame untimed, nothing to time-shift ------------------
+  s3.put(BUCKET, `${PREFIX_E}media.csv`, mediaCsv(PREFIX_E, MEDIA_E), 'text/csv');
+  s3.put(BUCKET, `${PREFIX_E}observations.csv`, blankObservationsCsv(PREFIX_E, MEDIA_E), 'text/csv');
+  s3.put(BUCKET, `${PREFIX_E}deployments.csv`, deploymentsCsv(), 'text/csv');
+  s3.put(
+    BUCKET,
+    `${PREFIX_E}UploadMeta.json`,
+    uploadMetaJson({
+      bucket: BUCKET,
+      prefix: PREFIX_E,
+      user: 'camerauser',
+      imageCount: MEDIA_E.length,
+      imagesWithSpecies: 0,
+      description: 'Camera with no working clock',
+    }),
+    'application/json',
+  );
+  MEDIA_E.forEach((m, i) => {
+    s3.put(BUCKET, mediaKey(PREFIX_E, m.file), makePng(240, 180, i + 80), 'video/mp4');
   });
 
   // --- A complete snapshot of upload A, plus an abandoned partial one --------
