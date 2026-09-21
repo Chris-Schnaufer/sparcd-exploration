@@ -175,6 +175,7 @@ describe('uploader bundle is valid v016 Camtrap data', () => {
       'America/Phoenix',
     );
     expect(parseMedia(b.mediaCsv)[0].timestamp).toBe('2024-01-10T15:00:00.000Z');
+    expect(parseMedia(b.mediaCsv)[0].comments).toBe('');
   });
 
   it('media rows carry the full object key as media_id and round-trip', async () => {

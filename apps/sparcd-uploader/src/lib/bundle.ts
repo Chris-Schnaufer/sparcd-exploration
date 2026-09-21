@@ -203,9 +203,11 @@ export function planItemFor(f: FileEntry, naming: BatchNaming, timeZone: string,
     size: f.size,
     sha256: f.sha256!,
     captureTimestamp: naiveInZoneToUtcIso(naive, timeZone),
-    timestampSource: modifiedOnly && !f.manualNaive
-      ? 'exif-modify'
-      : f.manualNaive ? f.manualSource ?? 'manual' : f.exifNaive ? undefined : estimate!.method,
+    timestampSource: f.exifNaive && !modifiedOnly
+      ? undefined
+      : f.manualNaive
+        ? f.manualSource ?? 'manual'
+        : modifiedOnly ? 'exif-modify' : estimate!.method,
     mediaKind: f.mediaKind,
     mimeType: mimeFor(f),
     preTags: f.preTags,
