@@ -48,6 +48,9 @@ const toFlipFile = (f: FileEntry, estimate: CaptureEstimate | undefined): FlipFi
   exifTimestamp: f.exifNaive ? formatNaive(f.exifNaive) : undefined,
   exifTimestampSource: f.exifTimestampSource,
   manualTimestamp: f.manualNaive ? formatNaive(f.manualNaive) : undefined,
+  manualSpreadStart: f.manualSpreadStart ? formatNaive(f.manualSpreadStart) : undefined,
+  manualSpreadMethod: f.manualSpreadMethod,
+  manualSpreadTimeZone: f.manualSpreadTimeZone,
   estimatedTimestamp: estimate ? formatNaive(estimate.naive) : undefined,
   timestampSource: f.exifTimestampSource === 'exif-modify' && !f.manualNaive
     ? 'exif-modify'
@@ -103,6 +106,9 @@ const toFileEntry = (f: FlipFile, file: File, record: FlipRecord): FileEntry => 
   exifTimestampSource: f.exifTimestampSource ?? (f.timestampSource === 'exif-modify' ? 'exif-modify' : undefined),
   manualNaive: parseNaive(f.manualTimestamp),
   manualSource: f.timestampSource === 'manual' || f.timestampSource === 'spread' ? f.timestampSource : undefined,
+  manualSpreadStart: parseNaive(f.manualSpreadStart),
+  manualSpreadMethod: f.manualSpreadMethod,
+  manualSpreadTimeZone: f.manualSpreadTimeZone,
   mimeType: f.mimeType,
   exifCamera: f.exifCamera,
   gps: f.gps,

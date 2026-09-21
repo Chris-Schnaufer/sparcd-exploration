@@ -35,6 +35,7 @@ import {
   type TagTarget,
   type BulkTimeTarget,
   type UploadCtx,
+  GHOST,
 } from '../lib/drafts';
 import {
   activeKeyProfile,
@@ -49,6 +50,11 @@ import { DEFAULT_SPECIES } from '../lib/defaultSpecies';
 import type { Species } from '../lib/species';
 import { isVideoImage, type TagImage } from '../lib/workspace';
 import type { DraftRecord } from '../lib/db';
+import {
+  appendSpeciesCountDigit,
+  removeSpeciesCountDigit,
+  speciesCountFromPrefix,
+} from '../lib/speciesCountPrefix';
 
 const RECENT_LIMIT = 12;
 const EMPTY: TagImage[] = []; // stable ref so memos don't churn before data loads
@@ -69,6 +75,7 @@ export function Tag() {
   const uploadPrefix = useStore((s) => s.selectedUploadPrefix);
   const burstGroupingEnabled = useStore((s) => s.burstGroupingEnabled);
   const burstThreshold = useStore((s) => s.burstThresholdSec);
+  const autoAdvanceOnTag = useStore((s) => s.autoAdvanceOnTag);
   const pendingSnapshots = useStore((s) => s.pendingSnapshots);
   const clearPendingSnapshots = useStore((s) => s.clearPendingSnapshots);
 
@@ -207,8 +214,20 @@ export function Tag() {
   // the species filter (a separate concern in SpeciesPanel). Jump-only — never
   // filters `list`, which would renumber the positional burst/selection indices.
   const [imgQuery, setImgQuery] = useState('');
+  const [speciesCountPrefix, setSpeciesCountPrefix] = useState('');
   const [matchPos, setMatchPos] = useState(0);
   const imgSearchRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (selected.size > 1) setSpeciesCountPrefix('');
+  }, [selected.size]);
+
+  // A pending count belongs to the image it was typed on, so any change of
+  // focused image drops it — arrows, mouse pick, filename jump, or new upload.
+  const focusedImageKey = list[focus]?.key;
+  useEffect(() => {
+    setSpeciesCountPrefix('');
+  }, [focusedImageKey, uploadPrefix]);
   const matches = useMemo(() => findFilenameMatches(list, imgQuery), [list, imgQuery]);
 
   const jumpToMatch = (pos: number) => {
@@ -361,11 +380,31 @@ export function Tag() {
       }));
   };
 
+  // Move focus to the next image, clearing selection — mirrors the keyboard
+  // handler's `focusMove`, scoped to this component's own focus/anchor/selected
+  // state (the handler's copy lives in a separate closure keyed off HandlerState).
+  const advanceFocus = () => {
+    const next = Math.max(0, Math.min(focus + 1, list.length - 1));
+    setFocus(next);
+    setAnchor(next);
+    setSelected(new Set());
+  };
+
+  const carriesSpecies = (img: TagImage, sci: string) =>
+    effectiveOf(img, drafts[img.key]).observations.some((o) => o.scientificName === sci);
+
   const apply = (tag: AppliedTag) => {
     const targets = targetsOf();
     if (!targets.length) return;
+    // A bulk operation changes every selected image, but only the focused
+    // image moves once so the researcher keeps their place in list order.
+    // A panel re-click on one image is a no-op. A selection can still add the
+    // species to other frames, so it advances its focused image once.
+    const shouldAdvance =
+      autoAdvanceOnTag && !!current && (selected.size > 0 || !carriesSpecies(current, tag.scientificName));
     addSpeciesFn(ctx, targets, tag);
     if (tag.scientificName) pushRecent(tag.scientificName);
+    if (shouldAdvance) advanceFocus();
   };
 
   const applyIncrementAt = (index: number, tag: AppliedTag) => {
@@ -373,6 +412,9 @@ export function Tag() {
     // if a multi-image selection still exists.
     const image = list[index];
     if (!image) return;
+    // Advance only when the drop landed on the focused image — a drop
+    // elsewhere shouldn't yank focus away from what the user is looking at.
+    const shouldAdvance = autoAdvanceOnTag && index === focus;
     incrementSpeciesFn(
       ctx,
       [
@@ -385,6 +427,7 @@ export function Tag() {
       tag,
     );
     if (tag.scientificName) pushRecent(tag.scientificName);
+    if (shouldAdvance) advanceFocus();
   };
 
   const applyIncrement = (tag: AppliedTag) => {
@@ -392,8 +435,10 @@ export function Tag() {
     // control. Keep this separate from spatial drag/drop targeting.
     const targets = targetsOf();
     if (!targets.length) return;
+    const shouldAdvance = autoAdvanceOnTag && !!current;
     incrementSpeciesFn(ctx, targets, tag);
     if (tag.scientificName) pushRecent(tag.scientificName);
+    if (shouldAdvance) advanceFocus();
   };
 
   // Selection-scoped bulk time shift: each target carries its currently-displayed
@@ -487,6 +532,8 @@ export function Tag() {
     captureKey,
     apply,
     applyIncrement,
+    speciesCountPrefix,
+    setSpeciesCountPrefix,
     targetsOf,
     setQuestionableMany: setQuestionableManyFn,
     drafts,
@@ -605,6 +652,15 @@ export function Tag() {
             </>
           )}
         </span>
+
+        {speciesCountPrefix && selected.size <= 1 && (
+          <span
+            className="border border-accent px-2 py-0.5 text-[12px] font-mono text-accent"
+            role="status"
+          >
+            Count: {speciesCountPrefix}
+          </span>
+        )}
 
         {/* Touch path for building a multi-select set (desktop uses Shift/Cmd
             click). Toggles the focused image in/out of the selection. */}
@@ -1000,10 +1056,12 @@ function FocusPane({
   const showAdjust = !!current && !isVideo;
 
   const [isDragOver, setIsDragOver] = useState(false);
+  const dropRef = useRef<HTMLDivElement>(null);
 
   return (
     <div className="flex flex-col min-h-[55svh] lg:min-h-0 bg-paper">
       <div
+        ref={dropRef}
         className={`relative flex-1 min-h-0 grid place-items-center p-4 overflow-hidden${isDragOver ? ' ring-2 ring-inset ring-accent' : ''}`}
         data-testid="focus-drop-zone"
         onDragOver={(e) => {
@@ -1038,6 +1096,14 @@ function FocusPane({
               value={adjustments}
               onChange={setAdjustments}
               onReset={() => setAdjustments(NEUTRAL)}
+              getMediaRect={() => dropRef.current?.querySelector('img')?.getBoundingClientRect() ?? null}
+              getBlockedRects={() => {
+                const focus = dropRef.current?.getBoundingClientRect();
+                return focus && focus.left > 0
+                  ? [new DOMRect(0, focus.top, focus.left, focus.height)]
+                  : [];
+              }}
+              mediaKey={current.key}
             />
           </div>
         )}
@@ -1469,6 +1535,8 @@ type HandlerState = {
   captureKey: (sci: string, key: string) => void;
   apply: (tag: AppliedTag) => void;
   applyIncrement: (tag: AppliedTag) => void;
+  speciesCountPrefix: string;
+  setSpeciesCountPrefix: (value: string) => void;
   targetsOf: () => TagTarget[];
   setQuestionableMany: (ctx: UploadCtx, targets: TagTarget[], value: boolean) => void;
   drafts: Record<string, DraftRecord>;
@@ -1538,6 +1606,10 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
       return;
     }
     const key = normalizeBindableEventKey(e);
+    if (key && /^\d$/.test(key)) {
+      e.preventDefault();
+      return;
+    }
     if (key) {
       e.preventDefault();
       s.captureKey(s.capturingFor, key);
@@ -1577,9 +1649,23 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
     return;
   }
 
-  // User-assigned printable species keys take precedence over built-in
-  // single-character shortcuts. This makes every alphanumeric and symbol key
-  // usable; assigning `?` intentionally displaces that app shortcut.
+  // Cmd/Ctrl/Alt digits belong to the browser (tab switching), so only a plain
+  // digit starts or extends a count prefix.
+  const unmodified = !e.metaKey && !e.ctrlKey && !e.altKey;
+  if (unmodified && s.selected.size <= 1 && /^\d$/.test(e.key)) {
+    e.preventDefault();
+    if (!e.repeat) s.setSpeciesCountPrefix(appendSpeciesCountDigit(s.speciesCountPrefix, e.key));
+    return;
+  }
+  if (unmodified && s.speciesCountPrefix && e.key === 'Backspace') {
+    e.preventDefault();
+    s.setSpeciesCountPrefix(removeSpeciesCountDigit(s.speciesCountPrefix));
+    return;
+  }
+
+  // User-assigned non-digit printable species keys take precedence over built-in
+  // single-character shortcuts. Digits are reserved for count prefixes;
+  // assigning `?` intentionally displaces that app shortcut.
   const current = s.list[s.focus];
   const printableKey = normalizeBindableEventKey(e);
   const speciesAction = printableKey
@@ -1588,11 +1674,19 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
   if (speciesAction && current) {
     e.preventDefault();
     if (e.repeat) return;
-    s.applyIncrement({
+    const prefix = speciesCountFromPrefix(s.speciesCountPrefix);
+    s.setSpeciesCountPrefix('');
+    const tag = {
       scientificName: speciesAction.species.scientificName,
       commonName: speciesAction.species.commonName,
-      count: 1,
-    });
+      count: prefix ?? 1,
+    };
+    const alreadyApplied = effectiveOf(current, s.drafts[current.key]).observations.some(
+      (observation) => observation.scientificName === tag.scientificName,
+    );
+    if (prefix && s.selected.size <= 1 && !alreadyApplied && tag.scientificName !== GHOST.label)
+      s.apply(tag);
+    else s.applyIncrement({ ...tag, count: 1 });
     return;
   }
 
@@ -1660,6 +1754,10 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
       }
       return;
     case 'Escape':
+      if (s.speciesCountPrefix) {
+        s.setSpeciesCountPrefix('');
+        return;
+      }
       if (s.selected.size) s.setSelected(new Set());
       return;
   }

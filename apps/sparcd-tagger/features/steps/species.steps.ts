@@ -21,7 +21,14 @@ import {
   ghostRow,
   positionReadout,
 } from './support/world';
-import { BUCKET, PREFIX_A, observationsCsv, OBS_A } from './support/data';
+import {
+  BUCKET,
+  PREFIX_A,
+  SETTINGS_BUCKET,
+  SPECIES_JSON,
+  observationsCsv,
+  OBS_A,
+} from './support/data';
 import { readStore, waitForDirtyDrafts } from './support/flows';
 
 const VOCAB = [
@@ -30,6 +37,8 @@ const VOCAB = [
   { common: 'Mountain Lion', scientific: 'Puma concolor' },
   { common: 'Mule Deer', scientific: 'Odocoileus hemionus' },
 ];
+const SPECIES_KEY = 'Settings/species.json';
+const SPECIES_STALE_MS = 15 * 60 * 1000 + 1;
 
 const appliedChip = (page: Page, label: string) =>
   page.locator('span.inline-flex:not([data-testid="applied-species-summary"])').filter({ hasText: label }).first();
@@ -335,6 +344,11 @@ When('an Alt-modified printable key is pressed while assigning a species key', a
   await page.keyboard.press('Alt+j');
 });
 
+When('a digit is pressed while assigning a species key', async ({ page }) => {
+  await speciesAssignKey(page, 'Pecari tajacu').click();
+  await page.keyboard.press('7');
+});
+
 Then('key capture remains active and no key is assigned', async ({ page }) => {
   await expect(speciesRow(page, 'Pecari tajacu')).toContainText('press a key…');
   await expect(speciesBadge(page, 'Pecari tajacu')).toHaveCount(0);
@@ -548,6 +562,81 @@ Then('the image still carries Ghost with a count of one', async ({ page }) => {
     .toBe(1);
 });
 
+When('count {int} is entered before the bound species key', async ({ page }, count: number) => {
+  for (const digit of String(count)) await page.keyboard.press(digit);
+  await expect(page.getByText(`Count: ${Math.min(count, 20)}`, { exact: true })).toBeVisible();
+  await page.keyboard.press('d');
+});
+
+When('count {int} is entered before the Ghost key', async ({ page }, count: number) => {
+  for (const digit of String(count)) await page.keyboard.press(digit);
+  await page.keyboard.press('g');
+});
+
+When('count {int} is typed before the bound species key', async ({ page }, count: number) => {
+  for (const digit of String(count)) await page.keyboard.press(digit);
+  await page.keyboard.press('d');
+});
+
+Then('the new species count is {int}', async ({ page }, count: number) => {
+  await expect(appliedChip(page, 'Mule Deer').locator('input[type="number"]')).toHaveValue(
+    String(count),
+  );
+});
+
+Then('the pending species count is cleared', async ({ page }) => {
+  await expect(page.getByText(/^Count: \d+$/, { exact: true })).toHaveCount(0);
+});
+
+Then('no pending species count is shown', async ({ page }) => {
+  await expect(page.getByText(/^Count: \d+$/, { exact: true })).toHaveCount(0);
+});
+
+When(
+  'count {int} is entered and Backspace is pressed before the bound species key',
+  async ({ page }, count: number) => {
+    for (const digit of String(count)) await page.keyboard.press(digit);
+    await page.keyboard.press('Backspace');
+    await expect(page.getByText('Count: 1', { exact: true })).toBeVisible();
+    await page.keyboard.press('d');
+  },
+);
+
+When('count {int} is entered and Escape is pressed', async ({ page }, count: number) => {
+  for (const digit of String(count)) await page.keyboard.press(digit);
+  await page.keyboard.press('Escape');
+});
+
+Given('count {int} is pending', async ({ page }, count: number) => {
+  for (const digit of String(count)) await page.keyboard.press(digit);
+  await expect(page.getByText(`Count: ${count}`, { exact: true })).toBeVisible();
+});
+
+When('numbers are typed into the species filter', async ({ page }) => {
+  await speciesFilter(page).fill('15');
+  await expect(speciesFilter(page)).toHaveValue('15');
+});
+
+Given('the focused image already carries the bound species at count two', async ({ page }) => {
+  await focusFrame(page, 'IMG001.JPG');
+  await expect(appliedChip(page, 'Mule Deer').locator('input[type="number"]')).toHaveValue('2');
+});
+
+Then('the existing species count increments to three', async ({ page }) => {
+  await expect(appliedChip(page, 'Mule Deer').locator('input[type="number"]')).toHaveValue('3');
+  await expect(gridCell(page, 'IMG001.JPG')).toContainText('Mule Deer ×3');
+});
+
+When('its existing count is changed to {int}', async ({ page }, count: number) => {
+  await appliedChip(page, 'Mule Deer').locator('input[type="number"]').fill(String(count));
+});
+
+Then('its existing count is {int}', async ({ page }, count: number) => {
+  await expect(appliedChip(page, 'Mule Deer').locator('input[type="number"]')).toHaveValue(
+    String(count),
+  );
+});
+
 Then('each selected image increments the species from its own count', async ({ page }) => {
   await waitForDirtyDrafts(page, 3);
   const drafts = (await readStore(page, 'drafts')) as {
@@ -607,28 +696,6 @@ When('the tagger is refreshed with its restored session', async ({ page }) => {
   await connect(page);
 });
 
-Then('no vocabulary reconciliation is performed', async ({ page }) => {
-  await expect(speciesChangedDialog(page)).toHaveCount(0);
-  const pending = await page.evaluate(() => {
-    const stored = JSON.parse(localStorage.getItem('sparcd-tagger-keybindings')!) as {
-      state: { profiles: Record<string, { pendingSpeciesChange?: unknown }> };
-    };
-    return Object.values(stored.state.profiles)[0].pendingSpeciesChange;
-  });
-  expect(pending).toBeUndefined();
-});
-
-When('the user explicitly logs in with the current server vocabulary', async ({ page }) => {
-  await page.evaluate(() => sessionStorage.clear());
-  await page.reload();
-  await expect(page.getByRole('button', { name: 'Connect' })).toBeVisible();
-  await expect(speciesChangedDialog(page)).toHaveCount(0);
-  await connect(page);
-  await expect(
-    page.getByRole('alertdialog', { name: 'Species vocabulary has changed' }),
-  ).toBeVisible();
-});
-
 const speciesChangedDialog = (page: Page) =>
   page.getByRole('alertdialog', { name: 'Species vocabulary has changed' });
 
@@ -661,6 +728,68 @@ Then('the binding the user set for the removed species is kept and the message s
   await page.reload();
   await connect(page);
   await expect(speciesChangedDialog(page)).toHaveCount(0);
+});
+
+Given('the server vocabulary gains Ringtail', async ({ s3 }) => {
+  const vocabulary = JSON.parse(SPECIES_JSON) as Record<string, unknown>[];
+  vocabulary.push({
+    name: 'Ringtail',
+    scientificName: 'Bassariscus astutus',
+    speciesIconURL: '',
+    keyBinding: null,
+  });
+  s3.put(SETTINGS_BUCKET, SPECIES_KEY, JSON.stringify(vocabulary), 'application/json');
+});
+
+Given('the current species profile is recorded', async ({ page, scratch }) => {
+  await expect.poll(() =>
+    page.evaluate(() => {
+      const stored = JSON.parse(localStorage.getItem('sparcd-tagger-keybindings')!) as {
+        state: { profiles: Record<string, { acceptedSpecies?: unknown[] }> };
+      };
+      return Object.values(stored.state.profiles)[0]?.acceptedSpecies?.length ?? 0;
+    }),
+  ).toBeGreaterThan(0);
+  scratch.speciesProfile = await page.evaluate(() =>
+    localStorage.getItem('sparcd-tagger-keybindings'),
+  );
+});
+
+Given('the server rejects species vocabulary reads', async ({ s3 }) => {
+  s3.failRead(SPECIES_KEY);
+});
+
+When('the stale tagger tab regains focus', async ({ page, s3, scratch }) => {
+  scratch.speciesReads = s3.readCount(SPECIES_KEY);
+  await page.clock.install({ time: new Date() });
+  await page.clock.fastForward(SPECIES_STALE_MS);
+  await page.evaluate(() => window.dispatchEvent(new Event('visibilitychange')));
+  await expect.poll(() => s3.readCount(SPECIES_KEY)).toBeGreaterThan(
+    scratch.speciesReads as number,
+  );
+  await page.clock.fastForward(100);
+});
+
+Then('Ringtail is available in the refreshed species vocabulary', async ({ page }) => {
+  await expect(speciesRow(page, 'Bassariscus astutus')).toContainText('Ringtail');
+});
+
+Then('a blocking message lists Ringtail as added', async ({ page }) => {
+  await expect(speciesChangedDialog(page)).toContainText('Ringtail');
+});
+
+Then('no vocabulary-change message is shown', async ({ page }) => {
+  await expect(speciesChangedDialog(page)).toHaveCount(0);
+});
+
+Then('the recorded species profile is unchanged', async ({ page, scratch }) => {
+  await expect
+    .poll(() => page.evaluate(() => localStorage.getItem('sparcd-tagger-keybindings')))
+    .toBe(scratch.speciesProfile);
+});
+
+Then('the existing species vocabulary remains available', async ({ page }) => {
+  await expect(speciesRow(page, 'Odocoileus hemionus')).toContainText('Mule Deer');
 });
 
 // --- Loupe ------------------------------------------------------------------

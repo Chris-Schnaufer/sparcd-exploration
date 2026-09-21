@@ -92,6 +92,14 @@ Feature: Publish local identifications back to the collection
     And any whole-upload time shift is cleared, because it is now part of the stored capture times
     And the workspace reloads the upload from the newly stored files
 
+  @H3
+  Scenario: Correcting an estimated capture time preserves manual provenance
+    When the estimated timestamp is corrected
+    And the sync is run
+    Then the corrected timestamp is stored with a manual source marker
+    And the deployment retains its timestamp issue marker
+    And the reloaded Focus view identifies it as entered by hand
+
   @unmapped
   Scenario: The dialog cannot be dismissed while a write is in flight
     Given a sync is running

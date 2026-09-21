@@ -435,14 +435,24 @@ export function parseMedia(csv: string): Media[] {
 export function parseObservations(csv: string): Observation[] {
   return parseCsvRows(csv).map((r) => {
     const rawType = r[OBS_COL.observationType] ?? '';
+    const scientificName = r[OBS_COL.scientificName] ?? '';
+    const count = Number(r[OBS_COL.count] ?? '0');
+    // Some producers (e.g. video ingestion) never populate observationType at
+    // all, leaving it empty even on rows that name a real species — infer
+    // "animal" from scientificName in that case. An explicit non-'animal'
+    // value (e.g. "human", "vehicle") is trusted as-is and stays 'blank',
+    // since other producers do use it to mean something other than blank.
+    const observationType = rawType === 'animal' || (rawType === '' && scientificName !== '' && count > 0)
+      ? 'animal'
+      : 'blank';
     return {
       observationId: r[OBS_COL.observationId] ?? '',
       mediaId: r[OBS_COL.mediaId] ?? '',
       deploymentId: r[OBS_COL.deploymentId] ?? '',
       timestamp: r[OBS_COL.timestamp] ?? '',
-      observationType: rawType === 'animal' ? 'animal' : 'blank',
-      scientificName: r[OBS_COL.scientificName] ?? '',
-      count: Number(r[OBS_COL.count] ?? '0'),
+      observationType,
+      scientificName,
+      count,
       tags: r[OBS_COL.comments] ?? '',
     };
   });
@@ -532,6 +542,8 @@ export type MediaEdit = {
   deploymentId: string;
   timestamp: string; // ISO stamped on new observation rows
   mediaTimestamp?: string; // if set, overwrite media.csv col 4 for this image
+  /** When a flagged capture time is corrected, replace its source marker in col 10. */
+  timestampSource?: TimestampSource;
   observations: ObservationInput[];
 };
 
@@ -579,17 +591,28 @@ function buildBlankObservationRow(edit: MediaEdit, observationId: string): strin
 
 /**
  * Merge time corrections into `media.csv`. Only rows whose media id appears in
- * an edit with a `mediaTimestamp` are touched (col 4); every other byte —
- * including media rows for un-edited images — is preserved.
+ * an edit with a `mediaTimestamp` are touched (col 4). A source update replaces
+ * that row's `[TIMESTAMP:…]` marker in col 10 without disturbing other comment
+ * text or markers; every un-edited row is preserved.
  */
 export function mergeMedia(canonicalMediaCsv: string, edits: MediaEdit[]): string {
-  const newTs = new Map<string, string>();
-  for (const e of edits) if (e.mediaTimestamp !== undefined) newTs.set(e.mediaId, e.mediaTimestamp);
-  if (newTs.size === 0) return canonicalMediaCsv;
+  const changes = new Map<string, { timestamp: string; source?: TimestampSource }>();
+  for (const e of edits) {
+    if (e.mediaTimestamp !== undefined)
+      changes.set(e.mediaId, { timestamp: e.mediaTimestamp, source: e.timestampSource });
+  }
+  if (changes.size === 0) return canonicalMediaCsv;
   const rows = parseCsvRows(canonicalMediaCsv);
   for (const row of rows) {
-    const ts = newTs.get(row[MEDIA_COL.mediaId]);
-    if (ts !== undefined) row[MEDIA_COL.timestamp] = ts;
+    const change = changes.get(row[MEDIA_COL.mediaId]);
+    if (!change) continue;
+    row[MEDIA_COL.timestamp] = change.timestamp;
+    if (change.source) {
+      row[MEDIA_COL.comments] = (row[MEDIA_COL.comments] ?? '').replace(
+        /\[TIMESTAMP:[^\]]*\]/g,
+        `[TIMESTAMP:${change.source}]`,
+      );
+    }
   }
   return serializeCsvRows(rows);
 }

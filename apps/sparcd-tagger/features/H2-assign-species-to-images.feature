@@ -17,6 +17,7 @@ Feature: Assign species to images in an upload
   Background:
     Given an upload is open in the tagging workspace
     And the species vocabulary has loaded
+    And auto-advance is switched off in Settings
 
   @H2
   Scenario: The species list is browsable, not only searchable
@@ -102,7 +103,12 @@ Feature: Assign species to images in an upload
       | j   |
       | k   |
       | x   |
-      | 7   |
+
+  @H2
+  Scenario: Digit keys are reserved for species counts
+    Given an image is focused
+    When a digit is pressed while assigning a species key
+    Then key capture remains active and no key is assigned
 
   @H2
   Scenario: Alt or Option modified keys remain available to the browser
@@ -155,6 +161,69 @@ Feature: Assign species to images in an upload
     Then the image still carries Ghost with a count of one
 
   @H2
+  Scenario: A count can be entered before adding a species to one image
+    Given an image is focused
+    When count 15 is entered before the bound species key
+    Then the new species count is 15
+    And the pending species count is cleared
+
+  @H2
+  Scenario: A prefixed species count is capped at twenty
+    Given an image is focused
+    When count 25 is entered before the bound species key
+    Then the new species count is 20
+
+  @H2
+  Scenario: A count prefix does not replace an existing species count
+    Given the focused image already carries the bound species at count two
+    When count 15 is entered before the bound species key
+    Then the existing species count increments to three
+
+  @H2
+  Scenario: A count prefix never changes Ghost's fixed count
+    Given an image is focused
+    When count 15 is entered before the Ghost key
+    Then the image still carries Ghost with a count of one
+
+  @H2
+  Scenario: Count-prefix entry is unavailable for multiple selected images
+    Given several images are selected
+    When count 15 is typed before the bound species key
+    Then no pending species count is shown
+    And each selected image increments the species from its own count
+
+  @H2
+  Scenario: Backspace edits a pending species count
+    Given an image is focused
+    When count 15 is entered and Backspace is pressed before the bound species key
+    Then the new species count is 1
+
+  @H2
+  Scenario: Escape cancels a pending species count
+    Given an image is focused
+    When count 15 is entered and Escape is pressed
+    Then no pending species count is shown
+
+  @H2
+  Scenario: Creating a multi-image selection clears a pending species count
+    Given an image is focused
+    And count 15 is pending
+    When several images are selected
+    Then no pending species count is shown
+
+  @H2
+  Scenario: Numbers typed into an input do not become a species count
+    Given an image is focused
+    When numbers are typed into the species filter
+    Then no pending species count is shown
+
+  @H2
+  Scenario: The existing species count editor is not capped at twenty
+    Given the focused image already carries the bound species at count two
+    When its existing count is changed to 25
+    Then its existing count is 25
+
+  @H2
   Scenario: A key belongs to only one species
     Given a key is already assigned to one species
     When the same key is assigned to a different species
@@ -186,12 +255,31 @@ Feature: Assign species to images in an upload
   Scenario: Server vocabulary changes require durable acknowledgement
     Given the saved user profile contains an older species configuration
     When the tagger is refreshed with its restored session
-    Then no vocabulary reconciliation is performed
-    When the user explicitly logs in with the current server vocabulary
     Then a blocking message lists added, removed and updated species
     And reopening again does not bypass the required acknowledgement
     When the vocabulary change is acknowledged
     Then the binding the user set for the removed species is kept and the message stays acknowledged
+
+  @H2
+  Scenario: A stale vocabulary refresh reports a server change when the tab regains focus
+    Given the server vocabulary gains Ringtail
+    When the stale tagger tab regains focus
+    Then Ringtail is available in the refreshed species vocabulary
+    And a blocking message lists Ringtail as added
+
+  @H2
+  Scenario: A stale vocabulary refresh makes no change when the server vocabulary is unchanged
+    Given the current species profile is recorded
+    When the stale tagger tab regains focus
+    Then no vocabulary-change message is shown
+    And the recorded species profile is unchanged
+
+  @H2
+  Scenario: A failed stale vocabulary refresh keeps the current vocabulary usable
+    Given the server rejects species vocabulary reads
+    When the stale tagger tab regains focus
+    Then the existing species vocabulary remains available
+    And no vocabulary-change message is shown
 
   @H2
   Scenario: A species reference image can be enlarged before deciding
