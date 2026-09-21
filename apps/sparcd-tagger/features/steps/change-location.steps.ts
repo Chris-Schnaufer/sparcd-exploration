@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import { Given, When, Then, expect, enterFocusView, sectionTab } from './support/world';
 import { BUCKET, PREFIX_A, LOCATION_NAME, NEW_LOCATION_NAME, NEW_LOCATION_ID, SAME_ID_LOCATION_NAME } from './support/data';
-import { openSyncDialog, runLiveSync, writeStore, makeLocalEdit, waitForDirtyDrafts } from './support/flows';
+import { openSyncDialog, runLiveSync, writeStore, makeLocalEdit, waitForDirtyDrafts, waitForSyncDialogClosed } from './support/flows';
 
 const statePill = (page: Page) => page.getByRole('status', { name: /^Sync status: / });
 
@@ -128,7 +128,7 @@ When('Browse is reopened', async ({ page }) => {
 
 When('the sync is run live', async ({ page }) => {
   await runLiveSync(page);
-  await page.getByRole('button', { name: 'Close', exact: true }).first().click();
+  await waitForSyncDialogClosed(page);
 });
 
 Then("every image's deployment is the new location", async ({ page }) => {

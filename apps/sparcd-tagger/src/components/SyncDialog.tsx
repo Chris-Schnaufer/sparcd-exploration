@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Deployment } from '@sparcd/camtrap';
 import { useStore } from '../store';
@@ -23,6 +23,7 @@ function uploadNameOf(uploadPrefix: string): string {
 // `UploadMeta.json` in place after an immutable snapshot.
 
 type Phase = 'previewing' | 'preview' | 'running' | 'done';
+const AUTO_CLOSE_MS = 900;
 
 export function SyncDialog({
   ctx,
@@ -55,6 +56,11 @@ export function SyncDialog({
   const [phase, setPhase] = useState<Phase>('previewing');
   const [result, setResult] = useState<SyncResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Pending auto-close timer after a successful live sync (#304) — cleared on
+  // unmount so an early manual close can't leave a stale timer to fire later
+  // against whatever dialog happens to be open by then.
+  const closeTimer = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => () => clearTimeout(closeTimer.current), []);
   // Snapshotted once, not read live: a successful sync clears the store's
   // `pendingLocation` as part of its own cleanup, which would otherwise blank
   // this dialog's "Location → X" confirmation the instant it has something to
@@ -98,11 +104,13 @@ export function SyncDialog({
     setPhase('running');
     setError(null);
     setSyncState('syncing');
+    let closeDelay: number | null = null;
     try {
       const r = await performSync({ ...args(), dryRun });
       setResult(r);
       setSyncState(syncStateFor(r, dryRun));
       if (r.status === 'synced' && !dryRun) {
+        const closeDeadline = Date.now() + AUTO_CLOSE_MS;
         // Ground the display on the freshly-written canonical files BEFORE
         // clearing drafts/offset (#306). A clean (non-dirty) draft defers to
         // `img.baseObservations`/the base timestamp for display — clearing
@@ -127,12 +135,23 @@ export function SyncDialog({
           setTimeOffset(ctx, null);
           setPendingLocation(ctx, null);
         }
+        // Only a fully refreshed and cleaned-up live sync can close itself.
+        // A slow refresh consumes the existing confirmation window instead of
+        // adding another AUTO_CLOSE_MS after it completes.
+        closeDelay = Math.max(0, closeDeadline - Date.now());
       }
     } catch (e) {
       setError((e as Error).message);
       setSyncState('error');
     } finally {
       setPhase('done');
+    }
+    if (closeDelay !== null) {
+      // A completed live sync needs no further confirmation here — the
+      // toolbar's sync-state pill already shows "synced" outside this dialog.
+      // Give the success message a beat to register, then get out of the way
+      // (#304) rather than leaving a finished dialog for the user to dismiss.
+      closeTimer.current = setTimeout(onClose, closeDelay);
     }
   };
 

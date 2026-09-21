@@ -234,6 +234,12 @@ export function Tag() {
   const [speciesCountPrefix, setSpeciesCountPrefix] = useState('');
   const [matchPos, setMatchPos] = useState(0);
   const imgSearchRef = useRef<HTMLInputElement>(null);
+  const syncButtonRef = useRef<HTMLButtonElement>(null);
+
+  const closeSync = () => {
+    setShowSync(false);
+    requestAnimationFrame(() => syncButtonRef.current?.focus());
+  };
 
   useEffect(() => {
     if (selected.size > 1) setSpeciesCountPrefix('');
@@ -1069,6 +1075,7 @@ export function Tag() {
               </button>
               <button
                 onClick={() => setShowSync(true)}
+                ref={syncButtonRef}
                 className="text-[12px] font-mono border border-ink px-2.5 py-1 text-ink hover:bg-panelHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
                 title="Review and sync local edits to the canonical S3 files"
               >
@@ -1172,7 +1179,7 @@ export function Tag() {
         />
       )}
       {showSync && (
-        <SyncDialog ctx={ctx} images={list} drafts={drafts} onClose={() => setShowSync(false)} />
+        <SyncDialog ctx={ctx} images={list} drafts={drafts} onClose={closeSync} />
       )}
       {showSnapshots && <SnapshotsDialog ctx={ctx} onClose={() => setShowSnapshots(false)} />}
       {showTimeShift && (

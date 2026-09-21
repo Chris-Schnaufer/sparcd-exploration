@@ -19,6 +19,7 @@ import {
   setSyncDryRun,
   readStore,
   waitForDirtyDrafts,
+  waitForSyncDialogClosed,
   writeStore,
 } from './support/flows';
 
@@ -479,7 +480,7 @@ Given('a whole-upload shift was written to the stored files by a sync', async ({
   await setSyncDryRun(page, false);
   await page.getByRole('button', { name: 'Sync now' }).click();
   await expect(page.getByText('Synced — canonical files replaced.')).toBeVisible();
-  await page.getByRole('button', { name: 'Close', exact: true }).first().click();
+  await waitForSyncDialogClosed(page);
 });
 
 Then('the standing shift is cleared afterwards', async ({ page }) => {
