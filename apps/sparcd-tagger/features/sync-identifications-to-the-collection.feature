@@ -36,7 +36,7 @@ Feature: Publish local identifications back to the collection
 
   @unmapped
   Scenario: A failed post-sync refresh keeps its error available
-    Given the post-sync canonical refresh will fail
+    Given the refresh after the live sync will fail
     When the live sync begins
     Then the refresh error remains available after the success close window
 
@@ -117,6 +117,41 @@ Feature: Publish local identifications back to the collection
     Then the images whose changes were written are no longer listed as unsaved
     And any whole-upload time shift is cleared, because it is now part of the stored capture times
     And the workspace reloads the upload from the newly stored files
+
+  @unmapped
+  Scenario: A just-synced species stays visible while the post-sync refresh is still in flight
+    Given the canonical refresh after a sync is held open
+    When the sync is run without waiting for it to finish
+    Then the tile still shows the species before the sync completes
+    # A clean (no-longer-dirty) draft defers to the base for display; the base
+    # must be confirmed fresh before the draft goes clean, or the species
+    # briefly (or, on a slow connection, not so briefly) drops out of view.
+
+  @unmapped
+  Scenario: A just-synced capture-time correction stays visible while refresh is in flight
+    Given times have been corrected in the workspace
+    And Focus is showing an image with a shifted capture time
+    And the canonical refresh after a sync is held open
+    When the sync is run without waiting for it to finish
+    Then the shifted timestamp remains visible before the sync completes
+
+  @unmapped
+  Scenario: A failed post-sync refresh leaves the visible edit unsynced
+    Given the post-sync canonical refresh will fail
+    When the sync is run and its refresh fails
+    Then the synced species remains visible as an unsynced edit
+
+  @unmapped
+  Scenario: A whole-upload shift whose post-sync refresh failed is not applied twice
+    Given times have been corrected in the workspace
+    And Focus is showing an image with a shifted capture time
+    When the sync is run and only its own post-sync refresh fails
+    Then the sync dialog reports the refresh failure
+    When the refresh recovers and the upload refetches without a reload
+    Then Focus shows the stored capture time with no whole-upload shift in effect
+    # The shift is already in the stored capture times and cleared from the
+    # upload record, so the standing in-memory shift has to go even when the
+    # refresh that would have reloaded those times failed.
 
   @H3
   Scenario: Correcting an estimated capture time preserves manual provenance

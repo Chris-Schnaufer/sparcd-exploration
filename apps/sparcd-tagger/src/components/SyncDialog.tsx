@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import type { Deployment } from '@sparcd/camtrap';
 import { useStore } from '../store';
 import { useDraftStore, type UploadCtx } from '../lib/drafts';
 import { performSync } from '../lib/syncRunner';
@@ -48,6 +49,7 @@ export function SyncDialog({
   const uploadName = uploadNameOf(ctx.uploadPrefix);
   const markUploadSynced = useDraftStore((s) => s.markUploadSynced);
   const setTimeOffset = useDraftStore((s) => s.setTimeOffset);
+  const setPendingLocation = useDraftStore((s) => s.setPendingLocation);
   const discardUpload = useDraftStore((s) => s.discardUpload);
   const queryClient = useQueryClient();
 
@@ -59,6 +61,11 @@ export function SyncDialog({
   // against whatever dialog happens to be open by then.
   const closeTimer = useRef<ReturnType<typeof setTimeout>>();
   useEffect(() => () => clearTimeout(closeTimer.current), []);
+  // Snapshotted once, not read live: a successful sync clears the store's
+  // `pendingLocation` as part of its own cleanup, which would otherwise blank
+  // this dialog's "Location → X" confirmation the instant it has something to
+  // confirm. What the preview computed against is what stays displayed.
+  const [previewedLocation] = useState(() => useDraftStore.getState().pendingLocation);
 
   const args = () => ({
     cfg: cfg!,
@@ -104,19 +111,30 @@ export function SyncDialog({
       setSyncState(syncStateFor(r, dryRun));
       if (r.status === 'synced' && !dryRun) {
         const closeDeadline = Date.now() + AUTO_CLOSE_MS;
-        // Refresh before clearing drafts so a clean draft never renders against
-        // the pre-sync base. A failed refresh retains the draft and prevents
-        // this completed dialog from closing itself.
-        await queryClient.invalidateQueries(
-          { queryKey: ['tagImages', connectionId] },
-          { throwOnError: true },
-        );
-        // Clear dirty only on the drafts actually written — questionable-only
-        // drafts (no canonical target) stay surfaced as unsaved.
-        await markUploadSynced(ctx, r.syncedMediaIds ?? []);
-        // The offset was baked into media.csv (performSync cleared it in Dexie);
-        // reset the in-memory value too so the active-offset indicator clears.
-        setTimeOffset(ctx, null);
+        // Ground the display on the freshly-written canonical files BEFORE
+        // clearing drafts/offset (#306). A clean (non-dirty) draft defers to
+        // `img.baseObservations`/the base timestamp for display — clearing
+        // dirty first would open a window where the query cache still holds
+        // the pre-sync base, so the species/time just written would briefly
+        // (or, on a slow backend, not-so-briefly) vanish from the tile.
+        try {
+          await queryClient.invalidateQueries(
+            { queryKey: ['tagImages', connectionId] },
+            { throwOnError: true },
+          );
+          await queryClient.invalidateQueries({ queryKey: ['currentDeployment', connectionId] });
+          // Clear dirty only on the drafts actually written — questionable-only
+          // drafts (no canonical target) stay surfaced as unsaved.
+          await markUploadSynced(ctx, r.syncedMediaIds ?? []);
+        } finally {
+          // The offset/location were baked into the canonical files (performSync
+          // cleared them in Dexie); reset the in-memory mirrors too so the
+          // active-offset and pending-location indicators clear. They have to go
+          // even when the refresh failed, or the next refetch shifts the
+          // already-shifted stored times a second time.
+          setTimeOffset(ctx, null);
+          setPendingLocation(ctx, null);
+        }
         // Only a fully refreshed and cleaned-up live sync can close itself.
         // A slow refresh consumes the existing confirmation window instead of
         // adding another AUTO_CLOSE_MS after it completes.
@@ -185,6 +203,7 @@ export function SyncDialog({
               live={phase === 'done'}
               collectionName={collectionName}
               uploadName={uploadName}
+              pendingLocation={previewedLocation}
             />
           )}
 
@@ -238,12 +257,14 @@ function ResultBody({
   live,
   collectionName,
   uploadName,
+  pendingLocation,
 }: {
   result: SyncResult;
   dryRun: boolean;
   live: boolean;
   collectionName: string;
   uploadName: string;
+  pendingLocation: Deployment | null;
 }) {
   switch (result.status) {
     case 'noop':
@@ -268,6 +289,7 @@ function ResultBody({
             Would write {result.writes.length} file(s):{' '}
             {result.writes.map((w) => w.role).join(', ') || '—'}.
           </p>
+          {pendingLocation && <LocationChangeNote pendingLocation={pendingLocation} />}
           <p className="text-[12px] text-inkMute font-mono break-all">
             {collectionName} / {uploadName}
           </p>
@@ -278,12 +300,21 @@ function ResultBody({
       return (
         <div className="space-y-2">
           <SummaryGrid summary={result.summary} />
+          {pendingLocation && <LocationChangeNote pendingLocation={pendingLocation} />}
           <p className="text-accent text-[13px] font-[600]">
             {dryRun ? 'Dry-run complete.' : 'Synced — canonical files replaced.'}
           </p>
         </div>
       );
   }
+}
+
+function LocationChangeNote({ pendingLocation }: { pendingLocation: Deployment }) {
+  return (
+    <p className="text-[13px] text-accent font-mono">
+      Location → {pendingLocation.locationName} ({pendingLocation.locationId})
+    </p>
+  );
 }
 
 function SummaryGrid({
