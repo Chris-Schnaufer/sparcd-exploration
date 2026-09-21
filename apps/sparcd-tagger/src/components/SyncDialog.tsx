@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import type { Deployment } from '@sparcd/camtrap';
 import { useStore } from '../store';
 import { useDraftStore, type UploadCtx } from '../lib/drafts';
 import { performSync } from '../lib/syncRunner';
@@ -47,12 +48,18 @@ export function SyncDialog({
   const uploadName = uploadNameOf(ctx.uploadPrefix);
   const markUploadSynced = useDraftStore((s) => s.markUploadSynced);
   const setTimeOffset = useDraftStore((s) => s.setTimeOffset);
+  const setPendingLocation = useDraftStore((s) => s.setPendingLocation);
   const discardUpload = useDraftStore((s) => s.discardUpload);
   const queryClient = useQueryClient();
 
   const [phase, setPhase] = useState<Phase>('previewing');
   const [result, setResult] = useState<SyncResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Snapshotted once, not read live: a successful sync clears the store's
+  // `pendingLocation` as part of its own cleanup, which would otherwise blank
+  // this dialog's "Location → X" confirmation the instant it has something to
+  // confirm. What the preview computed against is what stays displayed.
+  const [previewedLocation] = useState(() => useDraftStore.getState().pendingLocation);
 
   const args = () => ({
     cfg: cfg!,
@@ -107,15 +114,18 @@ export function SyncDialog({
             { queryKey: ['tagImages', connectionId] },
             { throwOnError: true },
           );
+          await queryClient.invalidateQueries({ queryKey: ['currentDeployment', connectionId] });
           // Clear dirty only on the drafts actually written — questionable-only
           // drafts (no canonical target) stay surfaced as unsaved.
           await markUploadSynced(ctx, r.syncedMediaIds ?? []);
         } finally {
-          // The offset was baked into media.csv (performSync cleared it in Dexie);
-          // reset the in-memory value too so the active-offset indicator clears.
-          // It has to go even when the refresh failed, or the next refetch
-          // shifts the already-shifted stored times a second time.
+          // The offset/location were baked into the canonical files (performSync
+          // cleared them in Dexie); reset the in-memory mirrors too so the
+          // active-offset and pending-location indicators clear. They have to go
+          // even when the refresh failed, or the next refetch shifts the
+          // already-shifted stored times a second time.
           setTimeOffset(ctx, null);
+          setPendingLocation(ctx, null);
         }
       }
     } catch (e) {
@@ -174,6 +184,7 @@ export function SyncDialog({
               live={phase === 'done'}
               collectionName={collectionName}
               uploadName={uploadName}
+              pendingLocation={previewedLocation}
             />
           )}
 
@@ -227,12 +238,14 @@ function ResultBody({
   live,
   collectionName,
   uploadName,
+  pendingLocation,
 }: {
   result: SyncResult;
   dryRun: boolean;
   live: boolean;
   collectionName: string;
   uploadName: string;
+  pendingLocation: Deployment | null;
 }) {
   switch (result.status) {
     case 'noop':
@@ -257,6 +270,7 @@ function ResultBody({
             Would write {result.writes.length} file(s):{' '}
             {result.writes.map((w) => w.role).join(', ') || '—'}.
           </p>
+          {pendingLocation && <LocationChangeNote pendingLocation={pendingLocation} />}
           <p className="text-[12px] text-inkMute font-mono break-all">
             {collectionName} / {uploadName}
           </p>
@@ -267,12 +281,21 @@ function ResultBody({
       return (
         <div className="space-y-2">
           <SummaryGrid summary={result.summary} />
+          {pendingLocation && <LocationChangeNote pendingLocation={pendingLocation} />}
           <p className="text-accent text-[13px] font-[600]">
             {dryRun ? 'Dry-run complete.' : 'Synced — canonical files replaced.'}
           </p>
         </div>
       );
   }
+}
+
+function LocationChangeNote({ pendingLocation }: { pendingLocation: Deployment }) {
+  return (
+    <p className="text-[13px] text-accent font-mono">
+      Location → {pendingLocation.locationName} ({pendingLocation.locationId})
+    </p>
+  );
 }
 
 function SummaryGrid({
