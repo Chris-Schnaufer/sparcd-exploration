@@ -132,23 +132,26 @@ Then(
   },
 );
 
-Then('at 1297px Browse retains upload names while supporting columns yield', async ({ page }) => {
-  await page.setViewportSize({ width: 1297, height: 900 });
+// The table sits beside a 320px rail from 1280px up, so the same viewport
+// width means two different table widths either side of that: 1440px leaves
+// the table 1078px, while 1280px leaves it only 918px.
+Then('at 1440px Browse shows every column', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
   const row = uploadRow(page, 'priortagger');
   const upload = row.locator('[data-column="upload"]');
 
   await expect(upload).toBeVisible();
   await expect(upload).toContainText('priortagger');
-  await expect(row.locator('[data-column="images"]')).toBeHidden();
-  await expect(row.locator('[data-column="tagged"]')).toBeHidden();
+  await expect(row.locator('[data-column="images"]')).toBeVisible();
+  await expect(row.locator('[data-column="tagged"]')).toBeVisible();
   await expect(row.locator('[data-column="sync"]')).toBeVisible();
   await expect.poll(async () => (await upload.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(256);
 });
 
 Then(
-  'at 1017px Browse retains upload names while supporting columns yield',
+  'at 1280px Browse yields image counts and tagging progress to the collection rail',
   async ({ page }) => {
-    await page.setViewportSize({ width: 1017, height: 900 });
+    await page.setViewportSize({ width: 1280, height: 900 });
     const row = uploadRow(page, 'priortagger');
     const upload = row.locator('[data-column="upload"]');
 
@@ -161,13 +164,28 @@ Then(
   },
 );
 
+Then('at 1100px Browse shows tagging progress but not image counts', async ({ page }) => {
+  await page.setViewportSize({ width: 1100, height: 900 });
+  const row = uploadRow(page, 'priortagger');
+  const upload = row.locator('[data-column="upload"]');
+
+  await expect(upload).toBeVisible();
+  await expect(upload).toContainText('priortagger');
+  await expect(row.locator('[data-column="images"]')).toBeHidden();
+  await expect(row.locator('[data-column="tagged"]')).toBeVisible();
+  await expect(row.locator('[data-column="sync"]')).toBeVisible();
+  await expect.poll(async () => (await upload.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(256);
+});
+
 Then('wide Browse gives tagging progress usable space', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const tagged = uploadRow(page, 'priortagger').locator('[data-column="tagged"]');
 
   await expect(tagged).toBeVisible();
   await expect(tagged).toContainText('3 / 6');
-  await expect(tagged.locator('[style*="width"]')).toBeVisible();
+  // The filled part of the bar is width:0 at 0% tagged, so it is only ever
+  // attached, never "visible" in Playwright's sense.
+  await expect(tagged.locator('[style*="width"]')).toBeAttached();
   await expect.poll(async () => (await tagged.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(130);
 });
 
