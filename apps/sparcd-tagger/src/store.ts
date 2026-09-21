@@ -149,13 +149,14 @@ function clearAutoAdvance() {
 }
 
 // The identity typed in Settings — stamps the audit-snapshot path and edit
-// comment of every sync. It survives reloads in this browser session (issue
-// #305), but does not outlive the session: it is a "who is at this keyboard"
-// attribution rather than a device preference, so a later operator cannot
-// inherit it on a shared machine.
+// comment of every sync. Remembered on this device like the display
+// preferences (issue #305: it used to reset to empty on every reload), and
+// dropped whenever the connection changes hands, since it is a "who is at this
+// keyboard" attribution: a stale identity surviving a logout or a swap to
+// someone else's credentials risks misattributing the next person's edits.
 function loadTaggerUser(): string {
   try {
-    return sessionStorage.getItem(TAGGER_IDENTITY_KEY) ?? '';
+    return localStorage.getItem(TAGGER_IDENTITY_KEY) ?? '';
   } catch {
     return '';
   }
@@ -163,15 +164,17 @@ function loadTaggerUser(): string {
 
 function saveTaggerUser(value: string) {
   try {
-    sessionStorage.setItem(TAGGER_IDENTITY_KEY, value);
+    localStorage.setItem(TAGGER_IDENTITY_KEY, value);
   } catch {
-    // Storage can be unavailable or full; the in-memory choice still applies.
+    // Storage can be unavailable or full. The in-memory choice still applies,
+    // but leaving an older value behind would restore it on the next reload.
+    clearTaggerUser();
   }
 }
 
 function clearTaggerUser() {
   try {
-    sessionStorage.removeItem(TAGGER_IDENTITY_KEY);
+    localStorage.removeItem(TAGGER_IDENTITY_KEY);
   } catch {
     // Disconnect still clears the active connection and in-memory identity.
   }
@@ -208,9 +211,8 @@ export const useStore = create<TaggerState>()(
   // (`subscribeSharedConnection`) supplies one within a message round-trip of
   // mount, and otherwise the user enters the secret. The theme lives in the
   // shared home every SPARC'd tool reads; date/time/distance display prefs,
-  // auto-advance persist to their own localStorage keys, while the tagger
-  // identity persists only for this tab's session (see the loaders above).
-  // Everything else — selection, sync state,
+  // auto-advance, and the tagger identity persist to their own localStorage
+  // keys (see the loaders above); everything else — selection, sync state,
   // pendingSnapshots, dryRun — is transient and dropped on reload by design.
   (set) => ({
     s3Config: initialSession,
@@ -318,17 +320,26 @@ export const useStore = create<TaggerState>()(
 // Also answers a sibling tab's own request with our current s3Config, if any.
 subscribeSharedConnection((cfg) => {
   clearClientCache();
-  if (!cfg) clearTaggerUser();
+  // The identity belongs to whoever is connected, so it goes when the
+  // connection does: a sibling logging out, or logging in as someone else,
+  // must not leave their name to be stamped on the next sync. Adopting a
+  // relay into a tab that had no connection of its own — a freshly opened tab
+  // picking up the live session — replaces nobody, so the identity stands.
+  const previous = useStore.getState().s3Config;
+  const handedOver =
+    previous !== null &&
+    (cfg === null || cfg.endpoint !== previous.endpoint || cfg.accessKey !== previous.accessKey);
+  if (handedOver) clearTaggerUser();
   useStore.setState((s) => ({
     s3Config: cfg,
     connectionId: s.connectionId + 1,
+    ...(handedOver ? { taggerUser: '' } : {}),
     ...(cfg
       ? {}
       : {
           section: 'browse' as const,
           selectedCollectionKey: null,
           selectedUploadPrefix: null,
-          taggerUser: '',
         }),
   }));
 }, () => useStore.getState().s3Config);

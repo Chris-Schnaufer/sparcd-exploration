@@ -93,12 +93,18 @@ Feature: Connect the tagger to a collection store and manage the session
     Then that identity is retained in Settings
 
   @unmapped
-  Scenario: The tagger identity does not outlive its browser session
+  Scenario: The tagger identity is remembered on this device
     Given the tagger is connected
     When a tagger identity is entered in Settings
-    And the tab is closed and the tagger is opened in a new one
-    And the tagger stays on the connection screen until the secret is re-entered
-    Then the reconnected browser session has no tagger identity
+    And the tagger is opened in a second tab of the same browser
+    Then that identity is retained in Settings of the second tab
+
+  @unmapped
+  Scenario: A sibling tab connecting as someone else drops the tagger identity
+    Given the tagger is connected
+    And a tagger identity is entered in Settings
+    When a sibling tool connects the shared session with different credentials
+    Then Settings shows no tagger identity
 
   @unmapped
   Scenario: The tagger identity is forgotten on disconnect

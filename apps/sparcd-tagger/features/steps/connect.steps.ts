@@ -203,7 +203,7 @@ Then('the tagger returns to the connection screen', async ({ page }) => {
 Then('after reloading and reconnecting, it has no identity carried over', async ({ page }) => {
   await page.reload();
   await expect(page.getByRole('button', { name: 'Connect', exact: true })).toBeVisible();
-  expect(await page.evaluate(() => sessionStorage.getItem('sparcd-tagger-identity'))).toBeNull();
+  expect(await page.evaluate(() => localStorage.getItem('sparcd-tagger-identity'))).toBeNull();
   await connect(page);
   await openSettings(page);
   await expect(page.locator('#user')).toHaveValue('');
@@ -239,16 +239,56 @@ Then('that identity is retained in Settings', async ({ page }) => {
 
 Then('a fresh connection starts with no identity carried over', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Connect', exact: true })).toBeVisible();
-  expect(await page.evaluate(() => sessionStorage.getItem('sparcd-tagger-identity'))).toBeNull();
+  expect(await page.evaluate(() => localStorage.getItem('sparcd-tagger-identity'))).toBeNull();
   await connect(page);
   await openSettings(page);
   await expect(page.locator('#user')).toHaveValue('');
 });
 
-Then('the reconnected browser session has no tagger identity', async ({ page }) => {
-  expect(await page.evaluate(() => sessionStorage.getItem('sparcd-tagger-identity'))).toBeNull();
+When('the tagger is opened in a second tab of the same browser', async ({ context, s3, scratch }) => {
+  const second = await context.newPage();
+  await installS3Mock(second, s3);
+  await second.goto(APP_URL);
+  await expect(sectionTab(second, 'Browse')).toBeVisible();
+  scratch.second = second;
+});
+
+Then('that identity is retained in Settings of the second tab', async ({ scratch }) => {
+  const second = scratch.second as import('@playwright/test').Page;
+  await openSettings(second);
+  await expect(second.locator('#user')).toHaveValue('jgonzalez');
+});
+
+When('a sibling tool connects the shared session with different credentials', async ({ context }) => {
+  // A same-origin static page models another SPARC'd tool relaying its own
+  // login, without mounting a second Tagger that would answer the connection
+  // request and race this message.
+  const sibling = await context.newPage();
+  await sibling.route('**/sibling-connect', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Sibling tool</title>' }),
+  );
+  await sibling.goto(`${ENDPOINT}/sibling-connect`);
+  await sibling.evaluate(async (endpoint) => {
+    const channel = new BroadcastChannel('sparcd-connection-live');
+    channel.postMessage({
+      type: 'connect',
+      config: {
+        endpoint,
+        region: 'us-east-1',
+        accessKey: 'otherkey',
+        secretKey: 'othersecret',
+        forcePathStyle: true,
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    channel.close();
+  }, ENDPOINT);
+});
+
+Then('Settings shows no tagger identity', async ({ page }) => {
   await openSettings(page);
   await expect(page.locator('#user')).toHaveValue('');
+  expect(await page.evaluate(() => localStorage.getItem('sparcd-tagger-identity'))).toBeNull();
 });
 
 Then(
