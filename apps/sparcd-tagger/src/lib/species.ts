@@ -148,8 +148,8 @@ export type SpeciesResult = SpeciesParse & {
 };
 
 function isMissingObjectError(err: unknown): boolean {
-  const e = err as { name?: string; message?: string; $metadata?: { httpStatusCode?: number } };
-  return e.$metadata?.httpStatusCode === 404 || e.name === 'NoSuchKey' || e.name === 'NotFound' || /NoSuchKey|not found/i.test(e.message ?? '');
+  const e = err as { name?: string; $metadata?: { httpStatusCode?: number } };
+  return e.$metadata?.httpStatusCode === 404 || e.name === 'NoSuchKey' || e.name === 'NotFound';
 }
 
 /** Read + parse the species registry from the discovered settings bucket. */
@@ -161,17 +161,20 @@ export async function fetchSpecies(
   if (collectionKey) {
     const { bucket, uuid } = parseCollectionKey(collectionKey);
     const collectionKeyPath = `Collections/${uuid}/species.json`;
+    let collectionBytes: Uint8Array | undefined;
     try {
-      const collectionBytes = await client.getObject(bucket, collectionKeyPath);
-      const collectionParsed = parseSpecies(new TextDecoder().decode(collectionBytes));
-      if (collectionParsed.species.length > 0) {
-        return { ...collectionParsed, settingsBucket: null, sourceBucket: bucket, sourceKey: collectionKeyPath };
-      }
+      collectionBytes = await client.getObject(bucket, collectionKeyPath);
     } catch (err) {
       if (!isMissingObjectError(err)) {
         throw translateReadError(err, `"${collectionKeyPath}" in bucket "${bucket}"`);
       }
       // A missing collection assignment falls back to settings.
+    }
+    if (collectionBytes) {
+      const collectionParsed = parseSpecies(new TextDecoder().decode(collectionBytes));
+      if (collectionParsed.species.length > 0) {
+        return { ...collectionParsed, settingsBucket: null, sourceBucket: bucket, sourceKey: collectionKeyPath };
+      }
     }
   }
   const settingsBucket = await discoverSettingsBucket(cfg, client);

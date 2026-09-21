@@ -248,8 +248,8 @@ export type LocationsResult = LocationsParse & {
 };
 
 function isMissingObjectError(err: unknown): boolean {
-  const e = err as { name?: string; message?: string; $metadata?: { httpStatusCode?: number } };
-  return e.$metadata?.httpStatusCode === 404 || e.name === 'NoSuchKey' || e.name === 'NotFound' || /NoSuchKey|not found/i.test(e.message ?? '');
+  const e = err as { name?: string; $metadata?: { httpStatusCode?: number } };
+  return e.$metadata?.httpStatusCode === 404 || e.name === 'NoSuchKey' || e.name === 'NotFound';
 }
 
 /**
@@ -267,8 +267,16 @@ export async function fetchLocations(
   if (collectionKey) {
     const { bucket: collectionBucket, uuid } = parseCollectionKey(collectionKey);
     const collectionPath = `Collections/${uuid}/locations.json`;
+    let collectionBytes: Uint8Array | undefined;
     try {
-      const collectionBytes = await client.getObject(collectionBucket, collectionPath);
+      collectionBytes = await client.getObject(collectionBucket, collectionPath);
+    } catch (err) {
+      if (!isMissingObjectError(err)) {
+        throw translateReadError(err, `"${collectionPath}" in bucket "${collectionBucket}"`);
+      }
+      // A missing collection assignment falls back to the settings list.
+    }
+    if (collectionBytes) {
       const collectionParsed = parseLocations(new TextDecoder().decode(collectionBytes));
       if (collectionParsed.locations.length > 0) {
         return {
@@ -278,11 +286,6 @@ export async function fetchLocations(
           sourceKey: collectionPath,
         };
       }
-    } catch (err) {
-      if (!isMissingObjectError(err)) {
-        throw translateReadError(err, `"${collectionPath}" in bucket "${collectionBucket}"`);
-      }
-      // A missing collection assignment falls back to the settings list.
     }
   }
   const settingsBucket = await discoverSettingsBucket(client, settingsBucketHint);

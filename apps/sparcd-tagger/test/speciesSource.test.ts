@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { SafeS3Client } from '@sparcd/s3-safe';
 import { diffSpecies } from '../src/lib/keys';
-import { fetchSpecies } from '../src/lib/species';
+import { fetchSpecies, SpeciesShapeError } from '../src/lib/species';
 
 const cfg = { endpoint: 'https://s3.example.test', region: 'us-east-1', accessKey: 'key', secretKey: 'secret', forcePathStyle: false };
 const speciesJson = (name: string) => JSON.stringify([{ name, scientificName: name, speciesIconURL: '', keyBinding: null }]);
@@ -57,6 +57,29 @@ describe('collection species source selection', () => {
       'collection-bucket/Collections/abc/species.json': Object.assign(new Error('denied'), { name: 'AccessDenied', $metadata: { httpStatusCode: 403 } }),
     });
     await expect(fetchSpecies(cfg, 'collection-bucket::abc', client)).rejects.toThrow(/Access denied/);
+  });
+
+  it('surfaces an unrelated error whose text merely says "not found"', async () => {
+    const client = fakeClient({
+      'collection-bucket/Collections/abc/species.json': new Error('proxy: upstream not found'),
+      'settings-bucket/Settings/species.json': speciesJson('settings'),
+    });
+    await expect(fetchSpecies(cfg, 'collection-bucket::abc', client)).rejects.toThrow(/Could not reach the endpoint/);
+    expect(client.reads).toEqual(['collection-bucket/Collections/abc/species.json']);
+  });
+
+  it('falls back to settings on a 404 status with no S3 error name', async () => {
+    const client = fakeClient({
+      'collection-bucket/Collections/abc/species.json': Object.assign(new Error('nope'), { $metadata: { httpStatusCode: 404 } }),
+      'settings-bucket/Settings/species.json': speciesJson('settings'),
+    });
+    const result = await fetchSpecies(cfg, 'collection-bucket::abc', client);
+    expect(result.species[0].scientificName).toBe('settings');
+  });
+
+  it('reports a malformed collection file as a shape error', async () => {
+    const client = fakeClient({ 'collection-bucket/Collections/abc/species.json': '{"a":1}' });
+    await expect(fetchSpecies(cfg, 'collection-bucket::abc', client)).rejects.toThrow(SpeciesShapeError);
   });
 
   it('reconciles local overrides against the selected collection list', () => {
