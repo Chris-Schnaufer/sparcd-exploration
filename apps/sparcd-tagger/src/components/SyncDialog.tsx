@@ -103,16 +103,30 @@ export function SyncDialog({
       setResult(r);
       setSyncState(syncStateFor(r, dryRun));
       if (r.status === 'synced' && !dryRun) {
-        // Clear dirty only on the drafts actually written — questionable-only
-        // drafts (no canonical target) stay surfaced as unsaved.
-        await markUploadSynced(ctx, r.syncedMediaIds ?? []);
-        // The offset/location were baked into the canonical files (performSync
-        // cleared them in Dexie); reset the in-memory mirrors too so the
-        // active-offset and pending-location indicators clear.
-        setTimeOffset(ctx, null);
-        setPendingLocation(ctx, null);
-        await queryClient.invalidateQueries({ queryKey: ['tagImages', connectionId] });
-        await queryClient.invalidateQueries({ queryKey: ['currentDeployment', connectionId] });
+        // Ground the display on the freshly-written canonical files BEFORE
+        // clearing drafts/offset (#306). A clean (non-dirty) draft defers to
+        // `img.baseObservations`/the base timestamp for display — clearing
+        // dirty first would open a window where the query cache still holds
+        // the pre-sync base, so the species/time just written would briefly
+        // (or, on a slow backend, not-so-briefly) vanish from the tile.
+        try {
+          await queryClient.invalidateQueries(
+            { queryKey: ['tagImages', connectionId] },
+            { throwOnError: true },
+          );
+          await queryClient.invalidateQueries({ queryKey: ['currentDeployment', connectionId] });
+          // Clear dirty only on the drafts actually written — questionable-only
+          // drafts (no canonical target) stay surfaced as unsaved.
+          await markUploadSynced(ctx, r.syncedMediaIds ?? []);
+        } finally {
+          // The offset/location were baked into the canonical files (performSync
+          // cleared them in Dexie); reset the in-memory mirrors too so the
+          // active-offset and pending-location indicators clear. They have to go
+          // even when the refresh failed, or the next refetch shifts the
+          // already-shifted stored times a second time.
+          setTimeOffset(ctx, null);
+          setPendingLocation(ctx, null);
+        }
       }
     } catch (e) {
       setError((e as Error).message);
