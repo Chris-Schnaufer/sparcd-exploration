@@ -545,13 +545,16 @@ def _(DEFAULT_ACCESS, DEFAULT_ENDPOINT, DEFAULT_SECRET, DEFAULT_SECURE, mo, reme
                 "remember": False,
             }
 
+        # A remembered record always carries its endpoint alongside its secure
+        # flag, so a remembered endpoint is what tells us the flag is real
+        # rather than the reader's empty-storage default.
         uses_remembered_endpoint = not default_endpoint and bool(remembered.endpoint)
         uses_remembered_access = not default_access and bool(remembered.access_key)
         return {
             "endpoint": default_endpoint or remembered.endpoint,
             "access": default_access or remembered.access_key,
             "secret": "",
-            "secure": default_secure if default_endpoint else remembered.secure,
+            "secure": remembered.secure if uses_remembered_endpoint else default_secure,
             "remember": uses_remembered_endpoint or uses_remembered_access,
         }
 

@@ -86,3 +86,27 @@ class InitialConnectionTest(unittest.TestCase):
         self.assertEqual(connection["secret"], "")
         self.assertTrue(connection["secure"])
         self.assertTrue(connection["remember"])
+
+
+class SecureDefaultTest(unittest.TestCase):
+    """The HTTPS box follows SPARCD_S3_SECURE unless a remembered connection says otherwise."""
+
+    def test_nothing_remembered_keeps_the_secure_default(self):
+        nothing = SimpleNamespace(endpoint="", access_key="", secure=False)
+
+        self.assertTrue(initial_connection("", "", "", True, nothing)["secure"])
+
+    def test_remembered_insecure_connection_wins(self):
+        remembered = SimpleNamespace(endpoint="remembered.example", access_key="remembered-access", secure=False)
+
+        self.assertFalse(initial_connection("", "", "", True, remembered)["secure"])
+
+    def test_remembered_secure_connection_wins(self):
+        remembered = SimpleNamespace(endpoint="remembered.example", access_key="remembered-access", secure=True)
+
+        self.assertTrue(initial_connection("", "", "", False, remembered)["secure"])
+
+    def test_environment_endpoint_keeps_the_secure_default(self):
+        remembered = SimpleNamespace(endpoint="remembered.example", access_key="remembered-access", secure=False)
+
+        self.assertTrue(initial_connection("environment.example", "", "", True, remembered)["secure"])
