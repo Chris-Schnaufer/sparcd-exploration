@@ -13,7 +13,7 @@ import {
   openUpload,
   selectCollection,
 } from './support/world';
-import { BUCKET, PREFIX_A, PREFIX_D, MEDIA_A, mediaCsv } from './support/data';
+import { BUCKET, PREFIX_A, PREFIX_E, MEDIA_A, mediaCsv } from './support/data';
 import {
   openSyncDialog,
   setSyncDryRun,
@@ -162,7 +162,7 @@ Given('a persisted whole-upload shift exists for an upload with no capture times
   await openUpload(page, 'camerauser');
   const upload = (await readStore(page, 'uploads')).find(
     (row): row is Record<string, unknown> =>
-      typeof row === 'object' && row !== null && row.uploadPrefix === PREFIX_D,
+      typeof row === 'object' && row !== null && row.uploadPrefix === PREFIX_E,
   );
   if (!upload) throw new Error('Expected the untimed upload to be grounded locally');
   await writeStore(page, 'uploads', {
