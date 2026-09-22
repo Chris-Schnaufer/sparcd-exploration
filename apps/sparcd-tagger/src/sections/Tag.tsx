@@ -1982,9 +1982,15 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
   const speciesAction = printableKey
     ? s.keyMap.get(printableKey)
     : undefined;
+  // A key two species both claim is swallowed whether or not an image is
+  // focused, so it can never reach the built-in shortcut it displaced.
+  if (speciesAction?.kind === 'conflict') {
+    e.preventDefault();
+    return;
+  }
   if (speciesAction && current) {
     e.preventDefault();
-    if (speciesAction.kind === 'conflict' || e.repeat) return;
+    if (e.repeat) return;
     const prefix = speciesCountFromPrefix(s.speciesCountPrefix);
     s.setSpeciesCountPrefix('');
     const tag = {

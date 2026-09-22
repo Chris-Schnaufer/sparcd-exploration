@@ -483,6 +483,7 @@ Then('both of their rows mark the key as shared', async ({ page }) => {
       'title',
       /^Key shared with .+; pick a new key$/,
     );
+    await expect(speciesBadge(page, scientific)).toHaveClass(/line-through/);
   }
 });
 
