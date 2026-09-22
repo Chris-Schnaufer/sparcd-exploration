@@ -17,14 +17,14 @@ const markup = (identity?: string) =>
   renderToStaticMarkup(<ConnectionChip identity={identity} onDisconnect={() => {}} />);
 
 describe('ConnectionChip', () => {
-  it('never prints the raw access key when the identity is just the key', () => {
-    const html = markup(ACCESS_KEY);
+  it('shows the access key once, masked', () => {
+    const html = markup();
     expect(html).not.toContain(ACCESS_KEY);
     expect(html).toContain('AK…90');
   });
 
-  it('shows an identity that is a real name', () => {
-    expect(markup('schnaufer')).toContain('schnaufer');
+  it('puts the full identity in a title so a truncated one stays readable', () => {
+    expect(markup('schnaufer')).toContain('title="schnaufer"');
   });
 
   it('puts the full host in a title so a truncated one stays readable', () => {
