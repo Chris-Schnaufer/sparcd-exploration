@@ -52,6 +52,7 @@ import {
   conflictingKeyOwners,
   effectiveKey,
   normalizeBindableEventKey,
+  resolveSpeciesKeys,
   useKeyBindings,
 } from '../lib/keys';
 import { useLocalBatch, saveLocalTags } from '../lib/localBatch';
@@ -404,15 +405,28 @@ export function Tag() {
     return k ? k.toUpperCase() : null;
   };
 
-  // key char → action, built once per species/override change.
+  const resolvedKeys = useMemo(
+    () => resolveSpeciesKeys(speciesList, overrides),
+    [speciesList, overrides],
+  );
+
+  // key char → action, built once per species/override change. A shared key is
+  // kept in the map as a conflict so pressing it is swallowed rather than
+  // falling through to a built-in shortcut.
   const keyMap = useMemo(() => {
-    const m = new Map<string, { kind: 'species'; species: Species }>();
-    for (const s of speciesList) {
-      const key = effectiveKey(s.scientificName, s.keyBinding, overrides);
-      if (key) m.set(key, { kind: 'species', species: s });
-    }
+    const m = new Map<string, SpeciesKeyAction>();
+    for (const [key, s] of resolvedKeys.byKey) m.set(key, { kind: 'species', species: s });
+    for (const key of resolvedKeys.shared.keys()) m.set(key, { kind: 'conflict' });
     return m;
-  }, [speciesList, overrides]);
+  }, [resolvedKeys]);
+
+  const keyConflictFor = (sci: string): string | null => {
+    const key = effectiveKey(sci, speciesJsonKey(speciesList, sci), overrides);
+    const owners = key ? resolvedKeys.shared.get(key) : undefined;
+    if (!owners) return null;
+    const others = owners.filter((o) => o.scientificName !== sci).map((o) => o.commonName);
+    return `Key shared with ${others.join(', ')}; pick a new key`;
+  };
 
   const captureKey = (scientificName: string, key: string) => {
     const target = speciesList.find((candidate) => candidate.scientificName === scientificName);
@@ -1236,6 +1250,7 @@ export function Tag() {
       onFilterChange: setFilter,
       filterRef,
       bindingFor,
+      keyConflictFor,
       capturingFor,
       onStartCapture: setCapturingFor,
       onClearKey: clearKey,
@@ -1770,6 +1785,8 @@ function shortDeployment(deploymentId: string): string {
   return tail || deploymentId;
 }
 
+type SpeciesKeyAction = { kind: 'species'; species: Species } | { kind: 'conflict' };
+
 function speciesJsonKey(list: Species[], sci: string): string | null {
   return list.find((s) => s.scientificName === sci)?.keyBinding ?? null;
 }
@@ -1787,7 +1804,7 @@ type HandlerState = {
   selected: Set<number>;
   setSelected: (s: Set<number>) => void;
   ctx: UploadCtx;
-  keyMap: Map<string, { kind: 'species'; species: Species }>;
+  keyMap: Map<string, SpeciesKeyAction>;
   capturingFor: string | null;
   setCapturingFor: (v: string | null) => void;
   captureKey: (sci: string, key: string) => void;
@@ -1967,7 +1984,7 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
     : undefined;
   if (speciesAction && current) {
     e.preventDefault();
-    if (e.repeat) return;
+    if (speciesAction.kind === 'conflict' || e.repeat) return;
     const prefix = speciesCountFromPrefix(s.speciesCountPrefix);
     s.setSpeciesCountPrefix('');
     const tag = {
