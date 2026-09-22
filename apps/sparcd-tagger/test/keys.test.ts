@@ -153,6 +153,14 @@ describe('resolveSpeciesKeys', () => {
     expect(shared.get('d')?.map((s) => s.scientificName)).toEqual(['a', 'b', 'c']);
   });
 
+  it('restores the key when an override clears one claimant off it', () => {
+    for (const cleared of [null, ''] as const) {
+      const { byKey, shared } = resolveSpeciesKeys(species, { c: cleared });
+      expect(byKey.get('d')?.scientificName).toBe('a');
+      expect(shared.size).toBe(0);
+    }
+  });
+
   it('restores the key to the remaining owner once the others move off it', () => {
     const { byKey, shared } = resolveSpeciesKeys(species, { c: 'j' });
     expect(byKey.get('d')?.scientificName).toBe('a');
