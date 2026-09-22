@@ -413,11 +413,24 @@ Then('focusing another control dismisses it', async ({ page }) => {
 });
 
 When('the focused image moves while the adjustment panel is open', async ({ page, scratch }) => {
-  scratch.adjustmentBeforeMove = await adjustmentPanel(page).boundingBox();
+  const [panel, media] = await Promise.all([
+    adjustmentPanel(page).boundingBox(),
+    focusedImage(page).boundingBox(),
+  ]);
+  scratch.adjustmentBeforeMove = { panel, media };
   await transformContent(page.locator('body')).first().evaluate((element) => {
     (element as HTMLElement).style.transform = 'translate(40px, 0px) scale(1)';
   });
 });
+
+/** Which slot the panel took, named the way the placement rule thinks of them. */
+const placementOf = (panel: Box, media: Box) => {
+  if (panel.x + panel.width <= media.x) return 'left of the image';
+  if (panel.x >= media.x + media.width) return 'right of the image';
+  if (panel.y + panel.height <= media.y) return 'over the image';
+  if (panel.y >= media.y + media.height) return 'under the image';
+  return 'on the image';
+};
 
 /**
  * Where the panel may not go, read off the rendered page rather than off the
@@ -453,13 +466,29 @@ async function expectPanelClearOfEverything(page: Page) {
 }
 
 Then('the adjustment panel follows the focused image', async ({ page, scratch }) => {
-  const before = scratch.adjustmentBeforeMove as { x: number; y: number };
+  const before = scratch.adjustmentBeforeMove as { panel: Box; media: Box };
   await expect
     .poll(async () => {
-      const after = await adjustmentPanel(page).boundingBox();
-      return after ? Math.abs(after.x - before.x) + Math.abs(after.y - before.y) : 0;
+      const panel = await adjustmentPanel(page).boundingBox();
+      return panel ? Math.abs(panel.x - before.panel.x) + Math.abs(panel.y - before.panel.y) : 0;
     })
     .toBeGreaterThan(5);
+  const [panel, media] = await Promise.all([
+    adjustmentPanel(page).boundingBox(),
+    focusedImage(page).boundingBox(),
+  ]);
+  const shift = media!.x - before.media.x;
+  expect(shift).toBeGreaterThan(5);
+  const was = placementOf(before.panel, before.media);
+  const now = placementOf(panel!, media!);
+  if (now === was) {
+    expect(Math.abs(panel!.x - before.panel.x - shift)).toBeLessThanOrEqual(2);
+  } else {
+    // Moving the image right only ever closes the gap on its right, so that is
+    // the one slot the panel may be pushed out of.
+    expect(was).toBe('right of the image');
+    expect(['left of the image', 'over the image', 'under the image']).toContain(now);
+  }
   await expectPanelClearOfEverything(page);
 });
 
