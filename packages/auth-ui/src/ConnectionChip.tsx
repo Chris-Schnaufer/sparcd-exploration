@@ -52,9 +52,6 @@ export function ConnectionChip({ identity, onDisconnect }: ConnectionChipProps) 
   if (!cfg) return null;
 
   const host = hostOf(cfg.endpoint);
-  // The identity defaults to the access key, which is already on screen masked
-  // — printing it again would put the raw key in the header.
-  const name = identity === cfg.accessKey ? undefined : identity;
 
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 font-mono text-[12px] text-inkSoft">
@@ -73,16 +70,16 @@ export function ConnectionChip({ identity, onDisconnect }: ConnectionChipProps) 
       <span className="shrink-0 text-inkMute italic" title="Your access key (masked)">
         {maskKey(cfg.accessKey)}
       </span>
-      {name && (
+      {identity && (
         <>
           <span aria-hidden className="text-ruleSoft">
             ·
           </span>
           <span
             className="min-w-0 max-w-[10rem] truncate text-inkSoft font-[600]"
-            title="Identity recorded with your activity"
+            title={identity}
           >
-            {name}
+            {identity}
           </span>
         </>
       )}

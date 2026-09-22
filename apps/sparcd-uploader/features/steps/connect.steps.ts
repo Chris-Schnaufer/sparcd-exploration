@@ -292,9 +292,6 @@ Then('the header shows the endpoint host and a masked form of the access key', a
 });
 
 Then('it shows the uploader identity when one has been set', async ({ app }) => {
-  // The identity defaults to the access key, and the header will not print
-  // that twice — only a name the user typed earns its own slot.
-  await expect(app.page.locator('header')).not.toContainText(ACCESS_KEY);
   await app.gotoSection('Settings');
   await app.setUploader('Ada Lovelace');
   await expect(app.page.locator('header')).toContainText('Ada Lovelace');
@@ -351,22 +348,16 @@ When('a connection is made', async ({ app }) => {
   await app.connect();
 });
 
-Then('the uploader identity is pre-filled with the connected access key', async ({ app }) => {
+Then('the uploader identity is blank', async ({ app }) => {
   await app.gotoSection('Settings');
-  await expect(app.page.getByPlaceholder('e.g. John Doe')).toHaveValue(ACCESS_KEY);
+  await expect(app.page.getByPlaceholder('e.g. John Doe')).toHaveValue('');
 });
 
-Then(
-  'an identity carried over from a previous connection in this browser is not overwritten by connecting',
-  async ({ app }) => {
-    await app.reopenInNewTab();
-    await app.fillConnection({ accessKey: 'AKIADIFFERENT002' });
-    await app.page.getByRole('button', { name: 'Connect', exact: true }).click();
-    await expect(app.page.getByRole('button', { name: 'Logout' })).toBeVisible();
-    await app.gotoSection('Settings');
-    await expect(app.page.getByPlaceholder('e.g. John Doe')).toHaveValue(ACCESS_KEY);
-  },
-);
+Then('the header shows the access key only in its masked form', async ({ app }) => {
+  const header = app.page.locator('header');
+  await expect(header).toContainText(`${ACCESS_KEY.slice(0, 2)}…${ACCESS_KEY.slice(-2)}`);
+  await expect(header).not.toContainText(ACCESS_KEY);
+});
 
 Then('the tool offers no list of permitted buckets of its own', async ({ app }) => {
   await app.gotoSection('History');
