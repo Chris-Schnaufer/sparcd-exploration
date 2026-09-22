@@ -62,7 +62,7 @@ export function SpeciesPanel(props: SpeciesPanelProps) {
   );
 
   return (
-    <div className="h-full flex flex-col border-l border-rule bg-panel min-h-0">
+    <div data-testid="species-panel" className="h-full flex flex-col border-l border-rule bg-panel min-h-0">
       {props.selectionCount > 1 && (
         <div className="px-3 py-1.5 bg-mark border-b border-rule text-[12px] font-mono text-accent">
           Applying to {props.selectionCount} selected images
