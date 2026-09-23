@@ -815,7 +815,10 @@ export class App {
   /** The run's log lines. Run state only — it has no on-screen panel (#108). */
   async logText(): Promise<string> {
     return this.page.evaluate(
-      () => (window as unknown as { __uploadLog?: string }).__uploadLog ?? '',
+      () =>
+        ((window as unknown as { __uploadLog?: { text: string }[] }).__uploadLog ?? [])
+          .map((l) => l.text)
+          .join('\n'),
     );
   }
 
