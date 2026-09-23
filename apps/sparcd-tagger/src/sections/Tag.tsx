@@ -1355,9 +1355,14 @@ function FocusPane({
               getMediaRect={() => dropRef.current?.querySelector('img')?.getBoundingClientRect() ?? null}
               getBlockedRects={() => {
                 const focus = dropRef.current?.getBoundingClientRect();
-                return focus && focus.left > 0
-                  ? [new DOMRect(0, focus.top, focus.left, focus.height)]
-                  : [];
+                if (!focus) return [];
+                const rails: DOMRect[] = [];
+                if (focus.left > 0) rails.push(new DOMRect(0, focus.top, focus.left, focus.height));
+                const species = document
+                  .querySelector('[data-testid="species-panel"]')
+                  ?.getBoundingClientRect();
+                if (species && species.left >= focus.right) rails.push(species);
+                return rails;
               }}
               mediaKey={current.key}
             />
