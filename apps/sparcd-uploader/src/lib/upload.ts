@@ -458,7 +458,7 @@ function makeRunner(
     snap.log.push({ kind, text });
     // The run log has no on-screen panel (#108) — it stays as run state for
     // diagnostics, and this is where the browser harness reads it.
-    (globalThis as { __uploadLog?: string }).__uploadLog = snap.log.map((l) => l.text).join('\n');
+    (globalThis as { __uploadLog?: LogLine[] }).__uploadLog = snap.log;
     emit(true);
   };
 
