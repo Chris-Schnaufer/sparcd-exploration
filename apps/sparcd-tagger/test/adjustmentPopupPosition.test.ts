@@ -86,3 +86,17 @@ it('rises above a phone image which runs past the bottom of the window', () => {
     { width: 390, height: 844 },
   )).toEqual({ left: 8, top: 334.6875 });
 });
+
+// The left rail runs the full height while the species list stops short, so
+// only the right side has a clear spot under the image.
+it('drops under the image on whichever side is clear', () => {
+  expect(adjustmentPopupPosition(
+    { left: 296, right: 1_084, top: 137.5, width: 788, height: 500 },
+    { left: 0, right: 224, top: 0, width: 224, height: 236 },
+    { width: 1_440, height: 950 },
+    [
+      { left: 0, right: 270, top: 121.5, width: 270, height: 828.5 },
+      { left: 1_100, right: 1_440, top: 121.5, width: 340, height: 478.5 },
+    ],
+  )).toEqual({ left: 1_096, top: 649.5 });
+});
