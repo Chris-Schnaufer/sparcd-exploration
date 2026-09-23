@@ -914,6 +914,10 @@ Then('the uploader identity is still filled in', async ({ app }) => {
 
 Then('continuing without a timezone is disabled', async ({ app }) => {
   await expect(app.continueButton()).toBeDisabled();
+  await expect(app.page.getByRole('status').filter({ hasText: 'Select a timezone first' })).toBeVisible();
+  await expect(app.page.locator('#upload-timezone-help')).toContainText(
+    'Select a timezone before continuing.',
+  );
 });
 
 // --- wake lock and preparing phase -------------------------------------------

@@ -186,6 +186,15 @@ export function Assign() {
   // streams blobs as files individually become ready and only publishes once
   // processing genuinely completes, so there's nothing to wait for here.
   const baseReady = !!selectedLocationKey && !!slug && !!collection && !!uploadTimeZone;
+  const continueHint = !selectedLocationKey
+    ? 'Select a deployment location first'
+    : !collection
+      ? 'Select a target collection first'
+      : !slug
+        ? 'Set an uploader identity first'
+        : !uploadTimeZone
+          ? 'Select a timezone first'
+          : null;
 
   function handleContinue() {
     if (!baseReady) return;
@@ -325,10 +334,14 @@ export function Assign() {
       </section>
 
       <section>
-        <h2 className={sectionLabel}>Timezone</h2>
+        <h2 id="upload-timezone-label" className={sectionLabel}>Timezone</h2>
         <select
+          id="uploadTimeZone"
           value={uploadTimeZone}
           onChange={(e) => setUploadTimeZone(e.target.value)}
+          aria-labelledby="upload-timezone-label"
+          aria-describedby="upload-timezone-help"
+          aria-invalid={!uploadTimeZone}
           className="w-full border border-rule bg-paper px-3 py-2 font-body text-[14px] text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1"
         >
           <option value="">Select a timezone…</option>
@@ -338,7 +351,8 @@ export function Assign() {
             </option>
           ))}
         </select>
-        <p className="font-body text-[12px] text-inkMute mt-1.5">
+        <p id="upload-timezone-help" className="font-body text-[12px] text-inkMute mt-1.5">
+          {!uploadTimeZone && <span className="text-warn">Select a timezone before continuing. </span>}
           Defaults to the selected deployment location's zone — change it here if the camera's
           clock was actually set to a different one.
         </p>
@@ -371,6 +385,11 @@ export function Assign() {
         </p>
       </section>
 
+      {!baseReady && continueHint && (
+        <p id="upload-continue-help" role="status" className="font-body text-[12px] text-warn">
+          {continueHint}
+        </p>
+      )}
       <div className="flex items-center justify-between gap-4 border-t border-ruleSoft pt-5">
         <button
           onClick={() => setStep('inspect')}
@@ -381,17 +400,8 @@ export function Assign() {
         <button
           disabled={!baseReady}
           onClick={handleContinue}
-          title={
-            !baseReady
-              ? !selectedLocationKey
-                ? 'Select a deployment location first'
-                : !collection
-                  ? 'Select a target collection first'
-                  : !uploadTimeZone
-                    ? 'Select a timezone first'
-                  : 'Set an uploader identity first'
-              : 'Continue to upload'
-          }
+          aria-describedby={!baseReady ? 'upload-continue-help' : undefined}
+          title={continueHint ?? 'Continue to upload'}
           className={`bg-ink text-paper border border-ink px-3.5 py-1.5 text-[14px] font-body font-[600] focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 ${
             baseReady ? 'hover:opacity-90' : 'opacity-40 cursor-not-allowed'
           }`}
