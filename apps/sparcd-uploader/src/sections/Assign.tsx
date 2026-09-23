@@ -76,6 +76,7 @@ export function Assign() {
   const setSelectedLocationKey = useStore((s) => s.setSelectedLocationKey);
   const selectedBucket = useStore((s) => s.selectedBucket);
   const setSelectedBucket = useStore((s) => s.setSelectedBucket);
+  const requireCollectionSelection = useStore((s) => s.requireCollectionSelection);
   const elevationUnit = useStore((s) => s.elevationUnit);
   const files = useStore((s) => s.files);
 
@@ -109,12 +110,12 @@ export function Assign() {
 
   // Preselect the first collection the connected credentials can read.
   useEffect(() => {
-    if (!collections.data?.length) return;
+    if (!collections.data?.length || requireCollectionSelection) return;
     if (selectedBucket && collections.data.some((c) => c.key === selectedBucket || c.bucket === selectedBucket)) {
       return;
     }
     setSelectedBucket(collections.data[0].key);
-  }, [collections.data, selectedBucket, setSelectedBucket]);
+  }, [collections.data, requireCollectionSelection, selectedBucket, setSelectedBucket]);
 
   const collection =
     collections.data?.find((c) => c.key === selectedBucket || c.bucket === selectedBucket) ?? null;
@@ -184,7 +185,7 @@ export function Assign() {
   // Background processing finishing is no longer part of this gate: Upload
   // streams blobs as files individually become ready and only publishes once
   // processing genuinely completes, so there's nothing to wait for here.
-  const baseReady = !!selectedLocationKey && !!slug && !!collection;
+  const baseReady = !!selectedLocationKey && !!slug && !!collection && !!uploadTimeZone;
 
   function handleContinue() {
     if (!baseReady) return;
@@ -194,7 +195,7 @@ export function Assign() {
   // The chosen zone is always offered even if it isn't in the platform's list.
   const timeZones = useMemo(() => {
     const all = supportedTimeZones();
-    return all.includes(uploadTimeZone) ? all : [uploadTimeZone, ...all];
+    return all.includes(uploadTimeZone) || !uploadTimeZone ? all : [uploadTimeZone, ...all];
   }, [uploadTimeZone]);
 
   // A deferred login reaches here eventually — picking a collection and a
@@ -330,6 +331,7 @@ export function Assign() {
           onChange={(e) => setUploadTimeZone(e.target.value)}
           className="w-full border border-rule bg-paper px-3 py-2 font-body text-[14px] text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1"
         >
+          <option value="">Select a timezone…</option>
           {timeZones.map((tz) => (
             <option key={tz} value={tz}>
               {tz}
@@ -385,6 +387,8 @@ export function Assign() {
                 ? 'Select a deployment location first'
                 : !collection
                   ? 'Select a target collection first'
+                  : !uploadTimeZone
+                    ? 'Select a timezone first'
                   : 'Set an uploader identity first'
               : 'Continue to upload'
           }
