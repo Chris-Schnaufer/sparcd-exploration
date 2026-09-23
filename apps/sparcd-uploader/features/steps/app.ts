@@ -812,14 +812,14 @@ export class App {
     return this.page.locator('select').filter({ hasText: 'Select a collection…' });
   }
 
+  /** The run's log lines. Run state only — it has no on-screen panel (#108). */
   async logText(): Promise<string> {
-    return this.page.evaluate(() => {
-      const panels = Array.from(document.querySelectorAll('div'));
-      const el = panels.find(
-        (d) => d.className.includes('font-mono') && d.className.includes('text-[11.5px]'),
-      );
-      return el?.textContent ?? '';
-    });
+    return this.page.evaluate(
+      () =>
+        ((window as unknown as { __uploadLog?: { text: string }[] }).__uploadLog ?? [])
+          .map((l) => l.text)
+          .join('\n'),
+    );
   }
 
   /**
