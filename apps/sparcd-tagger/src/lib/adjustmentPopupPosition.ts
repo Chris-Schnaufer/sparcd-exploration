@@ -59,11 +59,11 @@ export function adjustmentPopupPosition(
   // on a desktop clears the top of whichever rail it has to share.
   const under = mediaBottom + gap;
   const over = media.top - gap - panel.height;
-  const escape = [under, over].find(
-    (candidate) =>
-      candidate >= gutter &&
-      candidate + panel.height <= viewport.height - gutter &&
-      !isBlocked(bestLeft, candidate),
-  );
-  return { left: bestLeft, top: escape ?? Math.max(gutter, Math.min(under, viewport.height - panel.height - gutter)) };
+  const sides = [bestLeft, ...candidates.filter((candidate) => candidate !== bestLeft)];
+  for (const candidateTop of [under, over]) {
+    if (candidateTop < gutter || candidateTop + panel.height > viewport.height - gutter) continue;
+    const side = sides.find((candidate) => !isBlocked(candidate, candidateTop));
+    if (side !== undefined) return { left: side, top: candidateTop };
+  }
+  return { left: bestLeft, top: Math.max(gutter, Math.min(under, viewport.height - panel.height - gutter)) };
 }
