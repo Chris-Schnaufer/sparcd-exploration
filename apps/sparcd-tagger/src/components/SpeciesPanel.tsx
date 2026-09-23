@@ -262,6 +262,7 @@ function Row(p: RowProps) {
                 {p.badge}
               </kbd>
             )}
+            {p.badge && p.badgeConflict && <span className="sr-only">{p.badgeConflict}</span>}
           </>
         )}
       </div>
