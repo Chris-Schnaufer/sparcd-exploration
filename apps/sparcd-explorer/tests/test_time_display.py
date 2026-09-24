@@ -33,3 +33,8 @@ class TimeDisplayTest(unittest.TestCase):
         helper = load_helpers(Path(__file__).parents[1] / "notebooks" / "hello.py")[0]
         self.assertEqual(helper(None), "")
 
+    def test_detection_tables_convert_timestamp_values_in_both_notebooks(self):
+        root = Path(__file__).parents[1] / "notebooks"
+        conversion = 'pl.col("Timestamp").map_elements(format_timestamp_24, return_dtype=pl.Utf8)'
+        for notebook in (root / "hello.py", root / "hello_wasm.py"):
+            self.assertIn(conversion, notebook.read_text())
