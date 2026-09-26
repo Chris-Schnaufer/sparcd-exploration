@@ -299,7 +299,11 @@ export function RunMonitor({ snap }: { snap: UploadSnapshot }) {
       {snap.phase === 'partial' && (
         <Note
           tone="warn"
-          message={`${failed} of ${snap.files.length} files failed to upload — the rest are stored. Metadata was not published, so this upload is not yet visible; retry the failed files to complete it.`}
+          message={
+            failed === 0
+              ? 'Every file is stored, but the connection dropped before the metadata was published, so this upload is not yet visible. It picks up again on its own once the connection returns.'
+              : `${failed} of ${snap.files.length} files failed to upload — the rest are stored. Metadata was not published, so this upload is not yet visible; retry the failed files to complete it.`
+          }
         />
       )}
       {snap.phase === 'error' && <Note tone="warn" message={snap.error ?? 'Upload failed.'} />}

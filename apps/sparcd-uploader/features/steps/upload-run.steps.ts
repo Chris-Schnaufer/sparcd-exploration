@@ -1069,6 +1069,19 @@ When('storage stops answering while the browser still reports being online', asy
   expect(await app.page.evaluate(() => navigator.onLine)).toBe(true);
 });
 
+When('storage stops answering just as the upload is being published', async ({ app }) => {
+  // Every image lands; only the first UploadMeta.json write is held, then cut off.
+  app.s3.gatePut = (_bucket, key) => key.endsWith('/UploadMeta.json') && !gatedKey(app, 'UploadMeta.json');
+  for (const key of app.s3.gated) app.s3.releaseGatedPut(key);
+  await expect.poll(() => gatedKey(app, 'UploadMeta.json'), { timeout: 60_000 }).toBeTruthy();
+  const key = gatedKey(app, 'UploadMeta.json')!;
+  app.s3.offline = true;
+  app.s3.releaseGatedPut(key);
+  await expect.poll(() => app.s3.refusedOffline).toContain(`${BUCKET_A}/${key}`);
+  expect(published(app)).toBe(false);
+  expect(await app.page.evaluate(() => navigator.onLine)).toBe(true);
+});
+
 Then('the run stops as partial and says it picks up again on its own', async ({ app }) => {
   await app.waitForRunPhase('partial', 120_000);
   expect(await app.logText()).toContain('the upload picks up again on its own');

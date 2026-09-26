@@ -396,6 +396,57 @@ describe('upload runs continue past per-file blob failures', () => {
     }
   });
 
+  it('stops as a retryable partial run when the final listing gets no answer', async () => {
+    const session = makeSession(Array.from({ length: 3 }, () => 'pending'));
+    mocks.client = makeClient(session.files);
+    mocks.client.listObjects.mockImplementation(async function* () {
+      yield* [];
+      throw new TypeError('Failed to fetch');
+    });
+    let last: UploadSnapshot | null = null;
+    const run = resumeUpload(
+      { config: CONFIG, session, attached: attachedFor(session.files), concurrency: manual(3) },
+      (snap) => { last = snap; },
+    );
+    const snap = await collect(run, () => last);
+
+    expect(snap.phase).toBe('partial');
+    expect(snap.autoRetry).toBe(true);
+    expect(snap.log.some((l) => l.text.includes('the upload picks up again on its own'))).toBe(true);
+    expect(mocks.client.writeImmutable).not.toHaveBeenCalled();
+    expect(mocks.markBatchComplete).not.toHaveBeenCalled();
+  });
+
+  it('stops as a retryable partial run when a metadata write gets no answer, but errors on a refusal', async () => {
+    vi.useFakeTimers();
+    try {
+      for (const [failure, phase] of [
+        [() => new TypeError('Failed to fetch'), 'partial'],
+        [forbidden, 'error'],
+      ] as const) {
+        vi.clearAllMocks();
+        const session = makeSession(Array.from({ length: 2 }, () => 'pending'));
+        mocks.client = makeClient(session.files);
+        mocks.client.writeImmutable.mockImplementation(async (_bucket: string, key: string) => {
+          if (key.endsWith('UploadMeta.json')) throw failure();
+        });
+        let last: UploadSnapshot | null = null;
+        const run = resumeUpload(
+          { config: CONFIG, session, attached: attachedFor(session.files), concurrency: manual(2) },
+          (snap) => { last = snap; },
+        );
+        await vi.runAllTimersAsync();
+        const snap = await collect(run, () => last);
+
+        expect(snap.phase).toBe(phase);
+        if (phase === 'partial') expect(snap.autoRetry).toBe(true);
+        expect(mocks.markBatchComplete).not.toHaveBeenCalled();
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('clears an earlier refusal when a file fails its final review', async () => {
     const session = makeSession(['failed', 'pending']);
     session.files[0].refused = true;
@@ -1089,6 +1140,47 @@ describe('streamed runs upload as files individually become ready', () => {
     expect(snap.files.filter((f) => f.state === 'done')).toHaveLength(2);
     // The bundle is built (and persisted) once the full batch is known, even
     // though this run failed — so a retry has a real ledger to resume from.
+    expect(mocks.attachBundle).toHaveBeenCalledTimes(1);
+    expect(client.writeImmutable).not.toHaveBeenCalled();
+    expect(mocks.markBatchComplete).not.toHaveBeenCalled();
+  });
+
+  it('still persists the bundle when the final listing gets no answer, so the retry can resume', async () => {
+    const entries = [makeFileEntry(0), makeFileEntry(1)];
+    const client = makeStreamingClient();
+    client.listObjects.mockImplementation(async function* () {
+      yield* [];
+      throw new TypeError('Failed to fetch');
+    });
+    mocks.client = client;
+    let last: UploadSnapshot | null = null;
+
+    const run = runStreamingUpload(
+      {
+        config: CONFIG,
+        dryRun: false,
+        concurrency: manual(2),
+        uploaderUser: 'user',
+        fileAccessMode: 'reselect-required',
+        build: {
+          location: LOCATION,
+          collectionUuid: 'collection',
+          bucket: 'bucket',
+          uploaderSlug: 'user',
+          description: 'description',
+          timeZone: 'UTC',
+          files: entries,
+        },
+      },
+      (snap) => {
+        last = snap;
+      },
+    );
+    run.close(entries);
+    const snap = await collect(run, () => last);
+
+    expect(snap.phase).toBe('partial');
+    expect(snap.autoRetry).toBe(true);
     expect(mocks.attachBundle).toHaveBeenCalledTimes(1);
     expect(client.writeImmutable).not.toHaveBeenCalled();
     expect(mocks.markBatchComplete).not.toHaveBeenCalled();

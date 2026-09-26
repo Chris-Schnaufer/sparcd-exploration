@@ -207,6 +207,15 @@ Feature: Upload and publish a batch
     # No `online` event comes in this case, so the retry is on a backoff timer
     # that starts at 15 seconds.
 
+  @AL1 @AL1-1
+  Scenario: An upload whose connection drops while it is being published finishes by itself
+    Given a real upload of many images is under way
+    When storage stops answering just as the upload is being published
+    Then the run stops as partial and says it picks up again on its own
+    When storage answers again
+    Then the upload continues and is published with every image
+    And nothing had to be clicked to restart it
+
   @AL1 @AL1-5
   Scenario: Repeated connection drops still end in one finished upload
     Given a real upload of many images is under way

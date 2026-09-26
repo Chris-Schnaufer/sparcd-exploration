@@ -657,6 +657,22 @@ function makeRunner(
     emit(true);
   };
 
+  // Past the blob phase only the final review and the metadata writes are
+  // left. One that gets no answer is the same lost connection the blob phase
+  // stalls on, so the run ends partial and picks up on its own; a refusal
+  // still ends the run in error.
+  const endUnpublished = (err: unknown): void => {
+    if (cancelled || !isTransient(err)) throw err;
+    log(
+      'warn',
+      `connection lost before publishing (${err instanceof Error ? err.message : String(err)}) — ` +
+        'the upload picks up again on its own',
+    );
+    snap.autoRetry = snap.files.every((f) => f.state !== 'failed' || f.network);
+    snap.phase = 'partial';
+    emit(true);
+  };
+
   /**
    * How a wet run confirms itself: one listing pass (1 request per 1000
    * objects) checks every blob landed at its exact size, instead of a HEAD
@@ -941,7 +957,13 @@ function makeRunner(
 
     // With the connection down the review listing cannot answer either; the
     // next attempt reviews whatever it confirms.
-    if (!dryRun && !stalled) await finalReview(plan.sessionId, plan.uploadPath, plan.items);
+    if (!dryRun && !stalled) {
+      try {
+        await finalReview(plan.sessionId, plan.uploadPath, plan.items);
+      } catch (err) {
+        return endUnpublished(err);
+      }
+    }
 
     const failed = snap.files.filter((f) => f.state === 'failed').length;
     if (failed > 0) {
@@ -952,7 +974,7 @@ function makeRunner(
     // --- Phase 2: metadata, in publish order ---
     snap.phase = 'metadata';
     emit(true);
-    await writeMetadata(plan.writes, plan.uploadPath);
+    await writeMetadata(plan.writes, plan.uploadPath).catch(endUnpublished);
   };
 
   // Shared by a fixed-plan run and a streamed run: writes the CSVs/JSON in
@@ -1129,7 +1151,14 @@ function makeRunner(
     if (fatal) throw fatal;
     if (cancelled) throw new Error('cancelled');
 
-    if (!dryRun && !stalled) await finalReview(seed.sessionId, seed.uploadPath, pulled);
+    // A review that gets no answer still builds the bundle below: a retry
+    // can only resume a session that has one.
+    let reviewError: unknown = null;
+    if (!dryRun && !stalled) {
+      await finalReview(seed.sessionId, seed.uploadPath, pulled).catch((err: unknown) => {
+        reviewError = err;
+      });
+    }
 
     // The blob loop only exits normally (no fatal/cancel) once the queue is
     // closed and drained — the caller only closes it once every file in the
@@ -1141,6 +1170,7 @@ function makeRunner(
     const { writes, metadataBundleSha256 } = await buildMetadata();
     if (cancelled) throw new Error('cancelled');
     snap.metadataBundleSha256 = metadataBundleSha256;
+    if (reviewError) return endUnpublished(reviewError);
 
     const failed = snap.files.filter((f) => f.state === 'failed').length;
     if (failed > 0) {
@@ -1150,7 +1180,7 @@ function makeRunner(
 
     snap.phase = 'metadata';
     emit(true);
-    await writeMetadata(writes, snap.uploadPath!);
+    await writeMetadata(writes, snap.uploadPath!).catch(endUnpublished);
   };
 
   return {
