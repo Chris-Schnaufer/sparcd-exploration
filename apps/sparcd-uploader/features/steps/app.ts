@@ -293,7 +293,7 @@ export class App {
       }
 
       if (!drop) return;
-      const zone = document.querySelector('[aria-label^="Drop a folder"]')!;
+      const zone = document.querySelector('[aria-label^="Drop a folder"], [aria-label^="Choose JPEG photos"]')!;
       const ev = new DragEvent('drop', { bubbles: true, cancelable: true });
       Object.defineProperty(ev, 'dataTransfer', { value: dataTransfer });
       zone.dispatchEvent(ev);
@@ -496,7 +496,7 @@ export class App {
       });
       const items = roots.map((r) => ({ webkitGetAsEntry: () => r }));
       const dataTransfer = { items: Object.assign(items, { length: items.length }) };
-      const zone = document.querySelector('[aria-label^="Drop a folder"]')!;
+      const zone = document.querySelector('[aria-label^="Drop a folder"], [aria-label^="Choose JPEG photos"]')!;
       const ev = new DragEvent('drop', { bubbles: true, cancelable: true });
       Object.defineProperty(ev, 'dataTransfer', { value: dataTransfer });
       zone.dispatchEvent(ev);
