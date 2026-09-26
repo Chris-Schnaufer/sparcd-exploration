@@ -1003,6 +1003,19 @@ function makeRunner(
           if (cancelled) throw new Error('cancelled');
           if (err instanceof PreconditionFailedError) {
             if (isResume) {
+              // A 412 only says something is there. It is this upload's own
+              // earlier write only if it holds the same bytes; anything else
+              // would publish another upload's file as part of this one.
+              const existing = new TextDecoder().decode(await client.getObject(snap.bucket, key));
+              if (existing !== w.body) {
+                // Carries the 412 so it reads as a refusal, not a lost connection.
+                throw Object.assign(
+                  new Error(
+                    `${key} already holds different content — another upload wrote to this folder, so this one was not published`,
+                  ),
+                  { $metadata: { httpStatusCode: 412 } },
+                );
+              }
               log('info', `already present, skip: ${key}`);
               break;
             }

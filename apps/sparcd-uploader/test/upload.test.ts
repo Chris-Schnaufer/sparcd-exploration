@@ -17,6 +17,7 @@ type FakeClient = {
   writeImmutableStream: ReturnType<typeof vi.fn>;
   writeImmutable: ReturnType<typeof vi.fn>;
   listObjects: ReturnType<typeof vi.fn>;
+  getObject: ReturnType<typeof vi.fn>;
 };
 
 const mocks = vi.hoisted(() => ({
@@ -174,6 +175,7 @@ function makeClient(records: FileRecord[], failingKeys = new Set<string>()): Fak
       return { etag: `etag-${key}` };
     }),
     writeImmutable: vi.fn(async () => undefined),
+    getObject: vi.fn(async () => new Uint8Array()),
     listObjects: vi.fn(async function* () {
       for (const r of records) yield { key: r.remoteKey, size: r.size };
     }),
@@ -205,6 +207,7 @@ function makeStreamingClient(
       return { etag: `etag-${key}` };
     }),
     writeImmutable: vi.fn(async () => undefined),
+    getObject: vi.fn(async () => new Uint8Array()),
     listObjects: vi.fn(async function* () {
       for (const [key, w] of written) {
         if (hooks.omitFromListing?.(key)) continue;
@@ -485,6 +488,37 @@ describe('upload runs continue past per-file blob failures', () => {
 
     expect(snap.phase).toBe('done');
     expect(mocks.markBatchComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it('on resume, accepts an existing metadata object only when it holds the same bytes', async () => {
+    for (const [stored, phase] of [
+      ['deployments', 'done'],
+      ['someone else', 'error'],
+    ] as const) {
+      vi.clearAllMocks();
+      const session = makeSession(['pending', 'pending']);
+      mocks.client = makeClient(session.files);
+      mocks.client.writeImmutable.mockImplementation(async (_bucket: string, key: string) => {
+        if (key.endsWith('deployments.csv')) throw new PreconditionFailedError(key);
+      });
+      mocks.client.getObject.mockImplementation(async () => new TextEncoder().encode(stored));
+      let last: UploadSnapshot | null = null;
+      const run = resumeUpload(
+        { config: CONFIG, session, attached: attachedFor(session.files), concurrency: manual(2) },
+        (snap) => { last = snap; },
+      );
+      const snap = await collect(run, () => last);
+
+      expect(snap.phase).toBe(phase);
+      const keys = mocks.client.writeImmutable.mock.calls.map((c) => c[1] as string);
+      if (phase === 'error') {
+        expect(snap.error).toMatch(/already holds different content/);
+        expect(keys.some((k) => k.endsWith('UploadMeta.json'))).toBe(false);
+        expect(mocks.markBatchComplete).not.toHaveBeenCalled();
+      } else {
+        expect(keys.some((k) => k.endsWith('UploadComplete.json'))).toBe(true);
+      }
+    }
   });
 
   it('aborts immediately on systemic access failures', async () => {
