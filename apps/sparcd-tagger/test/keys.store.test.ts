@@ -2,12 +2,16 @@ import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 type KeyStore = typeof import('../src/lib/keys').useKeyBindings;
 
+const STORAGE_KEY = 'sparcd-tagger-keybindings-v5';
+const V4_KEY = 'sparcd-tagger-keybindings';
 const values = new Map<string, string>();
+let quotaFull = false;
 Object.defineProperty(globalThis, 'localStorage', {
   configurable: true,
   value: {
     getItem: (key: string) => values.get(key) ?? null,
     setItem: (key: string, value: string) => {
+      if (quotaFull) throw new DOMException('full', 'QuotaExceededError');
       values.set(key, value);
     },
     removeItem: (key: string) => values.delete(key),
@@ -23,7 +27,10 @@ let useKeyBindings: KeyStore;
 let rehydrateKeyBindings: typeof import('../src/lib/keys').rehydrateKeyBindings;
 let effectiveKey: typeof import('../src/lib/keys').effectiveKey;
 
+let MAX_SPECIES_SOURCES: number;
+
 beforeAll(async () => {
+  ({ MAX_SPECIES_SOURCES } = await import('@sparcd/auth-ui'));
   ({ useKeyBindings, rehydrateKeyBindings, effectiveKey } = await import('../src/lib/keys'));
 });
 
@@ -63,7 +70,7 @@ describe('per-user keybinding profiles', () => {
       a: null,
       b: 'd',
     });
-    expect(localStorage.getItem('sparcd-tagger-keybindings')).toContain('"a":null');
+    expect(localStorage.getItem(STORAGE_KEY)).toContain('"a":null');
   });
 
   it('keeps vocabulary changes pending until explicit acknowledgement', () => {
@@ -86,11 +93,11 @@ describe('per-user keybinding profiles', () => {
   it('does not revise a profile when the vocabulary is unchanged', () => {
     useKeyBindings.getState().activateProfile('server\u0000alice');
     useKeyBindings.getState().stageSpecies(SETTINGS, original, true);
-    const before = localStorage.getItem('sparcd-tagger-keybindings');
+    const before = localStorage.getItem(STORAGE_KEY);
 
     useKeyBindings.getState().stageSpecies(SETTINGS, [...original], true);
 
-    expect(localStorage.getItem('sparcd-tagger-keybindings')).toBe(before);
+    expect(localStorage.getItem(STORAGE_KEY)).toBe(before);
   });
 
   it('restores a default key when the server removes and re-adds a species', () => {
@@ -116,12 +123,12 @@ describe('per-user keybinding profiles', () => {
   it('rehydrates another tab\'s update without changing this tab\'s active profile', async () => {
     useKeyBindings.getState().activateProfile('server\u0000alice');
     useKeyBindings.getState().assignKey('a', '?');
-    const stored = JSON.parse(localStorage.getItem('sparcd-tagger-keybindings')!) as {
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY)!) as {
       state: { profiles: Record<string, { overrides: Record<string, string | null> }> };
       version: number;
     };
     stored.state.profiles['server\u0000alice'].overrides.b = '#';
-    localStorage.setItem('sparcd-tagger-keybindings', JSON.stringify(stored));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
 
     rehydrateKeyBindings();
 
@@ -130,7 +137,7 @@ describe('per-user keybinding profiles', () => {
       a: '?',
       b: '#',
     });
-    expect(JSON.parse(localStorage.getItem('sparcd-tagger-keybindings')!).state.profiles[
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!).state.profiles[
       'server\u0000alice'
     ].overrides).toMatchObject({ a: '?', b: '#' });
   });
@@ -138,7 +145,7 @@ describe('per-user keybinding profiles', () => {
   it('merges a concurrent stale-tab assignment during full store rehydration', () => {
     const profileId = 'server\u0000alice';
     useKeyBindings.getState().activateProfile(profileId);
-    const staleTab = JSON.parse(localStorage.getItem('sparcd-tagger-keybindings')!) as {
+    const staleTab = JSON.parse(localStorage.getItem(STORAGE_KEY)!) as {
       state: {
         profiles: Record<
           string,
@@ -158,12 +165,12 @@ describe('per-user keybinding profiles', () => {
       sequence: 1,
       writer: 'stale-tab',
     };
-    localStorage.setItem('sparcd-tagger-keybindings', JSON.stringify(staleTab));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(staleTab));
 
     rehydrateKeyBindings();
 
     expect(useKeyBindings.getState().profiles[profileId].overrides).toMatchObject({ a: 'a', b: 'b' });
-    const persisted = JSON.parse(localStorage.getItem('sparcd-tagger-keybindings')!) as {
+    const persisted = JSON.parse(localStorage.getItem(STORAGE_KEY)!) as {
       state: { profiles: Record<string, { overrides: Record<string, string | null> }> };
     };
     expect(persisted.state.profiles[profileId].overrides).toMatchObject({ a: 'a', b: 'b' });
@@ -193,10 +200,11 @@ describe('species lists remembered per source', () => {
   it('switches between collections with different lists without a change', () => {
     useKeyBindings.getState().stageSpecies(COLLECTION, original);
     useKeyBindings.getState().stageSpecies(OTHER_COLLECTION, changed);
-    const before = localStorage.getItem('sparcd-tagger-keybindings');
+    const accepted = (source: string) => sources()[source].acceptedRevision;
+    const before = [accepted(COLLECTION), accepted(OTHER_COLLECTION)];
     useKeyBindings.getState().stageSpecies(COLLECTION, original);
     useKeyBindings.getState().stageSpecies(OTHER_COLLECTION, changed);
-    expect(localStorage.getItem('sparcd-tagger-keybindings')).toBe(before);
+    expect([accepted(COLLECTION), accepted(OTHER_COLLECTION)]).toEqual(before);
     expect(Object.values(sources()).some((list) => list.pendingSpeciesChange)).toBe(false);
   });
 
@@ -245,13 +253,93 @@ describe('species lists remembered per source', () => {
 
   it('merges another tab\'s accepted list for a different source', () => {
     useKeyBindings.getState().stageSpecies(COLLECTION, original);
-    const stored = JSON.parse(localStorage.getItem('sparcd-tagger-keybindings')!);
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
     stored.state.profiles[profileId].speciesSources[OTHER_COLLECTION] = {
       acceptedSpecies: changed,
       acceptedRevision: { at: Date.now() + 1, sequence: 1, writer: 'other-tab' },
     };
-    localStorage.setItem('sparcd-tagger-keybindings', JSON.stringify(stored));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
     rehydrateKeyBindings();
     expect(Object.keys(sources()).sort()).toEqual([COLLECTION, OTHER_COLLECTION].sort());
+  });
+});
+
+describe('species list storage', () => {
+  const profileId = 'server\u0000alice';
+  const sources = () => useKeyBindings.getState().profiles[profileId].speciesSources ?? {};
+  const openTab = () => {
+    useKeyBindings.setState({ profiles: {}, activeProfileId: null });
+    rehydrateKeyBindings();
+    useKeyBindings.getState().activateProfile(profileId);
+    return useKeyBindings.getState();
+  };
+
+  beforeEach(() => {
+    values.clear();
+    quotaFull = false;
+    useKeyBindings.setState({ profiles: {}, activeProfileId: null });
+    useKeyBindings.getState().activateProfile(profileId);
+  });
+
+  it('lets two tabs stage and acknowledge the same change once', () => {
+    useKeyBindings.getState().stageSpecies(COLLECTION, original);
+    useKeyBindings.getState().stageSpecies(COLLECTION, changed);
+    const tabA = useKeyBindings.getState();
+
+    openTab();
+    expect(sources()[COLLECTION].pendingSpeciesChange).toBeDefined();
+    useKeyBindings.getState().stageSpecies(COLLECTION, changed);
+    useKeyBindings.getState().acknowledgeSpeciesChange(COLLECTION);
+
+    useKeyBindings.setState(tabA);
+    useKeyBindings.getState().stageSpecies(COLLECTION, changed);
+    expect(sources()[COLLECTION].pendingSpeciesChange).toBeUndefined();
+    useKeyBindings.getState().acknowledgeSpeciesChange(COLLECTION);
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
+    expect(stored.state.profiles[profileId].speciesSources[COLLECTION].pendingSpeciesChange)
+      .toBeUndefined();
+    expect(sources()[COLLECTION].acceptedSpecies?.map((s) => s.scientificName)).toEqual([
+      'a',
+      'added',
+    ]);
+  });
+
+  it('starts from version 4 data and ignores later version 4 writes', () => {
+    const v4 = (acceptedSpecies: typeof original) =>
+      JSON.stringify({
+        state: { profiles: { [profileId]: { overrides: { a: 'q' }, acceptedSpecies } } },
+        version: 4,
+      });
+    values.clear();
+    values.set(V4_KEY, v4(original));
+    openTab();
+    expect(useKeyBindings.getState().profiles[profileId].overrides.a).toBe('q');
+    useKeyBindings.getState().stageSpecies(SETTINGS, original, true);
+    useKeyBindings.getState().stageSpecies(COLLECTION, changed);
+
+    // A tab still on version 4 code rewrites its own key, without the per-source lists.
+    values.set(V4_KEY, v4(changed));
+    openTab();
+    expect(Object.keys(sources()).sort()).toEqual([COLLECTION, SETTINGS].sort());
+    useKeyBindings.getState().stageSpecies(SETTINGS, original, true);
+    expect(sources()[SETTINGS].pendingSpeciesChange).toBeUndefined();
+  });
+
+  it('keeps only the most recently used sources', () => {
+    for (let i = 0; i < MAX_SPECIES_SOURCES + 5; i += 1) {
+      useKeyBindings.getState().stageSpecies(`bucket-${i}/species.json`, original);
+    }
+    useKeyBindings.getState().stageSpecies('bucket-0/species.json', original);
+    const kept = Object.keys(sources());
+    expect(kept).toHaveLength(MAX_SPECIES_SOURCES);
+    expect(kept).toContain('bucket-0/species.json');
+    expect(kept).toContain(`bucket-${MAX_SPECIES_SOURCES + 4}/species.json`);
+    expect(kept).not.toContain('bucket-1/species.json');
+  });
+
+  it('keeps working in memory when localStorage is full', () => {
+    quotaFull = true;
+    expect(() => useKeyBindings.getState().stageSpecies(COLLECTION, original)).not.toThrow();
+    expect(sources()[COLLECTION].acceptedSpecies).toHaveLength(2);
   });
 });

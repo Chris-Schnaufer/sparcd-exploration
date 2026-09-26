@@ -1,5 +1,12 @@
-export const KEYBINDING_STORAGE_KEY = 'sparcd-tagger-keybindings';
-const KEYBINDING_STORAGE_VERSION = 4;
+/** Version 5 lives under its own key: a tab still running version 4 code drops
+ * fields it does not know on write, so sharing a key would let it erase the
+ * per-source lists. Version 4 data is read once, as the starting point. */
+export const KEYBINDING_STORAGE_KEY = 'sparcd-tagger-keybindings-v5';
+const KEYBINDING_STORAGE_VERSION = 5;
+const V4_STORAGE_KEY = 'sparcd-tagger-keybindings';
+const V4_STORAGE_VERSION = 4;
+/** Each remembered source holds a full species list, so keep only the most recently used. */
+export const MAX_SPECIES_SOURCES = 20;
 
 export type SpeciesKeyConfig = {
   scientificName: string;
@@ -19,6 +26,8 @@ export type Revision = { at: number; sequence: number; writer: string };
 
 /** What a user has accepted of one species list, and any unacknowledged change to it. */
 export type SpeciesListState = {
+  /** When this source was last switched to; orders eviction past MAX_SPECIES_SOURCES. */
+  usedAt?: number;
   acceptedSpecies?: SpeciesKeyConfig[];
   acceptedRevision?: Revision;
   pendingSpeciesChange?: PendingSpeciesChange;
@@ -116,13 +125,19 @@ function mergeRevisionedProfile(
     ...(sources.size
       ? {
           speciesSources: Object.fromEntries(
-            [...sources].map((source) => [
-              source,
-              mergeSpeciesListState(
-                a.speciesSources?.[source] ?? {},
-                b.speciesSources?.[source] ?? {},
-              ),
-            ]),
+            [...sources]
+              .map((source): [string, SpeciesListState] => [
+                source,
+                mergeSpeciesListState(
+                  a.speciesSources?.[source] ?? {},
+                  b.speciesSources?.[source] ?? {},
+                ),
+              ])
+              .sort(
+                ([aSource, aList], [bSource, bList]) =>
+                  (bList.usedAt ?? 0) - (aList.usedAt ?? 0) || aSource.localeCompare(bSource),
+              )
+              .slice(0, MAX_SPECIES_SOURCES),
           ),
         }
       : {}),
@@ -142,7 +157,9 @@ function mergeSpeciesListState(a: SpeciesListState, b: SpeciesListState): Specie
     b.pendingSpeciesChange,
     b.pendingRevision,
   );
+  const usedAt = Math.max(a.usedAt ?? 0, b.usedAt ?? 0);
   return {
+    ...(usedAt ? { usedAt } : {}),
     ...(accepted.value ? { acceptedSpecies: accepted.value } : {}),
     ...(accepted.revision ? { acceptedRevision: accepted.revision } : {}),
     ...(pending.value ? { pendingSpeciesChange: pending.value } : {}),
@@ -196,7 +213,7 @@ function migrateProfile(raw: unknown): RevisionedKeyProfile {
   };
 }
 
-function parseRevisionedProfiles(raw: string | null): RevisionedKeyProfiles {
+function parseRevisionedProfiles(raw: string | null, version: number): RevisionedKeyProfiles {
   if (!raw) return {};
   try {
     const envelope = JSON.parse(raw) as {
@@ -207,7 +224,7 @@ function parseRevisionedProfiles(raw: string | null): RevisionedKeyProfiles {
         knownSpecies?: string[];
       };
     };
-    if (envelope.version !== KEYBINDING_STORAGE_VERSION) return {};
+    if (envelope.version !== version) return {};
     if (envelope.state?.profiles) {
       return Object.fromEntries(
         Object.entries(envelope.state.profiles).map(([id, profile]) => [id, migrateProfile(profile)]),
@@ -254,7 +271,10 @@ function serializeRevisionedProfiles(profiles: RevisionedKeyProfiles): string {
 }
 
 export function readRevisionedProfiles(storage: Storage): RevisionedKeyProfiles {
-  return parseRevisionedProfiles(storage.getItem(KEYBINDING_STORAGE_KEY));
+  const current = storage.getItem(KEYBINDING_STORAGE_KEY);
+  return current === null
+    ? parseRevisionedProfiles(storage.getItem(V4_STORAGE_KEY), V4_STORAGE_VERSION)
+    : parseRevisionedProfiles(current, KEYBINDING_STORAGE_VERSION);
 }
 
 export function mergeAndWriteRevisionedProfiles(
@@ -264,7 +284,12 @@ export function mergeAndWriteRevisionedProfiles(
   const merged = mergeRevisionedProfiles(readRevisionedProfiles(storage), local);
   const serialized = serializeRevisionedProfiles(merged);
   if (storage.getItem(KEYBINDING_STORAGE_KEY) !== serialized) {
-    storage.setItem(KEYBINDING_STORAGE_KEY, serialized);
+    try {
+      storage.setItem(KEYBINDING_STORAGE_KEY, serialized);
+    } catch {
+      // A full localStorage keeps this tab's bindings in memory rather than
+      // failing the update; they persist on the next write that fits.
+    }
   }
   return merged;
 }

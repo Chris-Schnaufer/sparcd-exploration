@@ -722,7 +722,7 @@ Then('each selected image increments the species from its own count', async ({ p
 
 Given('the saved user profile contains an older species configuration', async ({ page }) => {
   await page.evaluate((source) => {
-    const key = 'sparcd-tagger-keybindings';
+    const key = 'sparcd-tagger-keybindings-v5';
     type Revision = { at: number; sequence: number; writer: string };
     const stored = JSON.parse(localStorage.getItem(key)!) as {
       state: {
@@ -784,7 +784,7 @@ When('the vocabulary change is acknowledged', async ({ page }) => {
 
 Then('the binding the user set for the removed species is kept and the message stays acknowledged', async ({ page }) => {
   const removed = await page.evaluate(() => {
-    const stored = JSON.parse(localStorage.getItem('sparcd-tagger-keybindings')!) as {
+    const stored = JSON.parse(localStorage.getItem('sparcd-tagger-keybindings-v5')!) as {
       state: { profiles: Record<string, { overrides: Record<string, string | null> }> };
     };
     return Object.values(stored.state.profiles)[0].overrides['Former species'];
@@ -809,7 +809,7 @@ Given('the server vocabulary gains Ringtail', async ({ s3 }) => {
 Given('the current species profile is recorded', async ({ page, scratch }) => {
   await expect.poll(() =>
     page.evaluate(() => {
-      const stored = JSON.parse(localStorage.getItem('sparcd-tagger-keybindings')!) as {
+      const stored = JSON.parse(localStorage.getItem('sparcd-tagger-keybindings-v5')!) as {
         state: {
           profiles: Record<
             string,
@@ -822,7 +822,7 @@ Given('the current species profile is recorded', async ({ page, scratch }) => {
     }),
   ).toBeGreaterThan(0);
   scratch.speciesProfile = await page.evaluate(() =>
-    localStorage.getItem('sparcd-tagger-keybindings'),
+    localStorage.getItem('sparcd-tagger-keybindings-v5'),
   );
 });
 
@@ -882,7 +882,7 @@ Given(/^(Backcountry Survey|Educational Test) is opened from Browse$/, async ({ 
   await expect
     .poll(() =>
       page.evaluate((source) => {
-        const stored = JSON.parse(localStorage.getItem('sparcd-tagger-keybindings') ?? '{}') as {
+        const stored = JSON.parse(localStorage.getItem('sparcd-tagger-keybindings-v5') ?? '{}') as {
           state?: { profiles?: Record<string, { speciesSources?: Record<string, unknown> }> };
         };
         return Object.values(stored.state?.profiles ?? {}).some(
@@ -907,7 +907,7 @@ Then('no vocabulary-change message is shown', async ({ page }) => {
 
 Then('the recorded species profile is unchanged', async ({ page, scratch }) => {
   await expect
-    .poll(() => page.evaluate(() => localStorage.getItem('sparcd-tagger-keybindings')))
+    .poll(() => page.evaluate(() => localStorage.getItem('sparcd-tagger-keybindings-v5')))
     .toBe(scratch.speciesProfile);
 });
 

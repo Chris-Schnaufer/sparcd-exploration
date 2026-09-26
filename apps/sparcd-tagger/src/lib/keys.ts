@@ -208,6 +208,17 @@ function legacyList({
   return { acceptedSpecies, acceptedRevision, pendingSpeciesChange, pendingRevision };
 }
 
+function isMostRecent(profile: RevisionedKeyProfile, source: string): boolean {
+  const lists = Object.entries(profile.speciesSources ?? {});
+  const usedAt = profile.speciesSources?.[source]?.usedAt ?? 0;
+  return lists.every(([other, list]) => other === source || (list.usedAt ?? 0) < usedAt);
+}
+
+function nextUsedAt(profile: RevisionedKeyProfile): number {
+  const lists = Object.values(profile.speciesSources ?? {});
+  return Math.max(Date.now(), ...lists.map((list) => (list.usedAt ?? 0) + 1));
+}
+
 function withSource(
   profile: RevisionedKeyProfile,
   source: string,
@@ -266,10 +277,16 @@ export const useKeyBindings = create<KeyBindingState>()((set) => ({
     set((state) =>
       updateActiveProfile(state, (profile) => {
         const known = profile.speciesSources?.[source];
-        const list = known ?? (shared ? legacyList(profile) : {});
+        // Recency is written only on a switch, so a refetch of the open list stays a no-op.
+        const latest = !!known && isMostRecent(profile, source);
+        const list = {
+          ...(known ?? (shared ? legacyList(profile) : {})),
+          usedAt: latest ? known.usedAt : nextUsedAt(profile),
+        };
         const next = normalizedSpecies(current);
         if (!list.acceptedSpecies) {
           return withSource(profile, source, {
+            usedAt: list.usedAt,
             acceptedSpecies: next,
             acceptedRevision: nextKeyProfileRevision(list.acceptedRevision),
           });
@@ -278,11 +295,11 @@ export const useKeyBindings = create<KeyBindingState>()((set) => ({
           list.pendingSpeciesChange &&
           JSON.stringify(list.pendingSpeciesChange.next) === JSON.stringify(next)
         ) {
-          return known ? profile : withSource(profile, source, list);
+          return latest ? profile : withSource(profile, source, list);
         }
         const diff = diffSpecies(list.acceptedSpecies, next);
         if (!hasDiff(diff) && !list.pendingSpeciesChange) {
-          return known ? profile : withSource(profile, source, list);
+          return latest ? profile : withSource(profile, source, list);
         }
         return withSource(profile, source, {
           ...list,
@@ -298,6 +315,7 @@ export const useKeyBindings = create<KeyBindingState>()((set) => ({
         const pending = list?.pendingSpeciesChange;
         if (!pending) return profile;
         return withSource(profile, source, {
+          usedAt: list.usedAt,
           acceptedSpecies: pending.next,
           acceptedRevision: nextKeyProfileRevision(list.acceptedRevision),
           pendingSpeciesChange: undefined,
