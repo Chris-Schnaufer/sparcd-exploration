@@ -78,7 +78,11 @@ export function DropZone() {
       <div
         role="button"
         tabIndex={0}
-        aria-label="Drop a folder of JPEGs or MP4 videos, or choose a folder"
+        aria-label={
+          supportsFolderPick
+            ? 'Drop a folder of JPEGs or MP4 videos, or choose a folder'
+            : 'Choose JPEG photos or MP4 videos to upload'
+        }
         onClick={() => void chooseFolder()}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {

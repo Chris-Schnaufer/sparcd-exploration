@@ -126,6 +126,8 @@ Then('the drop area offers to choose individual photos or videos instead', async
   await expect(app.page.getByText('Choose photos or videos to upload', { exact: true })).toBeVisible();
   await expect(app.page.getByText('Choose photos or videos', { exact: true })).toBeVisible();
   await expect(app.page.getByText(/Drop a folder|Choose folder/)).toHaveCount(0);
+  await expect(app.page.getByRole('button', { name: 'Choose JPEG photos or MP4 videos to upload' })).toBeVisible();
+  await expect(app.page.getByRole('button', { name: /folder/i })).toHaveCount(0);
   await expect(app.page.locator('input[type="file"][accept="image/jpeg,video/mp4"]')).toBeAttached();
 });
 
