@@ -234,6 +234,7 @@ async function collect(run: { done: Promise<void> }, onDone: () => UploadSnapsho
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.markFileState.mockReset();
   mocks.client = null;
   mocks.shardClients = null;
 });
@@ -412,6 +413,27 @@ describe('upload runs continue past per-file blob failures', () => {
     expect(snap.phase).toBe('partial');
     const patches = mocks.markFileState.mock.calls.filter((c) => c[0] === session.files[0].id).map((c) => c[1]);
     expect(patches.at(-1)).toMatchObject({ state: 'failed', refused: false });
+  });
+
+  it('stamps a resumed batch complete only after its per-file writes land', async () => {
+    const session = makeSession(['pending', 'pending']);
+    mocks.client = makeClient(session.files);
+    let releaseWrites!: () => void;
+    const writesHeld = new Promise<void>((resolve) => { releaseWrites = resolve; });
+    mocks.markFileState.mockImplementation(() => writesHeld);
+    let last: UploadSnapshot | null = null;
+    const run = resumeUpload(
+      { config: CONFIG, session, attached: attachedFor(session.files), concurrency: manual(2) },
+      (snap) => { last = snap; },
+    );
+
+    await vi.waitFor(() => expect(mocks.client!.writeImmutable).toHaveBeenCalledTimes(5));
+    expect(mocks.markBatchComplete).not.toHaveBeenCalled();
+    releaseWrites();
+    const snap = await collect(run, () => last);
+
+    expect(snap.phase).toBe('done');
+    expect(mocks.markBatchComplete).toHaveBeenCalledTimes(1);
   });
 
   it('aborts immediately on systemic access failures', async () => {

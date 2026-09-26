@@ -1532,7 +1532,9 @@ export function resumeUpload(
       if (runner.isCancelled()) throw new Error('cancelled');
       if (runner.snap.phase !== 'partial') {
         runner.snap.phase = 'done';
-        await markBatchComplete(batch.id, new Date().toISOString());
+        // Behind the per-file writes, so History never reads a completed batch
+        // whose tally is still catching up.
+        await runner.afterLedger(() => markBatchComplete(batch.id, new Date().toISOString()));
         runner.log('info', `published ${batch.uploadPrefix}/`);
         runner.emit(true);
       }
