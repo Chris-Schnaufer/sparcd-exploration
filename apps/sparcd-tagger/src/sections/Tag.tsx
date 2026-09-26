@@ -1602,24 +1602,12 @@ const ZOOM_PROPS = {
   panning: { velocityDisabled: true },
 };
 
-function ZoomableImage({
-  src,
-  alt,
-  resetKey,
-  filter,
-  onLoaded,
-}: {
-  src: string;
-  alt: string;
-  resetKey: string;
-  filter?: string;
-  onLoaded: () => void;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const [zoomed, setZoomed] = useState(false);
-  // Pan bounds come from the zoom content's box, so size it to the fitted
-  // picture rather than the pane: a letterboxed portrait or panorama then
-  // can't be dragged out of view.
+/**
+ * Pan bounds come from the zoom content's box, so size it to the fitted picture
+ * rather than the pane: a letterboxed portrait or panorama then can't be
+ * dragged out of view. `paneRef` goes on the element the zoom wrapper fills.
+ */
+function useFittedZoom(src: string) {
   const paneRef = useRef<HTMLDivElement>(null);
   const zoomRef = useRef<ReactZoomPanPinchRef>(null);
   const [pane, setPane] = useState<{ w: number; h: number } | null>(null);
@@ -1639,6 +1627,29 @@ function ZoomableImage({
     const zoom = zoomRef.current;
     if (fitted && zoom && zoom.state.scale <= 1.01) zoom.centerView(1, 0);
   }, [fitted?.width, fitted?.height]);
+  const onImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const img = e.currentTarget;
+    setLoaded({ src, w: img.naturalWidth, h: img.naturalHeight });
+  };
+  return { paneRef, zoomRef, fitted, onImageLoad };
+}
+
+function ZoomableImage({
+  src,
+  alt,
+  resetKey,
+  filter,
+  onLoaded,
+}: {
+  src: string;
+  alt: string;
+  resetKey: string;
+  filter?: string;
+  onLoaded: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [zoomed, setZoomed] = useState(false);
+  const { paneRef, zoomRef, fitted, onImageLoad } = useFittedZoom(src);
   return (
     <div ref={paneRef} className="w-full h-full">
       {/* key forces a fresh fit-to-view (reset zoom/pan) on every image change */}
@@ -1661,8 +1672,7 @@ function ZoomableImage({
                 fetchPriority="high"
                 draggable={false}
                 onLoad={(e) => {
-                  const img = e.currentTarget;
-                  setLoaded({ src, w: img.naturalWidth, h: img.naturalHeight });
+                  onImageLoad(e);
                   onLoaded();
                 }}
                 onError={onLoaded}
@@ -1696,6 +1706,7 @@ function Lightbox({
   onClose: () => void;
 }) {
   const [zoomed, setZoomed] = useState(false);
+  const { paneRef, zoomRef, fitted, onImageLoad } = useFittedZoom(src);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     document.addEventListener('keydown', onKey);
@@ -1716,18 +1727,29 @@ function Lightbox({
           ✕
         </button>
       </div>
-      <div className="relative min-h-0" onClick={(e) => e.target === e.currentTarget && onClose()}>
-        <TransformWrapper {...ZOOM_PROPS} maxScale={10} onTransform={(_, s) => setZoomed(s.scale > 1.01)}>
+      <div
+        ref={paneRef}
+        className="relative min-h-0"
+        onClick={(e) => e.target === e.currentTarget && onClose()}
+      >
+        <TransformWrapper
+          ref={zoomRef}
+          {...ZOOM_PROPS}
+          maxScale={10}
+          onTransform={(_, s) => setZoomed(s.scale > 1.01)}
+        >
           {({ zoomIn, zoomOut, resetTransform }) => (
             <>
               <TransformComponent
                 wrapperClass="!w-full !h-full cursor-grab active:cursor-grabbing"
-                contentClass="!w-full !h-full"
+                contentClass={fitted ? '' : '!w-full !h-full'}
+                contentStyle={fitted}
               >
                 <img
                   src={src}
                   alt={alt}
                   draggable={false}
+                  onLoad={onImageLoad}
                   style={filter ? { filter } : undefined}
                   className="w-full h-full object-contain select-none"
                 />

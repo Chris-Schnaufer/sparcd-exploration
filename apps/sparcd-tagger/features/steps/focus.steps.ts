@@ -328,7 +328,29 @@ type Examination = {
   enlarged: Transform;
   dragged: Transform;
   shoved: { image: Rect; pane: Rect }[];
+  // Enlarged to the limit in the fullscreen view, then shoved the same way.
+  fullscreen?: { image: Rect; pane: Rect }[];
 };
+
+/** Drag hard towards one corner, then the opposite one, recording where the picture ends up. */
+async function shoveBothWays(page: Page, root: Locator): Promise<{ image: Rect; pane: Rect }[]> {
+  const box = (await transformWrapper(root).first().boundingBox())!;
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  const views: { image: Rect; pane: Rect }[] = [];
+  for (const [dx, dy] of [
+    [4000, 4000],
+    [-8000, -8000],
+  ] as const) {
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    await page.mouse.move(cx + dx, cy + dy, { steps: 10 });
+    await page.mouse.up();
+    await settle(root);
+    views.push(await imageInPane(root));
+  }
+  return views;
+}
 
 Given(
   'the upload holds a portrait, a landscape and a panorama image of differing sizes',
@@ -371,19 +393,21 @@ When('each of them is examined closely in the Focus view', async ({ page, scratc
     await settle(body);
     const dragged = await readTransform(body);
 
-    const shoved: Examination['shoved'] = [];
-    for (const [dx, dy] of [
-      [4000, 4000],
-      [-8000, -8000],
-    ] as const) {
-      await page.mouse.move(cx, cy);
-      await page.mouse.down();
-      await page.mouse.move(cx + dx, cy + dy, { steps: 10 });
-      await page.mouse.up();
-      await settle(body);
-      shoved.push(await imageInPane(body));
+    const shoved = await shoveBothWays(page, body);
+
+    // The portrait and the panorama are the letterboxed ones; check the
+    // fullscreen view holds them too.
+    let fullscreen: Examination['fullscreen'];
+    if (shape.h > shape.w || shape.w > 3 * shape.h) {
+      await page.getByRole('button', { name: 'Open fullscreen' }).click();
+      await expect(lightbox(page)).toBeVisible();
+      await expect.poll(() => lightbox(page).locator('img').evaluate((el: HTMLImageElement) => el.naturalWidth)).toBe(shape.w);
+      await zoomToLimit(lightbox(page));
+      fullscreen = await shoveBothWays(page, lightbox(page));
+      await page.keyboard.press('Escape');
+      await expect(lightbox(page)).toHaveCount(0);
     }
-    exams.push({ natural, objectFit, fitted, enlarged, dragged, shoved });
+    exams.push({ natural, objectFit, fitted, enlarged, dragged, shoved, fullscreen });
   }
   scratch.exams = exams;
 });
@@ -412,6 +436,12 @@ Then(
     }
   },
 );
+
+Then('the portrait and the panorama stay in view when enlarged fullscreen too', async ({ scratch }) => {
+  const checked = (scratch.exams as Examination[]).filter((e) => e.fullscreen);
+  expect(checked.map((e) => e.natural.w)).toEqual([SHAPES[0].w, SHAPES[2].w]);
+  for (const e of checked) for (const view of e.fullscreen!) expectImageInBounds(view);
+});
 
 // --- Virtualization ---------------------------------------------------------
 

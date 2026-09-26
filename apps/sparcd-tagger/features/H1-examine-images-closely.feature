@@ -65,6 +65,7 @@ Feature: Examine an image closely enough to catch every species
     Then each opens whole and undistorted at the fitted size
     And each can be enlarged up to six times its fitted size
     And each can be dragged around once enlarged without moving beyond its edges
+    And the portrait and the panorama stay in view when enlarged fullscreen too
 
   @H1
   Scenario: The focused image is prioritized over delayed filmstrip thumbnails
