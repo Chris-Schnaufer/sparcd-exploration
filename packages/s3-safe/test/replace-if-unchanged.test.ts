@@ -1,3 +1,4 @@
+import { Readable } from 'node:stream';
 import { describe, it, expect } from 'vitest';
 import type { S3Config } from '@sparcd/types';
 import {
@@ -68,6 +69,25 @@ describe('replaceIfUnchanged — the reviewed conditional canonical overwrite', 
     const { client, sent } = stubClient(() => ({ ETag: '"new"' }));
     await client.replaceIfUnchanged('sparcd-x', 'k', 'b', { etag });
     expect(sent[0].input.IfMatch).toBe(expected);
+  });
+
+  it('puts the unquoted ETag in the signed If-Match header on the wire', async () => {
+    const client = new SafeS3Client(CFG, ['*'], ['*']);
+    const headers: Record<string, string>[] = [];
+    // Swap only the transport: the real SDK still serializes and signs the request.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (client as any).client.config.requestHandler = {
+      handle: async (req: { headers: Record<string, string> }) => {
+        headers.push(req.headers);
+        return {
+          response: { statusCode: 200, headers: { etag: '"new"' }, body: Readable.from([]) },
+        };
+      },
+    };
+    const res = await client.replaceIfUnchanged('sparcd-x', 'k', 'b', { etag: '"abc123"' });
+    expect(res.etag).toBe('"new"');
+    expect(headers[0]['if-match']).toBe('abc123');
+    expect(headers[0].authorization).toContain('if-match');
   });
 
   it('throws ConditionalReplaceConflictError on a stale ETag (412) — no fallback PUT', async () => {
