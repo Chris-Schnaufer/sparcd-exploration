@@ -424,10 +424,24 @@ function makeRunner(
   // `.then(write, write)` on both arms on purpose: one rejected write — or a
   // ledger that never opened — must not poison the rest of the queue.
   let ledgerReady: Promise<unknown> = Promise.resolve();
+  let ledgerWriteFailed = false;
   const afterLedger = (write: () => Promise<unknown>): Promise<unknown> => {
     ledgerReady = ledgerReady.then(write, write);
+    ledgerReady.catch(() => {
+      ledgerWriteFailed = true;
+    });
     return ledgerReady;
   };
+  // A completed batch's tally is read as final, so a ledger that dropped a
+  // file write leaves the batch open instead; resuming it re-checks every file.
+  const completeBatch = (sessionId: string): Promise<unknown> =>
+    afterLedger(async () => {
+      if (ledgerWriteFailed) {
+        log('warn', 'some file states could not be saved on this machine, so History keeps this upload open');
+        return;
+      }
+      await markBatchComplete(sessionId, new Date().toISOString());
+    });
 
   // Manual reads the caller's getter on every pull, so a slider change lands
   // mid-run; adaptive owns both the lane target and the length of the window it
@@ -1217,6 +1231,7 @@ function makeRunner(
       });
     },
     afterLedger,
+    completeBatch,
     cancel: () => {
       cancelled = true;
       abort.abort(); // requests in flight
@@ -1390,7 +1405,7 @@ export function runStreamingUpload(
         runner.snap.phase = 'done';
         // Behind the ledger too: `openSession` re-puts the batch row, so a
         // completion stamp that lands first is wiped by it.
-        if (persist) await runner.afterLedger(() => markBatchComplete(sessionId, new Date().toISOString()));
+        if (persist) await runner.completeBatch(sessionId);
         runner.log('info', dryRun ? 'dry-run complete — nothing written' : `published ${naming.uploadPath}/`);
         runner.emit(true);
       }
@@ -1577,7 +1592,7 @@ export function resumeUpload(
         runner.snap.phase = 'done';
         // Behind the per-file writes, so History never reads a completed batch
         // whose tally is still catching up.
-        await runner.afterLedger(() => markBatchComplete(batch.id, new Date().toISOString()));
+        await runner.completeBatch(batch.id);
         runner.log('info', `published ${batch.uploadPrefix}/`);
         runner.emit(true);
       }

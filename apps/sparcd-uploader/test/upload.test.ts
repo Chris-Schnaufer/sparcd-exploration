@@ -521,6 +521,22 @@ describe('upload runs continue past per-file blob failures', () => {
     }
   });
 
+  it('leaves a batch open when a per-file ledger write failed', async () => {
+    const session = makeSession(['pending', 'pending']);
+    mocks.client = makeClient(session.files);
+    mocks.markFileState.mockRejectedValueOnce(new Error('quota exceeded'));
+    let last: UploadSnapshot | null = null;
+    const run = resumeUpload(
+      { config: CONFIG, session, attached: attachedFor(session.files), concurrency: manual(2) },
+      (snap) => { last = snap; },
+    );
+    const snap = await collect(run, () => last);
+
+    expect(snap.phase).toBe('done');
+    expect(mocks.markBatchComplete).not.toHaveBeenCalled();
+    expect(snap.log.some((l) => l.text.includes('History keeps this upload open'))).toBe(true);
+  });
+
   it('aborts immediately on systemic access failures', async () => {
     expect(new PreconditionFailedError('x')).toBeInstanceOf(Error);
     const session = makeSession(Array.from({ length: 3 }, () => 'pending'));
