@@ -29,6 +29,65 @@ async function readTransform(root: Locator): Promise<Transform> {
   return { x: Number(m[1]), y: Number(m[2]), scale: Number(m[3]) };
 }
 
+type Rect = { left: number; top: number; right: number; bottom: number };
+
+/**
+ * The on-screen rect of the picture itself (any object-contain letterbox
+ * excluded) and of the pane framing it.
+ */
+async function imageInPane(root: Locator): Promise<{ image: Rect; pane: Rect }> {
+  const pane = await transformWrapper(root).first().evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+  });
+  const image = await transformContent(root)
+    .first()
+    .locator('img')
+    .evaluate((el: HTMLImageElement) => {
+      const r = el.getBoundingClientRect();
+      const f = Math.min(r.width / el.naturalWidth, r.height / el.naturalHeight);
+      const w = el.naturalWidth * f;
+      const h = el.naturalHeight * f;
+      const left = r.left + (r.width - w) / 2;
+      const top = r.top + (r.height - h) / 2;
+      return { left, top, right: left + w, bottom: top + h };
+    });
+  return { image, pane };
+}
+
+const axes = ({ image, pane }: { image: Rect; pane: Rect }) =>
+  [
+    [image.left, image.right, pane.left, pane.right],
+    [image.top, image.bottom, pane.top, pane.bottom],
+  ] as const;
+
+// 3px of fudge: the library rounds positions and the workspace header trims the
+// pane's height by a fraction of a pixel.
+const FUDGE = 3;
+
+/** A picture larger than the pane keeps covering it; a smaller one stays wholly inside. */
+function expectImageInBounds(view: { image: Rect; pane: Rect }): void {
+  for (const [lo, hi, paneLo, paneHi] of axes(view)) {
+    if (hi - lo >= paneHi - paneLo) {
+      expect(lo).toBeLessThanOrEqual(paneLo + FUDGE);
+      expect(hi).toBeGreaterThanOrEqual(paneHi - FUDGE);
+    } else {
+      expect(lo).toBeGreaterThanOrEqual(paneLo - FUDGE);
+      expect(hi).toBeLessThanOrEqual(paneHi + FUDGE);
+    }
+  }
+}
+
+/** Whole, centred, and touching the pane on at least one axis. */
+function expectFitted(view: { image: Rect; pane: Rect }): void {
+  expectImageInBounds(view);
+  const gaps = axes(view).map(([lo, hi, paneLo, paneHi]) => {
+    expect(Math.abs(lo - paneLo - (paneHi - hi))).toBeLessThanOrEqual(FUDGE);
+    return paneHi - paneLo - (hi - lo);
+  });
+  expect(Math.min(...gaps)).toBeLessThanOrEqual(FUDGE);
+}
+
 /** Zoom is animated (300ms), so wait for the transform to settle between steps. */
 async function settle(root: Locator): Promise<number> {
   let last = NaN;
@@ -139,8 +198,7 @@ Then('it cannot be dragged beyond the edges of the image', async ({ page }) => {
   const box = (await pane.boundingBox())!;
   const cx = box.x + box.width / 2;
   const cy = box.y + box.height / 2;
-  // Shove it hard in both directions; the offsets must stay inside the bounds
-  // the scaled content allows (0 …  -(scale-1) * size).
+  // Shove it hard in both directions; the picture must not leave the pane.
   for (const [dx, dy] of [
     [4000, 4000],
     [-8000, -8000],
@@ -150,15 +208,8 @@ Then('it cannot be dragged beyond the edges of the image', async ({ page }) => {
     await page.mouse.move(cx + dx, cy + dy, { steps: 10 });
     await page.mouse.up();
     await settle(page.locator('body'));
-    const t = await readTransform(page.locator('body'));
-    expect(t.x).toBeLessThanOrEqual(1);
-    expect(t.y).toBeLessThanOrEqual(1);
-    expect(t.x).toBeGreaterThanOrEqual(-(t.scale - 1) * box.width - 1);
-    // A couple more px than the x fudge: the workspace header (collection/
-    // upload name) trims the pane's available height, not its width, so the
-    // library's own bound settles a hair tighter here than the formula's
-    // exact math predicts.
-    expect(t.y).toBeGreaterThanOrEqual(-(t.scale - 1) * box.height - 3);
+    expect((await readTransform(page.locator('body'))).scale).toBeGreaterThan(1);
+    expectImageInBounds(await imageInPane(page.locator('body')));
   }
 });
 
@@ -257,8 +308,9 @@ Then('the new image is shown fitted to the pane', async ({ page }) => {
 });
 
 Then('no zoom or pan state carries over from the previous image', async ({ page }) => {
-  const t = await readTransform(page.locator('body'));
-  expect(t).toEqual({ x: 0, y: 0, scale: 1 });
+  expect((await readTransform(page.locator('body'))).scale).toBe(1);
+  // The fit settles once the new image has loaded.
+  await expect(async () => expectFitted(await imageInPane(page.locator('body')))).toPass();
 });
 
 // --- Differing image shapes -------------------------------------------------
@@ -272,10 +324,10 @@ const SHAPES = [
 type Examination = {
   natural: { w: number; h: number };
   objectFit: string;
-  fitted: Transform;
+  fitted: { t: Transform; view: { image: Rect; pane: Rect } };
   enlarged: Transform;
   dragged: Transform;
-  shoved: { t: Transform; box: { width: number; height: number } }[];
+  shoved: { image: Rect; pane: Rect }[];
 };
 
 Given(
@@ -304,7 +356,7 @@ When('each of them is examined closely in the Focus view', async ({ page, scratc
       getComputedStyle(el).objectFit,
     ] as const);
     await settle(body);
-    const fitted = await readTransform(body);
+    const fitted = { t: await readTransform(body), view: await imageInPane(body) };
     await zoomToLimit(body);
     const enlarged = await readTransform(body);
 
@@ -329,7 +381,7 @@ When('each of them is examined closely in the Focus view', async ({ page, scratc
       await page.mouse.move(cx + dx, cy + dy, { steps: 10 });
       await page.mouse.up();
       await settle(body);
-      shoved.push({ t: await readTransform(body), box });
+      shoved.push(await imageInPane(body));
     }
     exams.push({ natural, objectFit, fitted, enlarged, dragged, shoved });
   }
@@ -341,7 +393,8 @@ Then('each opens whole and undistorted at the fitted size', async ({ scratch }) 
   exams.forEach((e, i) => {
     expect(e.natural).toEqual({ w: SHAPES[i].w, h: SHAPES[i].h });
     expect(e.objectFit).toBe('contain');
-    expect(e.fitted).toEqual({ x: 0, y: 0, scale: 1 });
+    expect(e.fitted.t.scale).toBe(1);
+    expectFitted(e.fitted.view);
   });
 });
 
@@ -355,13 +408,7 @@ Then(
     for (const e of scratch.exams as Examination[]) {
       expect(e.dragged.scale).toBeCloseTo(e.enlarged.scale, 2);
       expect(Math.abs(e.dragged.x - e.enlarged.x) + Math.abs(e.dragged.y - e.enlarged.y)).toBeGreaterThan(5);
-      // Same bounds and fudge as "it cannot be dragged beyond the edges of the image".
-      for (const { t, box } of e.shoved) {
-        expect(t.x).toBeLessThanOrEqual(1);
-        expect(t.y).toBeLessThanOrEqual(1);
-        expect(t.x).toBeGreaterThanOrEqual(-(t.scale - 1) * box.width - 1);
-        expect(t.y).toBeGreaterThanOrEqual(-(t.scale - 1) * box.height - 3);
-      }
+      for (const view of e.shoved) expectImageInBounds(view);
     }
   },
 );
