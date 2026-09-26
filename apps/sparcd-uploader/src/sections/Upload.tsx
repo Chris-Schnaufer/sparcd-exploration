@@ -6,7 +6,7 @@ import { useLocations } from '../lib/useLocations';
 import { useCollections } from '../lib/useCollections';
 import { sanitizeUploaderUser } from '../lib/normalize';
 import { formatBytes } from '../lib/scanFiles';
-import { loadSession } from '../lib/db';
+import { loadSession, type BatchRecord } from '../lib/db';
 import type { ReconcileProblem } from '../lib/resume';
 import {
   resumeUpload,
@@ -18,6 +18,13 @@ import type { ProcessResponse } from '../lib/processPool';
 import { ensureBundle } from '../lib/resume';
 import { Note, RunMonitor } from '../components/RunMonitor';
 import { UploadCompleteDialog } from '../components/UploadCompleteDialog';
+
+// Every scan path keys files as `<picked folder>/<sub>/<file>`; loose files
+// picked on a phone have no folder to name.
+function folderOf(paths: string[]): string | null {
+  const top = paths[0]?.split('/')[0];
+  return top && paths.every((p) => p.startsWith(`${top}/`)) ? top : null;
+}
 
 const sectionLabel = 'font-[600] text-[11px] tracking-[0.16em] uppercase text-inkSoft mb-2';
 
@@ -86,6 +93,7 @@ export function Upload() {
   const fileAccessMode = useStore((s) => s.fileAccessMode);
   const dirHandle = useStore((s) => s.dirHandle);
   const pendingResume = useStore((s) => s.pendingResume);
+  const attachedFiles = useStore((s) => s.attachedFiles);
 
   const { data: locData } = useLocations(s3Config, connectionId, selectedBucket);
   const collections = useCollections(s3Config, connectionId);
@@ -174,12 +182,39 @@ export function Upload() {
 
   const ready = useMemo(() => files.filter((f) => f.processState === 'ready' && f.sha256), [files]);
   const stillInspecting = files.length - ready.length;
-  // Every scan path keys files as `<picked folder>/<sub>/<file>`; loose files
-  // picked on a phone have no folder to name.
-  const folder = useMemo(() => {
-    const top = files[0]?.relPath.split('/')[0];
-    return top && files.every((f) => f.relPath.startsWith(`${top}/`)) ? top : null;
-  }, [files]);
+  const folder = useMemo(() => folderOf(files.map((f) => f.relPath)), [files]);
+
+  // A run resumed from History goes to its saved destination, whatever Assign
+  // holds now, so the summary has to name that one.
+  const resumedSessionId = attachedFiles ? snap?.sessionId : undefined;
+  const [resumedBatch, setResumedBatch] = useState<BatchRecord | null>(null);
+  useEffect(() => {
+    setResumedBatch(null);
+    if (!resumedSessionId) return;
+    let live = true;
+    void loadSession(resumedSessionId).then((s) => {
+      if (live) setResumedBatch(s?.batch ?? null);
+    });
+    return () => {
+      live = false;
+    };
+  }, [resumedSessionId]);
+  const dest = resumedBatch
+    ? {
+        collectionName:
+          collections.data?.find(
+            (c) => c.bucket === resumedBatch.targetBucket && c.uuid === resumedBatch.collectionUuid,
+          )?.name ?? resumedBatch.targetBucket,
+        collectionUuid: resumedBatch.collectionUuid,
+        location: resumedBatch.location,
+        folder: folderOf([...(attachedFiles?.keys() ?? [])]),
+      }
+    : collection && {
+        collectionName: collection.name ?? '(unnamed)',
+        collectionUuid: collection.uuid,
+        location,
+        folder,
+      };
 
   const start = () => {
     if (!s3Config || !location || !collection || !slug) return;
@@ -340,53 +375,57 @@ export function Upload() {
           bundle with no Assign state behind it, so the options collapse away. */}
       <section className="space-y-3">
         <h2 className={sectionLabel}>Upload</h2>
-        {collection && (
+        {dest && (
           <>
-            <p className="font-body text-[13px] text-inkSoft">
-              {ready.length} file{ready.length === 1 ? '' : 's'} ready
-              {stillInspecting > 0 && ` (${stillInspecting} still being inspected)`} ·{' '}
-              {formatBytes(ready.reduce((n, f) => n + f.size, 0))}
-            </p>
+            {!resumedBatch && (
+              <p className="font-body text-[13px] text-inkSoft">
+                {ready.length} file{ready.length === 1 ? '' : 's'} ready
+                {stillInspecting > 0 && ` (${stillInspecting} still being inspected)`} ·{' '}
+                {formatBytes(ready.reduce((n, f) => n + f.size, 0))}
+              </p>
+            )}
 
             <dl className="space-y-1.5 font-body text-[13px]">
               <div className="flex items-baseline gap-3">
                 <dt className="text-inkSoft w-28 shrink-0">Collection</dt>
-                <dd className="text-ink min-w-0 break-words">{collection.name ?? '(unnamed)'}</dd>
+                <dd className="text-ink min-w-0 break-words">{dest.collectionName}</dd>
               </div>
-              {location && (
+              {dest.location && (
                 <div className="flex items-baseline gap-3">
                   <dt className="text-inkSoft w-28 shrink-0">Location</dt>
                   <dd className="min-w-0">
-                    <span className="block break-words text-ink">{location.name}</span>
+                    <span className="block break-words text-ink">{dest.location.name}</span>
                     <span className="block break-all font-mono text-[12px] text-inkMute">
-                      {location.id}
+                      {dest.location.id}
                     </span>
                   </dd>
                 </div>
               )}
-              {folder && (
+              {dest.folder && (
                 <div className="flex items-baseline gap-3">
                   <dt className="text-inkSoft w-28 shrink-0">Folder</dt>
-                  <dd className="font-mono text-ink min-w-0 break-all">{folder}</dd>
+                  <dd className="font-mono text-ink min-w-0 break-all">{dest.folder}</dd>
                 </div>
               )}
             </dl>
 
-            <label className="flex items-center gap-2.5 font-body text-[14px] text-ink">
-              <input
-                type="checkbox"
-                checked={effectiveDryRun}
-                disabled={anyRunActive}
-                onChange={(e) => setDryRun(e.target.checked)}
-                className="accent-accent"
-              />
-              Test the upload, nothing is written
-            </label>
+            {!resumedBatch && (
+              <label className="flex items-center gap-2.5 font-body text-[14px] text-ink">
+                <input
+                  type="checkbox"
+                  checked={effectiveDryRun}
+                  disabled={anyRunActive}
+                  onChange={(e) => setDryRun(e.target.checked)}
+                  className="accent-accent"
+                />
+                Test the upload, nothing is written
+              </label>
+            )}
 
             {snap && (snap.phase === 'error' || snap.phase === 'partial') && !snap.dryRun && (
               <Note
                 tone="warn"
-                message={`Upload failed. If it keeps happening, ask your administrator to check: the bucket's CORS policy must allow this web origin for PUT, HEAD, and OPTIONS requests, and the credentials need PUT, HEAD, and LIST permissions on the upload prefix. Collection ID: ${collection.uuid}.`}
+                message={`Upload failed. If it keeps happening, ask your administrator to check: the bucket's CORS policy must allow this web origin for PUT, HEAD, and OPTIONS requests, and the credentials need PUT, HEAD, and LIST permissions on the upload prefix. Collection ID: ${dest.collectionUuid}.`}
               />
             )}
           </>

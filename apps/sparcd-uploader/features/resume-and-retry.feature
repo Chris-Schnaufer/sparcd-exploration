@@ -56,6 +56,13 @@ Feature: Resume an interrupted upload and retry a failed one
     And the deployment, uploader identity and description are taken from the recorded session, not re-entered
     And the resumed upload's observations.csv matches what a fresh upload would have written
 
+  @AL2 @AL2-1
+  Scenario: A resumed upload names its saved destination on the Upload step
+    Given an open upload is listed in History
+    And another batch is set up for a different collection and location
+    When it is resumed
+    Then the Upload step names the resumed upload's collection, location and folder
+
   @AL2
   Scenario: A partial History-resumed run retries automatically when the tab becomes visible again
     Given an open upload is listed in History
