@@ -272,6 +272,29 @@ Feature: Assign species to images in an upload
     Then the binding the user set for the removed species is kept and the message stays acknowledged
 
   @H2
+  Scenario: A collection's own species list is accepted quietly the first time it is opened
+    Given Backcountry Survey has its own species list
+    When Backcountry Survey is opened from Browse
+    Then no vocabulary-change message is shown
+
+  @H2
+  Scenario: Switching between collections with different species lists shows no message
+    Given Backcountry Survey has its own species list
+    When Backcountry Survey is opened from Browse
+    And Educational Test is opened from Browse
+    And Backcountry Survey is opened from Browse
+    Then no vocabulary-change message is shown
+
+  @H2
+  Scenario: A collection's species list that changes on the server is still reported
+    Given Backcountry Survey has its own species list
+    And Backcountry Survey is opened from Browse
+    When Backcountry Survey's species list gains Ringtail on the server
+    And the tagger is refreshed with its restored session
+    And Backcountry Survey is opened from Browse
+    Then a blocking message lists Ringtail as added
+
+  @H2
   Scenario: A stale vocabulary refresh reports a server change when the tab regains focus
     Given the server vocabulary gains Ringtail
     When the stale tagger tab regains focus

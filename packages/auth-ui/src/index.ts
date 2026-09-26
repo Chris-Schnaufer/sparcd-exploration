@@ -31,4 +31,5 @@ export type {
   RevisionedKeyProfiles,
   SpeciesDiff,
   SpeciesKeyConfig,
+  SpeciesListState,
 } from './speciesKeyProfiles';

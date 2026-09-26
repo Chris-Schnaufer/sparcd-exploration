@@ -11,6 +11,7 @@ import {
   type RevisionedKeyProfiles,
   type SpeciesDiff,
   type SpeciesKeyConfig,
+  type SpeciesListState,
 } from '@sparcd/auth-ui';
 
 export type KeyOverrides = Record<string, string | null>;
@@ -28,8 +29,10 @@ type KeyBindingState = {
     displacedScientificNames?: string[],
   ) => void;
   clearKey: (scientificName: string) => void;
-  stageSpecies: (current: SpeciesKeyConfig[]) => void;
-  acknowledgeSpeciesChange: () => void;
+  /** `source` names the file the list came from; `shared` marks the settings
+   * list, which inherits the snapshot stored before lists were kept per source. */
+  stageSpecies: (source: string, current: SpeciesKeyConfig[], shared?: boolean) => void;
+  acknowledgeSpeciesChange: (source: string) => void;
 };
 
 const LEGACY_PROFILE = '__legacy__';
@@ -196,6 +199,23 @@ function updateActiveProfile(
   };
 }
 
+function legacyList({
+  acceptedSpecies,
+  acceptedRevision,
+  pendingSpeciesChange,
+  pendingRevision,
+}: RevisionedKeyProfile): SpeciesListState {
+  return { acceptedSpecies, acceptedRevision, pendingSpeciesChange, pendingRevision };
+}
+
+function withSource(
+  profile: RevisionedKeyProfile,
+  source: string,
+  list: SpeciesListState,
+): RevisionedKeyProfile {
+  return { ...profile, speciesSources: { ...profile.speciesSources, [source]: list } };
+}
+
 export const useKeyBindings = create<KeyBindingState>()((set) => ({
   profiles: storedProfiles(),
   activeProfileId: null,
@@ -242,44 +262,47 @@ export const useKeyBindings = create<KeyBindingState>()((set) => ({
         },
       })),
     ),
-  stageSpecies: (current) =>
+  stageSpecies: (source, current, shared = false) =>
     set((state) =>
       updateActiveProfile(state, (profile) => {
+        const known = profile.speciesSources?.[source];
+        const list = known ?? (shared ? legacyList(profile) : {});
         const next = normalizedSpecies(current);
-        if (!profile.acceptedSpecies) {
-          return {
-            ...profile,
+        if (!list.acceptedSpecies) {
+          return withSource(profile, source, {
             acceptedSpecies: next,
-            acceptedRevision: nextKeyProfileRevision(profile.acceptedRevision),
-          };
+            acceptedRevision: nextKeyProfileRevision(list.acceptedRevision),
+          });
         }
         if (
-          profile.pendingSpeciesChange &&
-          JSON.stringify(profile.pendingSpeciesChange.next) === JSON.stringify(next)
+          list.pendingSpeciesChange &&
+          JSON.stringify(list.pendingSpeciesChange.next) === JSON.stringify(next)
         ) {
-          return profile;
+          return known ? profile : withSource(profile, source, list);
         }
-        const diff = diffSpecies(profile.acceptedSpecies, next);
-        if (!hasDiff(diff) && !profile.pendingSpeciesChange) return profile;
-        return {
-          ...profile,
+        const diff = diffSpecies(list.acceptedSpecies, next);
+        if (!hasDiff(diff) && !list.pendingSpeciesChange) {
+          return known ? profile : withSource(profile, source, list);
+        }
+        return withSource(profile, source, {
+          ...list,
           pendingSpeciesChange: hasDiff(diff) ? { next, diff } : undefined,
-          pendingRevision: nextKeyProfileRevision(profile.pendingRevision),
-        };
+          pendingRevision: nextKeyProfileRevision(list.pendingRevision),
+        });
       }),
     ),
-  acknowledgeSpeciesChange: () =>
+  acknowledgeSpeciesChange: (source) =>
     set((state) =>
       updateActiveProfile(state, (profile) => {
-        const pending = profile.pendingSpeciesChange;
+        const list = profile.speciesSources?.[source];
+        const pending = list?.pendingSpeciesChange;
         if (!pending) return profile;
-        return {
-          ...profile,
+        return withSource(profile, source, {
           acceptedSpecies: pending.next,
-          acceptedRevision: nextKeyProfileRevision(profile.acceptedRevision),
+          acceptedRevision: nextKeyProfileRevision(list.acceptedRevision),
           pendingSpeciesChange: undefined,
-          pendingRevision: nextKeyProfileRevision(profile.pendingRevision),
-        };
+          pendingRevision: nextKeyProfileRevision(list.pendingRevision),
+        });
       }),
     ),
 }));

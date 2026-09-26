@@ -17,13 +17,22 @@ export type PendingSpeciesChange = { next: SpeciesKeyConfig[]; diff: SpeciesDiff
 
 export type Revision = { at: number; sequence: number; writer: string };
 
-export type RevisionedKeyProfile = {
-  overrides: Record<string, string | null>;
-  overrideRevisions: Record<string, Revision>;
+/** What a user has accepted of one species list, and any unacknowledged change to it. */
+export type SpeciesListState = {
   acceptedSpecies?: SpeciesKeyConfig[];
   acceptedRevision?: Revision;
   pendingSpeciesChange?: PendingSpeciesChange;
   pendingRevision?: Revision;
+};
+
+/** Overrides belong to the user; accepted lists belong to the file they came from
+ * (`speciesSources`, keyed by bucket + key), since each collection may carry its
+ * own. The top-level list fields are the pre-per-source single snapshot, read
+ * only as the baseline for the shared settings list. */
+export type RevisionedKeyProfile = SpeciesListState & {
+  overrides: Record<string, string | null>;
+  overrideRevisions: Record<string, Revision>;
+  speciesSources?: Record<string, SpeciesListState>;
 };
 
 export type RevisionedKeyProfiles = Record<string, RevisionedKeyProfile>;
@@ -96,6 +105,31 @@ function mergeRevisionedProfile(
       overrideRevisions[name] = selected.revision;
     }
   }
+  const sources = new Set([
+    ...Object.keys(a.speciesSources ?? {}),
+    ...Object.keys(b.speciesSources ?? {}),
+  ]);
+  return {
+    overrides,
+    overrideRevisions,
+    ...mergeSpeciesListState(a, b),
+    ...(sources.size
+      ? {
+          speciesSources: Object.fromEntries(
+            [...sources].map((source) => [
+              source,
+              mergeSpeciesListState(
+                a.speciesSources?.[source] ?? {},
+                b.speciesSources?.[source] ?? {},
+              ),
+            ]),
+          ),
+        }
+      : {}),
+  };
+}
+
+function mergeSpeciesListState(a: SpeciesListState, b: SpeciesListState): SpeciesListState {
   const accepted = newer(
     a.acceptedSpecies,
     a.acceptedRevision ?? (a.acceptedSpecies ? LEGACY_REVISION : undefined),
@@ -109,8 +143,6 @@ function mergeRevisionedProfile(
     b.pendingRevision,
   );
   return {
-    overrides,
-    overrideRevisions,
     ...(accepted.value ? { acceptedSpecies: accepted.value } : {}),
     ...(accepted.revision ? { acceptedRevision: accepted.revision } : {}),
     ...(pending.value ? { pendingSpeciesChange: pending.value } : {}),
@@ -160,6 +192,7 @@ function migrateProfile(raw: unknown): RevisionedKeyProfile {
       : profile.pendingSpeciesChange
         ? { pendingRevision: LEGACY_REVISION }
         : {}),
+    ...(profile.speciesSources ? { speciesSources: profile.speciesSources } : {}),
   };
 }
 

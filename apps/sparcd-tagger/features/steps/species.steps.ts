@@ -11,6 +11,7 @@ import {
   enterFocusView,
   focusFrame,
   gridCell,
+  sectionTab,
   speciesRow,
   speciesTile,
   speciesApply,
@@ -25,6 +26,11 @@ import {
 } from './support/world';
 import {
   BUCKET,
+  BUCKET_B,
+  COLLECTION_B_NAME,
+  COLLECTION_NAME,
+  UUID,
+  UUID_B,
   PREFIX_A,
   PREFIX_C,
   SETTINGS_BUCKET,
@@ -33,6 +39,7 @@ import {
   OBS_A,
 } from './support/data';
 import { readStore, waitForDirtyDrafts, waitForSyncDialogClosed } from './support/flows';
+import type { MockS3 } from './support/s3mock';
 
 const VOCAB = [
   { common: 'Coyote', scientific: 'Canis latrans' },
@@ -714,19 +721,17 @@ Then('each selected image increments the species from its own count', async ({ p
 });
 
 Given('the saved user profile contains an older species configuration', async ({ page }) => {
-  await page.evaluate(() => {
+  await page.evaluate((source) => {
     const key = 'sparcd-tagger-keybindings';
+    type Revision = { at: number; sequence: number; writer: string };
     const stored = JSON.parse(localStorage.getItem(key)!) as {
       state: {
         profiles: Record<
           string,
           {
             overrides: Record<string, string | null>;
-            overrideRevisions: Record<string, { at: number; sequence: number; writer: string }>;
-            acceptedSpecies?: { scientificName: string; commonName: string; keyBinding: string | null }[];
-            acceptedRevision?: { at: number; sequence: number; writer: string };
-            pendingSpeciesChange?: unknown;
-            pendingRevision?: { at: number; sequence: number; writer: string };
+            overrideRevisions: Record<string, Revision>;
+            speciesSources?: Record<string, Record<string, unknown>>;
           }
         >;
       };
@@ -736,15 +741,19 @@ Given('the saved user profile contains an older species configuration', async ({
     const revision = { at: Date.now() + 1, sequence: 1, writer: 'bdd-fixture' };
     profile.overrides['Former species'] = '!';
     profile.overrideRevisions['Former species'] = revision;
-    profile.acceptedSpecies = [
-      { scientificName: 'Odocoileus hemionus', commonName: 'Old Deer Name', keyBinding: 'M' },
-      { scientificName: 'Former species', commonName: 'Former Species', keyBinding: 'F' },
-    ];
-    profile.acceptedRevision = revision;
-    delete profile.pendingSpeciesChange;
-    profile.pendingRevision = revision;
+    profile.speciesSources = {
+      ...profile.speciesSources,
+      [source]: {
+        acceptedSpecies: [
+          { scientificName: 'Odocoileus hemionus', commonName: 'Old Deer Name', keyBinding: 'M' },
+          { scientificName: 'Former species', commonName: 'Former Species', keyBinding: 'F' },
+        ],
+        acceptedRevision: revision,
+        pendingRevision: revision,
+      },
+    };
     localStorage.setItem(key, JSON.stringify(stored));
-  });
+  }, `${SETTINGS_BUCKET}/${SPECIES_KEY}`);
 });
 
 When('the tagger is refreshed with its restored session', async ({ page }) => {
@@ -801,9 +810,15 @@ Given('the current species profile is recorded', async ({ page, scratch }) => {
   await expect.poll(() =>
     page.evaluate(() => {
       const stored = JSON.parse(localStorage.getItem('sparcd-tagger-keybindings')!) as {
-        state: { profiles: Record<string, { acceptedSpecies?: unknown[] }> };
+        state: {
+          profiles: Record<
+            string,
+            { speciesSources?: Record<string, { acceptedSpecies?: unknown[] }> }
+          >;
+        };
       };
-      return Object.values(stored.state.profiles)[0]?.acceptedSpecies?.length ?? 0;
+      const sources = Object.values(stored.state.profiles)[0]?.speciesSources ?? {};
+      return Object.values(sources)[0]?.acceptedSpecies?.length ?? 0;
     }),
   ).toBeGreaterThan(0);
   scratch.speciesProfile = await page.evaluate(() =>
@@ -824,6 +839,58 @@ When('the stale tagger tab regains focus', async ({ page, s3, scratch }) => {
     scratch.speciesReads as number,
   );
   await page.clock.fastForward(100);
+});
+
+// --- Per-collection species lists --------------------------------------------
+
+const COLLECTIONS: Record<string, { bucket: string; key: string }> = {
+  [COLLECTION_NAME]: { bucket: BUCKET, key: `Collections/${UUID}/species.json` },
+  [COLLECTION_B_NAME]: { bucket: BUCKET_B, key: `Collections/${UUID_B}/species.json` },
+};
+
+const entry = (name: string, scientificName: string, keyBinding: string | null = null) => ({
+  name,
+  scientificName,
+  speciesIconURL: '',
+  keyBinding,
+});
+const BACKCOUNTRY_SPECIES = [entry('Bobcat', 'Lynx rufus', 'B'), entry('Coyote', 'Canis latrans')];
+
+function putCollectionSpecies(s3: MockS3, name: string, list: unknown[]) {
+  const { bucket, key } = COLLECTIONS[name];
+  s3.put(bucket, key, JSON.stringify(list), 'application/json');
+}
+
+Given('Backcountry Survey has its own species list', async ({ s3 }) => {
+  putCollectionSpecies(s3, COLLECTION_B_NAME, BACKCOUNTRY_SPECIES);
+});
+
+Given("Backcountry Survey's species list gains Ringtail on the server", async ({ s3 }) => {
+  putCollectionSpecies(s3, COLLECTION_B_NAME, [
+    ...BACKCOUNTRY_SPECIES,
+    entry('Ringtail', 'Bassariscus astutus'),
+  ]);
+});
+
+/** Opens a collection and waits until the Tagger has reconciled its species list,
+ * so a missing message means none was raised rather than none raised yet. */
+Given(/^(Backcountry Survey|Educational Test) is opened from Browse$/, async ({ page, s3 }, name: string) => {
+  await sectionTab(page, 'Browse').click();
+  await selectCollection(page, name);
+  const { bucket, key } = COLLECTIONS[name];
+  const source = s3.has(bucket, key) ? `${bucket}/${key}` : `${SETTINGS_BUCKET}/${SPECIES_KEY}`;
+  await expect
+    .poll(() =>
+      page.evaluate((source) => {
+        const stored = JSON.parse(localStorage.getItem('sparcd-tagger-keybindings') ?? '{}') as {
+          state?: { profiles?: Record<string, { speciesSources?: Record<string, unknown> }> };
+        };
+        return Object.values(stored.state?.profiles ?? {}).some(
+          (profile) => !!profile.speciesSources?.[source],
+        );
+      }, source),
+    )
+    .toBe(true);
 });
 
 Then('Ringtail is available in the refreshed species vocabulary', async ({ page }) => {
