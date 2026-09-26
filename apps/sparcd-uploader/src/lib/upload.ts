@@ -467,8 +467,12 @@ function makeRunner(
     emit(true);
   };
 
+  // `refused` describes the file's latest state only: a file refused once and
+  // then failing for another reason must not keep the old refusal.
   const persistFile = (sessionId: string, localPath: string, patch: Partial<FileRecord>) => {
-    if (persist) void afterLedger(() => markFileState(fileRecordId(sessionId, localPath), patch));
+    if (persist) {
+      void afterLedger(() => markFileState(fileRecordId(sessionId, localPath), { refused: false, ...patch }));
+    }
   };
 
   // Upload (or skip) one blob. Returns once the object is present and verified,
@@ -639,7 +643,7 @@ function makeRunner(
     fp.state = 'failed';
     fp.error = 'not sent: connection lost';
     fp.network = true;
-    persistFile(sessionId, it.localPath, { state: 'failed', lastError: fp.error, refused: false });
+    persistFile(sessionId, it.localPath, { state: 'failed', lastError: fp.error });
     emit(true);
   };
   const stallMessage =

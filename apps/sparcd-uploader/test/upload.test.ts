@@ -395,6 +395,25 @@ describe('upload runs continue past per-file blob failures', () => {
     }
   });
 
+  it('clears an earlier refusal when a file fails its final review', async () => {
+    const session = makeSession(['failed', 'pending']);
+    session.files[0].refused = true;
+    mocks.client = makeClient(session.files);
+    mocks.client.listObjects.mockImplementation(async function* () {
+      yield { key: session.files[1].remoteKey, size: session.files[1].size };
+    });
+    let last: UploadSnapshot | null = null;
+    const run = resumeUpload(
+      { config: CONFIG, session, attached: attachedFor(session.files), concurrency: manual(2) },
+      (snap) => { last = snap; },
+    );
+    const snap = await collect(run, () => last);
+
+    expect(snap.phase).toBe('partial');
+    const patches = mocks.markFileState.mock.calls.filter((c) => c[0] === session.files[0].id).map((c) => c[1]);
+    expect(patches.at(-1)).toMatchObject({ state: 'failed', refused: false });
+  });
+
   it('aborts immediately on systemic access failures', async () => {
     expect(new PreconditionFailedError('x')).toBeInstanceOf(Error);
     const session = makeSession(Array.from({ length: 3 }, () => 'pending'));
