@@ -331,6 +331,24 @@ Then('that species is recorded on the image', async ({ page }) => {
   await expect(gridCell(page, 'IMG002.JPG')).toContainText('Javelina');
 });
 
+Given('the browser has no room left to save key settings', async ({ page }) => {
+  await page.evaluate(() => {
+    const setItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key: string, value: string) {
+      if (key.startsWith('sparcd-tagger-keybindings')) {
+        throw new DOMException('full', 'QuotaExceededError');
+      }
+      setItem.call(this, key, value);
+    };
+  });
+});
+
+Then('a notice says the key settings will reset on reload', async ({ page }) => {
+  await expect(page.getByTestId('species-panel').getByRole('alert')).toHaveText(
+    "Couldn't save your key settings in this browser. They'll reset when you reload.",
+  );
+});
+
 Then('the assigned key is shown on the species row', async ({ page }) => {
   await expect(speciesBadge(page, 'Pecari tajacu')).toHaveText('V');
 });

@@ -21,6 +21,8 @@ export { keyProfileId };
 
 type KeyBindingState = {
   profiles: RevisionedKeyProfiles;
+  /** The last write to localStorage failed, so changes live only in this tab. */
+  unsaved: boolean;
   activeProfileId: string | null;
   activateProfile: (profileId: string) => void;
   assignKey: (
@@ -178,10 +180,12 @@ function latestProfiles(local: RevisionedKeyProfiles): RevisionedKeyProfiles {
   return mergeRevisionedProfiles(local, storedProfiles());
 }
 
-function commitProfiles(profiles: RevisionedKeyProfiles): RevisionedKeyProfiles {
-  return typeof localStorage === 'undefined'
-    ? profiles
-    : mergeAndWriteRevisionedProfiles(localStorage, profiles);
+function commitProfiles(
+  profiles: RevisionedKeyProfiles,
+): Pick<KeyBindingState, 'profiles' | 'unsaved'> {
+  if (typeof localStorage === 'undefined') return { profiles, unsaved: false };
+  const { profiles: merged, saved } = mergeAndWriteRevisionedProfiles(localStorage, profiles);
+  return { profiles: merged, unsaved: !saved };
 }
 
 function updateActiveProfile(
@@ -191,12 +195,7 @@ function updateActiveProfile(
   if (!state.activeProfileId) return {};
   const profiles = latestProfiles(state.profiles);
   const profile = profiles[state.activeProfileId] ?? emptyRevisionedProfile();
-  return {
-    profiles: commitProfiles({
-      ...profiles,
-      [state.activeProfileId]: update(profile),
-    }),
-  };
+  return commitProfiles({ ...profiles, [state.activeProfileId]: update(profile) });
 }
 
 function legacyList({
@@ -229,19 +228,20 @@ function withSource(
 
 export const useKeyBindings = create<KeyBindingState>()((set) => ({
   profiles: storedProfiles(),
+  unsaved: false,
   activeProfileId: null,
   activateProfile: (profileId) =>
     set((state) => {
       if (state.activeProfileId === profileId) return state;
-      let profiles = latestProfiles(state.profiles);
-      if (!profiles[profileId]) {
-        const legacy = Object.keys(profiles).some((id) => id !== LEGACY_PROFILE)
-          ? undefined
-          : profiles[LEGACY_PROFILE];
-        profiles = { ...profiles, [profileId]: legacy ?? emptyRevisionedProfile() };
-        profiles = commitProfiles(profiles);
-      }
-      return { profiles, activeProfileId: profileId };
+      const profiles = latestProfiles(state.profiles);
+      if (profiles[profileId]) return { profiles, activeProfileId: profileId };
+      const legacy = Object.keys(profiles).some((id) => id !== LEGACY_PROFILE)
+        ? undefined
+        : profiles[LEGACY_PROFILE];
+      return {
+        ...commitProfiles({ ...profiles, [profileId]: legacy ?? emptyRevisionedProfile() }),
+        activeProfileId: profileId,
+      };
     }),
   assignKey: (scientificName, key, displacedScientificNames = []) =>
     set((state) =>
@@ -332,9 +332,9 @@ export function activeKeyProfile(state: KeyBindingState): KeyProfile {
 }
 
 export function rehydrateKeyBindings(): void {
-  useKeyBindings.setState((state) => ({
-    profiles: commitProfiles(mergeRevisionedProfiles(state.profiles, storedProfiles())),
-  }));
+  useKeyBindings.setState((state) =>
+    commitProfiles(mergeRevisionedProfiles(state.profiles, storedProfiles())),
+  );
 }
 
 if (typeof window !== 'undefined') {

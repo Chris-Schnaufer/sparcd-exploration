@@ -342,4 +342,14 @@ describe('species list storage', () => {
     expect(() => useKeyBindings.getState().stageSpecies(COLLECTION, original)).not.toThrow();
     expect(sources()[COLLECTION].acceptedSpecies).toHaveLength(2);
   });
+
+  it('flags changes it could not save, and clears the flag once a write fits', () => {
+    quotaFull = true;
+    useKeyBindings.getState().assignKey('a', 'x');
+    expect(useKeyBindings.getState().unsaved).toBe(true);
+    expect(useKeyBindings.getState().profiles[profileId].overrides.a).toBe('x');
+    quotaFull = false;
+    useKeyBindings.getState().assignKey('a', 'y');
+    expect(useKeyBindings.getState().unsaved).toBe(false);
+  });
 });

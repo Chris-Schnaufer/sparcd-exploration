@@ -398,6 +398,7 @@ export function Tag() {
   const overrides = useKeyBindings((state) => activeKeyProfile(state).overrides);
   const assignKey = useKeyBindings((state) => state.assignKey);
   const clearKey = useKeyBindings((state) => state.clearKey);
+  const keysUnsaved = useKeyBindings((state) => state.unsaved);
   const speciesList = localRecord ? DEFAULT_SPECIES : species.data?.species ?? [];
 
   const bindingFor = (sci: string): string | null => {
@@ -1254,6 +1255,7 @@ export function Tag() {
       capturingFor,
       onStartCapture: setCapturingFor,
       onClearKey: clearKey,
+      keysUnsaved,
       recent,
       appliedSet: new Set(observations.map((o) => o.scientificName)),
       hasFocus: !!current,

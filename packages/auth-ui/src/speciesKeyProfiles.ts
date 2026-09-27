@@ -277,21 +277,22 @@ export function readRevisionedProfiles(storage: Storage): RevisionedKeyProfiles 
     : parseRevisionedProfiles(current, KEYBINDING_STORAGE_VERSION);
 }
 
+/** `saved` is false when the write failed (usually a full localStorage): the
+ * merged profiles still apply in this tab, but a reload would lose them. */
 export function mergeAndWriteRevisionedProfiles(
   storage: Storage,
   local: RevisionedKeyProfiles,
-): RevisionedKeyProfiles {
+): { profiles: RevisionedKeyProfiles; saved: boolean } {
   const merged = mergeRevisionedProfiles(readRevisionedProfiles(storage), local);
   const serialized = serializeRevisionedProfiles(merged);
   if (storage.getItem(KEYBINDING_STORAGE_KEY) !== serialized) {
     try {
       storage.setItem(KEYBINDING_STORAGE_KEY, serialized);
     } catch {
-      // A full localStorage keeps this tab's bindings in memory rather than
-      // failing the update; they persist on the next write that fits.
+      return { profiles: merged, saved: false };
     }
   }
-  return merged;
+  return { profiles: merged, saved: true };
 }
 
 function fnv1a(input: string, seed: number): string {

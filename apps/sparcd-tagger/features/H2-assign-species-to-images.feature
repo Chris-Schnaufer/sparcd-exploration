@@ -90,6 +90,14 @@ Feature: Assign species to images in an upload
     And the assigned key is shown on the species row
 
   @H2
+  Scenario: A key assignment the browser cannot save says so
+    Given a species row is shown
+    And the browser has no room left to save key settings
+    When a key is assigned to it and that key is pressed with an image focused
+    Then the assigned key is shown on the species row
+    And a notice says the key settings will reset on reload
+
+  @H2
   Scenario Outline: Printable bindings, including former shortcuts, take precedence
     Given an image is focused
     When "<key>" is assigned to a species and pressed
