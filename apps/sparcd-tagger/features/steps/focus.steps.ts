@@ -196,6 +196,12 @@ Then('the Focus loading status disappears', async ({ page }) => {
   await expect(page.getByRole('status').filter({ hasText: 'loading' })).toHaveCount(0);
 });
 
+// The selected filmstrip row must not ask for 'high' too: it would take the
+// scheduler slot kept free for Focus.
+Then('the Focus image is the only media requested at high priority', async ({ page }) => {
+  await expect(page.locator('[fetchpriority="high"]')).toHaveCount(1);
+});
+
 // --- Zoom -------------------------------------------------------------------
 
 // Used as both the action and the precondition ("Given the image is zoomed in").

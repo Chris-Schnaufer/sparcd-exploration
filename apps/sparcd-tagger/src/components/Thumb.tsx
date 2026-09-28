@@ -1,4 +1,4 @@
-import { useMediaUrl, type MediaPriority } from '../lib/useMediaUrl';
+import { useMediaUrl } from '../lib/useMediaUrl';
 import { isVideoKey } from '../lib/workspace';
 
 // One presigned-GET thumbnail. The URL is signed lazily (per connection +
@@ -14,14 +14,12 @@ export function Thumb({
   objectKey,
   alt,
   isVideo = isVideoKey(objectKey),
-  priority = 'low',
 }: {
   objectKey: string;
   alt: string;
   isVideo?: boolean;
-  priority?: MediaPriority;
 }) {
-  const { url, isError, markLoaded } = useMediaUrl(objectKey, priority);
+  const { url, isError, markLoaded } = useMediaUrl(objectKey);
 
   if (isError) {
     return (
@@ -58,11 +56,13 @@ export function Thumb({
             </span>
           </>
         ) : (
+          // Always low and never lazy: the scheduler keeps its last slot for
+          // Focus, and a lazy <img> scrolled just out of view can hold a slot
+          // without ever loading, stalling every thumbnail queued behind it.
           <img
             src={url}
             alt={alt}
-            loading="lazy"
-            fetchPriority={priority}
+            fetchPriority="low"
             onLoad={markLoaded}
             onError={markLoaded}
             className="w-full h-full object-cover"

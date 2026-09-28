@@ -72,6 +72,7 @@ Feature: Examine an image closely enough to catch every species
     Given filmstrip thumbnail downloads are delayed
     Then the Focus image is requested at high priority
     And the filmstrip thumbnails are requested at low priority
+    And the Focus image is the only media requested at high priority
 
   Scenario: Returning to an image shows its loader until it is ready
     Given the current Focus image's next download is delayed
