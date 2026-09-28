@@ -1547,7 +1547,9 @@ function FocusImage({
     setLoadedKey(objectKey);
   };
   // The loader covers the pane until the bytes arrive, not just until the URL
-  // is ready: a full-size JPEG can take seconds after its <img> mounts.
+  // is ready: a full-size JPEG can take seconds after its <img> mounts. It is
+  // keyed by image, not URL, so a same-image swap (a local thumbnail giving way
+  // to the original, a re-signed URL) keeps showing the pixels we already have.
   return (
     <>
       {url &&
