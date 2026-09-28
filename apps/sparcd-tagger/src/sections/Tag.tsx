@@ -28,6 +28,7 @@ import { PerImageTime } from '../components/PerImageTime';
 import { SpeciesLoupe } from '../components/SpeciesLoupe';
 import { KeyConflictDialog } from '../components/KeyConflictDialog';
 import { ImageAdjustments } from '../components/ImageAdjustments';
+import { PawTrail } from '../components/Paw';
 import { cssFilter, NEUTRAL, type Adjustments } from '../lib/adjustments';
 import { Overview, type PickMods, type ViewKind } from '../components/Overview';
 import { groupBursts, type BurstGrouping } from '../lib/bursts';
@@ -1542,12 +1543,12 @@ function FocusImage({
     return <div className="text-[13px] font-mono text-warn">Could not load this image.</div>;
   if (!url)
     return (
-      <div className="w-full h-full grid place-items-center">
-        <img
-          src={`${import.meta.env.BASE_URL}loading.gif`}
-          alt="Loading focused image"
-          className="w-48 h-48 object-contain"
-        />
+      <div
+        role="status"
+        className="fn-appear w-full h-full grid place-content-center justify-items-center gap-4"
+      >
+        <PawTrail />
+        <span className="font-mono text-[12px] text-inkMute">loading {alt}</span>
       </div>
     );
   if (isVideo)
