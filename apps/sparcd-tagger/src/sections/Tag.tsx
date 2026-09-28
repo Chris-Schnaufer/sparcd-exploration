@@ -1539,28 +1539,39 @@ function FocusImage({
   filter?: string;
 }) {
   const { url, isError, markLoaded } = useMediaUrl(objectKey, 'high');
+  const [loadedKey, setLoadedKey] = useState<string>();
   if (isError)
     return <div className="text-[13px] font-mono text-warn">Could not load this image.</div>;
-  if (!url)
-    return (
-      <div
-        role="status"
-        className="fn-appear w-full h-full grid place-content-center justify-items-center gap-4"
-      >
-        <PawTrail />
-        <span className="font-mono text-[12px] text-inkMute">loading {alt}</span>
-      </div>
-    );
-  if (isVideo)
-    return <FocusVideo src={url} alt={alt} resetKey={objectKey} onLoaded={markLoaded} />;
+  const onLoaded = () => {
+    markLoaded();
+    setLoadedKey(objectKey);
+  };
+  // The loader covers the pane until the bytes arrive, not just until the URL
+  // is ready: a full-size JPEG can take seconds after its <img> mounts.
   return (
-    <ZoomableImage
-      src={url}
-      alt={alt}
-      resetKey={objectKey}
-      filter={filter}
-      onLoaded={markLoaded}
-    />
+    <>
+      {url &&
+        (isVideo ? (
+          <FocusVideo src={url} alt={alt} resetKey={objectKey} onLoaded={onLoaded} />
+        ) : (
+          <ZoomableImage
+            src={url}
+            alt={alt}
+            resetKey={objectKey}
+            filter={filter}
+            onLoaded={onLoaded}
+          />
+        ))}
+      {loadedKey !== objectKey && (
+        <div
+          role="status"
+          className="fn-appear absolute inset-0 grid place-content-center justify-items-center gap-4 bg-paper"
+        >
+          <PawTrail />
+          <span className="font-mono text-[12px] text-inkMute">loading {alt}</span>
+        </div>
+      )}
+    </>
   );
 }
 
