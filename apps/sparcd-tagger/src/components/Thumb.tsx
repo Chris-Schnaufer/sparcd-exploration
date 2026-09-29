@@ -19,6 +19,7 @@ export function Thumb({
   alt: string;
   isVideo?: boolean;
 }) {
+  // Never 'high', even when selected: the scheduler keeps that slot for Focus.
   const { url, isError, markLoaded } = useMediaUrl(objectKey);
 
   if (isError) {
@@ -56,12 +57,10 @@ export function Thumb({
             </span>
           </>
         ) : (
-          // Always low and never lazy: the scheduler keeps its last slot for
-          // Focus, and a lazy <img> scrolled just out of view can hold a slot
-          // without ever loading, stalling every thumbnail queued behind it.
           <img
             src={url}
             alt={alt}
+            loading="lazy"
             fetchPriority="low"
             onLoad={markLoaded}
             onError={markLoaded}
