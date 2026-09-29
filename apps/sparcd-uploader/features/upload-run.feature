@@ -167,6 +167,9 @@ Feature: Upload and publish a batch
     Given the upload has not been started
     When the browser reports offline before upload
     Then the upload status says it is offline and real upload is disabled
+    And dry run remains available while offline
+    When the operator allows a real upload while offline
+    Then the real upload action is available despite the offline signal
     When the browser reports online again
     Then the upload status says it is online and real upload is enabled
 
