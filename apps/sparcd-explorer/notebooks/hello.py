@@ -2222,10 +2222,6 @@ def _(
     from datetime import timedelta
     from html import escape
 
-    def format_timestamp_24(value):
-        """Render stored ISO timestamps without locale-dependent AM/PM text."""
-        return str(value or "").replace("T", " ")[:19]
-
     def _presign_row(bucket: str, path: str) -> str:
         return client.presigned_get_object(bucket, path, expires=timedelta(minutes=30))
 
@@ -2271,7 +2267,7 @@ def _(
             _url = _presign_row(_row["bucket"], _row["media_path"])
             _tag = _parse_tags(_row.get("tags") or "")
             _sci = _row.get("scientific_name") or ""
-            _ts = format_timestamp_24(_row.get("timestamp"))
+            _ts = (_row.get("timestamp") or "").replace("T", " ")[:19]
             _caption = " · ".join(x for x in [_tag, _sci, _ts] if x)
             _u = escape(_url, quote=True)
             _f = escape(_row["file_name"])
