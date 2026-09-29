@@ -63,3 +63,9 @@ it('keeps daylight-saving offsets tied to the local date', () => {
   expect(captureTimestampInZone('2026-01-15T12:00:00', 'America/New_York')).toContain('-05:00');
   expect(captureTimestampInZone('2026-07-15T12:00:00', 'America/New_York')).toContain('-04:00');
 });
+
+it('moves a spring-forward wall clock through the nonexistent hour', () => {
+  expect(captureTimestampInZone('2026-03-08T02:30:00', 'America/New_York')).toBe(
+    '2026-03-08T03:30:00.000-04:00',
+  );
+});

@@ -198,6 +198,12 @@ describe('time correction', () => {
     );
     expect(correctedTimestamp('2024-01-11T06:00:30.000Z', null, null)).toBe('2024-01-11T06:00:30.000Z');
   });
+
+  it('recomputes daylight-saving offsets when a zoned shift crosses a transition', () => {
+    expect(shiftTimestamp('2026-11-01T01:30:00.000-04:00', { ...ZERO_OFFSET, days: 1 }, 'America/New_York')).toBe(
+      '2026-11-02T01:30:00.000-05:00',
+    );
+  });
 });
 
 describe('validators', () => {

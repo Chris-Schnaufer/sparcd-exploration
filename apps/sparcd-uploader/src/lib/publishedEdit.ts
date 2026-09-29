@@ -146,15 +146,17 @@ export function restampDeployment(
   csv: { deployments: string; media: string; observations: string },
   opts: RestampInput,
 ): { deployments: string; media: string; observations: string } {
+  if (opts.fromDeploymentId !== undefined && opts.fromDeploymentId === opts.toDeploymentId) return csv;
   // deployments.csv: replace only the row(s) for the old deployment with the
   // chosen location's full row; any unrelated deployment rows survive verbatim.
   const depRows = parseCsvRows(csv.deployments);
   const correctedRow = parseCsvRows(serializeDeployments([opts.location]))[0];
+  const targetExists = depRows.some((row) => row[DEPLOY_COL.deploymentId] === opts.toDeploymentId);
   const out: string[][] = [];
   let placed = false;
   for (const row of depRows) {
     if (opts.fromDeploymentId === undefined || row[DEPLOY_COL.deploymentId] === opts.fromDeploymentId) {
-      if (!placed) {
+      if (!placed && !targetExists) {
         out.push(correctedRow);
         placed = true;
       }
@@ -163,25 +165,35 @@ export function restampDeployment(
       out.push(row);
     }
   }
-  if (!placed) out.push(correctedRow); // empty/unmatched file → write the corrected row
+  if (!placed && !targetExists) out.push(correctedRow); // empty/unmatched file → write the corrected row
 
   return {
     deployments: serializeCsvRows(out),
-    media: restampTimestamps(
-      restampCsv(csv.media, MEDIA_COL.deploymentId, opts.fromDeploymentId, opts.toDeploymentId),
+    media: restampCsv(
+      restampTimestamps(
+        csv.media,
+        MEDIA_COL.deploymentId,
+        MEDIA_COL.timestamp,
+        opts.fromDeploymentId,
+        opts.fromTimeZone,
+        opts.toTimeZone,
+      ),
       MEDIA_COL.deploymentId,
-      MEDIA_COL.timestamp,
+      opts.fromDeploymentId,
       opts.toDeploymentId,
-      opts.fromTimeZone,
-      opts.toTimeZone,
     ),
-    observations: restampTimestamps(
-      restampCsv(csv.observations, OBS_COL.deploymentId, opts.fromDeploymentId, opts.toDeploymentId),
+    observations: restampCsv(
+      restampTimestamps(
+        csv.observations,
+        OBS_COL.deploymentId,
+        OBS_COL.timestamp,
+        opts.fromDeploymentId,
+        opts.fromTimeZone,
+        opts.toTimeZone,
+      ),
       OBS_COL.deploymentId,
-      OBS_COL.timestamp,
+      opts.fromDeploymentId,
       opts.toDeploymentId,
-      opts.fromTimeZone,
-      opts.toTimeZone,
     ),
   };
 }

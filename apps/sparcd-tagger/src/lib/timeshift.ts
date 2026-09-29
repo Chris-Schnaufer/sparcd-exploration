@@ -64,10 +64,10 @@ const INPUT_RE = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?(?:\.(
  *  form stored in media.csv / observations.csv. Returns null on a shape or
  *  range violation so the caller can reject the edit instead of writing junk.
  *  A bare value is treated as +00:00, never as the browser's zone. */
-export function normalizeTimestampInput(raw: string): string | null {
+export function normalizeTimestampInput(raw: string, fallbackOffset?: string): string | null {
   const m = INPUT_RE.exec(raw.trim());
   if (!m) return null;
-  const [, y, mo, d, h, mi, s, fraction = '', zone = '+00:00'] = m;
+  const [, y, mo, d, h, mi, s, fraction = '', zone = fallbackOffset ?? '+00:00'] = m;
   const month = Number(mo);
   const day = Number(d);
   const hour = Number(h);

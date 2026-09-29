@@ -51,6 +51,10 @@ describe('normalizeTimestampInput', () => {
     expect(normalizeTimestampInput('2024-01-11T06:42:18.000+00:00')).toBe('2024-01-11T06:42:18.000+00:00');
   });
 
+  it('keeps the existing camera offset when a bare wall-clock edit is entered', () => {
+    expect(normalizeTimestampInput('2024-01-11 12:30', '-07:00')).toBe('2024-01-11T12:30:00.000-07:00');
+  });
+
   it('rejects malformed or out-of-range input', () => {
     expect(normalizeTimestampInput('not a date')).toBeNull();
     expect(normalizeTimestampInput('2024-13-01 06:00:00')).toBeNull(); // month 13

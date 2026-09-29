@@ -812,7 +812,7 @@ function daysInMonth(year: number, month0: number): number {
  * steps are exact durations. See the `contracts.test.ts` "clamps month/year
  * overflow" case.
  */
-export function shiftTimestamp(iso: string, off: TimeOffset): string {
+export function shiftTimestamp(iso: string, off: TimeOffset, timeZone?: string): string {
   const m = TS_RE.exec(iso);
   if (!m) return iso;
   let year = Number(m[1]);
@@ -843,7 +843,7 @@ export function shiftTimestamp(iso: string, off: TimeOffset): string {
   );
   d.setUTCMilliseconds(millisecond);
   const offset = iso.match(/(Z|[+-]\d{2}:?\d{2})$/)?.[1];
-  return formatCaptureTimestampWithOffset({
+  const shifted = {
     year: d.getUTCFullYear(),
     month: d.getUTCMonth() + 1,
     day: d.getUTCDate(),
@@ -851,7 +851,10 @@ export function shiftTimestamp(iso: string, off: TimeOffset): string {
     minute: d.getUTCMinutes(),
     second: d.getUTCSeconds(),
     millisecond: d.getUTCMilliseconds(),
-  }, offset === 'Z' || !offset ? '+00:00' : offset);
+  };
+  return timeZone
+    ? formatCaptureTimestamp(shifted, timeZone)
+    : formatCaptureTimestampWithOffset(shifted, offset === 'Z' || !offset ? '+00:00' : offset);
 }
 
 /** Resolve the corrected timestamp for one image: per-image override wins over the upload offset. */
@@ -859,9 +862,10 @@ export function correctedTimestamp(
   original: string,
   offset: TimeOffset | null,
   override: string | null,
+  timeZone?: string,
 ): string {
   if (override) return override;
-  if (offset) return shiftTimestamp(original, offset);
+  if (offset) return shiftTimestamp(original, offset, timeZone);
   return original;
 }
 
@@ -910,18 +914,25 @@ function parseCaptureTimestamp(value: string): { parts: CaptureTimestampParts; o
   return { parts, offset };
 }
 
+const zoneFormatters = new Map<string, Intl.DateTimeFormat>();
+
 function partsAt(instantMs: number, timeZone: string): CaptureTimestampParts {
   const map: Record<string, number> = {};
-  for (const part of new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    hourCycle: 'h23',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  }).formatToParts(new Date(instantMs))) {
+  let formatter = zoneFormatters.get(timeZone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hourCycle: 'h23',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    zoneFormatters.set(timeZone, formatter);
+  }
+  for (const part of formatter.formatToParts(new Date(instantMs))) {
     if (part.type !== 'literal') map[part.type] = Number(part.value);
   }
   return {
@@ -954,11 +965,34 @@ function offsetText(minutes: number): string {
   return `${sign}${String(Math.floor(absolute / 60)).padStart(2, '0')}:${String(absolute % 60).padStart(2, '0')}`;
 }
 
+function sameParts(a: CaptureTimestampParts, b: CaptureTimestampParts): boolean {
+  return a.year === b.year && a.month === b.month && a.day === b.day &&
+    a.hour === b.hour && a.minute === b.minute && a.second === b.second;
+}
+
+function localPartsAndOffset(parts: CaptureTimestampParts, timeZone: string): { parts: CaptureTimestampParts; offset: number } {
+  const offset = offsetMinutesFor(parts, timeZone);
+  const instant = partsAsUtcMs(parts) - offset * 60_000;
+  const shown = partsAt(instant, timeZone);
+  // A spring-forward wall-clock value does not exist. Move it through the gap
+  // to the first valid local time so the emitted timestamp names its instant.
+  if (!sameParts(shown, parts)) {
+    const delta = partsAsUtcMs(shown) - partsAsUtcMs(parts);
+    if (delta > 0) {
+      const corrected = partsAt(instant, timeZone);
+      return { parts: corrected, offset: offsetMinutesFor(corrected, timeZone) };
+    }
+  }
+  return { parts, offset };
+}
+
 function formatCaptureTimestamp(parts: CaptureTimestampParts, timeZone: string): string {
+  const resolved = localPartsAndOffset(parts, timeZone);
+  parts = resolved.parts;
   return (
     `${String(parts.year).padStart(4, '0')}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}T` +
     `${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}:${String(parts.second).padStart(2, '0')}.` +
-    `${String(parts.millisecond).padStart(3, '0')}${offsetText(offsetMinutesFor(parts, timeZone))}`
+    `${String(parts.millisecond).padStart(3, '0')}${offsetText(resolved.offset)}`
   );
 }
 
