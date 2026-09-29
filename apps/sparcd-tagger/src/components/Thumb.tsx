@@ -59,10 +59,10 @@ export function Thumb({
   return (
     <div className="relative aspect-[4/3] bg-paperHover border border-rule overflow-hidden">
       <svg
-        viewBox="0 0 108 108"
+        viewBox="25 28 58 59"
         fill="var(--ink)"
         aria-hidden
-        className={`absolute inset-0 m-auto w-[56%] h-[56%] ${url && !loaded ? 'fn-breathe' : 'opacity-20'}`}
+        className={`absolute inset-0 m-auto w-[44%] h-[44%] max-w-7 max-h-7 ${url && !loaded ? 'fn-breathe' : 'opacity-25'}`}
       >
         <PawPads />
       </svg>
@@ -84,12 +84,14 @@ export function Thumb({
               onError={onError}
               className={media}
             />
-            <span
-              aria-hidden
-              className="absolute inset-0 grid place-items-center text-paper/90 text-lg drop-shadow"
-            >
-              ▶
-            </span>
+            {loaded && (
+              <span
+                aria-hidden
+                className="absolute inset-0 grid place-items-center text-paper/90 text-lg drop-shadow"
+              >
+                ▶
+              </span>
+            )}
           </>
         ) : (
           <img

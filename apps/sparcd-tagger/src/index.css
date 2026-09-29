@@ -168,12 +168,12 @@ body {
 /* A thumbnail's paw while its photo downloads. */
 @keyframes fn-breathe {
   50% {
-    opacity: 0.55;
+    opacity: 0.6;
   }
 }
 
 .fn-breathe {
-  opacity: 0.2;
+  opacity: 0.25;
   animation: fn-breathe 1.6s ease-in-out infinite;
 }
 
