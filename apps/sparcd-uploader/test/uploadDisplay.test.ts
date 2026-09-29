@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatUploadDate, formatUploadHeader } from '../src/lib/uploadDisplay';
+import { formatHistoryBatchStart, formatUploadDate, formatUploadHeader } from '../src/lib/uploadDisplay';
 import { formatDateTime24, type UploadMetaJson } from '@sparcd/camtrap';
 
 const meta: UploadMetaJson = {
@@ -32,5 +32,10 @@ describe('uploadDisplay', () => {
   it('formats late upload instants with a 24-hour clock', () => {
     expect(formatDateTime24('2026-09-11T22:15:10.000Z', 'UTC')).toBe('2026-09-11 22:15:10');
     expect(formatDateTime24('2026-09-11T00:05:10.000Z', 'UTC')).toBe('2026-09-11 00:05:10');
+  });
+
+  it('formats the timestamp used by History through its display helper', () => {
+    expect(formatHistoryBatchStart('2026-09-11T22:15:10.000Z', 'UTC')).toBe('2026-09-11 22:15:10');
+    expect(formatHistoryBatchStart('2026-09-11T00:05:10.000Z', 'UTC')).toBe('2026-09-11 00:05:10');
   });
 });
