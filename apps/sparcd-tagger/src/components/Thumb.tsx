@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { useMediaUrl, type MediaPriority } from '../lib/useMediaUrl';
 import { isVideoKey } from '../lib/workspace';
+import { PawPads } from './Paw';
 
 // One presigned-GET thumbnail. The URL is signed lazily (per connection +
 // object key) and rendered straight into <img> — no canvas, so no CORS taint.
@@ -23,16 +25,47 @@ export function Thumb({
 }) {
   // Never 'high', even when selected: the scheduler keeps that slot for Focus.
   const { url, isError, markLoaded } = useMediaUrl(objectKey, THUMB_MEDIA_PRIORITY);
+  // Keyed by image, not URL: a local thumbnail giving way to the original must
+  // not blank a photo that is already showing.
+  const mediaKey = url ? `${objectKey}\u0000${url}` : undefined;
+  const [loadedKey, setLoadedKey] = useState<string>();
+  const [failedKey, setFailedKey] = useState<string>();
+  const loaded = !!mediaKey && loadedKey === mediaKey;
+  const failed = !!mediaKey && failedKey === mediaKey;
+  const onLoaded = () => {
+    markLoaded();
+    if (mediaKey) setLoadedKey(mediaKey);
+  };
+  const onError = () => {
+    // A signed URL can succeed while the actual media GET fails. Release the
+    // scheduler slot, but keep the tile visibly failed instead of treating it
+    // as a successful load.
+    markLoaded();
+    if (mediaKey) setFailedKey(mediaKey);
+  };
 
-  if (isError) {
+  if (isError || failed) {
     return (
       <div className="aspect-[4/3] bg-paperHover border border-rule grid place-items-center text-[11px] font-mono text-warn">
         failed
       </div>
     );
   }
+  const media = `absolute inset-0 w-full h-full object-cover transition-opacity duration-150 motion-reduce:transition-none ${
+    loaded ? 'opacity-100' : 'opacity-0'
+  }`;
+  // A faint paw while the thumbnail waits for a download slot; it breathes once
+  // the bytes are on their way, and the photo fades in over it.
   return (
     <div className="relative aspect-[4/3] bg-paperHover border border-rule overflow-hidden">
+      <svg
+        viewBox="0 0 108 108"
+        fill="var(--ink)"
+        aria-hidden
+        className={`absolute inset-0 m-auto w-[56%] h-[56%] ${url && !loaded ? 'fn-breathe' : 'opacity-20'}`}
+      >
+        <PawPads />
+      </svg>
       {url &&
         (isVideo ? (
           <>
@@ -46,10 +79,10 @@ export function Thumb({
               // browser to decode and display the first frame as the poster.
               onLoadedMetadata={(e) => {
                 e.currentTarget.currentTime = 0.001;
-                markLoaded();
               }}
-              onError={markLoaded}
-              className="w-full h-full object-cover"
+              onLoadedData={onLoaded}
+              onError={onError}
+              className={media}
             />
             <span
               aria-hidden
@@ -64,9 +97,9 @@ export function Thumb({
             alt={alt}
             loading="lazy"
             fetchPriority="low"
-            onLoad={markLoaded}
-            onError={markLoaded}
-            className="w-full h-full object-cover"
+            onLoad={onLoaded}
+            onError={onError}
+            className={media}
           />
         ))}
     </div>

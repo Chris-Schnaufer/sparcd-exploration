@@ -165,6 +165,18 @@ body {
   animation: fn-appear 1ms 200ms backwards;
 }
 
+/* A thumbnail's paw while its photo downloads. */
+@keyframes fn-breathe {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.fn-breathe {
+  opacity: 0.2;
+  animation: fn-breathe 1.6s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .fn-rise {
     opacity: 1;
@@ -177,6 +189,10 @@ body {
   }
   .fn-scan {
     opacity: 0;
+  }
+  .fn-breathe {
+    animation: none;
+    opacity: 0.4;
   }
 }
 
