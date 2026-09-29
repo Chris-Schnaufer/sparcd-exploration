@@ -478,11 +478,11 @@ export function History() {
               <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-1">
                 {!batch.completedAt && (
                   <button
-                    disabled={activeRunReserved || preparation !== null || pickerOpen}
-                    title={!online ? "You're offline" : undefined}
+                    disabled={!online || activeRunReserved || preparation !== null || pickerOpen}
+                    title={!online ? "You're offline — reconnect before resuming" : undefined}
                     onClick={() => void beginResume(batch)}
                     className={`bg-ink text-paper border border-ink min-h-[44px] sm:min-h-0 px-4 sm:px-3 py-1 text-[13px] font-body font-[600] hover:opacity-90 ${
-                      activeRunReserved || preparation !== null || pickerOpen ? 'opacity-40 cursor-not-allowed' : ''
+                      !online || activeRunReserved || preparation !== null || pickerOpen ? 'opacity-40 cursor-not-allowed' : ''
                     }`}
                   >
                     {isPreparing ? 'Verifying…' : 'Resume'}
