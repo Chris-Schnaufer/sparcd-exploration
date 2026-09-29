@@ -209,6 +209,7 @@ describe('uploader bundle is valid v016 Camtrap data', () => {
     expect(meta.imageCount).toBe(2);
     expect(meta.editComments).toEqual([]);
     expect(meta.bucket).toBe(`sparcd-${UUID}`);
+    expect(meta.captureTimeZone).toBe('America/Phoenix');
   });
 });
 

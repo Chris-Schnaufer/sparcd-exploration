@@ -99,6 +99,8 @@ export type RestampInput = {
   location: Deployment;
   /** IANA zones for rebasing capture timestamps during a location correction. */
   fromTimeZone?: string;
+  /** Persisted uploader zone for legacy `Z` values; coordinates are only a fallback. */
+  legacyTimeZone?: string;
   toTimeZone?: string;
 };
 
@@ -175,7 +177,7 @@ export function restampDeployment(
         MEDIA_COL.deploymentId,
         MEDIA_COL.timestamp,
         opts.fromDeploymentId,
-        opts.fromTimeZone,
+        opts.legacyTimeZone ?? opts.fromTimeZone,
         opts.toTimeZone,
       ),
       MEDIA_COL.deploymentId,
@@ -188,7 +190,7 @@ export function restampDeployment(
         OBS_COL.deploymentId,
         OBS_COL.timestamp,
         opts.fromDeploymentId,
-        opts.fromTimeZone,
+        opts.legacyTimeZone ?? opts.fromTimeZone,
         opts.toTimeZone,
       ),
       OBS_COL.deploymentId,

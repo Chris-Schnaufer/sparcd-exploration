@@ -23,7 +23,7 @@ import {
   type EditResult,
 } from '../lib/publishedEdit';
 import { locationToDeployment, type Location } from '../lib/locations';
-import { javaEditStamp, parseDeployments } from '@sparcd/camtrap';
+import { javaEditStamp, parseDeployments, parseUploadMeta } from '@sparcd/camtrap';
 import { formatUploadHeader } from '../lib/uploadDisplay';
 import { DeploymentPicker } from './DeploymentPicker';
 import { Note } from './RunMonitor';
@@ -124,10 +124,13 @@ function UploadCard({
     setBusy(true);
     setNote(null);
     try {
-      const roles = ['deployments', 'media', 'observations'] as const;
+      const roles = ['deployments', 'media', 'observations', 'uploadMeta'] as const;
       const fresh = await loadPublishedCanonical(cfg, collection.bucket, upload.prefix, [...roles]);
       const deployment = locationToDeployment(loc, uuid);
       const previousDeployment = parseDeployments(fresh.deployments!.text)[0];
+      const captureTimeZone = fresh.uploadMeta
+        ? parseUploadMeta(fresh.uploadMeta.text).captureTimeZone
+        : undefined;
       const next = restampDeployment(
         {
           deployments: fresh.deployments!.text,
@@ -141,6 +144,7 @@ function UploadCard({
           fromTimeZone: previousDeployment
             ? timeZoneForCoords(previousDeployment.latitude, previousDeployment.longitude)
             : undefined,
+          legacyTimeZone: captureTimeZone,
           toTimeZone: timeZoneForCoords(deployment.latitude, deployment.longitude),
         },
       );

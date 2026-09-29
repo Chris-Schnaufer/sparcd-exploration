@@ -197,6 +197,8 @@ export type UploadMetaJson = {
   bucket: string;
   uploadPath: string;
   description: string;
+  /** IANA zone used to interpret camera/estimated wall-clock capture times. */
+  captureTimeZone?: string;
 };
 
 const pad = (n: number): string => String(n).padStart(2, '0');
@@ -230,6 +232,7 @@ export function buildUploadMeta(input: {
   bucket: string;
   uploadPath: string;
   description: string;
+  captureTimeZone?: string;
 }): UploadMetaJson {
   // Key order matches the live file so the serialized bytes line up.
   return {
@@ -241,6 +244,7 @@ export function buildUploadMeta(input: {
     bucket: input.bucket,
     uploadPath: input.uploadPath,
     description: input.description,
+    ...(input.captureTimeZone ? { captureTimeZone: input.captureTimeZone } : {}),
   };
 }
 

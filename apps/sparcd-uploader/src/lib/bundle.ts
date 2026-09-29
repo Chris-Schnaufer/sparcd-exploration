@@ -305,6 +305,7 @@ export async function buildBundle(input: BuildInput): Promise<BundlePreview> {
       bucket,
       uploadPath,
       description,
+      captureTimeZone: timeZone,
     }),
   );
 
@@ -385,11 +386,12 @@ export async function buildBundleFromRecords(input: {
   bucket: string;
   uploaderSlug: string;
   description: string;
+  timeZone?: string;
   uploadPath: string;
   startedAt: Date;
   files: ResolvedFileRecord[];
 }): Promise<ResumeBundle> {
-  const { location, collectionUuid, bucket, uploaderSlug, description, uploadPath, startedAt, files } = input;
+  const { location, collectionUuid, bucket, uploaderSlug, description, timeZone, uploadPath, startedAt, files } = input;
   const deployment = locationToDeployment(location, collectionUuid);
 
   deployment.timestampIssues = files.some((f) => !!f.timestampSource);
@@ -443,6 +445,7 @@ export async function buildBundleFromRecords(input: {
       bucket,
       uploadPath,
       description,
+      captureTimeZone: timeZone,
     }),
   );
 

@@ -334,8 +334,8 @@ function replaceDeploymentRow(csv: string, fromDeploymentId: string | undefined,
  * runs against `current` (verified equal to the grounded base), so unrelated
  * rows and unmodelled columns survive verbatim. `UploadMeta.json` always
  * changes — every successful sync appends its mandatory edit comment. A
- * pending location correction rewrites every media/observation row's
- * deployment id and replaces `deployments.csv` with the single new row —
+ * pending location correction rewrites matching media/observation rows and
+ * replaces the matching deployment row while preserving other deployments —
  * applied on top of the tag/time merge, not instead of it, so a location
  * change and species edits in the same sync both land correctly.
  */
@@ -359,13 +359,14 @@ async function buildWrites(
       ? tzlookup(currentDeployment.latitude, currentDeployment.longitude)
       : undefined;
     const toTimeZone = tzlookup(plan.locationEdit.latitude, plan.locationEdit.longitude);
+    const legacyTimeZone = parseUploadMeta(current.uploadMeta.text).captureTimeZone ?? fromTimeZone;
     mediaBody = rewriteDeploymentAndRebase(
       mediaBody,
       MEDIA_COL.deploymentId,
       MEDIA_COL.timestamp,
       fromDeploymentId,
       plan.locationEdit.deploymentId,
-      fromTimeZone,
+      legacyTimeZone,
       toTimeZone,
     );
     observationsBody = rewriteDeploymentAndRebase(
@@ -374,7 +375,7 @@ async function buildWrites(
       OBS_COL.timestamp,
       fromDeploymentId,
       plan.locationEdit.deploymentId,
-      fromTimeZone,
+      legacyTimeZone,
       toTimeZone,
     );
     const replacement = parseCsvRows(serializeDeployments([plan.locationEdit]))[0];

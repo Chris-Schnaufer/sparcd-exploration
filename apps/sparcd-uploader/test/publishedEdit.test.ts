@@ -217,6 +217,29 @@ describe('restampDeployment scope', () => {
     expect(parseCsvRows(next.observations)[0][OBS_COL.timestamp]).toBe('2026-07-01T12:00:00.000-04:00');
   });
 
+  it('uses the persisted capture zone when recovering a legacy Z timestamp', () => {
+    const target = locationToDeployment(
+      { key: 'NY|x', id: 'NY', name: 'New York', latitude: 40.7, longitude: -74, elevation: 10 },
+      UUID,
+    );
+    const next = restampDeployment(
+      {
+        deployments: deploymentsText,
+        media: serializeCsvRows([mediaRow(K1, '2026-01-15T17:00:00.000Z', 'IMG_0001.JPG')]),
+        observations: obsText,
+      },
+      {
+        fromDeploymentId: DEP_FROM,
+        toDeploymentId: `${UUID}:NY`,
+        location: target,
+        fromTimeZone: 'America/Phoenix',
+        legacyTimeZone: 'America/Los_Angeles',
+        toTimeZone: 'America/New_York',
+      },
+    );
+    expect(parseCsvRows(next.media)[0][MEDIA_COL.timestamp]).toBe('2026-01-15T09:00:00.000-05:00');
+  });
+
   it('updates deployment_id in all three CSVs and nowhere else', () => {
     const target = locationToDeployment(
       { key: 'SAN20|x', id: 'SAN20', name: 'San Pedro 20', latitude: 32.1, longitude: -111.3, elevation: 1300 },
