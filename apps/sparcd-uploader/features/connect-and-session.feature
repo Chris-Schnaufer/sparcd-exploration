@@ -31,7 +31,7 @@ Feature: Connect the uploader to storage and manage the session
     Then it shows the connection screen instead of a collection picker
     And going back from it returns to Inspect with the batch intact
 
-  @unmapped @offline
+  @F1-2 @offline
   Scenario: A loaded uploader can inspect its first batch without network access
     Given no connection has been made in this browser session
     And the browser is offline before deferring login
