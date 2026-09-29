@@ -313,11 +313,13 @@ function rewriteDeploymentAndRebase(
 
 function replaceDeploymentRow(csv: string, fromDeploymentId: string | undefined, replacement: string[]): string {
   const rows = parseCsvRows(csv);
+  const replacementId = replacement[0] ?? '';
+  const targetExists = rows.some((row) => row[0] === replacementId);
   const out: string[][] = [];
   let placed = false;
   for (const row of rows) {
     if (fromDeploymentId === undefined || row[0] === fromDeploymentId) {
-      if (!placed) {
+      if (!placed && !targetExists) {
         out.push(replacement);
         placed = true;
       }
@@ -325,7 +327,7 @@ function replaceDeploymentRow(csv: string, fromDeploymentId: string | undefined,
       out.push(row);
     }
   }
-  if (!placed) out.push(replacement);
+  if (!placed && !targetExists) out.push(replacement);
   return serializeCsvRows(out);
 }
 
