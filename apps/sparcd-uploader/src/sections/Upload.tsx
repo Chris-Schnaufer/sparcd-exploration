@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { OfflineBanner, useOnline } from '@sparcd/auth-ui';
+import { useOnline } from '@sparcd/auth-ui';
 import { deleteFlipRecord } from '@sparcd/flip';
 import { useStore } from '../store';
 import { useLocations } from '../lib/useLocations';
@@ -63,6 +63,24 @@ function AdaptiveInfo() {
         </span>
       )}
     </span>
+  );
+}
+
+const uploadConnectivityStatusId = 'upload-connectivity-status';
+
+function UploadConnectivityStatus({ online }: { online: boolean }) {
+  return (
+    <div
+      id={uploadConnectivityStatusId}
+      aria-live="polite"
+      aria-atomic="true"
+      className={`flex items-center gap-2 border px-3 py-2.5 font-body text-[13px] ${
+        online ? 'border-ruleSoft bg-panel text-inkSoft' : 'border-warn/40 bg-paper text-warn'
+      }`}
+    >
+      <span aria-hidden className={`h-2 w-2 rounded-full ${online ? 'bg-accent' : 'bg-warn'}`} />
+      {online ? 'Online — upload available' : 'Offline — upload unavailable'}
+    </div>
   );
 }
 
@@ -329,7 +347,7 @@ export function Upload() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-7">
-      <OfflineBanner message="You're offline — the dry run still works, but a real upload won't until your connection is back." />
+      <UploadConnectivityStatus online={online} />
       {/* Run configuration. A resume handed off from History replays a persisted
           bundle with no Assign state behind it, so the options collapse away. */}
       <section className="space-y-3">
@@ -483,16 +501,20 @@ export function Upload() {
           ) : (snap?.phase === 'partial' || snap?.phase === 'error') && !snap.dryRun ? (
             <button
               onClick={retryFailed}
-              title={!online ? "You're offline" : undefined}
-              className="bg-ink text-paper border border-ink px-3.5 py-2.5 sm:py-1.5 min-h-[44px] sm:min-h-0 text-[14px] font-body font-[600] hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+              disabled={!online}
+              title={!online ? "You're offline — reconnect before retrying" : undefined}
+              aria-describedby={!online ? uploadConnectivityStatusId : undefined}
+              className={`bg-ink text-paper border border-ink px-3.5 py-2.5 sm:py-1.5 min-h-[44px] sm:min-h-0 text-[14px] font-body font-[600] hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 ${!online ? 'cursor-not-allowed opacity-40' : ''}`}
             >
               {snap.phase === 'error' ? 'Resume upload' : 'Retry failed files'}
             </button>
           ) : (
             <button
               onClick={start}
-              title={!effectiveDryRun && !online ? "You're offline" : undefined}
-              className="bg-ink text-paper border border-ink px-3.5 py-2.5 sm:py-1.5 min-h-[44px] sm:min-h-0 text-[14px] font-body font-[600] hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+              disabled={!effectiveDryRun && !online}
+              title={!effectiveDryRun && !online ? "You're offline — reconnect before uploading" : undefined}
+              aria-describedby={!effectiveDryRun && !online ? uploadConnectivityStatusId : undefined}
+              className={`bg-ink text-paper border border-ink px-3.5 py-2.5 sm:py-1.5 min-h-[44px] sm:min-h-0 text-[14px] font-body font-[600] hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 ${!effectiveDryRun && !online ? 'cursor-not-allowed opacity-40' : ''}`}
             >
               {effectiveDryRun ? 'Start dry run' : 'Start upload'}
             </button>
