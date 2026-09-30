@@ -27,7 +27,12 @@ import { makeActivity } from './activity.mjs';
 import { makeApi, ApiError } from './api.mjs';
 import { makeUpstream, normalizeIfMatch } from './upstream.mjs';
 import { loadMasterKey, unwrapSecret } from './keys.mjs';
-import { coordinateObjectKind, redactCoordinateBody, shouldRedactCoordinates } from './redact.mjs';
+import {
+  coordinateObjectKind,
+  isCoordinateFreeDeployments,
+  redactCoordinateBody,
+  shouldRedactCoordinates,
+} from './redact.mjs';
 
 const ALLOW_METHODS = 'GET, HEAD, PUT, POST, DELETE, PATCH';
 
@@ -452,7 +457,19 @@ export async function createAccessProxy(input) {
     }
     if (redactCoordinates && req.method !== 'GET' && req.method !== 'HEAD'
       && coordinateObjectKind(key)) {
-      return denied('exact coordinate permission is required to change this object');
+      // An uploader without exact-coordinate permission may create a new,
+      // coordinate-free deployments.csv. It may never replace an existing
+      // object (which could contain coordinates), and every row must have both
+      // coordinate columns blank.
+      const coordinateFreeCreate = coordinateObjectKind(key) === 'deployments'
+        && req.method === 'PUT'
+        && body && isCoordinateFreeDeployments(body.toString('utf8'))
+        && headers.get('if-none-match') === '*'
+        && signedHeaders.has('if-none-match')
+        && !headers.has('if-match');
+      if (!coordinateFreeCreate) {
+        return denied('exact coordinate permission is required to change this object');
+      }
     }
 
     if (op === 'ListObjectsV2' && isSettings) {
@@ -894,11 +911,23 @@ export async function listAroundProtectedTrees({
       resumeAt = name;
     }
     if (truncated) break;
-    // A page of nothing but folders still has a position to go on from: the
-    // cursor has moved past each of them above.
-    if (jumpedTo) cursor = jumpedTo;
-    else if (!got.nextToken || items.length === 0) break;
-    if (page === 19) {
+    if (jumpedTo) {
+      cursor = jumpedTo;
+      if (page === 19 && got.nextToken) {
+        truncated = true;
+        resumeAt = resumeAt ?? cursor ?? after ?? '';
+        break;
+      }
+      continue;
+    }
+    if (!got.nextToken || items.length === 0) break;
+    // A page of nothing but folders still has a position to go on from.
+    // Stopping there because it held no keys drops every page after it.
+    if (got.keys.length > 0) cursor = got.keys[got.keys.length - 1].key;
+    else if (got.commonPrefixes.length > 0) {
+      cursor = afterTree(got.commonPrefixes[got.commonPrefixes.length - 1]);
+    } else break;
+    if (page === 19 && got.nextToken) {
       truncated = true;
       resumeAt = resumeAt ?? cursor ?? after ?? '';
     }
