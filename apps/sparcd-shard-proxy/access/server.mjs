@@ -27,6 +27,7 @@ import { makeActivity } from './activity.mjs';
 import { makeApi, ApiError } from './api.mjs';
 import { makeUpstream, normalizeIfMatch } from './upstream.mjs';
 import { loadMasterKey, unwrapSecret } from './keys.mjs';
+import { coordinateObjectKind, redactCoordinateBody, shouldRedactCoordinates } from './redact.mjs';
 
 const ALLOW_METHODS = 'GET, HEAD, PUT, POST, DELETE, PATCH';
 
@@ -434,6 +435,7 @@ export async function createAccessProxy(input) {
     const isSettings = store.isSettings(clientBucket);
     const collection = store.collection(clientBucket);
     const membership = store.membership(person.id, clientBucket);
+    const redactCoordinates = shouldRedactCoordinates({ person, isSettings, membership, key });
 
     const op = classify({
       method: req.method, bucket: clientBucket, key, query: url.searchParams, headers,
@@ -442,6 +444,16 @@ export async function createAccessProxy(input) {
       op, key, isSettings, uuid: collection?.uuid, level: membership?.access ?? null,
     });
     if (!verdict.allow) return denied(verdict.reason);
+
+    // A byte range cannot be safely redacted without reconstructing the full
+    // object first. Refuse it rather than forwarding a coordinate fragment.
+    if (redactCoordinates && headers.has('range')) {
+      return denied('coordinate-protected objects do not support byte ranges', 416, 'InvalidRange');
+    }
+    if (redactCoordinates && req.method !== 'GET' && req.method !== 'HEAD'
+      && coordinateObjectKind(key)) {
+      return denied('exact coordinate permission is required to change this object');
+    }
 
     if (op === 'ListObjectsV2' && isSettings) {
       return handleSettingsListing({
@@ -482,6 +494,15 @@ export async function createAccessProxy(input) {
         return respondXml(res, 502, 'InternalError', 'the upstream answer was unusable', origin);
       }
       return sendText(res, upstreamRes, xml, origin);
+    }
+    if (redactCoordinates && req.method === 'GET' && upstreamRes.ok) {
+      try {
+        const redacted = redactCoordinateBody(key, await upstreamRes.text());
+        return sendText(res, upstreamRes, redacted, origin);
+      } catch (err) {
+        log('coordinate redaction failed', err);
+        return respondXml(res, 502, 'InternalError', 'the upstream answer was unusable', origin);
+      }
     }
     return streamBack(res, upstreamRes, origin);
   }

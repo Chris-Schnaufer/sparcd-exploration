@@ -69,6 +69,13 @@ describe('id-is-not-unique contract', () => {
     expect(locations.every((l) => l.id === 'DUP')).toBe(true);
   });
 
+  it('keeps a coordinate-redacted location selectable by id', () => {
+    const { locations, skipped } = parseLocations(doc([raw({ latProperty: null, lngProperty: null })]));
+    expect(skipped).toHaveLength(0);
+    expect(locations[0]).toMatchObject({ id: 'SAN15', latitude: null, longitude: null });
+    expect(locationToDeployment(locations[0], '8dbd9c43-5c3d-411d-8778-617d4693c69b').latitude).toBeNull();
+  });
+
   it('collapses exact duplicates (same id AND coordinates)', () => {
     const { locations, skipped } = parseLocations(
       doc([raw({ idProperty: 'DUP' }), raw({ idProperty: 'DUP' })]),
