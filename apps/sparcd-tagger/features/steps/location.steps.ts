@@ -53,6 +53,7 @@ Then('the location identity and elevation remain visible but its precise coordin
   await page.getByRole('button', { name: 'Change location' }).click();
   await expect(page.getByRole('heading', { name: /Change location/ })).toBeVisible();
   await expect(page.locator('body')).toContainText('SAN15');
+  await page.getByRole('button', { name: 'Select a location…' }).click();
   await expect(page.locator('body')).toContainText('1200 m');
   const body = await page.locator('body').innerText();
   expect(body).not.toMatch(/31\.500000|-110\.200000/);
