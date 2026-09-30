@@ -40,8 +40,10 @@ Feature: Identify species before the batch is uploaded
     When "Tag species first" is chosen through the unified dev origin
     Then the real Tagger opens the batch written by the Uploader
     When Coyote is applied in the real Tagger
+    And the real Tagger identity is set to Anita
     And the real Tagger hands the batch back
     Then the Uploader receives Coyote from the shared hand-off record
+    And the hand-off records Anita as the tagger
     # No step seeds sparcd-flip directly: the Uploader creates the record, the
     # Tagger reads and updates it, and the Uploader consumes it on return.
 

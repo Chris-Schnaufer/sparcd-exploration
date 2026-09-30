@@ -131,6 +131,12 @@ When('Coyote is applied in the real Tagger', async ({ app }) => {
   await expect(image).toContainText('Coyote');
 });
 
+When('the real Tagger identity is set to Anita', async ({ app }) => {
+  await app.page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await app.page.locator('#user').fill('anita');
+  await app.page.getByRole('button', { name: 'Tag', exact: true }).click();
+});
+
 When('the real Tagger hands the batch back', async ({ app }) => {
   await app.page.getByRole('button', { name: 'Done · back to Uploader' }).click();
   await app.page.waitForURL(/localhost:5310\/sparcd-exploration\/uploader\/\?flip=/);
@@ -146,6 +152,11 @@ Then('the Uploader receives Coyote from the shared hand-off record', async ({ ap
   const rows = await app.listedFiles();
   const image = rows.find((row) => row.name === 'IMG_0002.JPG');
   expect(image?.species).toBe('Coyote×1');
+});
+
+Then('the hand-off records Anita as the tagger', async ({ app }) => {
+  const [record] = await app.readFlipRecords();
+  expect(record.taggerUser).toBe('anita');
 });
 
 // --- coming back ------------------------------------------------------------
