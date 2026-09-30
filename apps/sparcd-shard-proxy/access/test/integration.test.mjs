@@ -59,11 +59,11 @@ before(async () => {
   };
 
   await invite('alice', [
-    { bucket: BUCKET_A, access: 'run' }, { bucket: BUCKET_B, access: 'look' },
+    { bucket: BUCKET_A, access: 'run', exactLocations: true }, { bucket: BUCKET_B, access: 'look' },
   ]);
   await invite('bob', [{ bucket: BUCKET_A, access: 'upload' }]);
   await invite('carol', [
-    { bucket: BUCKET_A, access: 'identify' }, { bucket: BUCKET_B, access: 'run' },
+    { bucket: BUCKET_A, access: 'identify', exactLocations: true }, { bucket: BUCKET_B, access: 'run' },
   ]);
 
   for (const name of ['alice', 'bob', 'carol']) {
@@ -157,6 +157,34 @@ describe('invariant 1: nothing outside the namespace', () => {
   test('the canary is still there, read with the upstream credential', async () => {
     const got = await root.get(CANARY, CANARY_KEY);
     assert.equal(got.text, CANARY_BODY);
+  });
+});
+
+describe('coordinate permission redaction', () => {
+  async function body(who, bucket, key) {
+    const out = await people[who].s3().send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+    return out.Body.transformToString();
+  }
+
+  test('settings and collection coordinates are redacted without exactLocations', async () => {
+    const settings = await body('bob', SETTINGS, 'Settings/locations.json');
+    assert.match(settings, /"nameProperty":"Settings site"/);
+    assert.match(settings, /"latProperty":null/);
+    assert.match(settings, /"lngProperty":null/);
+    const collection = await body('bob', BUCKET_A, `Collections/${UUID_A}/locations.json`);
+    assert.match(collection, /"idProperty":"LOC-/);
+    assert.match(collection, /"latProperty":null/);
+    assert.match(collection, /"lngProperty":null/);
+  });
+
+  test('exactLocations membership receives precise collection locations and deployments', async () => {
+    const locations = await body('alice', BUCKET_A, `Collections/${UUID_A}/locations.json`);
+    assert.match(locations, /"latProperty":32.1/);
+    const deployments = await body('alice', BUCKET_A, `${prefixA}/deployments.csv`);
+    assert.match(deployments, /-111.1,32.1/);
+    const redacted = await body('bob', BUCKET_A, `${prefixA}/deployments.csv`);
+    assert.doesNotMatch(redacted, /-111.1,32.1/);
+    assert.match(redacted, /DEP-1/);
   });
 });
 
