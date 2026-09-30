@@ -58,7 +58,7 @@ Then('the location identity and elevation remain visible but its precise coordin
   const body = await page.locator('body').innerText();
   expect(body).not.toMatch(/31\.500000|-110\.200000/);
   await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: 'Cancel' }).click();
+  await page.keyboard.press('Escape');
 });
 
 Then('no location is withheld on the grounds of the species in the images', async ({ page }) => {
