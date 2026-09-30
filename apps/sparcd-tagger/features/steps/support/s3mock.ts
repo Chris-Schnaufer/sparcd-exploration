@@ -35,6 +35,16 @@ export class MockS3 {
   readonly buckets: string[] = [];
   private readonly objects = new Map<string, StoredObject>();
 
+  /** The browser's connected identity may read exact coordinates only when
+   * this permission is granted. The route below applies the same response
+   * boundary as the access proxy; fixture objects remain the unredacted source
+   * of truth. */
+  exactLocations = true;
+
+  /** Bodies sent to the page, useful for asserting the network boundary in
+   * BDD without exposing the mock's private object map to step code. */
+  private readonly served = new Map<string, string>();
+
   /** Every PUT the page issued, in order — the write-side assertions read this. */
   readonly puts: PutRecord[] = [];
 
@@ -115,6 +125,14 @@ export class MockS3 {
     return o.body.toString('utf8');
   }
 
+  servedBody(bucket: string, key: string): string | undefined {
+    return this.served.get(objKey(bucket, key));
+  }
+
+  recordServed(bucket: string, key: string, body: string): void {
+    this.served.set(objKey(bucket, key), body);
+  }
+
   has(bucket: string, key: string): boolean {
     return this.objects.has(objKey(bucket, key));
   }
@@ -188,6 +206,76 @@ function listObjectsXml(
 
 function errorXml(code: string, message: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?><Error><Code>${code}</Code><Message>${xmlEscape(message)}</Message><RequestId>mock</RequestId></Error>`;
+}
+
+function parseCsvLine(line: string): string[] {
+  const cells: string[] = [];
+  let cell = '';
+  let quoted = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (quoted && line[i + 1] === '"') {
+        cell += '"';
+        i += 1;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (ch === ',' && !quoted) {
+      cells.push(cell);
+      cell = '';
+    } else {
+      cell += ch;
+    }
+  }
+  cells.push(cell);
+  return cells;
+}
+
+function csvCell(value: string): string {
+  return `"${value.replace(/"/g, '""')}"`;
+}
+
+/** Apply the access proxy's coordinate response policy to mock responses. */
+function responseBody(s3: MockS3, bucket: string, key: string, body: Buffer): string {
+  const text = body.toString('utf8');
+  if (s3.exactLocations) return text;
+
+  if (key.endsWith('locations.json')) {
+    try {
+      const entries = JSON.parse(text);
+      if (Array.isArray(entries)) {
+        return JSON.stringify(
+          entries.map((entry) =>
+            entry && typeof entry === 'object'
+              ? { ...(entry as Record<string, unknown>), latProperty: null, lngProperty: null }
+              : entry,
+          ),
+        );
+      }
+    } catch {
+      // Preserve malformed data so the application reports the same parse
+      // error it would receive from storage.
+    }
+  }
+
+  if (key.endsWith('deployments.csv')) {
+    return text
+      .split(/\r?\n/)
+      .filter((line) => line.length > 0)
+      .map((line) => {
+        const cells = parseCsvLine(line);
+        // deployments.csv stores longitude in column 3 and latitude in 4.
+        if (cells.length > 4) {
+          cells[3] = '';
+          cells[4] = '';
+        }
+        return cells.map(csvCell).join(',');
+      })
+      .join('\n');
+  }
+
+  return text;
 }
 
 const XML = { 'content-type': 'application/xml' } as const;
@@ -306,6 +394,8 @@ export async function installS3Mock(page: Page | BrowserContext, s3: MockS3): Pr
         });
         return;
       }
+      const body = responseBody(s3, bucket, key, existing.body);
+      s3.recordServed(bucket, key, body);
       await route.fulfill({
         status: 200,
         headers: {
@@ -313,7 +403,7 @@ export async function installS3Mock(page: Page | BrowserContext, s3: MockS3): Pr
           etag: `"${existing.etag}"`,
           'cache-control': 'no-store',
         },
-        body: existing.body,
+        body,
       });
       return;
     }

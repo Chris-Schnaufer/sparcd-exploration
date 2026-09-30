@@ -51,8 +51,10 @@ that map to an agreed story carry its ID; the rest carry `@unmapped`.
   has no sensitive-species concept and does not make the authorization decision;
   the proxy removes exact coordinates for accounts without `exactLocations`.
   `F4-location-visibility.feature` covers the Tagger's behavior with redacted
-  location data while the proxy integration tests cover the authorization
-  boundary.
+  location data, including `@F4-4`, while
+  `H2-protected-location-identification.feature` covers `@H2-7`. The proxy
+  integration tests cover the authorization boundary and the Tagger BDD mock
+  applies the same response policy to its browser requests.
 - **M2 (constraint) — largely supported.** Original files are never destroyed:
   every write is preceded by an immutable snapshot, replacement is conditional
   on the version read, conflicts refuse the write outright, and snapshots can
