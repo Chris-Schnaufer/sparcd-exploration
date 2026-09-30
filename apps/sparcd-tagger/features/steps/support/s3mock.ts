@@ -236,22 +236,30 @@ function csvCell(value: string): string {
   return `"${value.replace(/"/g, '""')}"`;
 }
 
-/** Apply the access proxy's coordinate response policy to mock responses. */
-function responseBody(s3: MockS3, bucket: string, key: string, body: Buffer): string {
+/** Apply the access proxy's coordinate response policy to mock responses.
+ * Keep non-coordinate objects as bytes: image fixtures are binary and must
+ * not be round-tripped through UTF-8 just because the response is observed. */
+function responseBody(
+  s3: MockS3,
+  bucket: string,
+  key: string,
+  body: Buffer,
+): { body: Buffer; text: string } {
   const text = body.toString('utf8');
-  if (s3.exactLocations) return text;
+  if (s3.exactLocations) return { body, text };
 
   if (key.endsWith('locations.json')) {
     try {
       const entries = JSON.parse(text);
       if (Array.isArray(entries)) {
-        return JSON.stringify(
+        const redacted = JSON.stringify(
           entries.map((entry) =>
             entry && typeof entry === 'object'
               ? { ...(entry as Record<string, unknown>), latProperty: null, lngProperty: null }
               : entry,
           ),
         );
+        return { body: Buffer.from(redacted, 'utf8'), text: redacted };
       }
     } catch {
       // Preserve malformed data so the application reports the same parse
@@ -260,7 +268,7 @@ function responseBody(s3: MockS3, bucket: string, key: string, body: Buffer): st
   }
 
   if (key.endsWith('deployments.csv')) {
-    return text
+    const redacted = text
       .split(/\r?\n/)
       .filter((line) => line.length > 0)
       .map((line) => {
@@ -273,9 +281,10 @@ function responseBody(s3: MockS3, bucket: string, key: string, body: Buffer): st
         return cells.map(csvCell).join(',');
       })
       .join('\n');
+    return { body: Buffer.from(redacted, 'utf8'), text: redacted };
   }
 
-  return text;
+  return { body, text };
 }
 
 const XML = { 'content-type': 'application/xml' } as const;
@@ -394,8 +403,8 @@ export async function installS3Mock(page: Page | BrowserContext, s3: MockS3): Pr
         });
         return;
       }
-      const body = responseBody(s3, bucket, key, existing.body);
-      s3.recordServed(bucket, key, body);
+      const response = responseBody(s3, bucket, key, existing.body);
+      s3.recordServed(bucket, key, response.text);
       await route.fulfill({
         status: 200,
         headers: {
@@ -403,7 +412,7 @@ export async function installS3Mock(page: Page | BrowserContext, s3: MockS3): Pr
           etag: `"${existing.etag}"`,
           'cache-control': 'no-store',
         },
-        body,
+        body: response.body,
       });
       return;
     }
