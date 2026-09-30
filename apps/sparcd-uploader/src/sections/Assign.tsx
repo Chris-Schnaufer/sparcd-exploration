@@ -12,6 +12,7 @@ import { CaptureTimeEditor } from '../components/CaptureTimeEditor';
 import { sanitizeUploaderUser } from '../lib/normalize';
 import { supportedTimeZones } from '../lib/exifTime';
 import { timeZoneForCoords } from '../lib/coords';
+import { findAllowedLocation, orderAllowedLocations } from '../lib/allowedLocations';
 
 const sectionLabel =
   'font-[600] text-[11px] tracking-[0.16em] uppercase text-inkSoft mb-2';
@@ -119,9 +120,9 @@ export function Assign() {
   const collection =
     collections.data?.find((c) => c.key === selectedBucket || c.bucket === selectedBucket) ?? null;
 
-  // Every location is assignable, not just ones this collection has already
-  // deployed — but the ones it has already deployed (derived from its uploads'
-  // deployments.csv) are listed first, since they're the likely picks.
+  // The selected collection's location file is authoritative for new
+  // assignments. Historical deployments only order locations that are still
+  // present in that current allowed list; removed locations never reappear.
   const deployments = useCollectionDeployments(s3Config, connectionId, collection);
 
   // react-query pauses a query's in-flight fetch while offline and resumes it
@@ -142,19 +143,26 @@ export function Assign() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [online]);
 
-  const usedLocationCount = useMemo(
-    () => new Set(deployments.data ?? []).size,
-    [deployments.data],
-  );
+  const usedLocationCount = useMemo(() => {
+    const allowed = new Set(data?.locations.map((l) => l.id) ?? []);
+    return new Set((deployments.data ?? []).filter((id) => allowed.has(id))).size;
+  }, [data?.locations, deployments.data]);
   const collectionLocations = useMemo(() => {
-    if (!data?.locations || !deployments.data) return [];
-    const used = new Set(deployments.data);
-    const already = data.locations.filter((l) => used.has(l.id));
-    const rest = data.locations.filter((l) => !used.has(l.id));
-    return [...already, ...rest];
+    if (!data?.locations) return [];
+    return orderAllowedLocations(data.locations, deployments.data ?? []);
   }, [data?.locations, deployments.data]);
 
-  const location = collectionLocations.find((l) => l.key === selectedLocationKey) ?? null;
+  const location = findAllowedLocation(collectionLocations, selectedLocationKey);
+
+  // A collection switch can leave the old key in the persisted store while
+  // the new scoped list is loading. Clear it once the new list is available so
+  // a removed location cannot be carried into a new upload.
+  useEffect(() => {
+    if (!data || !selectedLocationKey) return;
+    if (!findAllowedLocation(data.locations, selectedLocationKey)) {
+      setSelectedLocationKey(null);
+    }
+  }, [data, selectedLocationKey, setSelectedLocationKey]);
 
   // Picking a deployment implies a zone — the camera's naive EXIF wall-clock
   // needs to be interpreted in wherever it physically sits, not the browser's
@@ -184,7 +192,7 @@ export function Assign() {
   // Background processing finishing is no longer part of this gate: Upload
   // streams blobs as files individually become ready and only publishes once
   // processing genuinely completes, so there's nothing to wait for here.
-  const baseReady = !!selectedLocationKey && !!slug && !!collection;
+  const baseReady = !!location && !!slug && !!collection;
 
   function handleContinue() {
     if (!baseReady) return;
@@ -285,10 +293,10 @@ export function Assign() {
         {data && !collection && (
           <LocationsState tone="mute" message="Select a target collection first." />
         )}
-        {data && collection && deployments.data && (
+        {data && collection && (
           <div className="space-y-2">
             {collectionLocations.length === 0 ? (
-              <LocationsState tone="warn" message="No locations found in this connection's registry." />
+              <LocationsState tone="warn" message="No locations are currently allowed for this collection." />
             ) : (
               <DeploymentPicker
                 locations={collectionLocations}
@@ -300,8 +308,8 @@ export function Assign() {
             <p className="font-body text-[12px] text-inkMute">
               <span className="font-mono text-inkSoft">{usedLocationCount}</span> of{' '}
               <span className="font-mono text-inkSoft">{collectionLocations.length}</span> locations
-              already deployed by <span className="text-inkSoft">{collection.name ?? 'this collection'}</span> —
-              listed first, but any location can be assigned.
+              currently allowed for <span className="text-inkSoft">{collection.name ?? 'this collection'}</span> —
+              previously used locations are listed first.
             </p>
           </div>
         )}
@@ -381,7 +389,7 @@ export function Assign() {
           onClick={handleContinue}
           title={
             !baseReady
-              ? !selectedLocationKey
+              ? !location
                 ? 'Select a deployment location first'
                 : !collection
                   ? 'Select a target collection first'
