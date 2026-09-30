@@ -201,6 +201,10 @@ export function Assign() {
     }
     if (location.latitude !== null && location.longitude !== null) {
       setUploadTimeZone(timeZoneForCoords(location.latitude, location.longitude));
+    } else {
+      // A redacted location cannot establish a zone. Do not carry the prior
+      // location's zone into this batch; the operator must choose it manually.
+      setUploadTimeZone('');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location?.key]);
@@ -398,7 +402,7 @@ export function Assign() {
           className="w-full border border-rule bg-paper px-3 py-2 font-body text-[14px] text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1"
         >
           <option value="">Select a timezone…</option>
-          {timeZones.map((tz) => (
+          {timeZones.filter(Boolean).map((tz) => (
             <option key={tz} value={tz}>
               {tz}
             </option>

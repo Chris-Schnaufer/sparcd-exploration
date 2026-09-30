@@ -4,7 +4,7 @@
 
 const LOCATION_KEYS = new Set(['Settings/locations.json']);
 const COLLECTION_LOCATIONS = /^Collections\/[^/]+\/locations\.json$/;
-const DEPLOYMENTS = /^Collections\/[^/]+\/Uploads\/[^/]+\/deployments\.csv$/;
+const DEPLOYMENTS = /^Collections\/[^/]+\/Uploads\/[^/]+\/(?:\.sparcd-tagger-snapshots\/[^/]+\/[^/]+\/)?deployments\.csv$/;
 
 export function coordinateObjectKind(key) {
   if (LOCATION_KEYS.has(key) || COLLECTION_LOCATIONS.test(key)) return 'locations';
@@ -67,4 +67,12 @@ export function redactCoordinateBody(key, text) {
   if (kind === 'locations') return redactLocationJson(text);
   if (kind === 'deployments') return redactDeploymentsCsv(text);
   return text;
+}
+
+export function isCoordinateFreeDeployments(text) {
+  try {
+    return parseCsv(text).every((row) => row.length >= 5 && row[3] === '' && row[4] === '');
+  } catch {
+    return false;
+  }
 }

@@ -1,12 +1,13 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { coordinateObjectKind, redactCoordinateBody, shouldRedactCoordinates } from '../redact.mjs';
+import { coordinateObjectKind, isCoordinateFreeDeployments, redactCoordinateBody, shouldRedactCoordinates } from '../redact.mjs';
 
 describe('coordinate response redaction', () => {
   test('recognizes settings and collection location registries', () => {
     assert.equal(coordinateObjectKind('Settings/locations.json'), 'locations');
     assert.equal(coordinateObjectKind('Collections/abc/locations.json'), 'locations');
     assert.equal(coordinateObjectKind('Collections/abc/Uploads/run/deployments.csv'), 'deployments');
+    assert.equal(coordinateObjectKind('Collections/abc/Uploads/run/.sparcd-tagger-snapshots/user/2026-01-01/deployments.csv'), 'deployments');
     assert.equal(coordinateObjectKind('Collections/abc/Uploads/run/media.csv'), null);
   });
 
@@ -51,5 +52,10 @@ describe('coordinate response redaction', () => {
       () => redactCoordinateBody('Collections/u/Uploads/run/deployments.csv', '"id","only-two"\n'),
       /too few columns/,
     );
+  });
+
+  test('recognizes coordinate-free deployment creates but not exact rows', () => {
+    assert.equal(isCoordinateFreeDeployments('"id","l","name","",""\n'), true);
+    assert.equal(isCoordinateFreeDeployments('"id","l","name","-110","32"\n'), false);
   });
 });
