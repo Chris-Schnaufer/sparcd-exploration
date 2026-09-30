@@ -172,7 +172,9 @@ export function Assign() {
       isFirstLocationEffect.current = false;
       if (location.key === mountedLocationKeyRef.current) return;
     }
-    setUploadTimeZone(timeZoneForCoords(location.latitude, location.longitude));
+    if (location.latitude !== null && location.longitude !== null) {
+      setUploadTimeZone(timeZoneForCoords(location.latitude, location.longitude));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location?.key]);
 
@@ -337,8 +339,9 @@ export function Assign() {
           ))}
         </select>
         <p className="font-body text-[12px] text-inkMute mt-1.5">
-          Defaults to the selected deployment location's zone — change it here if the camera's
-          clock was actually set to a different one.
+          {location && (location.latitude === null || location.longitude === null)
+            ? "This account cannot read the selected location's coordinates, so choose the camera timezone manually."
+            : "Defaults to the selected deployment location's zone — change it here if the camera's clock was actually set to a different one."}
         </p>
       </section>
 
