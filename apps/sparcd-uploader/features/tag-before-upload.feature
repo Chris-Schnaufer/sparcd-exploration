@@ -89,6 +89,12 @@ Feature: Identify species before the batch is uploaded
     And each row carries the common name the tagger used
     And the upload metadata counts every identified image, empty frames included
 
+  @A1 @A1-5
+  Scenario: Tags made before upload are attributed to the person who made them
+    Given a batch was tagged in the Tagger and handed back
+    When it is published
+    Then the pre-upload identifications are attributed to Anita
+
   @unmapped
   Scenario: The hand-off is thrown away once its batch is published
     Given a batch was tagged in the Tagger and handed back

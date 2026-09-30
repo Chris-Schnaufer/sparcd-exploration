@@ -47,6 +47,7 @@ export type Observation = {
   scientificName: string;
   count?: number; // undefined → column written blank (no species identified)
   tags: string; // concatenated [PREFIX:value] markers
+  classifiedBy?: string;
 };
 
 /** All three collections for one upload bundle. */
@@ -169,7 +170,7 @@ export function serializeObservations(observations: Observation[]): string {
         '', // 13 behaviour
         '', // 14 individual_id
         '', // 15 classification_method
-        '', // 16 classified_by
+        o.classifiedBy ?? '', // 16 classified_by
         '', // 17 classification_timestamp
         '', // 18 classification_confidence
         o.tags, // 19 comments ([COMMONNAME:…])
@@ -456,6 +457,7 @@ export function parseObservations(csv: string): Observation[] {
       scientificName,
       count,
       tags: r[OBS_COL.comments] ?? '',
+      classifiedBy: r[OBS_COL.classifiedBy] || undefined,
     };
   });
 }

@@ -295,6 +295,12 @@ Then('each row carries the common name the tagger used', async ({ app }) => {
   expect(comments).toContain('[COMMONNAME:Ghost]');
 });
 
+Then('the pre-upload identifications are attributed to Anita', async ({ app }) => {
+  const animal = writtenCsvRows(app, 'observations.csv').filter((r) => r[5] === 'animal');
+  expect(animal.length).toBeGreaterThan(0);
+  expect(animal.every((row) => row[16] === 'anita')).toBe(true);
+});
+
 Then('the upload metadata counts every identified image, empty frames included', async ({ app }) => {
   const meta = JSON.parse(app.s3.puts.find((p) => p.key.endsWith('UploadMeta.json'))!.body);
   expect(meta.imageCount).toBe(4);
