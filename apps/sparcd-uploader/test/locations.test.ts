@@ -93,9 +93,11 @@ describe('locationToDeployment → shared camtrap serializer', () => {
 
     const [back] = parseDeployments(serializeDeployments([dep]));
     expect(back.locationId).toBe('SAN15');
-    expect(back.longitude).toBeCloseTo(-110.2, 5);
-    expect(back.latitude).toBeCloseTo(31.5, 5);
-    expect(validateCoordinates(back.latitude, back.longitude)).toBeNull();
+    expect(back.longitude).not.toBeNull();
+    expect(back.latitude).not.toBeNull();
+    expect(back.longitude!).toBeCloseTo(-110.2, 5);
+    expect(back.latitude!).toBeCloseTo(31.5, 5);
+    expect(validateCoordinates(back.latitude!, back.longitude!)).toBeNull();
   });
 
   it('restampDeployment builds toDeploymentId via locationToDeployment and round-trips', () => {
