@@ -73,8 +73,8 @@ export function Assign() {
   const setDescription = useStore((s) => s.setUploadDescription);
   const uploadTimeZone = useStore((s) => s.uploadTimeZone);
   const setUploadTimeZone = useStore((s) => s.setUploadTimeZone);
-  const selectedLocationKey = useStore((s) => s.selectedLocationKey);
-  const setSelectedLocationKey = useStore((s) => s.setSelectedLocationKey);
+  const selectedLocationId = useStore((s) => s.selectedLocationId);
+  const setSelectedLocationId = useStore((s) => s.setSelectedLocationId);
   const selectedBucket = useStore((s) => s.selectedBucket);
   const setSelectedBucket = useStore((s) => s.setSelectedBucket);
   const elevationUnit = useStore((s) => s.elevationUnit);
@@ -152,37 +152,37 @@ export function Assign() {
     return orderAllowedLocations(data.locations, deployments.data ?? []);
   }, [data?.locations, deployments.data]);
 
-  const location = findAllowedLocation(collectionLocations, selectedLocationKey);
+  const location = findAllowedLocation(collectionLocations, selectedLocationId);
 
   // A collection switch can leave the old key in the persisted store while
   // the new scoped list is loading. Clear it once the new list is available so
   // a removed location cannot be carried into a new upload.
   useEffect(() => {
-    if (!data || !selectedLocationKey) return;
-    if (!findAllowedLocation(data.locations, selectedLocationKey)) {
-      setSelectedLocationKey(null);
+    if (!data || !selectedLocationId) return;
+    if (!findAllowedLocation(data.locations, selectedLocationId)) {
+      setSelectedLocationId(null);
     }
-  }, [data, selectedLocationKey, setSelectedLocationKey]);
+  }, [data, selectedLocationId, setSelectedLocationId]);
 
   // Picking a deployment implies a zone — the camera's naive EXIF wall-clock
   // needs to be interpreted in wherever it physically sits, not the browser's
   // zone. Fires only when the *selection* changes, so a manual override the
   // user makes afterward for the same location sticks. The mount-time run is
-  // special-cased: uploadTimeZone/selectedLocationKey are both restored from
+  // special-cased: uploadTimeZone/selectedLocationId are both restored from
   // sessionStorage before this component ever renders, so if the location on
   // mount is the same one that was already selected, re-deriving here would
   // clobber a manual override that survived the reload.
-  const mountedLocationKeyRef = useRef(selectedLocationKey);
+  const mountedLocationIdRef = useRef(selectedLocationId);
   const isFirstLocationEffect = useRef(true);
   useEffect(() => {
     if (!location) return;
     if (isFirstLocationEffect.current) {
       isFirstLocationEffect.current = false;
-      if (location.key === mountedLocationKeyRef.current) return;
+      if (location.id === mountedLocationIdRef.current) return;
     }
     setUploadTimeZone(timeZoneForCoords(location.latitude, location.longitude));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location?.key]);
+  }, [location?.id]);
 
   const needsCaptureTime = files.some(
     (f) => f.processState === 'ready' && (!f.exifNaive || f.exifTimestampSource === 'exif-modify'),
@@ -300,16 +300,24 @@ export function Assign() {
             ) : (
               <DeploymentPicker
                 locations={collectionLocations}
-                value={selectedLocationKey}
-                onChange={setSelectedLocationKey}
+                value={selectedLocationId}
+                onChange={setSelectedLocationId}
                 elevationUnit={elevationUnit}
               />
             )}
-            <p className="font-body text-[12px] text-inkMute">
-              <span className="font-mono text-inkSoft">{usedLocationCount}</span> of{' '}
-              <span className="font-mono text-inkSoft">{collectionLocations.length}</span> locations
-              currently allowed for <span className="text-inkSoft">{collection.name ?? 'this collection'}</span> —
-              previously used locations are listed first.
+            <p className="font-body text-[12px] text-inkMute" aria-live="polite">
+              {deployments.isSuccess ? (
+                <>
+                  <span className="font-mono text-inkSoft">{usedLocationCount}</span> of{' '}
+                  <span className="font-mono text-inkSoft">{collectionLocations.length}</span> locations
+                  currently allowed for <span className="text-inkSoft">{collection.name ?? 'this collection'}</span> —
+                  previously used locations are listed first.
+                </>
+              ) : deployments.isFetching ? (
+                'Deployment history is loading; allowed locations are shown in registry order.'
+              ) : (
+                'Deployment history is unavailable; allowed locations are shown without historical ordering.'
+              )}
             </p>
           </div>
         )}

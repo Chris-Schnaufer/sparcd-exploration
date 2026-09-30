@@ -12,8 +12,8 @@ export function orderAllowedLocations(locations: Location[], deployedIds: string
   return [...used, ...unused];
 }
 
-/** Resolve a persisted picker value only when it is still in the current list. */
-export function findAllowedLocation(locations: Location[], selectedKey: string | null): Location | null {
-  if (!selectedKey) return null;
-  return locations.find((location) => location.key === selectedKey) ?? null;
+/** Resolve a persisted picker value only when its unique ID is still current. */
+export function findAllowedLocation(locations: Location[], selectedId: string | null): Location | null {
+  if (!selectedId) return null;
+  return locations.find((location) => location.id === selectedId) ?? null;
 }

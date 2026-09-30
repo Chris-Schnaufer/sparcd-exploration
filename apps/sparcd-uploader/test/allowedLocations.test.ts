@@ -22,7 +22,7 @@ describe('collection-scoped assignment locations', () => {
 
   it('rejects a persisted selection when the collection changes its allowed list', () => {
     const oldLocation = location('BEAR1');
-    expect(findAllowedLocation([oldLocation], oldLocation.key)).toBe(oldLocation);
-    expect(findAllowedLocation([location('COY2')], oldLocation.key)).toBeNull();
+    expect(findAllowedLocation([oldLocation], oldLocation.id)).toBe(oldLocation);
+    expect(findAllowedLocation([location('COY2')], oldLocation.id)).toBeNull();
   });
 });
