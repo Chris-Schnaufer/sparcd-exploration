@@ -27,7 +27,7 @@ import { makeActivity } from './activity.mjs';
 import { makeApi, ApiError } from './api.mjs';
 import { makeUpstream, normalizeIfMatch } from './upstream.mjs';
 import { loadMasterKey, unwrapSecret } from './keys.mjs';
-import { coordinateObjectKind, redactCoordinateBody, shouldRedactCoordinates } from './redact.mjs';
+import { coordinateObjectKind, isCoordinateFreeDeployments, redactCoordinateBody, shouldRedactCoordinates } from './redact.mjs';
 
 const ALLOW_METHODS = 'GET, HEAD, PUT, POST, DELETE, PATCH';
 
@@ -440,7 +440,18 @@ export async function createAccessProxy(input) {
     }
     if (redactCoordinates && req.method !== 'GET' && req.method !== 'HEAD'
       && coordinateObjectKind(key)) {
-      return denied('exact coordinate permission is required to change this object');
+      // An uploader without exact-coordinate permission may create a new,
+      // coordinate-free deployments.csv. It may never replace an existing
+      // object (which could contain coordinates), and every row must have both
+      // coordinate columns blank.
+      const coordinateFreeCreate = coordinateObjectKind(key) === 'deployments'
+        && req.method === 'PUT'
+        && body && isCoordinateFreeDeployments(body.toString('utf8'))
+        && headers.get('if-none-match') === '*'
+        && !headers.has('if-match');
+      if (!coordinateFreeCreate) {
+        return denied('exact coordinate permission is required to change this object');
+      }
     }
 
     if (op === 'ListObjectsV2' && isSettings) {
@@ -470,6 +481,19 @@ export async function createAccessProxy(input) {
       }
     }
 
+    // Protected coordinate objects are classified by key, not content type.
+    // Redact before the XML branch so an XML-labelled JSON/CSV object cannot
+    // bypass the coordinate policy.
+    if (redactCoordinates && req.method === 'GET' && upstreamRes.ok) {
+      try {
+        const redacted = redactCoordinateBody(key, await upstreamRes.text());
+        return sendText(res, upstreamRes, redacted, origin);
+      } catch (err) {
+        log('coordinate redaction failed', err);
+        return respondXml(res, 502, 'InternalError', 'the upstream answer was unusable', origin);
+      }
+    }
+
     // XML is the only body that can name a bucket, and it is always small.
     // Everything else — object bytes above all — streams straight through.
     const type = upstreamRes.headers.get('content-type') ?? '';
@@ -482,15 +506,6 @@ export async function createAccessProxy(input) {
         return respondXml(res, 502, 'InternalError', 'the upstream answer was unusable', origin);
       }
       return sendText(res, upstreamRes, xml, origin);
-    }
-    if (redactCoordinates && req.method === 'GET' && upstreamRes.ok) {
-      try {
-        const redacted = redactCoordinateBody(key, await upstreamRes.text());
-        return sendText(res, upstreamRes, redacted, origin);
-      } catch (err) {
-        log('coordinate redaction failed', err);
-        return respondXml(res, 502, 'InternalError', 'the upstream answer was unusable', origin);
-      }
     }
     return streamBack(res, upstreamRes, origin);
   }
@@ -881,7 +896,11 @@ export async function listAroundProtectedTrees({
     else if (got.commonPrefixes.length > 0) {
       cursor = afterTree(got.commonPrefixes[got.commonPrefixes.length - 1]);
     } else break;
+    if (page === 19 && got.nextToken) {
+      truncated = true;
+      resumeAt = resumeAt ?? cursor ?? after ?? '';
+    }
   }
 
-  return { keys, commonPrefixes, truncated, nextToken: truncated ? resumeAt : null };
+  return { keys, commonPrefixes, truncated, nextToken: truncated && resumeAt ? resumeAt : null };
 }

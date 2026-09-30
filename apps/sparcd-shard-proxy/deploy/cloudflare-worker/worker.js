@@ -139,7 +139,16 @@ export default {
       );
     }
 
-    if (COORDINATE_OBJECT.test(inbound.pathname)) {
+    let policyPath;
+    try {
+      // Apply the refusal policy to the decoded key. The upstream URL parser
+      // resolves percent-encoded dots, while a regex over the raw pathname
+      // would let `locations%2Ejson` bypass it.
+      policyPath = decodeURIComponent(inbound.pathname);
+    } catch {
+      return new Response('invalid object path', { status: 400, headers: corsHeaders(origin) });
+    }
+    if (COORDINATE_OBJECT.test(policyPath)) {
       return new Response(
         '<?xml version="1.0" encoding="UTF-8"?><Error><Code>AccessDenied</Code>' +
           '<Message>coordinate-bearing objects require the per-person access proxy</Message></Error>',
