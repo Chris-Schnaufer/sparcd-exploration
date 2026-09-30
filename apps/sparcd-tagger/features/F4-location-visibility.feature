@@ -31,6 +31,15 @@ Feature: What the tagger reveals about where images were taken
     Given a collection's uploads are listed
     Then the location identity and elevation remain visible but its precise coordinates do not
 
+  @F4 @security @F4-4
+  Scenario: Identify access does not reveal protected coordinates
+    Given the connected account cannot read exact coordinates
+    And an upload is open in the tagging workspace
+    And a tagger identity has been set in Settings
+    When the user identifies the focused image and syncs it
+    Then the identification is saved
+    And the saved identification does not disclose precise coordinates
+
   @F4
   Scenario: The focused image shows the deployment it belongs to
     Given an image is open in the Focus view
@@ -41,6 +50,12 @@ Feature: What the tagger reveals about where images were taken
     When any view, dialog or synced file is produced
     Then no species is treated as sensitive
     And no location is hidden, coarsened or withheld when the connected account has exact-coordinate permission
+
+  @F4 @security
+  Scenario: Exact-coordinate permission preserves precise location data
+    Given the connected account can read exact coordinates
+    And an upload is open in the tagging workspace
+    Then the exact coordinates remain available to the authorized account
 
   @F4
   Scenario: Image links are time-limited but not otherwise restricted
