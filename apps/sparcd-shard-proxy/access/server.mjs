@@ -448,6 +448,7 @@ export async function createAccessProxy(input) {
         && req.method === 'PUT'
         && body && isCoordinateFreeDeployments(body.toString('utf8'))
         && headers.get('if-none-match') === '*'
+        && signedHeaders.has('if-none-match')
         && !headers.has('if-match');
       if (!coordinateFreeCreate) {
         return denied('exact coordinate permission is required to change this object');
@@ -888,7 +889,15 @@ export async function listAroundProtectedTrees({
       resumeAt = entry.key;
     }
     if (truncated) break;
-    if (jumpedTo) { cursor = jumpedTo; continue; }
+    if (jumpedTo) {
+      cursor = jumpedTo;
+      if (page === 19 && got.nextToken) {
+        truncated = true;
+        resumeAt = resumeAt ?? cursor ?? after ?? '';
+        break;
+      }
+      continue;
+    }
     if (!got.nextToken) break;
     // A page of nothing but folders still has a position to go on from.
     // Stopping there because it held no keys drops every page after it.

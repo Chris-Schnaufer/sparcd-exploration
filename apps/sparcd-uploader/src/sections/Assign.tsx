@@ -190,7 +190,7 @@ export function Assign() {
   // Background processing finishing is no longer part of this gate: Upload
   // streams blobs as files individually become ready and only publishes once
   // processing genuinely completes, so there's nothing to wait for here.
-  const baseReady = !!selectedLocationKey && !!slug && !!collection;
+  const baseReady = !!selectedLocationKey && !!slug && !!collection && !!uploadTimeZone;
 
   function handleContinue() {
     if (!baseReady) return;
@@ -393,6 +393,8 @@ export function Assign() {
                 ? 'Select a deployment location first'
                 : !collection
                   ? 'Select a target collection first'
+                  : !uploadTimeZone
+                    ? 'Choose a camera timezone first'
                   : 'Set an uploader identity first'
               : 'Continue to upload'
           }
