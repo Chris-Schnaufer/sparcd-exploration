@@ -533,6 +533,8 @@ export type ObservationInput = {
   commonName?: string; // → [COMMONNAME:…] in col 19
   requestedSpecies?: string; // → [REQUESTED_SPECIES:…] in col 19
   extraMarkers?: TagMarker[]; // preserved through-markers
+  /** Existing attribution is retained when Tagger replaces an observation row. */
+  classifiedBy?: string;
 };
 
 /**
@@ -579,6 +581,7 @@ function buildObservationRow(
     requestedSpecies: o.requestedSpecies,
     extra: o.extraMarkers,
   });
+  row[OBS_COL.classifiedBy] = o.classifiedBy ?? '';
   return row;
 }
 
