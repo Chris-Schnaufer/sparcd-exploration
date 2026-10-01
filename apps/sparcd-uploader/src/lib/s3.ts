@@ -355,7 +355,8 @@ function deploymentLocationIds(csv: string): string[] {
 /**
  * The location ids a collection has actually deployed, read from each upload's
  * `Collections/<uuid>/Uploads/<upload>/deployments.csv`. Upload folders are
- * enumerated with a delimiter (no image walk), then one small GET per upload.
+ * enumerated with a delimiter (no image walk), and only prefixes with the
+ * UploadMeta visibility marker contribute locations.
  */
 export async function listCollectionDeploymentLocationIds(
   cfg: S3Config,
@@ -367,6 +368,7 @@ export async function listCollectionDeploymentLocationIds(
   await Promise.all(
     uploadDirs.map(async (dir) => {
       try {
+        await client.statObject(ref.bucket, `${dir}UploadMeta.json`);
         const bytes = await client.getObject(ref.bucket, `${dir}deployments.csv`);
         for (const id of deploymentLocationIds(new TextDecoder().decode(bytes))) ids.add(id);
       } catch {

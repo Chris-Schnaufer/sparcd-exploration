@@ -864,8 +864,15 @@ def _(BUCKETS, SPARCD_COLLECTION_DATA_CACHE, UPLOADS_PREFIXES, client, mo):
                     ]
                 except Exception:
                     uploads = []
-                total_uploads += len(uploads)
                 for up in uploads:
+                    # UploadMeta.json is written only after all blobs and CSVs
+                    # succeed. Keep failed prefixes in storage for recovery,
+                    # but do not expose them to Explorer or its totals.
+                    try:
+                        client.get_object(bucket, up + "UploadMeta.json").read()
+                    except Exception:
+                        continue
+                    total_uploads += 1
                     try:
                         rows = _read_csv(bucket, up + "deployments.csv")
                         _dep_rows += rows

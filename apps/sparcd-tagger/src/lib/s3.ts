@@ -71,11 +71,27 @@ export type UploadRef = {
   stamp: string; // the `<stamp>` folder name
 };
 
-/** Upload folders for a collection, enumerated with a delimiter (no image walk). */
+/**
+ * Upload folders for a collection, enumerated with a delimiter (no image walk).
+ * A prefix is visible only after the uploader has written UploadMeta.json.
+ * Blobs and CSVs from an interrupted run remain in storage for recovery, but
+ * must not become a Browse row or a selectable tagging workspace.
+ */
 export async function listUploads(cfg: S3Config, bucket: string, uuid: string): Promise<UploadRef[]> {
   const client = getClient(cfg);
   const dirs = await client.listCommonPrefixes(bucket, `Collections/${uuid}/Uploads/`);
-  return dirs
+  const visible = await Promise.all(
+    dirs.map(async (prefix) => {
+      try {
+        await client.statObject(bucket, `${prefix}UploadMeta.json`);
+        return prefix;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return visible
+    .filter((prefix): prefix is string => prefix !== null)
     .map((prefix) => ({ prefix, stamp: prefix.replace(/\/$/, '').split('/').pop() ?? prefix }))
     .sort((a, b) => b.stamp.localeCompare(a.stamp)); // newest stamp first
 }
