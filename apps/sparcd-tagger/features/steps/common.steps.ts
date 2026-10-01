@@ -25,7 +25,7 @@ Given('several images are selected', async ({ page }) => {
   await expect(positionReadout(page)).toHaveText('3 selected');
 });
 
-Given('a tagger identity has been set in Settings', async ({ page }) => {
+Given('the connected account is ready for attribution', async ({ page }) => {
   await sectionTab(page, 'Settings').click();
   await expect(page.locator('#user')).toHaveValue('testkey');
   await sectionTab(page, 'Tag').click();

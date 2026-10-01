@@ -203,6 +203,27 @@ describe('buildSyncPlan', () => {
     expect(plan.tagEdits[0].observations.find((o) => o.scientificName === 'Puma concolor')?.classifiedBy).toBe('fielduser');
   });
 
+  it('preserves canonical attribution when a legacy draft omitted classifiedBy', () => {
+    const images: TagImage[] = [{
+      ...IMAGES[0],
+      baseObservations: [{ ...obs('Puma concolor', 1), classifiedBy: 'fielduser' }, obs('Canis latrans', 1)],
+    }];
+    const plan = buildSyncPlan(
+      images,
+      {
+        [K1]: draft({
+          mediaPath: K1,
+          observations: [obs('Puma concolor', 1), { ...obs('Canis latrans', 1), count: 2 }],
+        }),
+      },
+      null,
+      null,
+      'harold',
+    );
+    expect(plan.tagEdits[0].observations.find((o) => o.scientificName === 'Puma concolor')?.classifiedBy).toBe('fielduser');
+    expect(plan.tagEdits[0].observations.find((o) => o.scientificName === 'Canis latrans')?.classifiedBy).toBe('harold');
+  });
+
   it('classifies a detag as a removal with empty observations', () => {
     const plan = buildSyncPlan(IMAGES, { [K1]: draft({ mediaPath: K1, observations: [] }) }, null);
     expect(plan.summary.removals).toBe(1);

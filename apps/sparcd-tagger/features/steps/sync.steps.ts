@@ -253,23 +253,6 @@ Then('switching the setting off changes the action to a real sync', async ({ pag
   await expect(page.getByRole('button', { name: 'Run dry-run' })).toHaveCount(0);
 });
 
-// --- Identity gate ----------------------------------------------------------
-
-Given('no tagger identity has been set', async ({ page }) => {
-  await sectionTab(page, 'Settings').click();
-  await page.locator('#user').fill('');
-  await sectionTab(page, 'Tag').click();
-});
-
-Then('the dialog states that an identity must be set in Settings first', async ({ page }) => {
-  await openSyncDialog(page);
-  await expect(page.getByText('Set a Tagger identity in Settings first')).toBeVisible();
-});
-
-Then('the sync action is unavailable', async ({ page }) => {
-  await expect(page.getByRole('button', { name: /Sync now|Run dry-run/ })).toBeDisabled();
-});
-
 // --- Nothing to sync --------------------------------------------------------
 
 Given('the local edits match what is already stored', async ({ page }) => {
@@ -337,7 +320,7 @@ Then(
 // --- Snapshot before replace ------------------------------------------------
 
 Then(
-  'the current stored files are first copied to an immutable snapshot filed under the tagger identity and the time',
+  'the current stored files are first copied to an immutable snapshot filed under the connected account and the time',
   async ({ s3 }) => {
     const snaps = s3.puts.filter((p) => p.key.includes('.sparcd-tagger-snapshots/testkey/'));
     expect(snaps.map((p) => p.key.split('/').pop())).toEqual([

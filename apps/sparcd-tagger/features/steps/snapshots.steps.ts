@@ -48,7 +48,7 @@ Then('every complete snapshot of this upload is listed, most recent first', asyn
 });
 
 Then(
-  'each entry states when it was taken, by which tagger identity, and how many files it holds',
+  'each entry states when it was taken, by which connected account or local handoff identity, and how many files it holds',
   async ({ page }) => {
     const item = snapshotItems(page).first();
     await expect(item).toContainText('2024-02-01 12:00:00');
@@ -116,11 +116,6 @@ Given('a snapshot has been chosen', async ({ page }) => {
   await openSnapshots(page);
   await snapshotItems(page).first().getByRole('button', { name: 'Restore…' }).click();
   await expect(page.getByText('Comparing the snapshot to the current files…')).toBeHidden();
-});
-
-Then('a restore cannot be run without a tagger identity', async ({ page }) => {
-  await expect(page.getByText('Set a Tagger identity in Settings first')).toBeVisible();
-  await expect(page.getByRole('button', { name: /Restore now|Run dry-run/ })).toBeDisabled();
 });
 
 Then(

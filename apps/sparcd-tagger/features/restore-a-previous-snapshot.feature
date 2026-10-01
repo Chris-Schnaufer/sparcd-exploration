@@ -18,7 +18,7 @@ Feature: Recover a previous state of an upload
   Scenario: The recoverable states of an upload are listed
     When the snapshots list is opened
     Then every complete snapshot of this upload is listed, most recent first
-    And each entry states when it was taken, by which tagger identity, and how many files it holds
+    And each entry states when it was taken, by which connected account or local handoff identity, and how many files it holds
 
   @unmapped
   Scenario: An incomplete snapshot is never offered for recovery

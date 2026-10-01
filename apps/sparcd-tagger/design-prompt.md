@@ -39,8 +39,8 @@ pill. Don't introduce a new palette or typeface — extend the one we have.
 - **History** — sync history across uploads, plus the per-upload version
   list (the recovery view, generalized): every prior synced version with
   timestamps, previewable, restorable into local.
-- **Settings** — connection/credentials, tagger identity, burst-grouping
-  threshold, dry-run default.
+- **Settings** — connection/credentials, connected-account attribution,
+  burst-grouping threshold, dry-run default.
 
 ## The tool, the user, the job
 
@@ -64,7 +64,7 @@ it already exists in this thread (e.g. from the uploader pass), reuse it
 as-is; if not, create it once from this spec: endpoint, access key, secret
 key, secure-HTTPS toggle, region, force-path-style toggle, and a backend
 preset dropdown (MinIO / AWS S3 / Cloudflare R2) that fills region +
-path-style, plus a per-tool identity field and dry-run default. Either way,
+path-style, plus connected-account attribution and dry-run default. Either way,
 don't fork it — the only per-tool change is the chrome label
 ("SPARC'd · Tagger"). It gates the tool on first run and is editable under
 Settings.

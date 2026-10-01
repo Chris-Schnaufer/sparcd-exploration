@@ -264,7 +264,7 @@ When('a live sync is run', async ({ page }) => {
 });
 
 Then(
-  'the upload\'s metadata gains an edit comment carrying the tagger identity and the time of the edit',
+  'the upload\'s metadata gains an edit comment carrying the connected account and the time of the edit',
   async ({ s3 }) => {
     const meta = JSON.parse(s3.text(BUCKET, `${PREFIX_A}UploadMeta.json`)) as {
       editComments: string[];

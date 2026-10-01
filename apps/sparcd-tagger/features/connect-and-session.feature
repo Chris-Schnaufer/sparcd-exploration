@@ -6,8 +6,9 @@ Feature: Connect the tagger to a collection store and manage the session
   """
   As-built flow: before any tagging is possible the tagger must be given
   S3-compatible credentials. The tool is a static, bring-your-own-credentials
-  page — it holds no accounts of its own. Session-level choices (who is
-  tagging, whether writes are real, how images are grouped) live in Settings.
+  page — it holds no accounts of its own. Session-level choices (whether writes
+  are real and how images are grouped) live in Settings. Connected attribution
+  comes from the storage username.
   """
 
   Background:
@@ -73,6 +74,16 @@ Feature: Connect the tagger to a collection store and manage the session
     When Settings is opened
     Then Settings shows the connected storage username
     And the connected identity cannot be edited
+
+  @H2 @H2-3
+  Scenario: A connected-account change updates future attribution
+    Given the tagger is connected
+    And an upload is open in the tagging workspace
+    When a sibling tool connects the shared session with different credentials
+    Then Settings shows connected storage username "otherkey"
+    When the connected account assigns a species to an image
+    And the upload is synced
+    Then the new identification is attributed to "otherkey"
 
   @unmapped
   Scenario: Real writes are the default; dry-run is opt-in
