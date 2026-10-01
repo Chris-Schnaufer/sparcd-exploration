@@ -252,7 +252,14 @@ describe('buildSyncPlan', () => {
     });
     const plan = buildSyncPlan(
       images,
-      { [K1]: { ...seeded, observations: reapplied, dirty: true } },
+      {
+        [K1]: {
+          ...seeded,
+          observations: reapplied,
+          confirmedSpecies: ['Puma concolor'],
+          dirty: true,
+        },
+      },
       null,
     );
     expect(plan.summary).toEqual({
@@ -280,6 +287,44 @@ describe('buildSyncPlan', () => {
     const plan = buildSyncPlan(IMAGES, { [K1]: { ...seeded, dirty: true } }, null);
     expect(plan.summary.confirmations).toBe(0);
     expect(plan.tagEdits).toHaveLength(0);
+  });
+
+  it('does not infer a confirmation from a legacy draft missing attribution', () => {
+    const images: TagImage[] = [{
+      ...IMAGES[0],
+      baseObservations: [{ ...obs('Puma concolor', 1), classifiedBy: 'fielduser' }],
+    }];
+    const seeded = blankDraft({ bucket: 'sparcd-x', uploadPrefix: PREFIX }, K1, DEP, {
+      observations: [obs('Puma concolor', 1)],
+    });
+    const plan = buildSyncPlan(images, { [K1]: { ...seeded, dirty: true } }, null);
+    expect(plan.summary.confirmations).toBe(0);
+    expect(plan.tagEdits).toHaveLength(0);
+  });
+
+  it('keeps confirmation attribution when a time correction is combined with the review', () => {
+    const images: TagImage[] = [{
+      ...IMAGES[0],
+      baseObservations: [{ ...obs('Puma concolor', 1), classifiedBy: 'fielduser' }],
+    }];
+    const seeded = blankDraft({ bucket: 'sparcd-x', uploadPrefix: PREFIX }, K1, DEP, {
+      observations: [{ ...obs('Puma concolor', 1), classifiedBy: 'harold', classificationTimestamp: NOW.toISOString() }],
+    });
+    const plan = buildSyncPlan(
+      images,
+      {
+        [K1]: {
+          ...seeded,
+          confirmedSpecies: ['Puma concolor'],
+          timeOverride: '2024-01-10T09:00:00',
+          dirty: true,
+        },
+      },
+      null,
+    );
+    expect(plan.summary).toMatchObject({ confirmations: 1, timeCorrections: 1 });
+    expect(plan.tagEdits[0].observations[0].classifiedBy).toBe('harold');
+    expect(plan.tagEdits[0].mediaTimestamp).toBe('2024-01-10T09:00:00');
   });
 
   it('classifies a detag as a removal with empty observations', () => {

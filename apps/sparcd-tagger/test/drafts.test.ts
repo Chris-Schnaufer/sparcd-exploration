@@ -61,6 +61,15 @@ describe('addObservation', () => {
     const next = addObservation([], { ...tag('Canis latrans'), classifiedBy: 'harold' });
     expect(next[0].classifiedBy).toBe('harold');
   });
+
+  it('preserves existing attribution when a legacy re-apply has no metadata', () => {
+    const next = addObservation(
+      [{ ...tag('Canis latrans'), classifiedBy: 'fielduser', classificationTimestamp: '2024-01-01T00:00:00.000Z' }],
+      tag('Canis latrans'),
+    );
+    expect(next[0].classifiedBy).toBe('fielduser');
+    expect(next[0].classificationTimestamp).toBe('2024-01-01T00:00:00.000Z');
+  });
 });
 
 describe('incrementObservation', () => {

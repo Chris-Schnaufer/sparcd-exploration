@@ -84,13 +84,28 @@ export function addObservation(obs: DraftObservation[], tag: AppliedTag): DraftO
     classifiedBy: tag.classifiedBy?.trim() || undefined,
     classificationTimestamp: tag.classificationTimestamp,
   };
-  if (isGhost(next)) return [next]; // Ghost replaces all real species
+  if (isGhost(next)) {
+    const existingGhost = obs.find((o) => isGhost(o));
+    return [
+      existingGhost
+        ? {
+            ...next,
+            classifiedBy: next.classifiedBy ?? existingGhost.classifiedBy,
+            classificationTimestamp: next.classificationTimestamp ?? existingGhost.classificationTimestamp,
+          }
+        : next,
+    ]; // Ghost replaces all real species
+  }
   const withoutGhost = obs.filter((o) => !isGhost(o)); // a real species clears Ghost
   const existing = withoutGhost.find((o) => o.scientificName === next.scientificName);
   if (existing) {
     return withoutGhost.map((o) =>
       o === existing
-        ? { ...o, classifiedBy: next.classifiedBy, classificationTimestamp: next.classificationTimestamp }
+      ? {
+          ...o,
+          classifiedBy: next.classifiedBy ?? o.classifiedBy,
+          classificationTimestamp: next.classificationTimestamp ?? o.classificationTimestamp,
+        }
         : o,
     );
   }
@@ -318,7 +333,18 @@ export const useDraftStore = create<DraftState>((set, get) => {
     },
 
     addSpecies: (ctx, targets, tag) =>
-      mutateMany(ctx, targets, (prev) => ({ observations: addObservation(prev.observations, tag) })),
+      mutateMany(ctx, targets, (prev) => {
+        const alreadyPresent = prev.observations.some((o) => o.scientificName === tag.scientificName);
+        const wasCanonical = targets.some((target) =>
+          target.mediaPath === prev.mediaPath &&
+          target.base?.observations.some((o) => o.scientificName === tag.scientificName),
+        );
+        const confirmed = alreadyPresent && wasCanonical && tag.scientificName !== GHOST.label;
+        const confirmedSpecies = confirmed
+          ? [...new Set([...(prev.confirmedSpecies ?? []), tag.scientificName])]
+          : prev.confirmedSpecies;
+        return { observations: addObservation(prev.observations, tag), confirmedSpecies };
+      }),
 
     incrementSpecies: (ctx, targets, tag) =>
       mutateMany(ctx, targets, (prev) => ({ observations: incrementObservation(prev.observations, tag) })),
@@ -326,6 +352,7 @@ export const useDraftStore = create<DraftState>((set, get) => {
     removeSpecies: (ctx, mediaPath, deploymentId, base, sci) =>
       mutateMany(ctx, [{ mediaPath, deploymentId, base }], (prev) => ({
         observations: removeObservation(prev.observations, sci),
+        confirmedSpecies: (prev.confirmedSpecies ?? []).filter((name) => name !== sci),
       })),
 
     setSpeciesCount: (ctx, mediaPath, deploymentId, base, sci, count) =>
@@ -333,7 +360,7 @@ export const useDraftStore = create<DraftState>((set, get) => {
         observations: setObservationCount(prev.observations, sci, count),
       })),
 
-    detag: (ctx, targets) => mutateMany(ctx, targets, { observations: [] }),
+    detag: (ctx, targets) => mutateMany(ctx, targets, { observations: [], confirmedSpecies: [] }),
 
     setTimeOffset: (ctx, offset) => {
       // Optimistic Zustand update (hot path) + durable Dexie mirror. Unlike a
@@ -443,7 +470,7 @@ export const useDraftStore = create<DraftState>((set, get) => {
           clearTimeout(timer);
           pending.delete(rec.id);
         }
-        const clean = { ...rec, dirty: false };
+        const clean = { ...rec, dirty: false, confirmedSpecies: undefined };
         next[path] = clean;
         changed.push(clean);
       }

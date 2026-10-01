@@ -151,26 +151,11 @@ export function buildSyncPlan(
     // not supply it, but make its source accurately say "manual".
     const timestampSource = timeChanged && img.timestampSource ? 'manual' : undefined;
     const tagChanged = !observationsEqual(obs, img.baseObservations);
-    // Re-applying a species already present is a no-op on content but still
-    // refreshes that observation's classifiedBy/classificationTimestamp
-    // (`addObservation`) — that is how a reviewer confirms an existing
-    // identification. Keying off that refresh (rather than the record's
-    // overall `dirty` flag) keeps this from misfiring on a draft that's dirty
-    // for an unrelated reason — a questionable toggle or a time-only override
-    // never touch attribution, so they correctly fall through unaffected.
-    // Q12 decided a review records the reviewer and date even when nothing
-    // changes (#368); a confirmation with no species present is meaningless
-    // (nothing to confirm), so it's excluded.
-    const attributionChanged =
-      !tagChanged &&
-      obs.some((o) => {
-        const base = img.baseObservations.find((b) => b.scientificName === o.scientificName);
-        return (
-          (o.classifiedBy ?? '') !== (base?.classifiedBy ?? '') ||
-          (o.classificationTimestamp ?? '') !== (base?.classificationTimestamp ?? '')
-        );
-      });
-    const confirmedUnchanged = !!d && attributionChanged && obs.length > 0;
+    // Re-applying an existing species is an explicit confirmation action. The
+    // draft records that action directly; comparing attribution fields would
+    // mistake legacy drafts that lack those fields for confirmations.
+    const confirmedUnchanged = !!d && !tagChanged &&
+      (d.confirmedSpecies ?? []).some((name) => obs.some((o) => o.scientificName === name));
 
     if (timeChanged) summary.timeCorrections++;
 

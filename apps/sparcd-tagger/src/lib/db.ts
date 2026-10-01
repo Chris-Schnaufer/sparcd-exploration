@@ -38,6 +38,8 @@ export interface DraftRecord {
 
   // The full intended species set for this image, in apply order.
   observations: DraftObservation[];
+  /** Species explicitly re-applied as a confirmation since the last sync. */
+  confirmedSpecies?: string[];
   questionable: boolean;
   timeOverride: string | null; // per-image corrected ISO timestamp; null when unset
 
