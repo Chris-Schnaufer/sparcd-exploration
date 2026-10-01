@@ -76,6 +76,7 @@ export type DiffSummary = {
   modifications: number; // tagged → different species/count
   removals: number; // tagged → detagged
   timeCorrections: number; // images whose capture time changes
+  confirmations: number; // species/count unchanged, but explicitly re-reviewed (#368)
 };
 
 export type SyncPlan = {
@@ -124,7 +125,13 @@ export function buildSyncPlan(
 ): SyncPlan {
   const tagEdits: MediaEdit[] = [];
   const timeEdits: MediaEdit[] = [];
-  const summary: DiffSummary = { additions: 0, modifications: 0, removals: 0, timeCorrections: 0 };
+  const summary: DiffSummary = {
+    additions: 0,
+    modifications: 0,
+    removals: 0,
+    timeCorrections: 0,
+    confirmations: 0,
+  };
 
   for (const img of images) {
     // Only a dirty draft carries pending intent; a clean (already-synced) draft
@@ -144,6 +151,26 @@ export function buildSyncPlan(
     // not supply it, but make its source accurately say "manual".
     const timestampSource = timeChanged && img.timestampSource ? 'manual' : undefined;
     const tagChanged = !observationsEqual(obs, img.baseObservations);
+    // Re-applying a species already present is a no-op on content but still
+    // refreshes that observation's classifiedBy/classificationTimestamp
+    // (`addObservation`) — that is how a reviewer confirms an existing
+    // identification. Keying off that refresh (rather than the record's
+    // overall `dirty` flag) keeps this from misfiring on a draft that's dirty
+    // for an unrelated reason — a questionable toggle or a time-only override
+    // never touch attribution, so they correctly fall through unaffected.
+    // Q12 decided a review records the reviewer and date even when nothing
+    // changes (#368); a confirmation with no species present is meaningless
+    // (nothing to confirm), so it's excluded.
+    const attributionChanged =
+      !tagChanged &&
+      obs.some((o) => {
+        const base = img.baseObservations.find((b) => b.scientificName === o.scientificName);
+        return (
+          (o.classifiedBy ?? '') !== (base?.classifiedBy ?? '') ||
+          (o.classificationTimestamp ?? '') !== (base?.classificationTimestamp ?? '')
+        );
+      });
+    const confirmedUnchanged = !!d && attributionChanged && obs.length > 0;
 
     if (timeChanged) summary.timeCorrections++;
 
@@ -160,24 +187,49 @@ export function buildSyncPlan(
         timestamp: corrected,
         mediaTimestamp: timeChanged ? corrected : undefined,
         timestampSource,
+        observations: obs.map((o) => {
+          const base = img.baseObservations.find(
+            (candidate) =>
+              candidate.scientificName === o.scientificName &&
+              Math.max(1, candidate.count) === Math.max(1, o.count) &&
+              (candidate.commonName ?? '') === (o.commonName ?? '') &&
+              (candidate.requestedSpecies ?? '') === (o.requestedSpecies ?? ''),
+          );
+          // Drafts written before classifiedBy/classificationTimestamp were
+          // modeled can omit them. Preserve the canonical values rather than
+          // blanking them when another observation on the image is edited.
+          const classifiedBy = base ? o.classifiedBy ?? base.classifiedBy : user.trim() || o.classifiedBy;
+          const classificationTimestamp = base
+            ? o.classificationTimestamp ?? base.classificationTimestamp
+            : o.classificationTimestamp;
+          return {
+            scientificName: o.scientificName,
+            count: Math.max(1, o.count),
+            commonName: o.commonName || undefined,
+            requestedSpecies: o.requestedSpecies || undefined,
+            classifiedBy,
+            classificationTimestamp,
+          };
+        }),
+      });
+    } else if (confirmedUnchanged) {
+      summary.confirmations++;
+      tagEdits.push({
+        mediaId: img.key,
+        deploymentId,
+        timestamp: corrected,
+        mediaTimestamp: timeChanged ? corrected : undefined,
+        timestampSource,
+        // Content is identical to base by definition (tagChanged is false),
+        // so no delta/summary bookkeeping runs here — only the attribution
+        // `addObservation` already refreshed at apply time is written through.
         observations: obs.map((o) => ({
           scientificName: o.scientificName,
           count: Math.max(1, o.count),
           commonName: o.commonName || undefined,
           requestedSpecies: o.requestedSpecies || undefined,
-          classifiedBy: (() => {
-            const base = img.baseObservations.find(
-              (candidate) =>
-                candidate.scientificName === o.scientificName &&
-                Math.max(1, candidate.count) === Math.max(1, o.count) &&
-                (candidate.commonName ?? '') === (o.commonName ?? '') &&
-                (candidate.requestedSpecies ?? '') === (o.requestedSpecies ?? ''),
-            );
-            // Drafts written before classifiedBy was modeled can omit the
-            // field. Preserve the canonical value rather than blanking it
-            // when another observation on the image is edited.
-            return base ? o.classifiedBy ?? base.classifiedBy : user.trim() || o.classifiedBy;
-          })(),
+          classifiedBy: o.classifiedBy || user.trim() || undefined,
+          classificationTimestamp: o.classificationTimestamp,
         })),
       });
     } else if (timeChanged) {
@@ -389,7 +441,13 @@ async function writePending(
   return { status: 'synced', summary: EMPTY_SUMMARY, newETags: collectNewETags(journal) };
 }
 
-const EMPTY_SUMMARY: DiffSummary = { additions: 0, modifications: 0, removals: 0, timeCorrections: 0 };
+const EMPTY_SUMMARY: DiffSummary = {
+  additions: 0,
+  modifications: 0,
+  removals: 0,
+  timeCorrections: 0,
+  confirmations: 0,
+};
 
 /**
  * Write the pre-change snapshot set (old canonical bodies, then `manifest.json`

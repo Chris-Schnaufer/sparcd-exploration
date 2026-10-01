@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test';
+import { parseObservations } from '@sparcd/camtrap';
 import {
   Given,
   When,
@@ -16,6 +17,12 @@ import {
 } from './support/world';
 import { BUCKET, PREFIX_A, MEDIA_A } from './support/data';
 import { openSyncDialog, setSyncDryRun, readStore, waitForSyncDialogClosed } from './support/flows';
+
+/** One cell of the preview's Added / Changed / Removed / Time-corrected / Confirmed grid. */
+const summaryCell = (page: Page, label: string) =>
+  page.locator('div.border.text-center').filter({ hasText: label });
+
+const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
 const appliedChip = (page: Page, label: string) =>
   page.locator('span.inline-flex:not([data-testid="applied-species-summary"])').filter({ hasText: label }).first();
@@ -227,7 +234,7 @@ Then('a selection of images can be marked in one action', async ({ page }) => {
   }
 });
 
-// --- Confirmation records nothing -------------------------------------------
+// --- Confirmation records a review (#368) -----------------------------------
 
 Given('an existing identification is re-applied unchanged', async ({ page }) => {
   await focusFrame(page, 'IMG001.JPG');
@@ -238,12 +245,44 @@ When('a sync is previewed', async ({ page }) => {
   await openSyncDialog(page);
 });
 
-Then('no change is reported for that image', async ({ page, s3 }) => {
-  await expect(
-    page.getByText('No local edits to sync — everything matches the canonical files.'),
-  ).toBeVisible();
-  expect(s3.puts).toHaveLength(0);
+Then('the preview reports one confirmed image and no other change', async ({ page }) => {
+  await expect(summaryCell(page, 'Added')).toHaveText('0Added');
+  await expect(summaryCell(page, 'Changed')).toHaveText('0Changed');
+  await expect(summaryCell(page, 'Removed')).toHaveText('0Removed');
+  await expect(summaryCell(page, 'Confirmed')).toHaveText('1Confirmed');
 });
+
+When('that sync is run live', async ({ page }) => {
+  await setSyncDryRun(page, false);
+  await page.getByRole('button', { name: 'Sync now' }).click();
+  await expect(page.getByText('Synced — canonical files replaced.')).toBeVisible();
+});
+
+Then(
+  "the confirmed image's stored identification is stamped with the reviewer and the time of the review",
+  async ({ s3 }) => {
+    const obs = parseObservations(s3.text(BUCKET, `${PREFIX_A}observations.csv`));
+    const row = obs.find(
+      (o) => o.mediaId.endsWith('IMG001.JPG') && o.scientificName === 'Odocoileus hemionus',
+    );
+    expect(row).toBeTruthy();
+    expect(row!.classifiedBy).toBe('testkey');
+    expect(row!.classificationTimestamp).toMatch(ISO_TIMESTAMP);
+  },
+);
+
+Then(
+  "the corrected image's stored identification is stamped with the reviewer and the time of the review",
+  async ({ s3 }) => {
+    const obs = parseObservations(s3.text(BUCKET, `${PREFIX_A}observations.csv`));
+    const row = obs.find(
+      (o) => o.mediaId.endsWith('IMG002.JPG') && o.scientificName === 'Canis latrans',
+    );
+    expect(row).toBeTruthy();
+    expect(row!.classifiedBy).toBe('testkey');
+    expect(row!.classificationTimestamp).toMatch(ISO_TIMESTAMP);
+  },
+);
 
 // --- Attribution ------------------------------------------------------------
 

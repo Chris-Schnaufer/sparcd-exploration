@@ -61,13 +61,19 @@ export type AppliedTag = {
   freeTags?: string;
   /** Identity captured when the edit is made, before a later account switch. */
   classifiedBy?: string;
+  /** ISO timestamp paired with classifiedBy — when that attribution was made. */
+  classificationTimestamp?: string;
 };
 
 // --- Pure array transforms (exported for unit tests) -----------------------
 
-/** Add-only: applying a species already present is a NO-OP (no dup, no count
- *  change). Mutual exclusivity: applying Ghost replaces the whole set; applying
- *  a real species first clears any Ghost. Order is preserved (append last). */
+/** Add-only: applying a species already present leaves its content untouched
+ *  (no dup, no count change) but DOES refresh its attribution — re-applying an
+ *  already-present species is how a reviewer confirms an existing
+ *  identification, and that confirmation must still be recorded (#368), even
+ *  though nothing about the species/count changes. Mutual exclusivity:
+ *  applying Ghost replaces the whole set; applying a real species first clears
+ *  any Ghost. Order is preserved (append last). */
 export function addObservation(obs: DraftObservation[], tag: AppliedTag): DraftObservation[] {
   const next: DraftObservation = {
     scientificName: tag.scientificName,
@@ -76,10 +82,18 @@ export function addObservation(obs: DraftObservation[], tag: AppliedTag): DraftO
     requestedSpecies: tag.requestedSpecies ?? '',
     freeTags: tag.freeTags ?? '',
     classifiedBy: tag.classifiedBy?.trim() || undefined,
+    classificationTimestamp: tag.classificationTimestamp,
   };
   if (isGhost(next)) return [next]; // Ghost replaces all real species
   const withoutGhost = obs.filter((o) => !isGhost(o)); // a real species clears Ghost
-  if (withoutGhost.some((o) => o.scientificName === next.scientificName)) return withoutGhost; // NO-OP
+  const existing = withoutGhost.find((o) => o.scientificName === next.scientificName);
+  if (existing) {
+    return withoutGhost.map((o) =>
+      o === existing
+        ? { ...o, classifiedBy: next.classifiedBy, classificationTimestamp: next.classificationTimestamp }
+        : o,
+    );
+  }
   return [...withoutGhost, next];
 }
 

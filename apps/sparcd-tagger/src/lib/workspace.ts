@@ -78,6 +78,7 @@ export function buildTagImages(bundle: CanonicalBundle): TagImage[] {
         count: o.count ?? 0, // parseObservations always yields a real number; 0 is the type-safe fallback
         requestedSpecies: requestedSpeciesFromComments(o.tags) ?? '',
         classifiedBy: o.classifiedBy,
+        classificationTimestamp: o.classificationTimestamp,
         // Base free-tags aren't surfaced today; keep '' to match prior behaviour.
         freeTags: '',
       })),

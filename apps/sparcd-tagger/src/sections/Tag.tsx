@@ -505,7 +505,7 @@ export function Tag() {
     // species to other frames, so it advances its focused image once.
     const shouldAdvance =
       autoAdvanceOnTag && !!current && (selected.size > 0 || !carriesSpecies(current, tag.scientificName));
-    addSpeciesFn(ctx, targets, { ...tag, classifiedBy: taggerUser.trim() || undefined });
+    addSpeciesFn(ctx, targets, { ...tag, classifiedBy: taggerUser.trim() || undefined, classificationTimestamp: new Date().toISOString() });
     if (tag.scientificName) pushRecent(tag.scientificName);
     if (shouldAdvance) advanceFocus();
   };
@@ -527,7 +527,7 @@ export function Tag() {
           base: { observations: image.baseObservations },
         },
       ],
-      { ...tag, classifiedBy: taggerUser.trim() || undefined },
+      { ...tag, classifiedBy: taggerUser.trim() || undefined, classificationTimestamp: new Date().toISOString() },
     );
     if (tag.scientificName) pushRecent(tag.scientificName);
     if (shouldAdvance) advanceFocus();
@@ -539,7 +539,7 @@ export function Tag() {
     const targets = targetsOf();
     if (!targets.length) return;
     const shouldAdvance = autoAdvanceOnTag && !!current;
-    incrementSpeciesFn(ctx, targets, { ...tag, classifiedBy: taggerUser.trim() || undefined });
+    incrementSpeciesFn(ctx, targets, { ...tag, classifiedBy: taggerUser.trim() || undefined, classificationTimestamp: new Date().toISOString() });
     if (tag.scientificName) pushRecent(tag.scientificName);
     if (shouldAdvance) advanceFocus();
   };
