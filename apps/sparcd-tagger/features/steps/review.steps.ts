@@ -103,8 +103,13 @@ Then('the image tile reports a mixed review status', async ({ page }) => {
   await expect(gridCell(page, 'IMG004.JPG').locator('[data-column="review-status"]')).toHaveText('Mixed review');
 });
 
+Then('the list row reports a mixed review status', async ({ page }) => {
+  await showList(page);
+  await expect(listRow(page, 'IMG004.JPG').locator('[data-column="review-status"]')).toHaveText('Mixed review');
+});
+
 Then('an identification without a review event is labelled not reviewed', async ({ page }) => {
-  await expect(gridCell(page, 'IMG003.JPG').locator('[data-column="review-status"]')).toHaveText('Not reviewed');
+  await expect(listRow(page, 'IMG003.JPG').locator('[data-column="review-status"]')).toHaveText('Not reviewed');
 });
 
 Then('each recorded species is shown with its count', async ({ page }) => {

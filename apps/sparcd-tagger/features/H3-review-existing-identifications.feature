@@ -110,6 +110,7 @@ Feature: Review, correct and remove identifications that already exist
     Given an image with mixed reviewed and unreviewed identifications is focused
     Then each identification shows whether it is reviewed
     And the image tile reports a mixed review status
+    And the list row reports a mixed review status
     And an identification without a review event is labelled not reviewed
 
   @H3
