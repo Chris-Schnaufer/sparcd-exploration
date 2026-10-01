@@ -369,10 +369,16 @@ export async function listCollectionDeploymentLocationIds(
     uploadDirs.map(async (dir) => {
       try {
         await client.statObject(ref.bucket, `${dir}UploadMeta.json`);
+      } catch (err) {
+        if (isMissingObjectError(err)) return;
+        throw translateReadError(err, 'UploadMeta.json');
+      }
+      try {
         const bytes = await client.getObject(ref.bucket, `${dir}deployments.csv`);
         for (const id of deploymentLocationIds(new TextDecoder().decode(bytes))) ids.add(id);
-      } catch {
-        // Upload without a deployments.csv yet, or unreadable / CORS-blocked.
+      } catch (err) {
+        if (!isMissingObjectError(err)) throw translateReadError(err, 'deployments.csv');
+        // A published upload may not have deployments.csv yet.
       }
     }),
   );

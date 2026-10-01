@@ -3,21 +3,24 @@ import unittest
 from pathlib import Path
 
 
-def load_visibility_helper(notebook: str):
+def load_visibility_helpers(notebook: str):
     module = ast.parse((Path(__file__).parents[1] / "notebooks" / notebook).read_text())
     for cell in ast.walk(module):
         if not isinstance(cell, ast.FunctionDef) or cell.name != "_":
             continue
-        helper = next(
-            (statement for statement in cell.body if isinstance(statement, ast.FunctionDef) and statement.name == "_upload_is_visible"),
-            None,
-        )
-        if helper is not None:
-            ast.fix_missing_locations(helper)
+        helpers = [
+            statement
+            for statement in cell.body
+            if isinstance(statement, ast.FunctionDef)
+            and statement.name in {"_upload_is_visible", "_load_visible_upload_rows"}
+        ]
+        if len(helpers) == 2:
+            for helper in helpers:
+                ast.fix_missing_locations(helper)
             namespace = {}
-            exec(compile(ast.Module(body=[helper], type_ignores=[]), notebook, "exec"), namespace)
-            return namespace["_upload_is_visible"]
-    raise AssertionError(f"_upload_is_visible was not found in {notebook}")
+            exec(compile(ast.Module(body=helpers, type_ignores=[]), notebook, "exec"), namespace)
+            return namespace["_upload_is_visible"], namespace["_load_visible_upload_rows"]
+    raise AssertionError(f"visibility helpers were not found in {notebook}")
 
 
 class FakeObject:
@@ -35,16 +38,36 @@ class FakeClient:
         return FakeObject()
 
 
+def read_csv(client, bucket, key):
+    if key not in client.objects:
+        raise FileNotFoundError(key)
+    return [[key]]
+
+
 class UploadVisibilityTest(unittest.TestCase):
-    def test_both_notebooks_hide_prefixes_without_upload_meta(self):
+    def test_both_notebooks_loader_excludes_unmarked_upload_rows_and_counts(self):
         for notebook in ("hello.py", "hello_wasm.py"):
-            helper = load_visibility_helper(notebook)
-            visible = helper.__globals__
-            # The helper closes over the notebook cell's `client` parameter, so
-            # bind a minimal client in its globals for this isolated check.
-            visible["client"] = FakeClient({"published/UploadMeta.json"})
-            self.assertTrue(helper("bucket", "published/"), notebook)
-            self.assertFalse(helper("bucket", "interrupted/"), notebook)
+            visible_helper, loader = load_visibility_helpers(notebook)
+            globals_for_helpers = visible_helper.__globals__
+            client = FakeClient(
+                {
+                    "published/UploadMeta.json",
+                    "published/deployments.csv",
+                    "published/media.csv",
+                    "published/observations.csv",
+                }
+            )
+            globals_for_helpers["client"] = client
+            globals_for_helpers["_upload_is_visible"] = visible_helper
+            globals_for_helpers["_read_csv"] = lambda bucket, key: read_csv(client, bucket, key)
+
+            self.assertTrue(visible_helper("bucket", "published/"), notebook)
+            self.assertFalse(visible_helper("bucket", "interrupted/"), notebook)
+            rows = loader("bucket", ["published/", "interrupted/"])
+            self.assertEqual(rows[-1], 1, notebook)
+            self.assertEqual(rows[0], [["published/deployments.csv"]], notebook)
+            self.assertEqual(rows[2], [["published/media.csv"]], notebook)
+            self.assertEqual(rows[4], [["published/observations.csv"]], notebook)
 
 
 if __name__ == "__main__":

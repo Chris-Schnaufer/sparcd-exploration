@@ -21,6 +21,7 @@ import type { SyncJournal, CanonicalRole } from './syncJournal';
 // Not a security boundary in a static app — the wrapper just requires an
 // explicit scope. The connected key's IAM policy and bucket CORS gate access.
 const RUNTIME_BUCKET_SCOPE = ['*'];
+const UPLOAD_MARKER_CONCURRENCY = 16;
 
 let cached: { config: S3Config; client: SafeS3Client } | null = null;
 let writeCached: { config: S3Config; client: SafeS3Client } | null = null;
@@ -80,16 +81,23 @@ export type UploadRef = {
 export async function listUploads(cfg: S3Config, bucket: string, uuid: string): Promise<UploadRef[]> {
   const client = getClient(cfg);
   const dirs = await client.listCommonPrefixes(bucket, `Collections/${uuid}/Uploads/`);
-  const visible = await Promise.all(
-    dirs.map(async (prefix) => {
-      try {
-        await client.statObject(bucket, `${prefix}UploadMeta.json`);
-        return prefix;
-      } catch {
-        return null;
-      }
-    }),
-  );
+  const visible: (string | null)[] = [];
+  for (let i = 0; i < dirs.length; i += UPLOAD_MARKER_CONCURRENCY) {
+    const chunk = dirs.slice(i, i + UPLOAD_MARKER_CONCURRENCY);
+    visible.push(
+      ...(await Promise.all(
+        chunk.map(async (prefix) => {
+          try {
+            await client.statObject(bucket, `${prefix}UploadMeta.json`);
+            return prefix;
+          } catch (err) {
+            if (isNotFound(err)) return null;
+            throw translateReadError(err, 'UploadMeta.json');
+          }
+        }),
+      )),
+    );
+  }
   return visible
     .filter((prefix): prefix is string => prefix !== null)
     .map((prefix) => ({ prefix, stamp: prefix.replace(/\/$/, '').split('/').pop() ?? prefix }))
@@ -363,7 +371,7 @@ export async function listCollectionSnapshots(
 
 export function isNotFound(err: unknown): boolean {
   const e = err as { name?: string; $metadata?: { httpStatusCode?: number } };
-  return e?.name === 'NoSuchKey' || e?.$metadata?.httpStatusCode === 404;
+  return e?.name === 'NoSuchKey' || e?.name === 'NotFound' || e?.$metadata?.httpStatusCode === 404;
 }
 
 /** Load the canonical bodies of one snapshot, to restore them in place. A
