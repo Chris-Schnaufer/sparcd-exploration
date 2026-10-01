@@ -1268,7 +1268,16 @@ export function Tag() {
           observations={observations}
           disabled={!current}
           onSetCount={(sci, n) =>
-            current && setSpeciesCountFn(ctx, current.key, current.deploymentId, currentBase, sci, n)
+            current && setSpeciesCountFn(
+              ctx,
+              current.key,
+              current.deploymentId,
+              currentBase,
+              sci,
+              n,
+              taggerUser.trim() || undefined,
+              new Date().toISOString(),
+            )
           }
           onRemove={(sci) =>
             current && removeSpeciesFn(ctx, current.key, current.deploymentId, currentBase, sci)
