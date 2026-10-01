@@ -28,7 +28,7 @@
 // statObject size/hash sanity check, and interrupted files restart from
 // scratch (mid-file multipart resume is a follow-on, not v0). The prefix is
 // reused, so a 412 on a metadata write is treated as "already written, skip"
-// rather than a re-stamp.
+// only after the existing object is read and its bytes match.
 //
 // Bounded concurrency is a small inline lane pool rather than p-limit: lanes
 // lazily pull the next blob, so memory stays flat across thousands of files and
@@ -788,7 +788,7 @@ function makeRunner(
 
   // One attempt at the whole sequence for a given plan. Throws
   // PreconditionFailedError on a final-prefix metadata collision (fresh runs
-  // re-stamp; resumes skip).
+  // re-stamp; resumes verify matching bytes before skipping).
   const runOnce = async (plan: RunPlan): Promise<void> => {
     abort = new AbortController(); // fresh signal per attempt
     snap.sessionId = plan.sessionId;
@@ -901,8 +901,9 @@ function makeRunner(
 
   // Shared by a fixed-plan run and a streamed run: writes the CSVs/JSON in
   // publish order, dry-run logs instead of PUTting, and treats a 412 as
-  // already-written (idempotent) only on resume — a fresh run must not
-  // silently accept a metadata collision.
+  // already-written only on resume after verifying the existing bytes. A
+  // fresh run must not silently accept a metadata collision, and a resumed
+  // run must not accept a different publication under the same key.
   const writeMetadata = async (writes: RunPlan['writes'], uploadPath: string): Promise<void> => {
     for (const w of writes) {
       if (cancelled) throw new Error('cancelled');
@@ -925,7 +926,12 @@ function makeRunner(
           if (cancelled) throw new Error('cancelled');
           if (err instanceof PreconditionFailedError) {
             if (isResume) {
-              log('info', `already present, skip: ${key}`);
+              const existing = await client.getObject(snap.bucket, key);
+              const existingBody = new TextDecoder().decode(existing);
+              if (existingBody !== w.body) {
+                throw new Error(`metadata conflict: ${key} already contains different content`);
+              }
+              log('info', `already present with matching content, skip: ${key}`);
               break;
             }
             throw err;
