@@ -351,6 +351,37 @@ describe('buildSyncPlan', () => {
     expect(plan.summary).toMatchObject({ modifications: 1, confirmations: 1 });
   });
 
+  it('writes a review event only on the species that was re-applied', () => {
+    const images: TagImage[] = [{
+      ...IMAGES[0],
+      baseObservations: [
+        { ...obs('Puma concolor', 1), classifiedBy: 'fielduser' },
+        { ...obs('Canis latrans', 1, 'Coyote'), classifiedBy: 'anita' },
+      ],
+    }];
+    const seeded = blankDraft({ bucket: 'sparcd-x', uploadPrefix: PREFIX }, K1, DEP, {
+      observations: images[0].baseObservations,
+    });
+    const plan = buildSyncPlan(images, {
+      [K1]: {
+        ...seeded,
+        observations: [
+          {
+            ...images[0].baseObservations[0],
+            reviewEvents: [{ reviewedBy: 'harold', reviewedAt: NOW.toISOString() }],
+          },
+          images[0].baseObservations[1],
+        ],
+        confirmedSpecies: ['Puma concolor'],
+        dirty: true,
+      },
+    }, null);
+    expect(plan.tagEdits[0].observations[0].reviewEvents).toEqual([
+      { reviewedBy: 'harold', reviewedAt: NOW.toISOString() },
+    ]);
+    expect(plan.tagEdits[0].observations[1].reviewEvents).toBeUndefined();
+  });
+
   it('keeps edit-time attribution when the connected account changes before sync', () => {
     const plan = buildSyncPlan(
       [{ ...IMAGES[1], baseObservations: [] }],

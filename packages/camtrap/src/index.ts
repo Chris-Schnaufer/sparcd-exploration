@@ -48,7 +48,7 @@ export type Observation = {
   count?: number; // undefined → column written blank (no species identified)
   tags: string; // concatenated [PREFIX:value] markers
   classifiedBy?: string;
-  classificationTimestamp?: string; // ISO; when classifiedBy last reviewed this row
+  classificationTimestamp?: string; // ISO; when the original identification was made
   reviewEvents?: ReviewEvent[];
 };
 
@@ -562,7 +562,7 @@ export type ObservationInput = {
   extraMarkers?: TagMarker[]; // preserved through-markers
   /** Existing attribution is retained when Tagger replaces an observation row. */
   classifiedBy?: string;
-  /** ISO timestamp paired with classifiedBy — when that attribution was made. */
+  /** ISO timestamp paired with classifiedBy — when the original attribution was made. */
   classificationTimestamp?: string;
 };
 

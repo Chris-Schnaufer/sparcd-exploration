@@ -106,12 +106,12 @@ function Chip({
       </span>
       {obs.classifiedBy && (
         <span className="text-[11px] text-inkMute" aria-label={`Originally identified by ${obs.classifiedBy}`}>
-          by {obs.classifiedBy}
+          Originally identified by {obs.classifiedBy}
         </span>
       )}
       {reviewLabel(obs) && (
         <span className="text-[11px] text-inkMute" aria-label={reviewLabel(obs)!}>
-          reviewed
+          {reviewLabel(obs)}
         </span>
       )}
       {obs.requestedSpecies && (
