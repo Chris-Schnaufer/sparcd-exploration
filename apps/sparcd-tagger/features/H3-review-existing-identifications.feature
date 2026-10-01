@@ -105,6 +105,23 @@ Feature: Review, correct and remove identifications that already exist
     When a live sync is run
     Then the original identifier and separate review remain visible in the stored image
 
+  @H3 @H3-7
+  Scenario: A correction preserves the immutable original upload baseline
+    Given the original upload data is captured before a review
+    And identifications were corrected locally
+    When a live sync is run
+    Then the original uploaded data remains byte-for-byte intact
+    And the live audit records the correction identity and time
+
+  @H3 @H3-7
+  Scenario: A removal preserves the immutable original upload baseline
+    Given the original upload data is captured before a review
+    And the focused image carries at least one species
+    When Clear Species is used
+    And a live sync is run
+    Then the original uploaded data remains byte-for-byte intact
+    And the live audit records the removal identity and time
+
   @H3
   Scenario: An image edited locally is distinguishable from one that is not
     Given an image's identifications were changed in this browser

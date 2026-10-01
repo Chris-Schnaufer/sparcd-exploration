@@ -124,8 +124,8 @@
 | H3-3 | Harold can correct an existing identification | partial | tagger: H3-review-existing-identifications.feature: A recorded count can be corrected; tagger: H3-review-existing-identifications.feature: A correction is attributed to the person who synced it | Correction and audit identity exist, but species correction is not recorded explicitly. |
 | H3-4 | Harold can remove an existing identification | partial | tagger: H3-review-existing-identifications.feature: A single wrong identification can be removed without losing the others; tagger: sync-identifications-to-the-collection.feature: Detagging an image and syncing writes a blank placeholder row rather than removing the row | Removal is stored, but no removal record is asserted. |
 | H3-5 | A review records who carried it out | partial | tagger: H3-review-existing-identifications.feature: A correction is attributed to the person who synced it | Correction records identity and time; confirmation without change records no reviewer. |
-| H3-6 | The original identifier's work remains attributable | missing | — | No scenario displays original attribution beside a separate review. |
-| H3-7 | A review does not destroy the original uploaded data | partial | tagger: sync-identifications-to-the-collection.feature: The previous state is preserved before anything is replaced; tagger: H3-review-existing-identifications.feature: A correction is attributed to the person who synced it | The change is traceable, but the stored files are replaced and the upload record is rewritten on sync; the original survives only as a snapshot copy. |
+| H3-6 | The original identifier's work remains attributable | covered | tagger: H3-review-existing-identifications.feature: A review keeps original attribution separate from the review event | The original identifier and repeatable review event are both visible and persisted. |
+| H3-7 | A review does not destroy the original uploaded data | covered | tagger: H3-review-existing-identifications.feature: A correction preserves the immutable original upload baseline; tagger: H3-review-existing-identifications.feature: A removal preserves the immutable original upload baseline | The original media bytes and all four initial canonical files are retained byte-for-byte in the idempotent baseline; live audit data records the change. |
 | H3-8 | Harold can tell reviewed identifications from unreviewed ones | missing | tagger: H3-review-existing-identifications.feature: An image edited locally is distinguishable from one that is not | The marker means unsynced edit, not reviewed versus unreviewed. |
 
 ## Totals
@@ -142,5 +142,5 @@
 | AL2 | 4 | 2 | 0 | 0 | 6 |
 | H1 | 3 | 0 | 1 | 2 | 6 |
 | H2 | 2 | 2 | 2 | 1 | 7 |
-| H3 | 1 | 5 | 2 | 0 | 8 |
-| Overall | 21 | 25 | 20 | 7 | 73 |
+| H3 | 3 | 3 | 2 | 0 | 8 |
+| Overall | 23 | 23 | 18 | 7 | 73 |
