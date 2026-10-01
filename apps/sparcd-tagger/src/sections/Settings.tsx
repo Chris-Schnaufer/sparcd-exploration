@@ -232,17 +232,26 @@ export function Settings() {
 
       <section className="border-t border-ruleSoft pt-6">
         <span className={kicker}>Connection</span>
-        <p className="text-[13px] font-mono text-inkSoft break-all">{cfg?.endpoint}</p>
-        <button
-          onClick={() => void logout()}
-          className="mt-3 inline-flex items-center min-h-11 md:min-h-0 text-[14px] border border-ink px-3 py-2.5 md:py-1.5 text-ink hover:bg-panelHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-        >
-          Disconnect
-        </button>
-        <p className="mt-2 text-[13px] text-inkMute font-body">
-          Clears this browser's local drafts and settings so the next person connects to a clean
-          app.
-        </p>
+        {cfg ? (
+          <>
+            <p className="text-[13px] font-mono text-inkSoft break-all">{cfg.endpoint}</p>
+            <button
+              onClick={() => void logout()}
+              className="mt-3 inline-flex items-center min-h-11 md:min-h-0 text-[14px] border border-ink px-3 py-2.5 md:py-1.5 text-ink hover:bg-panelHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            >
+              Disconnect
+            </button>
+            <p className="mt-2 text-[13px] text-inkMute font-body">
+              Clears this browser's local drafts and settings so the next person connects to a clean
+              app.
+            </p>
+          </>
+        ) : (
+          <p className="text-[13px] text-inkMute font-body">
+            Local batch — no storage connection. Return to the Uploader with Done when tagging is
+            complete.
+          </p>
+        )}
       </section>
 
       {pendingDirty !== null && (

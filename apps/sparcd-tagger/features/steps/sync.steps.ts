@@ -467,6 +467,10 @@ When('the sync is run without waiting for it to finish', async ({ page }) => {
   await openSyncDialog(page);
   await setSyncDryRun(page, false);
   await page.getByRole('button', { name: 'Sync now' }).click();
+  // Do not sample the pre-sync frame while the click is still committing the
+  // dialog state. The delayed canonical read guarantees this intermediate
+  // syncing state exists for both the species and timestamp scenarios.
+  await expect(statePill(page)).toHaveAttribute('aria-label', /^Sync status: syncing/);
 });
 
 Then('the tile still shows the species before the sync completes', async ({ page, s3 }) => {

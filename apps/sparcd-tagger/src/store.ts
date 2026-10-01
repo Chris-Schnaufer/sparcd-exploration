@@ -10,6 +10,7 @@ import {
   type Theme,
 } from '@sparcd/auth-ui';
 import { clearClientCache } from './lib/s3';
+import { localBatchId } from './lib/localBatch';
 import type { DateFormat, TimeFormat } from './lib/formatting';
 
 export type Section = 'browse' | 'tag' | 'history' | 'settings';
@@ -77,7 +78,10 @@ type TaggerState = {
 // another SPARC'd tool or a reload lands straight back in the app. Nothing is
 // cached yet at module init, so unlike the cross-tab handler below this needs
 // no cache clear and no connectionId bump.
-const initialSession = loadSessionConnection();
+// A local handoff is deliberately storage-free even when this tab inherited a
+// shared S3 session from another SPARC'd tool. Do not let that session replace
+// the handoff identity or expose connected-only actions in the local workspace.
+const initialSession = localBatchId ? null : loadSessionConnection();
 
 const LEGACY_THEME_KEY = 'sparcd-tagger-session';
 const DISPLAY_PREFERENCES_KEY = 'sparcd-tagger-display-preferences';
@@ -312,6 +316,7 @@ export const useStore = create<TaggerState>()(
 // connectionId so client-side caches scoped to a connection are invalidated.
 // Also answers a sibling tab's own request with our current s3Config, if any.
 subscribeSharedConnection((cfg) => {
+  if (localBatchId) return;
   clearClientCache();
   useStore.setState((s) => ({
     s3Config: cfg,
@@ -325,4 +330,4 @@ subscribeSharedConnection((cfg) => {
           selectedUploadPrefix: null,
         }),
   }));
-}, () => useStore.getState().s3Config);
+}, () => (localBatchId ? null : useStore.getState().s3Config));
