@@ -89,6 +89,24 @@ Given('an image with existing identifications is focused', async ({ page }) => {
   await focusFrame(page, 'IMG004.JPG');
 });
 
+Given('an image with mixed reviewed and unreviewed identifications is focused', async ({ page }) => {
+  await focusFrame(page, 'IMG004.JPG');
+  await expandApplied(page);
+});
+
+Then('each identification shows whether it is reviewed', async ({ page }) => {
+  await expect(appliedChip(page, 'Coyote').getByText(/Reviewed by fielduser/)).toBeVisible();
+  await expect(appliedChip(page, 'Mountain Lion').getByText('Not reviewed', { exact: true })).toBeVisible();
+});
+
+Then('the image tile reports a mixed review status', async ({ page }) => {
+  await expect(gridCell(page, 'IMG004.JPG').locator('[data-column="review-status"]')).toHaveText('Mixed review');
+});
+
+Then('an identification without a review event is labelled not reviewed', async ({ page }) => {
+  await expect(gridCell(page, 'IMG003.JPG').locator('[data-column="review-status"]')).toHaveText('Not reviewed');
+});
+
 Then('each recorded species is shown with its count', async ({ page }) => {
   await expandApplied(page);
   await expect(appliedChip(page, 'Mountain Lion').locator('input[type="number"]')).toHaveValue('1');

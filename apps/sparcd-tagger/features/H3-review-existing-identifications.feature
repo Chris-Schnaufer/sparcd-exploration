@@ -105,6 +105,13 @@ Feature: Review, correct and remove identifications that already exist
     When a live sync is run
     Then the original identifier and separate review remain visible in the stored image
 
+  @H3 @H3-8
+  Scenario: Reviewed and unreviewed identifications are visibly distinguished
+    Given an image with mixed reviewed and unreviewed identifications is focused
+    Then each identification shows whether it is reviewed
+    And the image tile reports a mixed review status
+    And an identification without a review event is labelled not reviewed
+
   @H3
   Scenario: An image edited locally is distinguishable from one that is not
     Given an image's identifications were changed in this browser

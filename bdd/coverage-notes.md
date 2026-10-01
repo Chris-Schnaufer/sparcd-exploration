@@ -126,7 +126,7 @@
 | H3-5 | A review records who carried it out | partial | tagger: H3-review-existing-identifications.feature: A correction is attributed to the person who synced it | Correction records identity and time; confirmation without change records no reviewer. |
 | H3-6 | The original identifier's work remains attributable | missing | — | No scenario displays original attribution beside a separate review. |
 | H3-7 | A review does not destroy the original uploaded data | partial | tagger: sync-identifications-to-the-collection.feature: The previous state is preserved before anything is replaced; tagger: H3-review-existing-identifications.feature: A correction is attributed to the person who synced it | The change is traceable, but the stored files are replaced and the upload record is rewritten on sync; the original survives only as a snapshot copy. |
-| H3-8 | Harold can tell reviewed identifications from unreviewed ones | missing | tagger: H3-review-existing-identifications.feature: An image edited locally is distinguishable from one that is not | The marker means unsynced edit, not reviewed versus unreviewed. |
+| H3-8 | Harold can tell reviewed identifications from unreviewed ones | covered | tagger: H3-review-existing-identifications.feature: Reviewed and unreviewed identifications are visibly distinguished | The focused species chips identify each observation as reviewed or not reviewed, and Overview reports mixed and unreviewed image states. |
 
 ## Totals
 
@@ -142,5 +142,5 @@
 | AL2 | 4 | 2 | 0 | 0 | 6 |
 | H1 | 3 | 0 | 1 | 2 | 6 |
 | H2 | 2 | 2 | 2 | 1 | 7 |
-| H3 | 1 | 5 | 2 | 0 | 8 |
-| Overall | 21 | 25 | 20 | 7 | 73 |
+| H3 | 2 | 4 | 2 | 0 | 8 |
+| Overall | 22 | 24 | 20 | 7 | 73 |

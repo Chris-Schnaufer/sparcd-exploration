@@ -109,6 +109,24 @@ describe('buildTagImages', () => {
     expect(multi[0].baseObservations[0].count).toBe(3);
   });
 
+  it('preserves review events so the UI can distinguish reviewed identifications', () => {
+    const reviewed = serializeObservations([
+      {
+        observationId: 'reviewed',
+        mediaId: 'Collections/c/Uploads/u/IMG001.JPG',
+        deploymentId: 'c:loc-a',
+        timestamp: '2024-01-01T08:00:00',
+        observationType: 'animal',
+        scientificName: 'Canis latrans',
+        count: 1,
+        tags: '[COMMONNAME:Coyote][REVIEWED_BY:harold][REVIEWED_AT:2024-01-02T09:00:00.000Z]',
+      },
+    ]);
+    expect(buildTagImages({ mediaCsv, observationsCsv: reviewed })[0].baseObservations[0].reviewEvents).toEqual([
+      { reviewedBy: 'harold', reviewedAt: '2024-01-02T09:00:00.000Z' },
+    ]);
+  });
+
   it('treats a blank placeholder row as untagged (empty base observations)', () => {
     const blank = buildTagImages({ mediaCsv, observationsCsv: blankObsCsv });
     expect(blank[0].baseObservations).toEqual([]);
