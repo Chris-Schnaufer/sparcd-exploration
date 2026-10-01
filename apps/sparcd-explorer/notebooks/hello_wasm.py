@@ -825,6 +825,16 @@ def _(BUCKETS, SPARCD_COLLECTION_DATA_CACHE, UPLOADS_PREFIXES, client, mo):
         return [row for row in csv.reader(io.StringIO(raw)) if row]
 
 
+    def _upload_is_visible(bucket: str, prefix: str) -> bool:
+        # UploadMeta.json is the publication marker. Failed prefixes remain
+        # recoverable in storage, but are not application-visible until it exists.
+        try:
+            client.get_object(bucket, prefix + "UploadMeta.json").read()
+        except Exception:
+            return False
+        return True
+
+
     DEPLOY_COLS = ["deployment_id", "location_id", "location_name",
                    "longitude", "latitude", "_d5", "_d6", "_d7",
                    "_d8", "_d9", "_d10", "_d11", "elevation"]
@@ -870,12 +880,7 @@ def _(BUCKETS, SPARCD_COLLECTION_DATA_CACHE, UPLOADS_PREFIXES, client, mo):
                 except Exception:
                     uploads = []
                 for up in uploads:
-                    # UploadMeta.json is written only after all blobs and CSVs
-                    # succeed. Keep failed prefixes in storage for recovery,
-                    # but do not expose them to Explorer or its totals.
-                    try:
-                        client.get_object(bucket, up + "UploadMeta.json").read()
-                    except Exception:
+                    if not _upload_is_visible(bucket, up):
                         continue
                     total_uploads += 1
                     try:
