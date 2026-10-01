@@ -328,9 +328,31 @@ describe('buildSyncPlan', () => {
   });
 
   it('classifies a detag as a removal with empty observations', () => {
-    const plan = buildSyncPlan(IMAGES, { [K1]: draft({ mediaPath: K1, observations: [] }) }, null);
+    const plan = buildSyncPlan(IMAGES, {
+      [K1]: draft({ mediaPath: K1, observations: [], removedSpecies: ['Puma concolor'] }),
+    }, null);
     expect(plan.summary.removals).toBe(1);
     expect(plan.tagEdits[0].observations).toEqual([]);
+    expect(plan.tagEdits[0].removedSpecies).toEqual(['Puma concolor']);
+  });
+
+  it('records a partial removal without inferring removals from a changed legacy draft', () => {
+    const seeded = blankDraft({ bucket: 'sparcd-x', uploadPrefix: PREFIX }, K1, DEP, {
+      observations: [obs('Puma concolor', 1), obs('Canis latrans', 1, 'Coyote')],
+    });
+    const plan = buildSyncPlan(
+      [{ ...IMAGES[0], baseObservations: seeded.observations }],
+      { [K1]: { ...seeded, observations: [obs('Canis latrans', 1, 'Coyote')], removedSpecies: ['Puma concolor'], dirty: true } },
+      null,
+    );
+    expect(plan.tagEdits[0].removedSpecies).toEqual(['Puma concolor']);
+    expect(plan.tagEdits[0].observations[0].removedSpecies).toEqual(['Puma concolor']);
+    const legacy = buildSyncPlan(
+      [{ ...IMAGES[0], baseObservations: seeded.observations }],
+      { [K1]: { ...seeded, observations: [obs('Canis latrans', 1, 'Coyote')], dirty: true } },
+      null,
+    );
+    expect(legacy.tagEdits[0].removedSpecies).toEqual([]);
   });
 
   it('ignores a questionable-only toggle (no canonical change)', () => {

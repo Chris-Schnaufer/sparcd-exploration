@@ -9,6 +9,8 @@ import {
   serializeUploadMeta,
   parseObservations,
   serializeCsvRows,
+  buildObservationComments,
+  removedSpeciesFromComments,
 } from '../src/index';
 import { fixture } from './fixtures';
 
@@ -94,6 +96,29 @@ describe('no accidental data loss', () => {
     expect(detagged).toBeDefined();
     expect(detagged.observationType).toBe('blank');
     expect(detagged.scientificName).toBe('');
+  });
+
+  it('serializes and parses explicit removed-species markers', () => {
+    const comments = buildObservationComments({
+      removedSpecies: ['Puma concolor', 'Canis latrans'],
+    });
+    expect(comments).toBe('[REMOVED:Puma concolor][REMOVED:Canis latrans]');
+    expect(removedSpeciesFromComments(comments)).toEqual(['Puma concolor', 'Canis latrans']);
+  });
+
+  it('keeps removal provenance on a full detag placeholder row', () => {
+    const mediaId = k('IMG004.JPG');
+    const canonical = fixture('java-v016', 'observations.csv');
+    const merged = parseObservations(mergeObservations(canonical, [{
+      mediaId,
+      deploymentId: DEP,
+      timestamp: '2024-01-10T22:15:00',
+      removedSpecies: ['Puma concolor'],
+      observations: [],
+    }]));
+    const row = merged.find((o) => o.mediaId === mediaId)!;
+    expect(row.observationType).toBe('blank');
+    expect(row.tags).toContain('[REMOVED:Puma concolor]');
   });
 });
 

@@ -165,6 +165,13 @@ Then('the remaining species and their counts are preserved', async ({ page }) =>
   await expect(gridCell(page, 'IMG004.JPG')).not.toContainText('+1');
 });
 
+Then('the removed species is absent from the stored image and marked as removed', async ({ s3 }) => {
+  const obs = parseObservations(s3.text(BUCKET, `${PREFIX_A}observations.csv`));
+  expect(obs.some((o) => o.mediaId.endsWith('IMG004.JPG') && o.scientificName === 'Canis latrans')).toBe(false);
+  const remaining = obs.find((o) => o.mediaId.endsWith('IMG004.JPG') && o.scientificName === 'Puma concolor');
+  expect(remaining?.tags).toContain('[REMOVED:Canis latrans]');
+});
+
 // --- Clear Species ------------------------------------------------------------------
 
 // The Focus footer's own control and the applied-species strip's control

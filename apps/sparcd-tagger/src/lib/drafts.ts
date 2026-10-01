@@ -343,24 +343,45 @@ export const useDraftStore = create<DraftState>((set, get) => {
         const confirmedSpecies = confirmed
           ? [...new Set([...(prev.confirmedSpecies ?? []), tag.scientificName])]
           : prev.confirmedSpecies;
-        return { observations: addObservation(prev.observations, tag), confirmedSpecies };
+        const removedSpecies = (prev.removedSpecies ?? []).filter((name) => name !== tag.scientificName);
+        return { observations: addObservation(prev.observations, tag), confirmedSpecies, removedSpecies };
       }),
 
     incrementSpecies: (ctx, targets, tag) =>
-      mutateMany(ctx, targets, (prev) => ({ observations: incrementObservation(prev.observations, tag) })),
+      mutateMany(ctx, targets, (prev) => ({
+        observations: incrementObservation(prev.observations, tag),
+        removedSpecies: (prev.removedSpecies ?? []).filter((name) => name !== tag.scientificName),
+      })),
 
     removeSpecies: (ctx, mediaPath, deploymentId, base, sci) =>
-      mutateMany(ctx, [{ mediaPath, deploymentId, base }], (prev) => ({
-        observations: removeObservation(prev.observations, sci),
-        confirmedSpecies: (prev.confirmedSpecies ?? []).filter((name) => name !== sci),
-      })),
+      mutateMany(ctx, [{ mediaPath, deploymentId, base }], (prev) => {
+        const wasCanonical = base?.observations.some((o) => o.scientificName === sci) ?? false;
+        const removedSpecies = wasCanonical
+          ? [...new Set([...(prev.removedSpecies ?? []), sci])]
+          : prev.removedSpecies;
+        return {
+          observations: removeObservation(prev.observations, sci),
+          confirmedSpecies: (prev.confirmedSpecies ?? []).filter((name) => name !== sci),
+          removedSpecies,
+        };
+      }),
 
     setSpeciesCount: (ctx, mediaPath, deploymentId, base, sci, count) =>
       mutateMany(ctx, [{ mediaPath, deploymentId, base }], (prev) => ({
         observations: setObservationCount(prev.observations, sci, count),
       })),
 
-    detag: (ctx, targets) => mutateMany(ctx, targets, { observations: [], confirmedSpecies: [] }),
+    detag: (ctx, targets) => mutateMany(ctx, targets, (prev) => {
+      const canonical = targets.find((target) => target.mediaPath === prev.mediaPath)?.base?.observations ?? [];
+      const removedSpecies = canonical
+        .filter((o) => prev.observations.some((current) => current.scientificName === o.scientificName))
+        .map((o) => o.scientificName);
+      return {
+        observations: [],
+        confirmedSpecies: [],
+        removedSpecies: [...new Set([...(prev.removedSpecies ?? []), ...removedSpecies])],
+      };
+    }),
 
     setTimeOffset: (ctx, offset) => {
       // Optimistic Zustand update (hot path) + durable Dexie mirror. Unlike a
@@ -470,7 +491,7 @@ export const useDraftStore = create<DraftState>((set, get) => {
           clearTimeout(timer);
           pending.delete(rec.id);
         }
-        const clean = { ...rec, dirty: false, confirmedSpecies: undefined };
+        const clean = { ...rec, dirty: false, confirmedSpecies: undefined, removedSpecies: undefined };
         next[path] = clean;
         changed.push(clean);
       }

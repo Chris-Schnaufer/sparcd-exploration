@@ -481,6 +481,7 @@ export function timestampSourceFromComments(comments: string): TimestampSource |
 
 export const COMMONNAME_PREFIX = 'COMMONNAME';
 export const REQUESTED_SPECIES_PREFIX = 'REQUESTED_SPECIES';
+export const REMOVED_PREFIX = 'REMOVED';
 
 // `[PREFIX:value]` markers concatenated in the col-19 comments field. Prefixes
 // are upper snake; values run to the next `]`.
@@ -508,6 +509,14 @@ export function requestedSpeciesFromComments(comments: string): string | null {
   return m ? m.value : null;
 }
 
+/** All scientific names explicitly removed in this edit, or an empty list. */
+export function removedSpeciesFromComments(comments: string): string[] {
+  return parseTagMarkers(comments)
+    .filter((t) => t.prefix === REMOVED_PREFIX)
+    .map((t) => t.value)
+    .filter(Boolean);
+}
+
 /**
  * Build the col-19 comments string for one observation. `commonName` and
  * `requestedSpecies` land as reserved markers; `extra` carries through any
@@ -516,12 +525,15 @@ export function requestedSpeciesFromComments(comments: string): string | null {
 export function buildObservationComments(input: {
   commonName?: string;
   requestedSpecies?: string;
+  removedSpecies?: string[];
   extra?: TagMarker[];
 }): string {
   const markers: TagMarker[] = [];
   if (input.commonName) markers.push({ prefix: COMMONNAME_PREFIX, value: input.commonName });
   if (input.requestedSpecies)
     markers.push({ prefix: REQUESTED_SPECIES_PREFIX, value: input.requestedSpecies });
+  for (const species of input.removedSpecies ?? [])
+    if (species) markers.push({ prefix: REMOVED_PREFIX, value: species });
   if (input.extra) markers.push(...input.extra);
   return serializeTagMarkers(markers);
 }
@@ -534,6 +546,7 @@ export type ObservationInput = {
   count: number; // col 9
   commonName?: string; // → [COMMONNAME:…] in col 19
   requestedSpecies?: string; // → [REQUESTED_SPECIES:…] in col 19
+  removedSpecies?: string[]; // → [REMOVED:…] in col 19
   extraMarkers?: TagMarker[]; // preserved through-markers
   /** Existing attribution is retained when Tagger replaces an observation row. */
   classifiedBy?: string;
@@ -554,6 +567,8 @@ export type MediaEdit = {
   mediaTimestamp?: string; // if set, overwrite media.csv col 4 for this image
   /** When a flagged capture time is corrected, replace its source marker in col 10. */
   timestampSource?: TimestampSource;
+  /** Species explicitly removed in this edit; written once on the replacement row. */
+  removedSpecies?: string[];
   observations: ObservationInput[];
 };
 
@@ -583,6 +598,7 @@ function buildObservationRow(
   row[OBS_COL.comments] = buildObservationComments({
     commonName: o.commonName,
     requestedSpecies: o.requestedSpecies,
+    removedSpecies: o.removedSpecies,
     extra: o.extraMarkers,
   });
   row[OBS_COL.classifiedBy] = o.classifiedBy ?? '';
@@ -598,6 +614,7 @@ function buildBlankObservationRow(edit: MediaEdit, observationId: string): strin
   row[OBS_COL.timestamp] = edit.timestamp;
   row[OBS_COL.observationType] = 'blank';
   row[OBS_COL.cameraSetup] = 'false';
+  row[OBS_COL.comments] = buildObservationComments({ removedSpecies: edit.removedSpecies });
   return row;
 }
 

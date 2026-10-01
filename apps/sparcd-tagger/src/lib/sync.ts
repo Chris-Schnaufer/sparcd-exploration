@@ -166,12 +166,17 @@ export function buildSyncPlan(
       else if (wasTagged && !nowTagged) summary.removals++;
       else summary.modifications++;
 
+      const removedSpecies = (d?.removedSpecies ?? []).filter((name) =>
+        img.baseObservations.some((o) => o.scientificName === name),
+      );
+
       tagEdits.push({
         mediaId: img.key,
         deploymentId,
         timestamp: corrected,
         mediaTimestamp: timeChanged ? corrected : undefined,
         timestampSource,
+        removedSpecies,
         observations: obs.map((o) => {
           const base = img.baseObservations.find(
             (candidate) =>
@@ -192,6 +197,7 @@ export function buildSyncPlan(
             count: Math.max(1, o.count),
             commonName: o.commonName || undefined,
             requestedSpecies: o.requestedSpecies || undefined,
+            removedSpecies: obs[0] === o ? removedSpecies : undefined,
             classifiedBy,
             classificationTimestamp,
           };

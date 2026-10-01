@@ -40,6 +40,8 @@ export interface DraftRecord {
   observations: DraftObservation[];
   /** Species explicitly re-applied as a confirmation since the last sync. */
   confirmedSpecies?: string[];
+  /** Species explicitly removed since the last sync. */
+  removedSpecies?: string[];
   questionable: boolean;
   timeOverride: string | null; // per-image corrected ISO timestamp; null when unset
 
