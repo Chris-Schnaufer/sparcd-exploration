@@ -49,6 +49,7 @@ export type Observation = {
   tags: string; // concatenated [PREFIX:value] markers
   classifiedBy?: string;
   classificationTimestamp?: string; // ISO; when classifiedBy last reviewed this row
+  reviewEvents?: ReviewEvent[];
 };
 
 /** All three collections for one upload bundle. */
@@ -449,6 +450,8 @@ export function parseObservations(csv: string): Observation[] {
     const observationType = rawType === 'animal' || (rawType === '' && scientificName !== '' && count > 0)
       ? 'animal'
       : 'blank';
+    const tags = r[OBS_COL.comments] ?? '';
+    const reviewEvents = reviewEventsFromComments(tags);
     return {
       observationId: r[OBS_COL.observationId] ?? '',
       mediaId: r[OBS_COL.mediaId] ?? '',
@@ -457,9 +460,10 @@ export function parseObservations(csv: string): Observation[] {
       observationType,
       scientificName,
       count,
-      tags: r[OBS_COL.comments] ?? '',
+      tags,
       classifiedBy: r[OBS_COL.classifiedBy] || undefined,
       classificationTimestamp: r[OBS_COL.classificationTimestamp] || undefined,
+      ...(reviewEvents.length ? { reviewEvents } : {}),
     };
   });
 }
@@ -467,6 +471,7 @@ export function parseObservations(csv: string): Observation[] {
 // --- Tag marker grammar ----------------------------------------------------
 
 export type TagMarker = { prefix: string; value: string };
+export type ReviewEvent = { reviewedBy: string; reviewedAt: string };
 
 /** Reserved prefixes for v0. Unknown prefixes are tolerated and preserved. */
 export const TIMESTAMP_PREFIX = 'TIMESTAMP';
@@ -481,6 +486,8 @@ export function timestampSourceFromComments(comments: string): TimestampSource |
 
 export const COMMONNAME_PREFIX = 'COMMONNAME';
 export const REQUESTED_SPECIES_PREFIX = 'REQUESTED_SPECIES';
+export const REVIEWED_BY_PREFIX = 'REVIEWED_BY';
+export const REVIEWED_AT_PREFIX = 'REVIEWED_AT';
 
 // `[PREFIX:value]` markers concatenated in the col-19 comments field. Prefixes
 // are upper snake; values run to the next `]`.
@@ -508,6 +515,16 @@ export function requestedSpeciesFromComments(comments: string): string | null {
   return m ? m.value : null;
 }
 
+/** Read repeatable reviewer events from an observation's comments markers. */
+export function reviewEventsFromComments(comments: string): ReviewEvent[] {
+  const markers = parseTagMarkers(comments);
+  const reviewers = markers.filter((m) => m.prefix === REVIEWED_BY_PREFIX).map((m) => m.value);
+  const timestamps = markers.filter((m) => m.prefix === REVIEWED_AT_PREFIX).map((m) => m.value);
+  return reviewers
+    .map((reviewedBy, i) => ({ reviewedBy, reviewedAt: timestamps[i] ?? '' }))
+    .filter((event) => event.reviewedBy && event.reviewedAt);
+}
+
 /**
  * Build the col-19 comments string for one observation. `commonName` and
  * `requestedSpecies` land as reserved markers; `extra` carries through any
@@ -516,12 +533,19 @@ export function requestedSpeciesFromComments(comments: string): string | null {
 export function buildObservationComments(input: {
   commonName?: string;
   requestedSpecies?: string;
+  reviewEvents?: ReviewEvent[];
   extra?: TagMarker[];
 }): string {
   const markers: TagMarker[] = [];
   if (input.commonName) markers.push({ prefix: COMMONNAME_PREFIX, value: input.commonName });
   if (input.requestedSpecies)
     markers.push({ prefix: REQUESTED_SPECIES_PREFIX, value: input.requestedSpecies });
+  for (const event of input.reviewEvents ?? []) {
+    if (event.reviewedBy && event.reviewedAt) {
+      markers.push({ prefix: REVIEWED_BY_PREFIX, value: event.reviewedBy });
+      markers.push({ prefix: REVIEWED_AT_PREFIX, value: event.reviewedAt });
+    }
+  }
   if (input.extra) markers.push(...input.extra);
   return serializeTagMarkers(markers);
 }
@@ -534,6 +558,7 @@ export type ObservationInput = {
   count: number; // col 9
   commonName?: string; // → [COMMONNAME:…] in col 19
   requestedSpecies?: string; // → [REQUESTED_SPECIES:…] in col 19
+  reviewEvents?: ReviewEvent[]; // → [REVIEWED_BY/REVIEWED_AT:…] in col 19
   extraMarkers?: TagMarker[]; // preserved through-markers
   /** Existing attribution is retained when Tagger replaces an observation row. */
   classifiedBy?: string;
@@ -583,6 +608,7 @@ function buildObservationRow(
   row[OBS_COL.comments] = buildObservationComments({
     commonName: o.commonName,
     requestedSpecies: o.requestedSpecies,
+    reviewEvents: o.reviewEvents,
     extra: o.extraMarkers,
   });
   row[OBS_COL.classifiedBy] = o.classifiedBy ?? '';

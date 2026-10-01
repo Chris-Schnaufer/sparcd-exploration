@@ -29,6 +29,7 @@ export type FlipObservation = {
   classifiedBy?: string;
   /** ISO timestamp paired with classifiedBy. */
   classificationTimestamp?: string;
+  reviewEvents?: { reviewedBy: string; reviewedAt: string }[];
 };
 
 /**

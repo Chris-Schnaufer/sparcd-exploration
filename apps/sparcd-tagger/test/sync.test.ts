@@ -233,8 +233,8 @@ describe('buildSyncPlan', () => {
   // #368 (Q12): a review of an existing identification must record the
   // reviewer and date even when nothing about the species/count changes.
   // Re-applying a species already present is how that confirmation is made —
-  // `addObservation` refreshes its classifiedBy/classificationTimestamp
-  // without touching content, which is the signal buildSyncPlan keys off.
+  // The store records the reviewer separately; the original attribution is
+  // retained in the canonical row.
   it('records a confirmation as its own category, not a modification, when a species is re-applied unchanged', () => {
     const images: TagImage[] = [{
       ...IMAGES[0],
@@ -273,8 +273,8 @@ describe('buildSyncPlan', () => {
     const written = plan.tagEdits[0].observations[0];
     expect(written.scientificName).toBe('Puma concolor');
     expect(written.count).toBe(1);
-    expect(written.classifiedBy).toBe('harold');
-    expect(written.classificationTimestamp).toBe('2024-01-20T14:30:00.000Z');
+    expect(written.classifiedBy).toBe('fielduser');
+    expect(written.classificationTimestamp).toBe('2024-01-11T00:00:00.000Z');
   });
 
   it('does not confirm an untouched draft (no attribution refresh, no edit)', () => {
@@ -325,7 +325,7 @@ describe('buildSyncPlan', () => {
     }, null);
     const rows = plan.tagEdits[0].observations;
     expect(plan.summary.confirmations).toBe(1);
-    expect(rows.find((o) => o.scientificName === 'Puma concolor')?.classifiedBy).toBe('harold');
+    expect(rows.find((o) => o.scientificName === 'Puma concolor')?.classifiedBy).toBe('fielduser');
     expect(rows.find((o) => o.scientificName === 'Canis latrans')?.classifiedBy).toBeUndefined();
   });
 
@@ -383,7 +383,7 @@ describe('buildSyncPlan', () => {
       null,
     );
     expect(plan.summary).toMatchObject({ confirmations: 1, timeCorrections: 1 });
-    expect(plan.tagEdits[0].observations[0].classifiedBy).toBe('harold');
+    expect(plan.tagEdits[0].observations[0].classifiedBy).toBe('fielduser');
     expect(plan.tagEdits[0].mediaTimestamp).toBe('2024-01-10T09:00:00');
   });
 

@@ -191,16 +191,17 @@ export function buildSyncPlan(
           // modeled can omit them. Preserve the canonical values rather than
           // blanking them when another observation on the image is edited.
           const classifiedBy = base
-            ? o.classifiedBy ?? base.classifiedBy
+            ? base.classifiedBy ?? o.classifiedBy
             : o.classifiedBy ?? (user.trim() || undefined);
           const classificationTimestamp = base
-            ? o.classificationTimestamp ?? base.classificationTimestamp
+            ? base.classificationTimestamp ?? o.classificationTimestamp
             : o.classificationTimestamp;
           return {
             scientificName: o.scientificName,
             count: Math.max(1, o.count),
             commonName: o.commonName || undefined,
             requestedSpecies: o.requestedSpecies || undefined,
+            reviewEvents: o.reviewEvents ?? base?.reviewEvents,
             classifiedBy,
             classificationTimestamp,
           };
@@ -228,10 +229,11 @@ export function buildSyncPlan(
             // Only the explicitly re-applied species receives the current
             // reviewer identity. Other legacy rows keep their canonical
             // attribution (or remain unattributed).
-            classifiedBy: o.classifiedBy ?? base?.classifiedBy ??
+            classifiedBy: base?.classifiedBy ?? o.classifiedBy ??
               (explicitlyConfirmed ? user.trim() || undefined : undefined),
-            classificationTimestamp: o.classificationTimestamp ??
-              (explicitlyConfirmed ? new Date().toISOString() : base?.classificationTimestamp),
+            classificationTimestamp: base?.classificationTimestamp ?? o.classificationTimestamp ??
+              (explicitlyConfirmed ? new Date().toISOString() : undefined),
+            reviewEvents: o.reviewEvents ?? base?.reviewEvents,
           };
         }),
       });

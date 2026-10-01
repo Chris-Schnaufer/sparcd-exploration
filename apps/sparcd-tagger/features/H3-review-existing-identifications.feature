@@ -98,6 +98,13 @@ Feature: Review, correct and remove identifications that already exist
     Then the confirmed image's stored identification is stamped with the reviewer and the time of the review
     And the corrected image's stored identification is stamped with the reviewer and the time of the review
 
+  @H3 @H3-6
+  Scenario: A review keeps original attribution separate from the review event
+    Given an existing identification has original attribution
+    And an existing identification is re-applied unchanged
+    When a live sync is run
+    Then the original identifier and separate review remain visible in the stored image
+
   @H3
   Scenario: An image edited locally is distinguishable from one that is not
     Given an image's identifications were changed in this browser

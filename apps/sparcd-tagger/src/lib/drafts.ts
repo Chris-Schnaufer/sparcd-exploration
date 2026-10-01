@@ -65,13 +65,33 @@ export type AppliedTag = {
   classificationTimestamp?: string;
 };
 
+function appendReviewEvent(
+  observations: DraftObservation[],
+  scientificName: string,
+  reviewedBy?: string,
+  reviewedAt?: string,
+): DraftObservation[] {
+  if (!reviewedBy || !reviewedAt) return observations;
+  return observations.map((o) =>
+    o.scientificName === scientificName
+      ? {
+          ...o,
+          reviewEvents: (o.reviewEvents ?? []).some(
+            (event) => event.reviewedBy === reviewedBy && event.reviewedAt === reviewedAt,
+          )
+            ? o.reviewEvents
+            : [...(o.reviewEvents ?? []), { reviewedBy, reviewedAt }],
+        }
+      : o,
+  );
+}
+
 // --- Pure array transforms (exported for unit tests) -----------------------
 
 /** Add-only: applying a species already present leaves its content untouched
- *  (no dup, no count change) but DOES refresh its attribution — re-applying an
- *  already-present species is how a reviewer confirms an existing
- *  identification, and that confirmation must still be recorded (#368), even
- *  though nothing about the species/count changes. Mutual exclusivity:
+ *  (no dup, no count change) while preserving its original attribution;
+ *  re-applying an already-present species is recorded as a separate review
+ *  event by the store action. Mutual exclusivity:
  *  applying Ghost replaces the whole set; applying a real species first clears
  *  any Ghost. Order is preserved (append last). */
 export function addObservation(obs: DraftObservation[], tag: AppliedTag): DraftObservation[] {
@@ -90,8 +110,9 @@ export function addObservation(obs: DraftObservation[], tag: AppliedTag): DraftO
       existingGhost
         ? {
             ...next,
-            classifiedBy: next.classifiedBy ?? existingGhost.classifiedBy,
-            classificationTimestamp: next.classificationTimestamp ?? existingGhost.classificationTimestamp,
+            classifiedBy: existingGhost.classifiedBy,
+            classificationTimestamp: existingGhost.classificationTimestamp,
+            reviewEvents: existingGhost.reviewEvents,
           }
         : next,
     ]; // Ghost replaces all real species
@@ -103,8 +124,9 @@ export function addObservation(obs: DraftObservation[], tag: AppliedTag): DraftO
       o === existing
       ? {
           ...o,
-          classifiedBy: next.classifiedBy ?? o.classifiedBy,
-          classificationTimestamp: next.classificationTimestamp ?? o.classificationTimestamp,
+          classifiedBy: o.classifiedBy,
+          classificationTimestamp: o.classificationTimestamp,
+          reviewEvents: o.reviewEvents,
         }
         : o,
     );
@@ -127,10 +149,9 @@ export function incrementObservation(obs: DraftObservation[], tag: AppliedTag): 
         ? {
             ...o,
             count: o.count + 1,
-            classifiedBy: tag.classifiedBy ?? o.classifiedBy,
-            classificationTimestamp: tag.classifiedBy
-              ? tag.classificationTimestamp
-              : o.classificationTimestamp,
+            classifiedBy: o.classifiedBy,
+            classificationTimestamp: o.classificationTimestamp,
+            reviewEvents: o.reviewEvents,
           }
         : o,
     );
@@ -354,11 +375,25 @@ export const useDraftStore = create<DraftState>((set, get) => {
         const confirmedSpecies = confirmed
           ? [...new Set([...(prev.confirmedSpecies ?? []), tag.scientificName])]
           : prev.confirmedSpecies;
-        return { observations: addObservation(prev.observations, tag), confirmedSpecies };
+        const observations = addObservation(prev.observations, tag);
+        return {
+          observations: confirmed
+            ? appendReviewEvent(observations, tag.scientificName, tag.classifiedBy, tag.classificationTimestamp)
+            : observations,
+          confirmedSpecies,
+        };
       }),
 
     incrementSpecies: (ctx, targets, tag) =>
-      mutateMany(ctx, targets, (prev) => ({ observations: incrementObservation(prev.observations, tag) })),
+      mutateMany(ctx, targets, (prev) => {
+        const wasPresent = prev.observations.some((o) => o.scientificName === tag.scientificName);
+        const observations = incrementObservation(prev.observations, tag);
+        return {
+          observations: wasPresent
+            ? appendReviewEvent(observations, tag.scientificName, tag.classifiedBy, tag.classificationTimestamp)
+            : observations,
+        };
+      }),
 
     removeSpecies: (ctx, mediaPath, deploymentId, base, sci) =>
       mutateMany(ctx, [{ mediaPath, deploymentId, base }], (prev) => ({
@@ -368,10 +403,11 @@ export const useDraftStore = create<DraftState>((set, get) => {
 
     setSpeciesCount: (ctx, mediaPath, deploymentId, base, sci, count, classifiedBy, classificationTimestamp) =>
       mutateMany(ctx, [{ mediaPath, deploymentId, base }], (prev) => ({
-        observations: setObservationCount(prev.observations, sci, count).map((o) =>
-          o.scientificName === sci && classifiedBy
-            ? { ...o, classifiedBy, classificationTimestamp }
-            : o,
+        observations: appendReviewEvent(
+          setObservationCount(prev.observations, sci, count),
+          sci,
+          classifiedBy,
+          classificationTimestamp,
         ),
       })),
 
@@ -485,7 +521,17 @@ export const useDraftStore = create<DraftState>((set, get) => {
           clearTimeout(timer);
           pending.delete(rec.id);
         }
-        const clean = { ...rec, dirty: false, confirmedSpecies: undefined };
+        const clean = {
+          ...rec,
+          dirty: false,
+          confirmedSpecies: undefined,
+          // Review events are now in the canonical observations.csv. Remove
+          // the pending copy so a later sync cannot write the same marker twice.
+          observations: rec.observations.map((observation) => ({
+            ...observation,
+            reviewEvents: undefined,
+          })),
+        };
         next[path] = clean;
         changed.push(clean);
       }

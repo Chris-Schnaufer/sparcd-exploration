@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { parseObservations } from '@sparcd/camtrap';
+import { parseObservations, parseCsvRows, serializeCsvRows, OBS_COL } from '@sparcd/camtrap';
 import {
   Given,
   When,
@@ -241,6 +241,19 @@ Given('an existing identification is re-applied unchanged', async ({ page }) => 
   await speciesApply(page, 'Odocoileus hemionus').click();
 });
 
+Given('an existing identification has original attribution', async ({ page, s3 }) => {
+  const key = `${PREFIX_A}observations.csv`;
+  const rows = parseCsvRows(s3.text(BUCKET, key));
+  const row = rows.find((cells) => cells[OBS_COL.mediaId]?.endsWith('IMG001.JPG'))!;
+  row[OBS_COL.classifiedBy] = 'fielduser';
+  row[OBS_COL.classificationTimestamp] = '2024-01-11T00:00:00.000Z';
+  s3.put(BUCKET, key, serializeCsvRows(rows), 'text/csv');
+  await page.reload();
+  await openWorkspace(page);
+  await expect(gridCell(page, 'IMG001.JPG')).toContainText('Mule Deer');
+  await expect(page.locator('[aria-label="Originally identified by fielduser"]')).toBeVisible();
+});
+
 When('a sync is previewed', async ({ page }) => {
   await openSyncDialog(page);
 });
@@ -268,8 +281,19 @@ Then(
     expect(row).toBeTruthy();
     expect(row!.classifiedBy).toBe('testkey');
     expect(row!.classificationTimestamp).toMatch(ISO_TIMESTAMP);
+    expect(row!.reviewEvents).toEqual([{ reviewedBy: 'testkey', reviewedAt: expect.stringMatching(ISO_TIMESTAMP) }]);
   },
 );
+
+Then('the original identifier and separate review remain visible in the stored image', async ({ s3 }) => {
+  const obs = parseObservations(s3.text(BUCKET, `${PREFIX_A}observations.csv`));
+  const row = obs.find((o) => o.mediaId.endsWith('IMG001.JPG') && o.scientificName === 'Odocoileus hemionus');
+  expect(row).toMatchObject({
+    classifiedBy: 'fielduser',
+    classificationTimestamp: '2024-01-11T00:00:00.000Z',
+  });
+  expect(row?.reviewEvents).toEqual([{ reviewedBy: 'testkey', reviewedAt: expect.stringMatching(ISO_TIMESTAMP) }]);
+});
 
 Then(
   "the corrected image's stored identification is stamped with the reviewer and the time of the review",

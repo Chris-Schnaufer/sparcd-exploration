@@ -41,12 +41,12 @@ that map to an agreed story carry its ID; the rest carry `@unmapped`.
   storage username (the access key) and stamp it into new observation rows,
   the snapshot path and the `UploadMeta.json` edit comment. A disconnected
   local Uploader handoff uses its session-scoped handoff identity instead.
-- **H3 — partially met.** Existing identifications from any source (Java
-  desktop app, sparcd-web, an earlier tagger sync) are shown with counts, and
-  can be corrected or removed. **A pure confirmation records nothing** — the
-  diff is content-based, so re-applying an identical identification produces
-  no change and therefore no "reviewed by / reviewed at" trace. H3's third
-  criterion is not satisfied.
+- **H3 — met for review provenance.** Existing identifications from any source
+  (Java desktop app, sparcd-web, an earlier tagger sync) are shown with counts,
+  and can be corrected or removed. Re-applying an identical identification
+  preserves the original `classified_by` and `classification_timestamp` and
+  appends a separate repeatable `[REVIEWED_BY:…][REVIEWED_AT:…]` event. The
+  review event survives sync and the Uploader-to-Tagger handoff.
 - **F4 — not addressed by this tool.** No sensitive-species concept exists
   anywhere in the tagger. Locations are shown to any connected user. Captured
   honestly in `F4-location-visibility.feature` so the gap is on the record.
@@ -81,9 +81,9 @@ that map to an agreed story carry its ID; the rest carry `@unmapped`.
    published. Its drafts also stay listed as "unsaved" after a sync, because
    only the drafts actually written are cleared. Is a local-only flag the
    intent, or should it become part of the canonical record?
-2. **Confirmation of prior work leaves no trace** (see H3 above). If the
-   director wants "Harold reviewed this upload on this date", something must
-   be recorded that a content diff cannot produce.
+2. **Review provenance is separate from original attribution.** H3-6 covers
+   repeatable review markers and their preservation through sync and local
+   handoff; the canonical contract is documented in issue #371.
 3. **Connected identity follows credentials.** The connected storage username
    becomes attribution and the snapshot folder name, and the Settings field is
    read-only. Disconnected local Uploader handoffs retain a separate,

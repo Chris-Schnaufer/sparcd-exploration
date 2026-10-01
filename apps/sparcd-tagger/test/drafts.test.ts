@@ -100,16 +100,16 @@ describe('incrementObservation', () => {
     ]);
   });
 
-  it('refreshes attribution when incrementing an existing species', () => {
+  it('preserves original attribution when incrementing an existing species', () => {
     const next = incrementObservation(
       [{ ...obs('Canis latrans', 1), classifiedBy: 'fielduser' }],
       { ...tag('Canis latrans'), classifiedBy: 'harold', classificationTimestamp: '2024-01-20T14:30:00.000Z' },
     );
     expect(next[0]).toMatchObject({
       count: 2,
-      classifiedBy: 'harold',
-      classificationTimestamp: '2024-01-20T14:30:00.000Z',
+      classifiedBy: 'fielduser',
     });
+    expect(next[0].classificationTimestamp).toBeUndefined();
   });
 
   it('clears Ghost when a real species is incremented', () => {
