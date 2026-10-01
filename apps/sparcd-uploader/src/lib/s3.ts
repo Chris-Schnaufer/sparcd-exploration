@@ -248,8 +248,8 @@ export type LocationsResult = LocationsParse & {
 };
 
 function isMissingObjectError(err: unknown): boolean {
-  const e = err as { name?: string; $metadata?: { httpStatusCode?: number } };
-  return e.$metadata?.httpStatusCode === 404 || e.name === 'NoSuchKey' || e.name === 'NotFound';
+  const e = err as { name?: string; message?: string; $metadata?: { httpStatusCode?: number } };
+  return e.$metadata?.httpStatusCode === 404 || e.name === 'NoSuchKey' || e.name === 'NotFound' || e.message === 'NoSuchKey';
 }
 
 /**
@@ -493,8 +493,11 @@ export async function listPublishedUploads(cfg: S3Config, ref: CollectionRef): P
           // No deployments.csv — leave deploymentId null.
         }
         return { prefix, stamp: prefix.replace(/\/$/, '').split('/').pop() ?? prefix, meta, deploymentId };
-      } catch {
-        return null; // No UploadMeta.json yet, or unreadable / CORS-blocked.
+      } catch (err) {
+        if (isMissingObjectError(err)) return null;
+        // A published upload must not disappear silently when the marker read
+        // fails because of CORS, credentials, or a transient storage error.
+        throw translateReadError(err, 'UploadMeta.json');
       }
     }),
   );

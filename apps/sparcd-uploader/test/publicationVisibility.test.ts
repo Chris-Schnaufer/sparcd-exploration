@@ -70,6 +70,14 @@ describe('UploadMeta publication gate', () => {
     ]);
   });
 
+  it('surfaces marker read failures instead of treating published uploads as absent', async () => {
+    const client = getClient(CFG) as unknown as FakeClient;
+    client.listCommonPrefixes.mockResolvedValue([COMPLETE]);
+    client.getObject.mockRejectedValue(new Error('Failed to fetch'));
+
+    await expect(listPublishedUploads(CFG, REF)).rejects.toThrow('Failed to fetch');
+  });
+
   it('excludes an unmarked upload from deployment locations', async () => {
     const client = getClient(CFG) as unknown as FakeClient;
     client.listCommonPrefixes.mockResolvedValue([COMPLETE, INCOMPLETE]);

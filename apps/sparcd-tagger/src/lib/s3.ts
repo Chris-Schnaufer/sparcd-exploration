@@ -370,8 +370,8 @@ export async function listCollectionSnapshots(
 }
 
 export function isNotFound(err: unknown): boolean {
-  const e = err as { name?: string; $metadata?: { httpStatusCode?: number } };
-  return e?.name === 'NoSuchKey' || e?.name === 'NotFound' || e?.$metadata?.httpStatusCode === 404;
+  const e = err as { name?: string; message?: string; $metadata?: { httpStatusCode?: number } };
+  return e?.name === 'NoSuchKey' || e?.name === 'NotFound' || e?.message === 'NoSuchKey' || e?.$metadata?.httpStatusCode === 404;
 }
 
 /** Load the canonical bodies of one snapshot, to restore them in place. A
