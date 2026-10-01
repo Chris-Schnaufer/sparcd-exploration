@@ -713,6 +713,62 @@ describe('upload runs continue past per-file blob failures', () => {
     expect(mocks.markBatchComplete).not.toHaveBeenCalled();
   });
 
+  it('rejects a resumed publication when existing metadata has a UTF-8 BOM', async () => {
+    const session = makeSession(['done']);
+    const client = makeClient(session.files);
+    mocks.client = client;
+    const key = `${session.batch.uploadPrefix}/deployments.csv`;
+    client.writeImmutable.mockImplementation(async (_bucket: string, candidate: string) => {
+      if (candidate === key) throw new PreconditionFailedError(candidate);
+    });
+    const expected = new TextEncoder().encode('deployments');
+    const withBom = new Uint8Array(expected.length + 3);
+    withBom.set([0xef, 0xbb, 0xbf]);
+    withBom.set(expected, 3);
+    client.getObject.mockResolvedValue(withBom);
+
+    let last: UploadSnapshot | null = null;
+    const run = resumeUpload(
+      { config: CONFIG, session, attached: new Map(), concurrency: manual(1) },
+      (snap) => { last = snap; },
+    );
+    const snap = await collect(run, () => last);
+
+    expect(snap.phase).toBe('error');
+    expect(snap.error).toContain('metadata conflict');
+    expect(mocks.markBatchComplete).not.toHaveBeenCalled();
+  });
+
+  it('retries a transient existing-metadata read before accepting matching bytes', async () => {
+    const session = makeSession(['done']);
+    const client = makeClient(session.files);
+    mocks.client = client;
+    const key = `${session.batch.uploadPrefix}/media.csv`;
+    client.writeImmutable.mockImplementation(async (_bucket: string, candidate: string) => {
+      if (candidate === key) throw new PreconditionFailedError(candidate);
+    });
+    let reads = 0;
+    client.getObject.mockImplementation(async (_bucket: string, candidate: string) => {
+      expect(candidate).toBe(key);
+      reads++;
+      if (reads === 1) {
+        throw Object.assign(new Error('service unavailable'), { $metadata: { httpStatusCode: 503 } });
+      }
+      return new TextEncoder().encode('media');
+    });
+
+    let last: UploadSnapshot | null = null;
+    const run = resumeUpload(
+      { config: CONFIG, session, attached: new Map(), concurrency: manual(1) },
+      (snap) => { last = snap; },
+    );
+    const snap = await collect(run, () => last);
+
+    expect(snap.phase).toBe('done');
+    expect(client.getObject).toHaveBeenCalledTimes(2);
+    expect(mocks.markBatchComplete).toHaveBeenCalledTimes(1);
+  });
+
   it('confirms a resumed run by one listing pass plus a digest sample, not a HEAD per file', async () => {
     const session = makeSession(Array.from({ length: 8 }, () => 'pending'));
     mocks.client = makeClient(session.files);

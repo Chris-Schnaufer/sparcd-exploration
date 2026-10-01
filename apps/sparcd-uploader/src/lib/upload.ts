@@ -905,6 +905,21 @@ function makeRunner(
   // fresh run must not silently accept a metadata collision, and a resumed
   // run must not accept a different publication under the same key.
   const writeMetadata = async (writes: RunPlan['writes'], uploadPath: string): Promise<void> => {
+    const readExisting = async (key: string): Promise<Uint8Array> => {
+      for (let attempt = 0; ; attempt++) {
+        if (cancelled) throw new Error('cancelled');
+        try {
+          return await client.getObject(snap.bucket, key);
+        } catch (err) {
+          if (cancelled) throw new Error('cancelled');
+          if (attempt + 1 >= MAX_ATTEMPTS || !isTransient(err)) throw err;
+          const wait = backoff(attempt);
+          log('warn', `verify existing metadata retry ${key} (attempt ${attempt + 2}) after ${Math.round(wait)}ms`);
+          await sleep(wait);
+        }
+      }
+    };
+
     for (const w of writes) {
       if (cancelled) throw new Error('cancelled');
       const key = `${uploadPath}/${w.name}`;
@@ -926,9 +941,10 @@ function makeRunner(
           if (cancelled) throw new Error('cancelled');
           if (err instanceof PreconditionFailedError) {
             if (isResume) {
-              const existing = await client.getObject(snap.bucket, key);
-              const existingBody = new TextDecoder().decode(existing);
-              if (existingBody !== w.body) {
+              const existing = await readExisting(key);
+              const expected = new TextEncoder().encode(w.body);
+              const sameBytes = existing.length === expected.length && existing.every((byte, i) => byte === expected[i]);
+              if (!sameBytes) {
                 throw new Error(`metadata conflict: ${key} already contains different content`);
               }
               log('info', `already present with matching content, skip: ${key}`);
