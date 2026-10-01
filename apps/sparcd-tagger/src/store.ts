@@ -42,8 +42,9 @@ type TaggerState = {
   // workspace consumes it once to auto-open its Snapshots dialog, then clears it.
   pendingSnapshots: boolean;
 
-  // Settings (the login gate stays three-field; identity + dry-run live here).
-  taggerUser: string; // logical userId for snapshot paths + editComments
+  // Connected storage username used for attribution and audit paths. Local
+  // batch mode may carry its handoff identity separately because it has no S3.
+  taggerUser: string;
   dryRun: boolean; // off by default; on to preview a sync without writing anything
   burstGroupingEnabled: boolean; // off by default — our cameras shoot no bursts
   burstThresholdSec: number; // sequence grouping threshold (5–600s), used when enabled
@@ -61,6 +62,7 @@ type TaggerState = {
   openUploadForSnapshots: (collectionKey: string, uploadPrefix: string) => void;
   clearPendingSnapshots: () => void;
   setSyncState: (state: SyncState) => void;
+  /** Local-batch fallback only; connected sessions derive identity from S3. */
   setTaggerUser: (value: string) => void;
   setDryRun: (value: boolean) => void;
   setBurstGrouping: (value: boolean) => void;
@@ -80,7 +82,7 @@ const initialSession = loadSessionConnection();
 const LEGACY_THEME_KEY = 'sparcd-tagger-session';
 const DISPLAY_PREFERENCES_KEY = 'sparcd-tagger-display-preferences';
 const AUTO_ADVANCE_KEY = 'sparcd-tagger-auto-advance-on-tag';
-const TAGGER_IDENTITY_KEY = 'sparcd-tagger-identity';
+const LOCAL_BATCH_IDENTITY_KEY = 'sparcd-tagger-local-batch-identity';
 
 type DisplayPreferences = Pick<TaggerState, 'dateFormat' | 'timeFormat' | 'distanceUnit'>;
 
@@ -140,39 +142,38 @@ function clearAutoAdvance() {
   }
 }
 
-// The identity typed in Settings — stamps the audit-snapshot path and edit
-// comment of every sync. Remembered on this device like the display
-// preferences (issue #305: it used to reset to empty on every reload), and
-// dropped whenever the connection changes hands, since it is a "who is at this
-// keyboard" attribution: a stale identity surviving a logout or a swap to
-// someone else's credentials risks misattributing the next person's edits.
-function loadTaggerUser(): string {
+function loadLocalBatchIdentity(): string {
   try {
-    return localStorage.getItem(TAGGER_IDENTITY_KEY) ?? '';
+    return sessionStorage.getItem(LOCAL_BATCH_IDENTITY_KEY) ?? '';
   } catch {
     return '';
   }
 }
 
-function saveTaggerUser(value: string) {
+function saveLocalBatchIdentity(value: string): void {
   try {
-    localStorage.setItem(TAGGER_IDENTITY_KEY, value);
+    sessionStorage.setItem(LOCAL_BATCH_IDENTITY_KEY, value);
   } catch {
-    // Storage can be unavailable or full. The in-memory choice still applies,
-    // but leaving an older value behind would restore it on the next reload.
-    clearTaggerUser();
+    // The in-memory value still makes the current local batch usable.
   }
 }
 
-function clearTaggerUser() {
+function clearLocalBatchIdentity(): void {
   try {
-    localStorage.removeItem(TAGGER_IDENTITY_KEY);
+    sessionStorage.removeItem(LOCAL_BATCH_IDENTITY_KEY);
   } catch {
-    // Disconnect still clears the active connection and in-memory identity.
+    // The in-memory value is cleared below even when storage is unavailable.
   }
 }
 
+// A local-batch handoff has no storage account to provide attribution, so its
+// identity survives a reload in this tab only. Connected sessions never use
+// this value: their attribution always comes from the active S3 access key.
 const initialDisplayPreferences = loadDisplayPreferences();
+
+export function connectedIdentity(config: S3Config | null): string {
+  return config?.accessKey?.trim() ?? '';
+}
 
 /** The choice this tool persisted for itself before the shared home existed. */
 function legacyTheme(): Theme | null {
@@ -203,10 +204,11 @@ export const useStore = create<TaggerState>()(
   // (`subscribeSharedConnection`) supplies one within a message round-trip of
   // mount, and otherwise the user enters the secret. The theme lives in the
   // shared home every SPARC'd tool reads; date/time/distance display prefs,
-  // auto-advance, and the tagger identity persist to their own localStorage
-  // keys (see the loaders above); everything else — selection, sync state,
-  // pendingSnapshots, dryRun — is transient and dropped on reload by design.
-  (set) => ({
+  // auto-advance persist to their own localStorage keys (see the loaders
+  // above); attribution comes from the active connection. Everything else —
+  // selection, sync state, pendingSnapshots, dryRun — is transient and dropped
+  // on reload by design.
+  (set, get) => ({
     s3Config: initialSession,
     connectionId: 0,
     section: 'browse',
@@ -215,7 +217,7 @@ export const useStore = create<TaggerState>()(
     selectedCollectionKey: null,
     selectedUploadPrefix: null,
     pendingSnapshots: false,
-    taggerUser: loadTaggerUser(),
+    taggerUser: initialSession ? connectedIdentity(initialSession) : loadLocalBatchIdentity(),
     dryRun: false,
     burstGroupingEnabled: false,
     burstThresholdSec: 60,
@@ -230,13 +232,14 @@ export const useStore = create<TaggerState>()(
         connectionId: s.connectionId + 1,
         selectedCollectionKey: null,
         selectedUploadPrefix: null,
+        taggerUser: connectedIdentity(config),
       }));
     },
     disconnect: () => {
       clearClientCache();
       clearSharedConnection();
       clearAutoAdvance();
-      clearTaggerUser();
+      clearLocalBatchIdentity();
       set((s) => ({
         s3Config: null,
         connectionId: s.connectionId + 1,
@@ -273,7 +276,7 @@ export const useStore = create<TaggerState>()(
     clearPendingSnapshots: () => set({ pendingSnapshots: false }),
     setSyncState: (state) => set({ syncState: state }),
     setTaggerUser: (value) => {
-      saveTaggerUser(value);
+      if (!get().s3Config) saveLocalBatchIdentity(value);
       set({ taggerUser: value });
     },
     setDryRun: (value) => set({ dryRun: value }),
@@ -310,20 +313,10 @@ export const useStore = create<TaggerState>()(
 // Also answers a sibling tab's own request with our current s3Config, if any.
 subscribeSharedConnection((cfg) => {
   clearClientCache();
-  // The identity belongs to whoever is connected, so it goes when the
-  // connection does: a sibling logging out, or logging in as someone else,
-  // must not leave their name to be stamped on the next sync. Adopting a
-  // relay into a tab that had no connection of its own — a freshly opened tab
-  // picking up the live session — replaces nobody, so the identity stands.
-  const previous = useStore.getState().s3Config;
-  const handedOver =
-    previous !== null &&
-    (cfg === null || cfg.endpoint !== previous.endpoint || cfg.accessKey !== previous.accessKey);
-  if (handedOver) clearTaggerUser();
   useStore.setState((s) => ({
     s3Config: cfg,
     connectionId: s.connectionId + 1,
-    ...(handedOver ? { taggerUser: '' } : {}),
+    taggerUser: connectedIdentity(cfg),
     ...(cfg
       ? {}
       : {

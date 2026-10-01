@@ -91,7 +91,7 @@ Then(
 
 When('a snapshot is chosen for restore', async ({ page }) => {
   await sectionTab(page, 'Settings').click();
-  await page.locator('#user').fill('jgonzalez');
+  await expect(page.locator('#user')).toHaveValue('testkey');
   await sectionTab(page, 'Tag').click();
   await openSnapshots(page);
   await snapshotItems(page).first().getByRole('button', { name: 'Restore…' }).click();
@@ -131,7 +131,7 @@ Then(
     await sectionTab(page, 'Settings').click();
     await settingsDryRunCheckbox(page).check();
     await expect(settingsDryRunCheckbox(page)).toBeChecked();
-    await page.locator('#user').fill('jgonzalez');
+    await expect(page.locator('#user')).toHaveValue('testkey');
     await sectionTab(page, 'Tag').click();
     await openSnapshots(page);
     await snapshotItems(page).first().getByRole('button', { name: 'Restore…' }).click();
@@ -145,7 +145,7 @@ Then(
 
 When('a snapshot is restored', async ({ page }) => {
   await sectionTab(page, 'Settings').click();
-  await page.locator('#user').fill('jgonzalez');
+  await expect(page.locator('#user')).toHaveValue('testkey');
   await sectionTab(page, 'Tag').click();
   await openSnapshots(page);
   await snapshotItems(page).first().getByRole('button', { name: 'Restore…' }).click();
@@ -164,7 +164,7 @@ When('a snapshot is restored', async ({ page }) => {
 Then(
   'the current stored files are first copied to a new snapshot filed under the restoring identity',
   async ({ s3 }) => {
-    const snaps = s3.puts.filter((p) => p.key.includes('.sparcd-tagger-snapshots/jgonzalez/'));
+    const snaps = s3.puts.filter((p) => p.key.includes('.sparcd-tagger-snapshots/testkey/'));
     expect(snaps.map((p) => p.key.split('/').pop())).toEqual([
       'media.csv',
       'observations.csv',
@@ -191,7 +191,7 @@ Then("only then are the snapshot's versions written back in place", async ({ s3 
 
 Given('the stored files changed since the restore was previewed', async ({ page, s3 }) => {
   await sectionTab(page, 'Settings').click();
-  await page.locator('#user').fill('jgonzalez');
+  await expect(page.locator('#user')).toHaveValue('testkey');
   await settingsDryRunCheckbox(page).uncheck();
   await sectionTab(page, 'Tag').click();
   await openSnapshots(page);
@@ -227,7 +227,7 @@ Then(
     expect(canonical.every((p) => !!p.ifMatch)).toBe(true);
     // And the pre-restore snapshot captured the third party's state, so it is
     // recoverable rather than lost.
-    const snaps = s3.puts.filter((p) => p.key.includes('.sparcd-tagger-snapshots/jgonzalez/'));
+    const snaps = s3.puts.filter((p) => p.key.includes('.sparcd-tagger-snapshots/testkey/'));
     expect(snaps.find((p) => p.key.endsWith('observations.csv'))!.body).toBe('rewritten elsewhere');
   },
 );
@@ -325,4 +325,3 @@ Then("the other uploads' snapshots are still listed", async ({ page }) => {
   await expect(section).toContainText('2024-02-01 12:00:00');
   await expect(section).not.toContainText('2024-04-04');
 });
-

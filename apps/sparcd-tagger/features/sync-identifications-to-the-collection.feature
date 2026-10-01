@@ -69,13 +69,6 @@ Feature: Publish local identifications back to the collection
     And switching the setting off changes the action to a real sync
 
   @unmapped
-  Scenario: A write cannot be run without a tagger identity
-    Given no tagger identity has been set
-    Then the dialog states that an identity must be set in Settings first
-    And the sync action is unavailable
-    # The identity stamps the snapshot path and the mandatory edit comment.
-
-  @unmapped
   Scenario: Nothing to sync is reported as such
     Given the local edits match what is already stored
     When the sync preview finishes

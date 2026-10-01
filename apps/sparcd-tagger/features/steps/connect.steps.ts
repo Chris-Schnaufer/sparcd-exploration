@@ -228,14 +228,21 @@ Then('Browse, History and Settings remain available', async ({ page }) => {
 
 // --- Identity ---------------------------------------------------------------
 
+Then('Settings shows the connected storage username', async ({ page }) => {
+  await expect(page.locator('#user')).toHaveValue('testkey');
+});
+
+Then('the connected identity cannot be edited', async ({ page }) => {
+  await expect(page.locator('#user')).toHaveAttribute('readonly', '');
+});
+
 When('a tagger identity is entered in Settings', async ({ page }) => {
   await openSettings(page);
-  await page.locator('#user').fill('jgonzalez');
-  await expect(page.locator('#user')).toHaveValue('jgonzalez');
+  await expect(page.locator('#user')).toHaveValue('testkey');
 });
 
 Then('that identity is retained in Settings', async ({ page }) => {
-  await expect(page.locator('#user')).toHaveValue('jgonzalez');
+  await expect(page.locator('#user')).toHaveValue('testkey');
 });
 
 Then('a fresh connection starts with no identity carried over', async ({ page }) => {
@@ -257,7 +264,7 @@ When('the tagger is opened in a second tab of the same browser', async ({ contex
 Then('that identity is retained in Settings of the second tab', async ({ scratch }) => {
   const second = scratch.second as import('@playwright/test').Page;
   await openSettings(second);
-  await expect(second.locator('#user')).toHaveValue('jgonzalez');
+  await expect(second.locator('#user')).toHaveValue('testkey');
 });
 
 When('a sibling tool connects the shared session with different credentials', async ({ context }) => {
@@ -307,8 +314,8 @@ Then(
     const written = s3.puts.filter((p) => p.key.endsWith('UploadMeta.json'));
     expect(written.length).toBeGreaterThan(0);
     const meta = JSON.parse(written[written.length - 1].body) as { editComments: string[] };
-    expect(meta.editComments.join('\n')).toContain('jgonzalez');
-    expect(s3.puts.some((p) => p.key.includes('.sparcd-tagger-snapshots/jgonzalez/'))).toBe(true);
+    expect(meta.editComments.join('\n')).toContain('testkey');
+    expect(s3.puts.some((p) => p.key.includes('.sparcd-tagger-snapshots/testkey/'))).toBe(true);
   },
 );
 
@@ -345,7 +352,7 @@ Then(
   async ({ page, s3 }) => {
     await expect(settingsDryRunCheckbox(page)).not.toBeChecked();
     // An identity is required before the dialog will run anything at all.
-    await page.locator('#user').fill('jgonzalez');
+    await expect(page.locator('#user')).toHaveValue('testkey');
     await sectionTab(page, 'Browse').click();
     await collectionButton(page, COLLECTION_NAME).click();
     await openWorkspaceFromBrowse(page);

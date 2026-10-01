@@ -39,12 +39,6 @@ Feature: Recover a previous state of an upload
     And which collection and upload it would write to
 
   @unmapped
-  Scenario: A restore is gated exactly like a sync
-    Given a snapshot has been chosen
-    Then a restore cannot be run without a tagger identity
-    And while the dry-run setting is on, running it reports that nothing was written
-
-  @unmapped
   Scenario: The state being replaced is itself preserved
     Given the dry-run setting has been switched off
     When a snapshot is restored

@@ -339,7 +339,7 @@ Then(
 Then(
   'the current stored files are first copied to an immutable snapshot filed under the tagger identity and the time',
   async ({ s3 }) => {
-    const snaps = s3.puts.filter((p) => p.key.includes('.sparcd-tagger-snapshots/jgonzalez/'));
+    const snaps = s3.puts.filter((p) => p.key.includes('.sparcd-tagger-snapshots/testkey/'));
     expect(snaps.map((p) => p.key.split('/').pop())).toEqual([
       'media.csv',
       'observations.csv',
@@ -363,7 +363,7 @@ Then('the snapshot is only counted as recoverable once its manifest is written',
     files: { name: string }[];
   };
   expect(manifest.schemaVersion).toBe(1);
-  expect(manifest.user).toBe('jgonzalez');
+  expect(manifest.user).toBe('testkey');
   expect(manifest.files.map((f) => f.name)).toEqual([
     'media.csv',
     'observations.csv',
@@ -670,8 +670,8 @@ Given('a previous sync wrote some but not all of the stored files', async ({ pag
     id: `${BUCKET}::${PREFIX_A}`,
     bucket: BUCKET,
     uploadPrefix: PREFIX_A,
-    snapshotPrefix: `${PREFIX_A}.sparcd-tagger-snapshots/jgonzalez/2024-05-05T10-00-00/`,
-    user: 'jgonzalez',
+    snapshotPrefix: `${PREFIX_A}.sparcd-tagger-snapshots/testkey/2024-05-05T10-00-00/`,
+    user: 'testkey',
     startedAt: '2024-05-05T10:00:00.000Z',
     objects: [
       {

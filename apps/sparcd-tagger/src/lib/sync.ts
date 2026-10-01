@@ -120,6 +120,7 @@ export function buildSyncPlan(
   drafts: Record<string, DraftRecord>,
   offset: TimeOffset | null,
   pendingLocation: Deployment | null = null,
+  user = '',
 ): SyncPlan {
   const tagEdits: MediaEdit[] = [];
   const timeEdits: MediaEdit[] = [];
@@ -164,7 +165,16 @@ export function buildSyncPlan(
           count: Math.max(1, o.count),
           commonName: o.commonName || undefined,
           requestedSpecies: o.requestedSpecies || undefined,
-          classifiedBy: o.classifiedBy,
+          classifiedBy:
+            img.baseObservations.some(
+              (base) =>
+                base.scientificName === o.scientificName &&
+                Math.max(1, base.count) === Math.max(1, o.count) &&
+                (base.commonName ?? '') === (o.commonName ?? '') &&
+                (base.requestedSpecies ?? '') === (o.requestedSpecies ?? ''),
+            )
+              ? o.classifiedBy
+              : user.trim() || o.classifiedBy,
         })),
       });
     } else if (timeChanged) {
