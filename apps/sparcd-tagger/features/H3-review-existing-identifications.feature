@@ -122,6 +122,16 @@ Feature: Review, correct and remove identifications that already exist
     Then the original uploaded data remains byte-for-byte intact
     And the live audit records the removal identity and time
 
+  @H3 @H3-7
+  Scenario: Repeated reviews do not duplicate the original upload baseline
+    Given the original upload data is captured before a review
+    And identifications were corrected locally
+    When a live sync is run
+    And another review is made locally
+    And a live sync is run
+    Then the original uploaded data remains byte-for-byte intact
+    And the live audit records the correction identity and time
+
   @H3
   Scenario: An image edited locally is distinguishable from one that is not
     Given an image's identifications were changed in this browser

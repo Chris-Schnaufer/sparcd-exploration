@@ -325,14 +325,33 @@ Then('the original uploaded data remains byte-for-byte intact', async ({ s3, scr
   expect(s3.putsFor(`${PREFIX_A}.sparcd-tagger-original/`)).toHaveLength(5);
 });
 
+When('another review is made locally', async ({ page }) => {
+  await focusFrame(page, 'IMG002.JPG');
+  await speciesApply(page, 'Canis latrans').click();
+});
+
+function expectAuditSnapshot(s3: { puts: { key: string; body: string }[] }): void {
+  const manifests = s3.puts.filter((put) =>
+    put.key.includes('.sparcd-tagger-snapshots/testkey/') && put.key.endsWith('manifest.json'),
+  );
+  expect(manifests.length).toBeGreaterThan(0);
+  for (const item of manifests) {
+    const manifest = JSON.parse(item.body) as { user?: string; editStamp?: string };
+    expect(manifest.user).toBe('testkey');
+    expect(manifest.editStamp).toMatch(/^\d{4}\.\d{2}\.\d{2}\.\d{2}\.\d{2}\.\d{2}$/);
+  }
+}
+
 Then('the live audit records the correction identity and time', async ({ s3 }) => {
   const meta = JSON.parse(s3.text(BUCKET, `${PREFIX_A}UploadMeta.json`)) as { editComments: string[] };
   expect(meta.editComments.some((comment) => comment.includes('testkey'))).toBe(true);
+  expectAuditSnapshot(s3);
 });
 
 Then('the live audit records the removal identity and time', async ({ s3 }) => {
   const meta = JSON.parse(s3.text(BUCKET, `${PREFIX_A}UploadMeta.json`)) as { editComments: string[] };
   expect(meta.editComments.some((comment) => comment.includes('testkey'))).toBe(true);
+  expectAuditSnapshot(s3);
 });
 
 Then(
