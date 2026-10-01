@@ -594,9 +594,10 @@ function buildObservationRow(
   edit: MediaEdit,
   o: ObservationInput,
   observationId: string,
+  existingRow?: string[],
 ): string[] {
-  const row = new Array<string>(OBS_COLUMN_COUNT).fill('');
-  row[OBS_COL.observationId] = observationId;
+  const row = existingRow ? [...existingRow] : new Array<string>(OBS_COLUMN_COUNT).fill('');
+  row[OBS_COL.observationId] = existingRow?.[OBS_COL.observationId] || observationId;
   row[OBS_COL.deploymentId] = edit.deploymentId;
   row[OBS_COL.mediaId] = edit.mediaId;
   row[OBS_COL.timestamp] = edit.timestamp;
@@ -605,11 +606,15 @@ function buildObservationRow(
   row[OBS_COL.scientificName] = o.scientificName;
   row[OBS_COL.count] = String(o.count);
   row[OBS_COL.countNew] = '0';
+  const knownPrefixes = new Set(['COMMONNAME', 'REQUESTED_SPECIES', 'REVIEWED_BY', 'REVIEWED_AT']);
+  const preservedMarkers = parseTagMarkers(existingRow?.[OBS_COL.comments] ?? '').filter(
+    (marker) => !knownPrefixes.has(marker.prefix),
+  );
   row[OBS_COL.comments] = buildObservationComments({
     commonName: o.commonName,
     requestedSpecies: o.requestedSpecies,
     reviewEvents: o.reviewEvents,
-    extra: o.extraMarkers,
+    extra: [...preservedMarkers, ...(o.extraMarkers ?? [])],
   });
   row[OBS_COL.classifiedBy] = o.classifiedBy ?? '';
   row[OBS_COL.classificationTimestamp] = o.classificationTimestamp ?? '';
@@ -675,18 +680,32 @@ export function mergeObservations(
 ): string {
   const genId = opts.observationId ?? defaultObservationId;
   const editByMedia = new Map(edits.map((e) => [e.mediaId, e]));
+  const rows = parseCsvRows(canonicalObsCsv);
+  const existingByMedia = new Map<string, string[][]>();
+  for (const row of rows) {
+    const list = existingByMedia.get(row[OBS_COL.mediaId]);
+    if (list) list.push(row);
+    else existingByMedia.set(row[OBS_COL.mediaId], [row]);
+  }
   const built = new Map<string, string[][]>();
   for (const e of edits) {
+    const used = new Set<string[]>();
+    const existing = existingByMedia.get(e.mediaId) ?? [];
     const positive = e.observations
       .filter(positiveCount)
-      .map((o, i) => buildObservationRow(e, o, genId(e.mediaId, i)));
+      .map((o, i) => {
+        const prior = existing.find(
+          (row) => !used.has(row) && row[OBS_COL.observationType] === 'animal' && row[OBS_COL.scientificName] === o.scientificName,
+        );
+        if (prior) used.add(prior);
+        return buildObservationRow(e, o, genId(e.mediaId, i), prior);
+      });
     built.set(
       e.mediaId,
       positive.length > 0 ? positive : [buildBlankObservationRow(e, genId(e.mediaId, 0))],
     );
   }
 
-  const rows = parseCsvRows(canonicalObsCsv);
   const out: string[][] = [];
   const placed = new Set<string>();
   for (const row of rows) {

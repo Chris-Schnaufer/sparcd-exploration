@@ -352,6 +352,37 @@ export function isNotFound(err: unknown): boolean {
   return e?.name === 'NoSuchKey' || e?.$metadata?.httpStatusCode === 404;
 }
 
+/** Prefer the oldest complete pre-change snapshot when an upload was edited
+ * before this version first created its immutable baseline. There is no way to
+ * recover an older byte state from the live canonical files alone; an existing
+ * snapshot is the earliest durable evidence available. Missing snapshot roles
+ * fall back to the current canonical role. */
+async function originalBaselineSource(
+  cfg: S3Config,
+  bucket: string,
+  uploadPrefix: string,
+  current: CanonicalState,
+): Promise<CanonicalState> {
+  try {
+    const snapshots = await listSnapshots(cfg, bucket, uploadPrefix);
+    const oldest = snapshots.at(-1);
+    if (!oldest) return current;
+    const bodies = await loadSnapshotBodies(cfg, bucket, oldest.prefix);
+    const source = { ...current };
+    for (const role of ORIGINAL_BASELINE_ROLES) {
+      const text = bodies[role];
+      if (text !== undefined) {
+        source[role] = { text, etag: '', hash: await sha256Hex(text) };
+      }
+    }
+    return source;
+  } catch {
+    // Snapshot discovery is best-effort. The first live state remains the
+    // only available source when an older snapshot cannot be read.
+    return current;
+  }
+}
+
 /**
  * Create the upload's immutable first-state baseline. The manifest is written
  * last, so a failed/partial attempt is retried safely; an existing manifest is
@@ -372,9 +403,10 @@ async function ensureOriginalBaseline(
   } catch (err) {
     if (!isNotFound(err)) throw translateReadError(err, 'original upload baseline');
   }
+  const source = await originalBaselineSource(cfg, bucket, uploadPrefix, current);
 
   for (const role of ORIGINAL_BASELINE_ROLES) {
-    const body = current[role].text;
+    const body = source[role].text;
     try {
       await writeClient.writeImmutable(bucket, `${prefix}${CANONICAL_FILE[role]}`, body, {
         contentType: role === 'uploadMeta' ? 'application/json' : 'text/csv',
@@ -386,14 +418,24 @@ async function ensureOriginalBaseline(
     }
   }
 
+  // Read back the objects after conditional writes. A concurrent creator may
+  // have won one of the object races, so the manifest must describe the bytes
+  // that actually exist rather than the state this caller originally loaded.
+  const files = [];
+  for (const role of ORIGINAL_BASELINE_ROLES) {
+    const objectKey = `${prefix}${CANONICAL_FILE[role]}`;
+    const stat = await readClient.statObject(bucket, objectKey);
+    const bytes = await readClient.getObject(bucket, objectKey);
+    files.push({
+      name: CANONICAL_FILE[role],
+      etag: stat.etag ?? '',
+      sha256: await sha256Hex(bytes),
+    });
+  }
   const manifest = JSON.stringify({
     schemaVersion: 1,
     kind: 'original-upload-baseline',
-    files: ORIGINAL_BASELINE_ROLES.map((role) => ({
-      name: CANONICAL_FILE[role],
-      etag: current[role].etag,
-      sha256: current[role].hash,
-    })),
+    files,
   }, null, 2);
   try {
     await writeClient.writeImmutable(bucket, `${prefix}${ORIGINAL_BASELINE_FILE}`, manifest, {

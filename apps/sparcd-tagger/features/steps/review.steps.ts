@@ -255,6 +255,10 @@ Given('an existing identification has original attribution', async ({ page, s3 }
 });
 
 Given('the original upload data is captured before a review', async ({ s3, scratch }) => {
+  // Keep this baseline scenario independent from the restore fixture's older
+  // snapshots: the captured canonical files are the upload's first observed
+  // state, so an unrelated historical snapshot must not become its source.
+  for (const key of s3.keys(BUCKET, `${PREFIX_A}.sparcd-tagger-snapshots/`)) s3.delete(BUCKET, key);
   const mediaKey = parseMedia(s3.text(BUCKET, `${PREFIX_A}media.csv`))[0].mediaPath;
   scratch.originalBaseline = {
     media: s3.text(BUCKET, `${PREFIX_A}media.csv`),

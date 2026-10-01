@@ -36,7 +36,9 @@ import {
 const statePill = (page: Page) => page.getByRole('status', { name: /^Sync status: / });
 
 const canonicalPuts = (puts: { key: string }[]) =>
-  puts.filter((p) => !p.key.includes('.sparcd-tagger-snapshots/'));
+  puts.filter(
+    (p) => !p.key.includes('.sparcd-tagger-snapshots/') && !p.key.includes('.sparcd-tagger-original/'),
+  );
 
 /** One cell of the preview's Added / Changed / Removed / Time-corrected grid. */
 const summaryCell = (page: Page, label: string) =>
@@ -357,7 +359,9 @@ Then('the snapshot is only counted as recoverable once its manifest is written',
 
 Then('only then are the stored files replaced', async ({ s3 }) => {
   const lastSnapshot = s3.puts.findLastIndex((p) => p.key.includes('.sparcd-tagger-snapshots/'));
-  const firstCanonical = s3.puts.findIndex((p) => !p.key.includes('.sparcd-tagger-snapshots/'));
+  const firstCanonical = s3.puts.findIndex(
+    (p) => !p.key.includes('.sparcd-tagger-snapshots/') && !p.key.includes('.sparcd-tagger-original/'),
+  );
   expect(firstCanonical).toBeGreaterThan(lastSnapshot);
   for (const p of canonicalPuts(s3.puts)) expect(p.ifMatch).toBeTruthy();
 });

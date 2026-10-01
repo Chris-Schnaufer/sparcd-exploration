@@ -152,12 +152,11 @@ export function buildSyncPlan(
     const timestampSource = timeChanged && img.timestampSource ? 'manual' : undefined;
     const tagChanged = !observationsEqual(obs, img.baseObservations);
     const confirmedSpecies = d?.confirmedSpecies ?? [];
+    // Match provenance by the stable species key even when count/name fields
+    // changed. A count correction must retain the canonical review history and
+    // original attribution for that species.
     const baseForObservation = (o: (typeof obs)[number]) => img.baseObservations.find(
-      (candidate) =>
-        candidate.scientificName === o.scientificName &&
-        Math.max(1, candidate.count) === Math.max(1, o.count) &&
-        (candidate.commonName ?? '') === (o.commonName ?? '') &&
-        (candidate.requestedSpecies ?? '') === (o.requestedSpecies ?? ''),
+      (candidate) => candidate.scientificName === o.scientificName,
     );
     // Re-applying an existing species is an explicit confirmation action. The
     // draft records that action directly; comparing attribution fields would
@@ -191,7 +190,7 @@ export function buildSyncPlan(
           // modeled can omit them. Preserve the canonical values rather than
           // blanking them when another observation on the image is edited.
           const classifiedBy = base
-            ? base.classifiedBy ?? o.classifiedBy
+            ? base.classifiedBy ?? o.classifiedBy ?? (user.trim() || undefined)
             : o.classifiedBy ?? (user.trim() || undefined);
           const classificationTimestamp = base
             ? base.classificationTimestamp ?? o.classificationTimestamp
@@ -519,6 +518,11 @@ async function tryResume(
   const decision = planResume(journal, remoteStates(cur));
   if (decision.kind === 'conflict')
     return { status: 'conflict', role: decision.role, reason: decision.reason };
+  // A journal may have been created by an older version before the immutable
+  // baseline was introduced. Establish the baseline before completing any
+  // resumed canonical write; the S3 adapter can use any available pre-change
+  // snapshot when one exists.
+  if (!dryRun) await ensureOriginalBaseline(io, cur);
   if (decision.kind === 'done') {
     if (dryRun)
       return { status: 'dry-run', summary: EMPTY_SUMMARY, snapshotPrefix: journal.snapshotPrefix, writes: [] };

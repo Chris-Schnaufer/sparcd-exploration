@@ -831,6 +831,7 @@ describe('runSync — resume a partial sync from the journal', () => {
   it('verifies the written object and continues from the first pending one', async () => {
     const cur = await canonical();
     const { io, rec } = fakeIO(cur);
+    io.ensureOriginalBaseline = async (state) => rec.baselines.push(state);
     const journal: SyncJournal = {
       id: `sparcd-x::${PREFIX}`,
       bucket: 'sparcd-x',
@@ -851,6 +852,7 @@ describe('runSync — resume a partial sync from the journal', () => {
     expect(res.status).toBe('synced');
     // Media was already written, so resume only writes the two pending objects.
     expect(rec.replaces.map((r) => r.key.split('/').pop())).toEqual(['observations.csv', 'UploadMeta.json']);
+    expect(rec.baselines).toHaveLength(1);
     expect(rec.cleared).toBe(1);
   });
 

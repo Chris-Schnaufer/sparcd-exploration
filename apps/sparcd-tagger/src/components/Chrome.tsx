@@ -88,7 +88,6 @@ function CollectionChrome({ children }: { children: ReactNode }) {
   const toggleTheme = useStore((s) => s.toggleTheme);
   const syncState = useStore((s) => s.syncState);
   const hasUpload = useStore((s) => !!s.selectedUploadPrefix);
-  const taggerUser = useStore((s) => s.taggerUser);
   const disconnect = useStore((s) => s.disconnect);
   // Local-only in P1: surface unsaved edits so the pill is honest before the P4
   // write path exists. `syncState` stays the source of truth once sync ships.
@@ -131,7 +130,10 @@ function CollectionChrome({ children }: { children: ReactNode }) {
           <span className="hidden sm:flex items-center">
             <StatePill state={displayState} />
           </span>
-          <ConnectionChip identity={taggerUser || undefined} onDisconnect={disconnect} />
+          {/* The connected access key is the attribution identity internally,
+              but ConnectionChip already renders only its masked form. Do not
+              pass the raw key into the header as a second identity label. */}
+          <ConnectionChip onDisconnect={disconnect} />
           <button
             onClick={toggleTheme}
             className="w-11 h-11 md:w-8 md:h-8 grid place-items-center border border-rule text-inkSoft hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
