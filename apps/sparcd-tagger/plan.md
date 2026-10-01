@@ -852,9 +852,11 @@ exactly like Java. The `tagger-edited-v016` golden exercises both a Ghost
   `Settings/species.json` exists in the live settings bucket. The `.jpg`/`.mp4`
   `<img>` render-without-canvas assumption is encoded in `Thumb.tsx` and should
   be eyeballed live.
-- Open questions #1–#3 (snapshot/edit-comment identity persistence, first
-  write-allowed credentials, `IfMatch`/`IfNoneMatch` backend enforcement) remain
-  **P4 gates** and are untouched here by design — P0 writes nothing.
+- Open questions #2–#3 (first write-allowed credentials,
+  `IfMatch`/`IfNoneMatch` backend enforcement) remain **P4 gates** and are
+  untouched here by design — P0 writes nothing. Connected attribution is
+  resolved from the storage access key and is read-only; local handoffs use a
+  separate session-scoped identity.
 
 **For the P1 agent:** the merge/draft data model is ready
 (`MediaEdit`/`ObservationInput` in `@sparcd/camtrap`). P1 adds the Dexie `drafts`
@@ -1492,11 +1494,12 @@ per image); the `@sparcd/camtrap` merge layer already supports N rows/image.
 
 ## Open questions for before P0
 
-1. **User identity for snapshots and edit comments.** The IAM access key
-   stamps the bucket-side writer; the tagger also needs a logical `userId` for
-   audit snapshot paths and mandatory `UploadMeta.json.editComments` entries.
-   Options: prompt at session start, derive from access key, or pin to a
-   config file. Lean: prompt + persist.
+1. **User identity for snapshots and edit comments — resolved.** Connected
+   Tagger sessions use the IAM/storage access key as the username for
+   `classified_by`, audit snapshot paths and `UploadMeta.json.editComments`.
+   Settings displays that value read-only. Disconnected local Uploader
+   handoffs use a separate session-scoped identity because no storage account
+   is connected.
 2. **First write-allowed bucket/credentials.** Not a build-time allowlist
    (that idea is gone — see Static BYO-S3 security contract); a concrete
    credential set whose IAM policy permits conditional `PUT` on canonical
