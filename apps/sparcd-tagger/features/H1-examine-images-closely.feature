@@ -87,6 +87,19 @@ Feature: Examine an image closely enough to catch every species
     Then the Focus loading status disappears
 
   @H1
+  Scenario: A failed thumbnail download remains visibly failed
+    Given a thumbnail download fails after signing
+    Then the failed thumbnail is marked as failed rather than loaded
+
+  @H1
+  Scenario: A video thumbnail waits for its first displayable frame
+    Given a video thumbnail is waiting for its first frame
+    When thumbnail video metadata becomes available before its first frame
+    Then the thumbnail play marker is still hidden
+    When the thumbnail video frame becomes available
+    Then the thumbnail play marker is visible
+
+  @H1
   Scenario: Only the images on screen are rendered while scrolling a large upload
     Given an upload with thousands of images is open
     When the Overview is scrolled
