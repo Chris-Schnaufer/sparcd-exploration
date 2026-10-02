@@ -1,4 +1,4 @@
-import { useMediaUrl } from '../lib/useMediaUrl';
+import { useMediaUrl, type MediaPriority } from '../lib/useMediaUrl';
 import { isVideoKey } from '../lib/workspace';
 
 // One presigned-GET thumbnail. The URL is signed lazily (per connection +
@@ -10,6 +10,8 @@ import { isVideoKey } from '../lib/workspace';
 // <video> — `preload="metadata"`, no controls/autoplay — so the browser paints
 // the first frame as the still without downloading the whole clip. `isVideo`
 // defaults from the key so existing call sites stay one-arg.
+export const THUMB_MEDIA_PRIORITY: MediaPriority = 'low';
+
 export function Thumb({
   objectKey,
   alt,
@@ -20,7 +22,7 @@ export function Thumb({
   isVideo?: boolean;
 }) {
   // Never 'high', even when selected: the scheduler keeps that slot for Focus.
-  const { url, isError, markLoaded } = useMediaUrl(objectKey);
+  const { url, isError, markLoaded } = useMediaUrl(objectKey, THUMB_MEDIA_PRIORITY);
 
   if (isError) {
     return (
