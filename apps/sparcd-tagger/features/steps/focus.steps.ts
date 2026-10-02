@@ -148,6 +148,54 @@ Then('the filmstrip thumbnails are requested at low priority', async ({ page }) 
   await expect.poll(() => thumbs.evaluateAll((images) => images.some((image) => !image.complete))).toBe(true);
 });
 
+Given("the current Focus image's next download is delayed", async ({ page, s3 }) => {
+  await expect(page.locator('.react-transform-component img')).toBeVisible();
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Network.clearBrowserCache');
+  s3.delay(mediaKey(PREFIX_A, MEDIA_A[0].file), 2_000);
+});
+
+When('another image is opened and the first image is opened again', async ({ page }) => {
+  await page.locator('button').filter({ hasText: MEDIA_A[1].file }).first().click();
+  await page.locator('button').filter({ hasText: MEDIA_A[0].file }).first().click();
+});
+
+Then('the Focus loading status stays visible until that image loads', async ({ page }) => {
+  const status = page.getByRole('status').filter({ hasText: 'loading' });
+  await expect(status).toBeVisible();
+  await expect(page.locator('.react-transform-component img')).toBeVisible();
+  await expect(status).toHaveCount(0);
+});
+
+Given('the focused video is waiting for its first frame', async ({ page, s3 }) => {
+  await sectionTab(page, 'Tag').click();
+  await page.getByRole('button', { name: 'Overview', exact: true }).click();
+  s3.delay(mediaKey(PREFIX_A, 'VID001.MP4'), 10_000);
+  await focusFrame(page, 'VID001.MP4');
+  await enterFocusViewForVideo(page);
+  await expect(page.getByRole('status').filter({ hasText: 'loading' })).toBeVisible();
+});
+
+When('video metadata becomes available before its first frame', async ({ page }) => {
+  await page.locator('video[controls]').evaluate((video) => {
+    video.dispatchEvent(new Event('loadedmetadata'));
+  });
+});
+
+When('the first video frame becomes available', async ({ page }) => {
+  await page.locator('video[controls]').evaluate((video) => {
+    video.dispatchEvent(new Event('loadeddata'));
+  });
+});
+
+Then('the Focus loading status is still visible', async ({ page }) => {
+  await expect(page.getByRole('status').filter({ hasText: 'loading' })).toBeVisible();
+});
+
+Then('the Focus loading status disappears', async ({ page }) => {
+  await expect(page.getByRole('status').filter({ hasText: 'loading' })).toHaveCount(0);
+});
+
 // --- Zoom -------------------------------------------------------------------
 
 // Used as both the action and the precondition ("Given the image is zoomed in").

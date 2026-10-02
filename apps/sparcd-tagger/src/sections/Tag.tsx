@@ -1539,22 +1539,41 @@ function FocusImage({
   filter?: string;
 }) {
   const { url, isError, markLoaded } = useMediaUrl(objectKey, 'high');
-  const [loadedKey, setLoadedKey] = useState<string>();
+  const [loadedToken, setLoadedToken] = useState<string>();
+  // A key can be revisited while its previous request is still represented in
+  // state. The generation makes every key/URL admission a distinct readiness
+  // token, so a stale successful load can never hide a new request's loader.
+  const identity = useRef({ objectKey, url, generation: 0 });
+  if (identity.current.objectKey !== objectKey || identity.current.url !== url) {
+    identity.current = { objectKey, url, generation: identity.current.generation + 1 };
+  }
+  const mediaToken = url
+    ? `${objectKey}\u0000${url}\u0000${identity.current.generation}`
+    : undefined;
   if (isError)
     return <div className="text-[13px] font-mono text-warn">Could not load this image.</div>;
   const onLoaded = () => {
     markLoaded();
-    setLoadedKey(objectKey);
+    if (mediaToken) setLoadedToken(mediaToken);
+  };
+  const onMediaError = () => {
+    // Keep the native video element available for the existing media-error
+    // affordance, but do not confuse metadata/error with first-frame readiness.
+    markLoaded();
   };
   // The loader covers the pane until the bytes arrive, not just until the URL
-  // is ready: a full-size JPEG can take seconds after its <img> mounts. It is
-  // keyed by image, not URL, so a same-image swap (a local thumbnail giving way
-  // to the original, a re-signed URL) keeps showing the pixels we already have.
+  // is ready: a full-size JPEG can take seconds after its <img> mounts.
   return (
     <>
       {url &&
         (isVideo ? (
-          <FocusVideo src={url} alt={alt} resetKey={objectKey} onLoaded={onLoaded} />
+          <FocusVideo
+            src={url}
+            alt={alt}
+            resetKey={objectKey}
+            onLoaded={onLoaded}
+            onError={onMediaError}
+          />
         ) : (
           <ZoomableImage
             src={url}
@@ -1564,7 +1583,7 @@ function FocusImage({
             onLoaded={onLoaded}
           />
         ))}
-      {loadedKey !== objectKey && (
+      {(!url || loadedToken !== mediaToken) && (
         <div
           role="status"
           className="fn-appear absolute inset-0 grid place-content-center justify-items-center gap-4 bg-paper"
@@ -1586,11 +1605,13 @@ function FocusVideo({
   alt,
   resetKey,
   onLoaded,
+  onError,
 }: {
   src: string;
   alt: string;
   resetKey: string;
   onLoaded: () => void;
+  onError: () => void;
 }) {
   return (
     <video
@@ -1600,8 +1621,8 @@ function FocusVideo({
       controls
       playsInline
       preload="metadata"
-      onLoadedMetadata={onLoaded}
-      onError={onLoaded}
+      onLoadedData={onLoaded}
+      onError={onError}
       className="w-full h-full object-contain"
     />
   );
