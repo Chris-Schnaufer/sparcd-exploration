@@ -13,6 +13,7 @@ import {
   sectionTab,
 } from './support/world';
 import { BUCKET, PREFIX_A, mediaCsv, MEDIA_A, mediaKey } from './support/data';
+import { makePng } from './support/png';
 
 // --- react-zoom-pan-pinch introspection -------------------------------------
 
@@ -26,6 +27,65 @@ async function readTransform(root: Locator): Promise<Transform> {
   const m = /translate\((-?[\d.]+)px,\s*(-?[\d.]+)px\)\s*scale\(([\d.]+)\)/.exec(style);
   if (!m) return { x: 0, y: 0, scale: 1 };
   return { x: Number(m[1]), y: Number(m[2]), scale: Number(m[3]) };
+}
+
+type Rect = { left: number; top: number; right: number; bottom: number };
+
+/**
+ * The on-screen rect of the picture itself (any object-contain letterbox
+ * excluded) and of the pane framing it.
+ */
+async function imageInPane(root: Locator): Promise<{ image: Rect; pane: Rect }> {
+  const pane = await transformWrapper(root).first().evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+  });
+  const image = await transformContent(root)
+    .first()
+    .locator('img')
+    .evaluate((el: HTMLImageElement) => {
+      const r = el.getBoundingClientRect();
+      const f = Math.min(r.width / el.naturalWidth, r.height / el.naturalHeight);
+      const w = el.naturalWidth * f;
+      const h = el.naturalHeight * f;
+      const left = r.left + (r.width - w) / 2;
+      const top = r.top + (r.height - h) / 2;
+      return { left, top, right: left + w, bottom: top + h };
+    });
+  return { image, pane };
+}
+
+const axes = ({ image, pane }: { image: Rect; pane: Rect }) =>
+  [
+    [image.left, image.right, pane.left, pane.right],
+    [image.top, image.bottom, pane.top, pane.bottom],
+  ] as const;
+
+// 3px of fudge: the library rounds positions and the workspace header trims the
+// pane's height by a fraction of a pixel.
+const FUDGE = 3;
+
+/** A picture larger than the pane keeps covering it; a smaller one stays wholly inside. */
+function expectImageInBounds(view: { image: Rect; pane: Rect }): void {
+  for (const [lo, hi, paneLo, paneHi] of axes(view)) {
+    if (hi - lo >= paneHi - paneLo) {
+      expect(lo).toBeLessThanOrEqual(paneLo + FUDGE);
+      expect(hi).toBeGreaterThanOrEqual(paneHi - FUDGE);
+    } else {
+      expect(lo).toBeGreaterThanOrEqual(paneLo - FUDGE);
+      expect(hi).toBeLessThanOrEqual(paneHi + FUDGE);
+    }
+  }
+}
+
+/** Whole, centred, and touching the pane on at least one axis. */
+function expectFitted(view: { image: Rect; pane: Rect }): void {
+  expectImageInBounds(view);
+  const gaps = axes(view).map(([lo, hi, paneLo, paneHi]) => {
+    expect(Math.abs(lo - paneLo - (paneHi - hi))).toBeLessThanOrEqual(FUDGE);
+    return paneHi - paneLo - (hi - lo);
+  });
+  expect(Math.min(...gaps)).toBeLessThanOrEqual(FUDGE);
 }
 
 /** Zoom is animated (300ms), so wait for the transform to settle between steps. */
@@ -138,8 +198,7 @@ Then('it cannot be dragged beyond the edges of the image', async ({ page }) => {
   const box = (await pane.boundingBox())!;
   const cx = box.x + box.width / 2;
   const cy = box.y + box.height / 2;
-  // Shove it hard in both directions; the offsets must stay inside the bounds
-  // the scaled content allows (0 …  -(scale-1) * size).
+  // Shove it hard in both directions; the picture must not leave the pane.
   for (const [dx, dy] of [
     [4000, 4000],
     [-8000, -8000],
@@ -149,15 +208,8 @@ Then('it cannot be dragged beyond the edges of the image', async ({ page }) => {
     await page.mouse.move(cx + dx, cy + dy, { steps: 10 });
     await page.mouse.up();
     await settle(page.locator('body'));
-    const t = await readTransform(page.locator('body'));
-    expect(t.x).toBeLessThanOrEqual(1);
-    expect(t.y).toBeLessThanOrEqual(1);
-    expect(t.x).toBeGreaterThanOrEqual(-(t.scale - 1) * box.width - 1);
-    // A couple more px than the x fudge: the workspace header (collection/
-    // upload name) trims the pane's available height, not its width, so the
-    // library's own bound settles a hair tighter here than the formula's
-    // exact math predicts.
-    expect(t.y).toBeGreaterThanOrEqual(-(t.scale - 1) * box.height - 3);
+    expect((await readTransform(page.locator('body'))).scale).toBeGreaterThan(1);
+    expectImageInBounds(await imageInPane(page.locator('body')));
   }
 });
 
@@ -256,8 +308,139 @@ Then('the new image is shown fitted to the pane', async ({ page }) => {
 });
 
 Then('no zoom or pan state carries over from the previous image', async ({ page }) => {
-  const t = await readTransform(page.locator('body'));
-  expect(t).toEqual({ x: 0, y: 0, scale: 1 });
+  expect((await readTransform(page.locator('body'))).scale).toBe(1);
+  // The fit settles once the new image has loaded.
+  await expect(async () => expectFitted(await imageInPane(page.locator('body')))).toPass();
+});
+
+// --- Differing image shapes -------------------------------------------------
+
+const SHAPES = [
+  { file: 'IMG001.JPG', w: 240, h: 420 },
+  { file: 'IMG002.JPG', w: 640, h: 360 },
+  { file: 'IMG003.JPG', w: 1200, h: 200 },
+];
+
+type Examination = {
+  natural: { w: number; h: number };
+  objectFit: string;
+  fitted: { t: Transform; view: { image: Rect; pane: Rect } };
+  enlarged: Transform;
+  dragged: Transform;
+  shoved: { image: Rect; pane: Rect }[];
+  // Enlarged to the limit in the fullscreen view, then shoved the same way.
+  fullscreen?: { image: Rect; pane: Rect }[];
+};
+
+/** Drag hard towards one corner, then the opposite one, recording where the picture ends up. */
+async function shoveBothWays(page: Page, root: Locator): Promise<{ image: Rect; pane: Rect }[]> {
+  const box = (await transformWrapper(root).first().boundingBox())!;
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  const views: { image: Rect; pane: Rect }[] = [];
+  for (const [dx, dy] of [
+    [4000, 4000],
+    [-8000, -8000],
+  ] as const) {
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    await page.mouse.move(cx + dx, cy + dy, { steps: 10 });
+    await page.mouse.up();
+    await settle(root);
+    views.push(await imageInPane(root));
+  }
+  return views;
+}
+
+Given(
+  'the upload holds a portrait, a landscape and a panorama image of differing sizes',
+  async ({ page, s3 }) => {
+    SHAPES.forEach((s, i) =>
+      s3.put(BUCKET, mediaKey(PREFIX_A, s.file), makePng(s.w, s.h, i + 100), 'image/png'),
+    );
+    await page.reload();
+    await openWorkspace(page);
+    await enterFocusView(page);
+  },
+);
+
+When('each of them is examined closely in the Focus view', async ({ page, scratch }) => {
+  const body = page.locator('body');
+  const exams: Examination[] = [];
+  for (const shape of SHAPES) {
+    await page.locator('button').filter({ hasText: shape.file }).first().click();
+    const img = page.locator('.react-transform-component img').first();
+    await expect
+      .poll(() => img.evaluate((el: HTMLImageElement) => el.naturalWidth))
+      .toBe(shape.w);
+    const [natural, objectFit] = await img.evaluate((el: HTMLImageElement) => [
+      { w: el.naturalWidth, h: el.naturalHeight },
+      getComputedStyle(el).objectFit,
+    ] as const);
+    await settle(body);
+    const fitted = { t: await readTransform(body), view: await imageInPane(body) };
+    await zoomToLimit(body);
+    const enlarged = await readTransform(body);
+
+    const pane = transformWrapper(body).first();
+    const box = (await pane.boundingBox())!;
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    await page.mouse.move(cx - 60, cy - 40, { steps: 12 });
+    await page.mouse.up();
+    await settle(body);
+    const dragged = await readTransform(body);
+
+    const shoved = await shoveBothWays(page, body);
+
+    // The portrait and the panorama are the letterboxed ones; check the
+    // fullscreen view holds them too.
+    let fullscreen: Examination['fullscreen'];
+    if (shape.h > shape.w || shape.w > 3 * shape.h) {
+      await page.getByRole('button', { name: 'Open fullscreen' }).click();
+      await expect(lightbox(page)).toBeVisible();
+      await expect.poll(() => lightbox(page).locator('img').evaluate((el: HTMLImageElement) => el.naturalWidth)).toBe(shape.w);
+      await zoomToLimit(lightbox(page));
+      fullscreen = await shoveBothWays(page, lightbox(page));
+      await page.keyboard.press('Escape');
+      await expect(lightbox(page)).toHaveCount(0);
+    }
+    exams.push({ natural, objectFit, fitted, enlarged, dragged, shoved, fullscreen });
+  }
+  scratch.exams = exams;
+});
+
+Then('each opens whole and undistorted at the fitted size', async ({ scratch }) => {
+  const exams = scratch.exams as Examination[];
+  exams.forEach((e, i) => {
+    expect(e.natural).toEqual({ w: SHAPES[i].w, h: SHAPES[i].h });
+    expect(e.objectFit).toBe('contain');
+    expect(e.fitted.t.scale).toBe(1);
+    expectFitted(e.fitted.view);
+  });
+});
+
+Then('each can be enlarged up to six times its fitted size', async ({ scratch }) => {
+  for (const e of scratch.exams as Examination[]) expect(e.enlarged.scale).toBeCloseTo(6, 1);
+});
+
+Then(
+  'each can be dragged around once enlarged without moving beyond its edges',
+  async ({ scratch }) => {
+    for (const e of scratch.exams as Examination[]) {
+      expect(e.dragged.scale).toBeCloseTo(e.enlarged.scale, 2);
+      expect(Math.abs(e.dragged.x - e.enlarged.x) + Math.abs(e.dragged.y - e.enlarged.y)).toBeGreaterThan(5);
+      for (const view of e.shoved) expectImageInBounds(view);
+    }
+  },
+);
+
+Then('the portrait and the panorama stay in view when enlarged fullscreen too', async ({ scratch }) => {
+  const checked = (scratch.exams as Examination[]).filter((e) => e.fullscreen);
+  expect(checked.map((e) => e.natural.w)).toEqual([SHAPES[0].w, SHAPES[2].w]);
+  for (const e of checked) for (const view of e.fullscreen!) expectImageInBounds(view);
 });
 
 // --- Virtualization ---------------------------------------------------------

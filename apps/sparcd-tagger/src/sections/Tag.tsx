@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
+import { TransformWrapper, TransformComponent, type ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
 import { useStore } from '../store';
 import {
   useTagImages,
@@ -1602,6 +1602,38 @@ const ZOOM_PROPS = {
   panning: { velocityDisabled: true },
 };
 
+/**
+ * Pan bounds come from the zoom content's box, so size it to the fitted picture
+ * rather than the pane: a letterboxed portrait or panorama then can't be
+ * dragged out of view. `paneRef` goes on the element the zoom wrapper fills.
+ */
+function useFittedZoom(src: string) {
+  const paneRef = useRef<HTMLDivElement>(null);
+  const zoomRef = useRef<ReactZoomPanPinchRef>(null);
+  const [pane, setPane] = useState<{ w: number; h: number } | null>(null);
+  const [loaded, setLoaded] = useState<{ src: string; w: number; h: number } | null>(null);
+  const natural = loaded?.src === src ? loaded : null;
+  useLayoutEffect(() => {
+    const el = paneRef.current!;
+    const measure = () => setPane({ w: el.clientWidth, h: el.clientHeight });
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const fit = pane && natural ? Math.min(pane.w / natural.w, pane.h / natural.h) : null;
+  const fitted = fit && natural ? { width: natural.w * fit, height: natural.h * fit } : undefined;
+  useLayoutEffect(() => {
+    const zoom = zoomRef.current;
+    if (fitted && zoom && zoom.state.scale <= 1.01) zoom.centerView(1, 0);
+  }, [fitted?.width, fitted?.height]);
+  const onImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const img = e.currentTarget;
+    setLoaded({ src, w: img.naturalWidth, h: img.naturalHeight });
+  };
+  return { paneRef, zoomRef, fitted, onImageLoad };
+}
+
 function ZoomableImage({
   src,
   alt,
@@ -1617,11 +1649,13 @@ function ZoomableImage({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [zoomed, setZoomed] = useState(false);
+  const { paneRef, zoomRef, fitted, onImageLoad } = useFittedZoom(src);
   return (
-    <>
+    <div ref={paneRef} className="w-full h-full">
       {/* key forces a fresh fit-to-view (reset zoom/pan) on every image change */}
       <TransformWrapper
         key={resetKey}
+        ref={zoomRef}
         {...ZOOM_PROPS}
         onTransform={(_, s) => setZoomed(s.scale > 1.01)}
       >
@@ -1629,14 +1663,18 @@ function ZoomableImage({
           <>
             <TransformComponent
               wrapperClass="!w-full !h-full cursor-grab active:cursor-grabbing"
-              contentClass="!w-full !h-full"
+              contentClass={fitted ? '' : '!w-full !h-full'}
+              contentStyle={fitted}
             >
               <img
                 src={src}
                 alt={alt}
                 fetchPriority="high"
                 draggable={false}
-                onLoad={onLoaded}
+                onLoad={(e) => {
+                  onImageLoad(e);
+                  onLoaded();
+                }}
                 onError={onLoaded}
                 style={filter ? { filter } : undefined}
                 className="w-full h-full object-contain select-none"
@@ -1652,7 +1690,7 @@ function ZoomableImage({
         )}
       </TransformWrapper>
       {expanded && <Lightbox src={src} alt={alt} filter={filter} onClose={() => setExpanded(false)} />}
-    </>
+    </div>
   );
 }
 
@@ -1668,6 +1706,7 @@ function Lightbox({
   onClose: () => void;
 }) {
   const [zoomed, setZoomed] = useState(false);
+  const { paneRef, zoomRef, fitted, onImageLoad } = useFittedZoom(src);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     document.addEventListener('keydown', onKey);
@@ -1688,18 +1727,29 @@ function Lightbox({
           ✕
         </button>
       </div>
-      <div className="relative min-h-0" onClick={(e) => e.target === e.currentTarget && onClose()}>
-        <TransformWrapper {...ZOOM_PROPS} maxScale={10} onTransform={(_, s) => setZoomed(s.scale > 1.01)}>
+      <div
+        ref={paneRef}
+        className="relative min-h-0"
+        onClick={(e) => e.target === e.currentTarget && onClose()}
+      >
+        <TransformWrapper
+          ref={zoomRef}
+          {...ZOOM_PROPS}
+          maxScale={10}
+          onTransform={(_, s) => setZoomed(s.scale > 1.01)}
+        >
           {({ zoomIn, zoomOut, resetTransform }) => (
             <>
               <TransformComponent
                 wrapperClass="!w-full !h-full cursor-grab active:cursor-grabbing"
-                contentClass="!w-full !h-full"
+                contentClass={fitted ? '' : '!w-full !h-full'}
+                contentStyle={fitted}
               >
                 <img
                   src={src}
                   alt={alt}
                   draggable={false}
+                  onLoad={onImageLoad}
                   style={filter ? { filter } : undefined}
                   className="w-full h-full object-contain select-none"
                 />
