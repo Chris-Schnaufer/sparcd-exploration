@@ -219,12 +219,13 @@ Then('Browse, History and Settings remain available', async ({ page }) => {
 // --- Identity ---------------------------------------------------------------
 
 Then('Settings shows the connected storage username', async ({ page }) => {
-  await expect(page.locator('#user')).toHaveValue('testkey');
+  await expect(page.locator('#user')).toHaveValue('tes…key');
 });
 
 Then('Settings shows connected storage username {string}', async ({ page }, username: string) => {
   await openSettings(page);
-  await expect(page.locator('#user')).toHaveValue(username);
+  const displayed = username.length <= 6 ? '••••••' : `${username.slice(0, 3)}…${username.slice(-3)}`;
+  await expect(page.locator('#user')).toHaveValue(displayed);
   await sectionTab(page, 'Tag').click();
 });
 
@@ -289,7 +290,7 @@ Then(
   async ({ page, s3 }) => {
     await expect(settingsDryRunCheckbox(page)).not.toBeChecked();
     // An identity is required before the dialog will run anything at all.
-    await expect(page.locator('#user')).toHaveValue('testkey');
+    await expect(page.locator('#user')).toHaveValue('tes…key');
     await sectionTab(page, 'Browse').click();
     await collectionButton(page, COLLECTION_NAME).click();
     await openWorkspaceFromBrowse(page);

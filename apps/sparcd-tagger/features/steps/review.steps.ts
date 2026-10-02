@@ -335,7 +335,7 @@ Then(
 
 Given('identifications were corrected locally', async ({ page }) => {
   await sectionTab(page, 'Settings').click();
-  await expect(page.locator('#user')).toHaveValue('testkey');
+  await expect(page.locator('#user')).toHaveValue('tes…key');
   await sectionTab(page, 'Tag').click();
   await focusFrame(page, 'IMG002.JPG');
   await speciesApply(page, 'Canis latrans').click();
@@ -383,7 +383,7 @@ Then('its tile carries an unsaved-edit marker', async ({ page }) => {
 
 Then('the marker is cleared for that image once its change has been synced', async ({ page }) => {
   await sectionTab(page, 'Settings').click();
-  await expect(page.locator('#user')).toHaveValue('testkey');
+  await expect(page.locator('#user')).toHaveValue('tes…key');
   await sectionTab(page, 'Tag').click();
   await openSyncDialog(page);
   await setSyncDryRun(page, false);

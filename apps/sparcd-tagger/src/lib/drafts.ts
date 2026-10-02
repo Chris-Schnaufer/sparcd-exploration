@@ -387,11 +387,18 @@ export const useDraftStore = create<DraftState>((set, get) => {
     incrementSpecies: (ctx, targets, tag) =>
       mutateMany(ctx, targets, (prev) => {
         const wasPresent = prev.observations.some((o) => o.scientificName === tag.scientificName);
+        const wasCanonical = targets.some((target) =>
+          target.mediaPath === prev.mediaPath &&
+          target.base?.observations.some((o) => o.scientificName === tag.scientificName),
+        );
         const observations = incrementObservation(prev.observations, tag);
         return {
-          observations: wasPresent
+          observations: wasPresent && wasCanonical
             ? appendReviewEvent(observations, tag.scientificName, tag.classifiedBy, tag.classificationTimestamp)
             : observations,
+          confirmedSpecies: wasPresent && wasCanonical
+            ? [...new Set([...(prev.confirmedSpecies ?? []), tag.scientificName])]
+            : prev.confirmedSpecies,
         };
       }),
 
@@ -402,14 +409,17 @@ export const useDraftStore = create<DraftState>((set, get) => {
       })),
 
     setSpeciesCount: (ctx, mediaPath, deploymentId, base, sci, count, classifiedBy, classificationTimestamp) =>
-      mutateMany(ctx, [{ mediaPath, deploymentId, base }], (prev) => ({
-        observations: appendReviewEvent(
-          setObservationCount(prev.observations, sci, count),
-          sci,
-          classifiedBy,
-          classificationTimestamp,
-        ),
-      })),
+      mutateMany(ctx, [{ mediaPath, deploymentId, base }], (prev) => {
+        const wasCanonical = base?.observations.some((o) => o.scientificName === sci) ?? false;
+        return {
+          observations: wasCanonical
+            ? appendReviewEvent(setObservationCount(prev.observations, sci, count), sci, classifiedBy, classificationTimestamp)
+            : setObservationCount(prev.observations, sci, count),
+          confirmedSpecies: wasCanonical
+            ? [...new Set([...(prev.confirmedSpecies ?? []), sci])]
+            : prev.confirmedSpecies,
+        };
+      }),
 
     detag: (ctx, targets) => mutateMany(ctx, targets, { observations: [], confirmedSpecies: [] }),
 

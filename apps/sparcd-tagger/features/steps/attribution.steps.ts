@@ -5,7 +5,7 @@ import { BUCKET, PREFIX_A } from './support/data';
 
 Given('Harold is connected as the storage account', async ({ page }) => {
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  await expect(page.locator('#user')).toHaveValue('testkey');
+  await expect(page.locator('#user')).toHaveValue('tes…key');
   await expect(page.locator('#user')).toHaveAttribute('readonly', '');
   await page.getByRole('button', { name: 'Tag', exact: true }).click();
 });

@@ -153,11 +153,7 @@ export function buildSyncPlan(
     const tagChanged = !observationsEqual(obs, img.baseObservations);
     const confirmedSpecies = d?.confirmedSpecies ?? [];
     const baseForObservation = (o: (typeof obs)[number]) => img.baseObservations.find(
-      (candidate) =>
-        candidate.scientificName === o.scientificName &&
-        Math.max(1, candidate.count) === Math.max(1, o.count) &&
-        (candidate.commonName ?? '') === (o.commonName ?? '') &&
-        (candidate.requestedSpecies ?? '') === (o.requestedSpecies ?? ''),
+      (candidate) => candidate.scientificName === o.scientificName,
     );
     // Re-applying an existing species is an explicit confirmation action. The
     // draft records that action directly; comparing attribution fields would
@@ -191,7 +187,7 @@ export function buildSyncPlan(
           // modeled can omit them. Preserve the canonical values rather than
           // blanking them when another observation on the image is edited.
           const classifiedBy = base
-            ? base.classifiedBy ?? o.classifiedBy
+            ? base.classifiedBy ?? o.classifiedBy ?? (user.trim() || undefined)
             : o.classifiedBy ?? (user.trim() || undefined);
           const classificationTimestamp = base
             ? base.classificationTimestamp ?? o.classificationTimestamp

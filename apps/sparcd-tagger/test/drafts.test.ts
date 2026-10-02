@@ -245,6 +245,33 @@ describe('draft store — add-only over a base multi-species image', () => {
     expect(d[P2].observations[0].count).toBe(1);
   });
 
+  it('does not mark a species added in this draft as reviewed when its count is incremented', () => {
+    const empty = { observations: [] };
+    useDraftStore.getState().incrementSpecies(
+      CTX,
+      [{ ...target(empty) }],
+      tag('Lynx rufus', 1, 'Bobcat'),
+    );
+    const observation = useDraftStore.getState().drafts[PATH].observations[0];
+    expect(observation.count).toBe(1);
+    expect(observation.reviewEvents).toBeUndefined();
+    expect(useDraftStore.getState().drafts[PATH].confirmedSpecies).toBeUndefined();
+  });
+
+  it('marks a count edit on an existing species as confirmed for sync', () => {
+    useDraftStore.getState().setSpeciesCount(
+      CTX,
+      PATH,
+      DEP,
+      BASE,
+      'Odocoileus hemionus',
+      1,
+      'reviewer',
+      '2024-01-20T14:30:00.000Z',
+    );
+    expect(useDraftStore.getState().drafts[PATH].confirmedSpecies).toEqual(['Odocoileus hemionus']);
+  });
+
   it('applying Ghost via the store clears real species', () => {
     useDraftStore.getState().addSpecies(CTX, [target()], tag(GHOST.label, 1, GHOST.commonName));
     expect(useDraftStore.getState().drafts[PATH].observations.map((o) => o.scientificName)).toEqual([
