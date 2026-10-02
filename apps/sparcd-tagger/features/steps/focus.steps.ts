@@ -196,6 +196,47 @@ Then('the Focus loading status disappears', async ({ page }) => {
   await expect(page.getByRole('status').filter({ hasText: 'loading' })).toHaveCount(0);
 });
 
+Given('a thumbnail download fails after signing', async ({ page, s3 }) => {
+  s3.failRead(mediaKey(PREFIX_A, 'IMG002.JPG'));
+  await page.reload();
+  await openWorkspace(page);
+  await expect(page.locator('button[title="IMG002.JPG"]')).toBeVisible();
+});
+
+Then('the failed thumbnail is marked as failed rather than loaded', async ({ page }) => {
+  const tile = page.locator('button[title="IMG002.JPG"]');
+  await expect(tile.getByTestId('thumbnail-failure')).toBeVisible();
+  await expect(tile.getByTestId('thumbnail-play')).toHaveCount(0);
+});
+
+Given('a video thumbnail is waiting for its first frame', async ({ page, s3 }) => {
+  s3.delay(mediaKey(PREFIX_A, 'VID001.MP4'), 10_000);
+  await page.reload();
+  await openWorkspace(page);
+  await page.getByRole('button', { name: 'Overview', exact: true }).click();
+  await expect(page.locator('button[title="VID001.MP4"] video')).toBeVisible();
+});
+
+When('thumbnail video metadata becomes available before its first frame', async ({ page }) => {
+  await page.locator('button[title="VID001.MP4"] video').evaluate((video) => {
+    video.dispatchEvent(new Event('loadedmetadata'));
+  });
+});
+
+Then('the thumbnail play marker is still hidden', async ({ page }) => {
+  await expect(page.locator('button[title="VID001.MP4"] [data-testid="thumbnail-play"]')).toHaveCount(0);
+});
+
+When('the thumbnail video frame becomes available', async ({ page }) => {
+  await page.locator('button[title="VID001.MP4"] video').evaluate((video) => {
+    video.dispatchEvent(new Event('loadeddata'));
+  });
+});
+
+Then('the thumbnail play marker is visible', async ({ page }) => {
+  await expect(page.locator('button[title="VID001.MP4"] [data-testid="thumbnail-play"]')).toBeVisible();
+});
+
 // The selected filmstrip row must not ask for 'high' too: it would take the
 // scheduler slot kept free for Focus.
 Then('the Focus image is the only media requested at high priority', async ({ page }) => {

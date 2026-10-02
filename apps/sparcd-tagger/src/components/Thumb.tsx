@@ -14,6 +14,18 @@ import { PawPads } from './Paw';
 // defaults from the key so existing call sites stay one-arg.
 export const THUMB_MEDIA_PRIORITY: MediaPriority = 'low';
 
+export type ThumbnailLoadState = 'loading' | 'loaded' | 'failed';
+
+export function thumbnailLoadState(
+  mediaKey: string | undefined,
+  loadedKey: string | undefined,
+  failedKey: string | undefined,
+): ThumbnailLoadState {
+  if (mediaKey && failedKey === mediaKey) return 'failed';
+  if (mediaKey && loadedKey === mediaKey) return 'loaded';
+  return 'loading';
+}
+
 export function Thumb({
   objectKey,
   alt,
@@ -30,8 +42,9 @@ export function Thumb({
   const mediaKey = url ? `${objectKey}\u0000${url}` : undefined;
   const [loadedKey, setLoadedKey] = useState<string>();
   const [failedKey, setFailedKey] = useState<string>();
-  const loaded = !!mediaKey && loadedKey === mediaKey;
-  const failed = !!mediaKey && failedKey === mediaKey;
+  const loadState = thumbnailLoadState(mediaKey, loadedKey, failedKey);
+  const loaded = loadState === 'loaded';
+  const failed = loadState === 'failed';
   const onLoaded = () => {
     markLoaded();
     if (mediaKey) setLoadedKey(mediaKey);
@@ -47,7 +60,7 @@ export function Thumb({
   if (isError || failed) {
     return (
       <div className="aspect-[4/3] bg-paperHover border border-rule grid place-items-center text-[11px] font-mono text-warn">
-        failed
+        <span data-testid="thumbnail-failure">failed</span>
       </div>
     );
   }
@@ -87,6 +100,7 @@ export function Thumb({
             {loaded && (
               <span
                 aria-hidden
+                data-testid="thumbnail-play"
                 className="absolute inset-0 grid place-items-center text-paper/90 text-lg drop-shadow"
               >
                 ▶
