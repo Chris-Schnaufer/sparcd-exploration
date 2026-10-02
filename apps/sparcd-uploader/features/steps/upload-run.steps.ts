@@ -1064,7 +1064,18 @@ When('the connection returns', async ({ app }) => {
 
 When('storage stops answering while the browser still reports being online', async ({ app }) => {
   await expect.poll(() => gatedKey(app, CUT_OFF[0]), { timeout: 60_000 }).toBeTruthy();
+  const key = gatedKey(app, CUT_OFF[0])!;
+  // Keep the browser online and fail only the cut-off object with a transient
+  // response. The other 23 files can finish, so the scenario reaches the
+  // partial state quickly without spending the whole retry budget on every
+  // file while the mock is offline.
+  app.s3.putHooks.push((_bucket, candidate) =>
+    candidate === key ? { status: 503, code: 'ServiceUnavailable', message: 'temporarily unavailable' } : undefined,
+  );
   app.s3.offline = true;
+  app.s3.releaseGatedPut(key);
+  await expect.poll(() => app.s3.refusedOffline).toContain(`${BUCKET_A}/${key}`);
+  app.s3.offline = false;
   openGate(app);
   expect(await app.page.evaluate(() => navigator.onLine)).toBe(true);
 });
@@ -1089,6 +1100,8 @@ Then('the run stops as partial and says it picks up again on its own', async ({ 
 
 When('storage answers again', async ({ app }) => {
   app.s3.offline = false;
+  app.s3.putHooks.length = 0;
+  openGate(app);
 });
 
 Then('the upload continues and is published with every image', async ({ app }) => {

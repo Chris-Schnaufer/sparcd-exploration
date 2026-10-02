@@ -1,7 +1,7 @@
 import { Given, When, Then, expect } from './fixtures';
 import type { App, FileSpec } from './app';
 import { FOLDER, jpegAt, manyJpegs, publishableBatch, slowPublishableBatch } from './batches';
-import { BUCKET_A, COLLECTION_A_NAME, COLLECTION_B_NAME, UUID_A } from './fixtures-data'
+import { BUCKET_A, COLLECTION_A_NAME, COLLECTION_B_NAME, UUID_A } from './fixtures-data';
 import {
   FAILING_FILE,
   produceCompleteRun,

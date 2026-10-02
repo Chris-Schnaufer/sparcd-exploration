@@ -665,8 +665,13 @@ function makeRunner(
     'the upload picks up again on its own';
 
   const endPartial = (failed: number, published: string) => {
-    log('warn', `${failed} files failed — metadata not ${published}; retry the failed files to complete the upload`);
     snap.autoRetry = snap.files.every((f) => f.state !== 'failed' || f.network);
+    log(
+      'warn',
+      snap.autoRetry
+        ? `${failed} files failed — metadata not ${published}; the upload picks up again on its own`
+        : `${failed} files failed — metadata not ${published}; retry the failed files to complete the upload`,
+    );
     snap.phase = 'partial';
     emit(true);
   };

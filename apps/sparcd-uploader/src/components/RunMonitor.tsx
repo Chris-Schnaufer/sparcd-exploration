@@ -300,9 +300,11 @@ export function RunMonitor({ snap }: { snap: UploadSnapshot }) {
         <Note
           tone="warn"
           message={
-            failed === 0
-              ? 'Every file is stored, but the connection dropped before the metadata was published, so this upload is not yet visible. It picks up again on its own once the connection returns.'
-              : `${failed} of ${snap.files.length} files failed to upload — the rest are stored. Metadata was not published, so this upload is not yet visible; retry the failed files to complete it.`
+            snap.autoRetry
+              ? `${failed} of ${snap.files.length} files failed while storage was unreachable. Metadata was not published, so this upload is not yet visible; it picks up again on its own.`
+              : failed === 0
+                ? 'Every file is stored, but the connection dropped before the metadata was published, so this upload is not yet visible. It picks up again on its own once the connection returns.'
+                : `${failed} of ${snap.files.length} files failed to upload — the rest are stored. Metadata was not published, so this upload is not yet visible; retry the failed files to complete it.`
           }
         />
       )}
