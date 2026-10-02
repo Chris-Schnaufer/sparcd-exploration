@@ -82,7 +82,7 @@ test('uploads the fixed corpus through the real app', async ({ page }) => {
   await loadFixtureFolder(page);
   const filePane = page.locator('[aria-label^="Scanned files"]');
   await expect(filePane).toBeVisible();
-  await expect(page.getByText(/362 files/).first()).toBeVisible();
+  await expect(page.getByText(/362 of 362 files processed/).first()).toBeVisible();
   await page.waitForFunction(() => {
     const text = document.body.innerText;
     return !/\d+\s+processing/.test(text) && !text.includes('Processing…') && !text.includes('Queued');
