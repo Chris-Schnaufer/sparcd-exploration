@@ -80,8 +80,9 @@ test('uploads the fixed corpus through the real app', async ({ page }) => {
 
   const folderAcceptedAt = performance.now();
   await loadFixtureFolder(page);
-  const filePane = page.locator('[aria-label^="Scanned files"]');
-  await expect(filePane).toBeVisible();
+  // Inspect keeps the virtualised file pane folded by default; the summary
+  // and its toggle are the stable readiness surface for the benchmark.
+  await expect(page.getByRole('button', { name: 'Show files' })).toBeVisible();
   await expect(page.getByText(/362 of 362 files processed/).first()).toBeVisible();
   await page.waitForFunction(() => {
     const text = document.body.innerText;
