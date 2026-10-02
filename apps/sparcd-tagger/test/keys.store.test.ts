@@ -352,4 +352,24 @@ describe('species list storage', () => {
     useKeyBindings.getState().assignKey('a', 'y');
     expect(useKeyBindings.getState().unsaved).toBe(false);
   });
+
+  it('flags an acknowledged vocabulary change when localStorage cannot save it', () => {
+    useKeyBindings.getState().stageSpecies(COLLECTION, original);
+    useKeyBindings.getState().stageSpecies(COLLECTION, changed);
+    expect(sources()[COLLECTION].pendingSpeciesChange).toBeDefined();
+
+    quotaFull = true;
+    useKeyBindings.getState().acknowledgeSpeciesChange(COLLECTION);
+
+    expect(useKeyBindings.getState().unsaved).toBe(true);
+    expect(sources()[COLLECTION].pendingSpeciesChange).toBeUndefined();
+    expect(sources()[COLLECTION].acceptedSpecies?.map((s) => s.scientificName)).toEqual([
+      'a',
+      'added',
+    ]);
+
+    quotaFull = false;
+    useKeyBindings.getState().assignKey('a', 'x');
+    expect(useKeyBindings.getState().unsaved).toBe(false);
+  });
 });
