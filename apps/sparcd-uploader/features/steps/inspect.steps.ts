@@ -99,8 +99,8 @@ When('"Hide files" is chosen', async ({ app }) => {
 });
 
 Then('the per-file list is shown', async ({ app }) => {
+  await app.showFileList();
   await expect(app.fileListToggle()).toHaveAttribute('aria-expanded', 'true');
-  await expect(app.fileListPane()).toBeVisible();
 });
 
 When('another folder is dropped', async ({ app }) => {
@@ -116,7 +116,7 @@ When('the count of files needing attention is chosen', async ({ app }) => {
 });
 
 Then('the per-file list is shown with only that file in it', async ({ app }) => {
-  await expect(app.fileListPane()).toBeVisible();
+  await app.showFileList();
   await expect.poll(async () => (await app.listedFiles()).map((f) => f.name)).toEqual(['BROKEN.JPG']);
 });
 

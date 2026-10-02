@@ -157,10 +157,7 @@ async function handBackAndReattach(app: App, id: string): Promise<void> {
   // again — and the fake picker is reset by the navigation, so re-seed it.
   await app.seedPickedFolder(app.lastSpecs);
   await app.page.getByRole('button', { name: 'Choose folder' }).click();
-<<<<<<< HEAD
   await expect(app.fileListToggle()).toBeVisible();
-=======
-  await expect(app.fileListPane()).toBeVisible();
 }
 
 Given('a batch was tagged in the Tagger and handed back', async ({ app }) => {
@@ -198,7 +195,7 @@ When('the batch is handed back 15 days after that', async ({ app }) => {
   await expect(app.page.getByRole('heading', { name: 'Choose the folder again' })).toBeVisible();
   await app.seedPickedFolder(app.lastSpecs);
   await app.page.getByRole('button', { name: 'Choose folder' }).click();
-  await expect(app.fileListPane()).toBeVisible();
+  await expect(app.fileListToggle()).toBeVisible();
   expect(await app.batchSummary()).toContain('2 tagged');
 });
 
@@ -237,7 +234,6 @@ Then('the upload finishes without going back to Inspect or the Tagger', async ({
   await expect(app.page.getByText(/Published \d+ files under/)).toBeVisible({ timeout: 120_000 });
   expect((app.notes.visited as string[]).filter((u) => u.includes('/tagger/'))).toEqual([]);
   await expect(app.page.getByRole('button', { name: /Tag species first|Edit tags/ })).toHaveCount(0);
->>>>>>> 25ad902 (test(uploader): read the stored location and tags back from the published CSVs)
 });
 
 Given('a batch tagged in the Tagger is handed back with no remembered folder', async ({ app }) => {
