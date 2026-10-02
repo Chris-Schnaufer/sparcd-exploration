@@ -73,6 +73,18 @@ Feature: Examine an image closely enough to catch every species
     Then the Focus image is requested at high priority
     And the filmstrip thumbnails are requested at low priority
 
+  Scenario: Returning to an image shows its loader until it is ready
+    Given the current Focus image's next download is delayed
+    When another image is opened and the first image is opened again
+    Then the Focus loading status stays visible until that image loads
+
+  Scenario: A video loader waits for its first displayable frame
+    Given the focused video is waiting for its first frame
+    When video metadata becomes available before its first frame
+    Then the Focus loading status is still visible
+    When the first video frame becomes available
+    Then the Focus loading status disappears
+
   @H1
   Scenario: Only the images on screen are rendered while scrolling a large upload
     Given an upload with thousands of images is open
