@@ -1,7 +1,7 @@
 import { Given, When, Then, expect } from './fixtures';
 import type { App, FileSpec } from './app';
 import { FOLDER, jpegAt, publishableBatch, slowPublishableBatch } from './batches';
-import { BUCKET_A, UUID_A } from './fixtures-data';
+import { BUCKET_A, COLLECTION_A_NAME, COLLECTION_B_NAME, UUID_A } from './fixtures-data';
 import {
   FAILING_FILE,
   producePartialRun as basePartialRun,
@@ -291,6 +291,34 @@ Then(
     }
   },
 );
+
+Given('another batch is set up for a different collection and location', async ({ app }) => {
+  await app.reopen();
+  await app.dropFolder([{ ...jpegAt('IMG_9001.JPG', '2026:07:01 12:00:00'), path: 'OTHERCARD/IMG_9001.JPG' }]);
+  await expect(app.fileListToggle()).toBeVisible({ timeout: 30_000 });
+  await app.continueToAssign();
+  await app.waitForCollections();
+  await app.openCollectionList();
+  await app.page.locator('ul[role="listbox"] li[role="option"]').filter({ hasText: COLLECTION_B_NAME }).click();
+  await app.chooseDeployment('Coyote Wash');
+  await app.continueToUpload();
+  await expect(app.page.locator('dl').filter({ hasText: 'Collection' })).toContainText(COLLECTION_B_NAME);
+  // The Resume folder dialog hands back the interrupted upload's source folder.
+  await app.seedPickedFolder(app.notes.sourceSpecs as FileSpec[]);
+});
+
+Then("the Upload step names the resumed upload's collection, location and folder", async ({ app }) => {
+  await app.expectStep('Upload');
+  const summary = app.page.locator('dl').filter({ hasText: 'Collection' });
+  await expect(summary).toContainText(COLLECTION_A_NAME, { timeout: 60_000 });
+  await expect(summary).toContainText('Bear Canyon');
+  await expect(summary).toContainText('BEAR1');
+  await expect(summary).toContainText(FOLDER);
+  await expect(summary).not.toContainText(COLLECTION_B_NAME);
+  await expect(summary).not.toContainText('Coyote Wash');
+  await expect(summary).not.toContainText('OTHERCARD');
+  await expect(app.page.getByText(/Published \d+ files under/)).toBeVisible({ timeout: 120_000 });
+});
 
 // --- retrying from the Upload step -----------------------------------------
 
