@@ -199,17 +199,24 @@ export function Upload() {
       live = false;
     };
   }, [resumedSessionId]);
-  const dest = resumedBatch
+  // A resume may render before the asynchronous session read completes. Keep
+  // the saved session's destination as the only source of truth during that
+  // gap; falling back to Assign here can briefly name a different batch.
+  const savedBatch = resumedBatch ?? pendingResume?.session.batch ?? null;
+  const isResumed = Boolean(attachedFiles || pendingResume || resumedSessionId);
+  const dest = savedBatch
     ? {
         collectionName:
           collections.data?.find(
-            (c) => c.bucket === resumedBatch.targetBucket && c.uuid === resumedBatch.collectionUuid,
-          )?.name ?? resumedBatch.targetBucket,
-        collectionUuid: resumedBatch.collectionUuid,
-        location: resumedBatch.location,
+            (c) => c.bucket === savedBatch.targetBucket && c.uuid === savedBatch.collectionUuid,
+          )?.name ?? savedBatch.targetBucket,
+        collectionUuid: savedBatch.collectionUuid,
+        location: savedBatch.location,
         folder: folderOf([...(attachedFiles?.keys() ?? [])]),
       }
-    : collection && {
+    : isResumed
+      ? null
+      : collection && {
         collectionName: collection.name ?? '(unnamed)',
         collectionUuid: collection.uuid,
         location,
@@ -377,7 +384,7 @@ export function Upload() {
         <h2 className={sectionLabel}>Upload</h2>
         {dest && (
           <>
-            {!resumedBatch && (
+            {!isResumed && (
               <p className="font-body text-[13px] text-inkSoft">
                 {ready.length} file{ready.length === 1 ? '' : 's'} ready
                 {stillInspecting > 0 && ` (${stillInspecting} still being inspected)`} ·{' '}
@@ -409,7 +416,7 @@ export function Upload() {
               )}
             </dl>
 
-            {!resumedBatch && (
+            {!isResumed && (
               <label className="flex items-center gap-2.5 font-body text-[14px] text-ink">
                 <input
                   type="checkbox"
@@ -429,6 +436,9 @@ export function Upload() {
               />
             )}
           </>
+        )}
+        {isResumed && !dest && (
+          <p className="font-body text-[13px] text-inkSoft">Loading the saved upload destination…</p>
         )}
 
         {stillInspecting > 0 && (
