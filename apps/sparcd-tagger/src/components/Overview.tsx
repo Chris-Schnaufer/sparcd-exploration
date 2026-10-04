@@ -308,7 +308,6 @@ function ListCell({
           objectKey={img.key}
           alt={img.fileName}
           isVideo={isVideo}
-          priority={active ? 'high' : 'low'}
         />
       </span>
       <span
@@ -425,7 +424,6 @@ function GridCell({
           objectKey={img.key}
           alt={img.fileName}
           isVideo={isVideoImage(img)}
-          priority={active ? 'high' : 'low'}
         />
         {isVideoImage(img) && (
           <span className="absolute top-1 left-1 bg-paperHover border border-rule text-inkSoft font-mono text-[10px] px-1 leading-tight">

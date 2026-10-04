@@ -33,6 +33,14 @@ Feature: Resume an interrupted upload and retry a failed one
     And it shows how many of its files are done and how many failed
     And only uploads whose metadata was published are marked complete
 
+  @AL1 @AL1-3
+  Scenario: Uploads left running unattended are found either complete or ready to resume
+    Given one upload finished while nobody was watching
+    And a second upload was cut off part-way while nobody was watching
+    When History is opened
+    Then the finished upload is shown as complete with nothing left to do
+    And the cut-off upload says how many files are still to send and names "Resume upload" as the next step
+
   @AL1
   Scenario: History renders a late batch start with a 24-hour clock
     Given a completed upload started late in the day is recorded
@@ -45,8 +53,9 @@ Feature: Resume an interrupted upload and retry a failed one
     When it is resumed
     Then the source folder is re-attached, by permission for a remembered folder or by selecting it again
     And the upload continues from where it stopped
-    # As-built continuation is manual: the user clicks Resume. The tool does not
-    # detect connectivity returning and does not restart on its own.
+    # Resuming from History is manual because it needs the source folder back.
+    # A run still open in this tab carries on by itself when the connection
+    # returns; see upload-run.feature.
 
   @AL1 @F1 @AL1-2 @F1-5
   Scenario: Files already stored and verified are not sent again
@@ -61,6 +70,13 @@ Feature: Resume an interrupted upload and retry a failed one
     Then it writes to the same collection, the same upload folder and the same object paths as the original attempt
     And the deployment, uploader identity and description are taken from the recorded session, not re-entered
     And the resumed upload's observations.csv matches what a fresh upload would have written
+
+  @AL2 @AL2-1
+  Scenario: A resumed upload names its saved destination on the Upload step
+    Given an open upload is listed in History
+    And another batch is set up for a different collection and location
+    When it is resumed
+    Then the Upload step names the resumed upload's collection, location and folder
 
   @AL2
   Scenario: A partial History-resumed run retries automatically when the tab becomes visible again
@@ -86,6 +102,7 @@ Feature: Resume an interrupted upload and retry a failed one
   Scenario: Resuming a run that failed outright completes that same upload
     Given a real upload failed outright
     Then "Resume upload" is offered
+    And History says storage refused the file and to ask an administrator before resuming
     When the refusal is cleared and "Resume upload" is chosen
     Then the upload completes
     And when they all land, the metadata for that same upload folder is published
