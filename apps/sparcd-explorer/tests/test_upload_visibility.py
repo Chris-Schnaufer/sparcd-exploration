@@ -28,19 +28,26 @@ class FakeObject:
         return b"{}"
 
 
+class NoSuchKey(Exception):
+    code = "NoSuchKey"
+
+
 class FakeClient:
-    def __init__(self, objects):
+    def __init__(self, objects, failing=()):
         self.objects = objects
+        self.failing = set(failing)
 
     def get_object(self, bucket, key):
+        if key in self.failing:
+            raise ConnectionError(key)
         if key not in self.objects:
-            raise FileNotFoundError(key)
+            raise NoSuchKey(key)
         return FakeObject()
 
 
 def read_csv(client, bucket, key):
     if key not in client.objects:
-        raise FileNotFoundError(key)
+        raise NoSuchKey(key)
     return [[key]]
 
 
@@ -55,16 +62,21 @@ class UploadVisibilityTest(unittest.TestCase):
                     "published/deployments.csv",
                     "published/media.csv",
                     "published/observations.csv",
-                }
+                },
+                failing={"unreadable/UploadMeta.json"},
             )
+            skipped = []
+            globals_for_helpers["_skip"] = lambda where, what, exc: skipped.append((where, what))
             globals_for_helpers["client"] = client
             globals_for_helpers["_upload_is_visible"] = visible_helper
             globals_for_helpers["_read_csv"] = lambda bucket, key: read_csv(client, bucket, key)
 
             self.assertTrue(visible_helper("bucket", "published/"), notebook)
             self.assertFalse(visible_helper("bucket", "interrupted/"), notebook)
-            rows = loader("bucket", ["published/", "interrupted/"])
+            skipped.clear()
+            rows = loader("bucket", ["published/", "interrupted/", "unreadable/"])
             self.assertEqual(rows[-1], 1, notebook)
+            self.assertEqual(skipped, [("unreadable", "UploadMeta.json")], notebook)
             self.assertEqual(rows[0], [["published/deployments.csv"]], notebook)
             self.assertEqual(rows[2], [["published/media.csv"]], notebook)
             self.assertEqual(rows[4], [["published/observations.csv"]], notebook)

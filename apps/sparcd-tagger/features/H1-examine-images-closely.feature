@@ -58,11 +58,46 @@ Feature: Examine an image closely enough to catch every species
     Then the new image is shown fitted to the pane
     And no zoom or pan state carries over from the previous image
 
+  @H1 @H1-6
+  Scenario: Zoom and pan behave the same on portrait, landscape and panorama images
+    Given the upload holds a portrait, a landscape and a panorama image of differing sizes
+    When each of them is examined closely in the Focus view
+    Then each opens whole and undistorted at the fitted size
+    And each can be enlarged up to six times its fitted size
+    And each can be dragged around once enlarged without moving beyond its edges
+    And the portrait and the panorama stay in view when enlarged fullscreen too
+
   @H1
   Scenario: The focused image is prioritized over delayed filmstrip thumbnails
     Given filmstrip thumbnail downloads are delayed
     Then the Focus image is requested at high priority
     And the filmstrip thumbnails are requested at low priority
+    And the Focus image is the only media requested at high priority
+
+  Scenario: Returning to an image shows its loader until it is ready
+    Given the current Focus image's next download is delayed
+    When another image is opened and the first image is opened again
+    Then the Focus loading status stays visible until that image loads
+
+  Scenario: A video loader waits for its first displayable frame
+    Given the focused video is waiting for its first frame
+    When video metadata becomes available before its first frame
+    Then the Focus loading status is still visible
+    When the first video frame becomes available
+    Then the Focus loading status disappears
+
+  @H1
+  Scenario: A failed thumbnail download remains visibly failed
+    Given a thumbnail download fails after signing
+    Then the failed thumbnail is marked as failed rather than loaded
+
+  @H1
+  Scenario: A video thumbnail waits for its first displayable frame
+    Given a video thumbnail is waiting for its first frame
+    When thumbnail video metadata becomes available before its first frame
+    Then the thumbnail play marker is still hidden
+    When the thumbnail video frame becomes available
+    Then the thumbnail play marker is visible
 
   @H1
   Scenario: Only the images on screen are rendered while scrolling a large upload
