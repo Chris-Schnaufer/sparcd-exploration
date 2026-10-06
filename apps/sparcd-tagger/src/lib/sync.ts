@@ -165,6 +165,13 @@ export function buildSyncPlan(
     const confirmedUnchanged = !!d && !tagChanged &&
       (d.confirmedSpecies ?? []).some((name) => obs.some((o) => o.scientificName === name));
 
+    // Removals already on the canonical rows are re-emitted on every rewrite of
+    // this image; a species that is present again no longer counts as removed.
+    const removedSpecies = [...new Set([
+      ...(img.baseRemovedSpecies ?? []),
+      ...(d?.removedSpecies ?? []).filter((name) => img.baseObservations.some((o) => o.scientificName === name)),
+    ])].filter((name) => !obs.some((o) => o.scientificName === name));
+
     if (timeChanged) summary.timeCorrections++;
 
     if (tagChanged) {
@@ -173,10 +180,6 @@ export function buildSyncPlan(
       if (!wasTagged && nowTagged) summary.additions++;
       else if (wasTagged && !nowTagged) summary.removals++;
       else summary.modifications++;
-
-      const removedSpecies = (d?.removedSpecies ?? []).filter((name) =>
-        img.baseObservations.some((o) => o.scientificName === name),
-      );
 
       summary.confirmations += confirmedSpecies.filter((name) =>
         obs.some((o) => o.scientificName === name) &&
@@ -223,6 +226,7 @@ export function buildSyncPlan(
         // Content is identical to base by definition (tagChanged is false),
         // so no delta/summary bookkeeping runs here — only the attribution
         // `addObservation` already refreshed at apply time is written through.
+        removedSpecies,
         observations: obs.map((o) => {
           const base = baseForObservation(o);
           const explicitlyConfirmed = confirmedSpecies.includes(o.scientificName);
@@ -231,6 +235,7 @@ export function buildSyncPlan(
             count: Math.max(1, o.count),
             commonName: o.commonName || undefined,
             requestedSpecies: o.requestedSpecies || undefined,
+            removedSpecies: obs[0] === o ? removedSpecies : undefined,
             // Only the explicitly re-applied species receives the current
             // reviewer identity. Other legacy rows keep their canonical
             // attribution (or remain unattributed).
