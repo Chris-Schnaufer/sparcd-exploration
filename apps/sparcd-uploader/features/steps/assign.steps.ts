@@ -413,6 +413,8 @@ When('the next batch is uploaded with {string} as its location', async ({ app },
   await app.waitForInspected();
   await app.continueToAssign();
   await app.waitForCollections();
+  // Next batch starts with nothing assigned (#338), so pick the collection again.
+  await app.chooseCollection(COLLECTION_A_NAME);
   await uploadAt(app, location);
 });
 

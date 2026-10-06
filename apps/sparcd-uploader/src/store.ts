@@ -103,6 +103,7 @@ type UploaderState = {
   uploaderUser: string; // free-text identity, normalized into a slug for keys
   selectedLocationId: string | null; // chosen deployment location ID (Assign)
   selectedBucket: string | null; // selected collection key `${bucket}::${uuid}` (Assign)
+  requireCollectionSelection: boolean; // keep a new batch visibly unassigned
   uploadDescription: string; // free-text description for UploadMeta
   uploadTimeZone: string; // IANA zone EXIF naive times are interpreted in; default = browser zone
   dryRun: boolean; // off by default; when on, logs PUTs and writes nothing
@@ -213,6 +214,7 @@ function disconnectedState(s: UploaderState): Partial<UploaderState> {
     flipId: null,
     selectedLocationId: null,
     selectedBucket: null,
+    requireCollectionSelection: false,
     uploaderUser: '',
     uploadTimeZone: localTimeZone(),
     pendingResume: null,
@@ -328,6 +330,7 @@ export const useStore = create<UploaderState>()(
       uploaderUser: '',
       selectedLocationId: null,
       selectedBucket: null,
+      requireCollectionSelection: false,
       uploadDescription: '',
       uploadTimeZone: localTimeZone(),
       dryRun: false,
@@ -354,6 +357,7 @@ export const useStore = create<UploaderState>()(
           loginDeferred: false,
           selectedLocationId: null,
           selectedBucket: null,
+          requireCollectionSelection: false,
         }));
       },
       setLoginDeferred: (value) => set({ loginDeferred: value }),
@@ -642,7 +646,7 @@ export const useStore = create<UploaderState>()(
       // Stored raw; sanitizeUploaderUser derives the key-safe slug at point of use.
       setUploaderUser: (value) => set({ uploaderUser: value }),
       setSelectedLocationId: (id) => set({ selectedLocationId: id }),
-      setSelectedBucket: (bucket) => set({ selectedBucket: bucket }),
+      setSelectedBucket: (bucket) => set({ selectedBucket: bucket, requireCollectionSelection: false }),
       setUploadDescription: (value) => set({ uploadDescription: value }),
       setUploadTimeZone: (value) => set({ uploadTimeZone: value }),
       setDryRun: (value) => set({ dryRun: value }),
@@ -690,9 +694,9 @@ export const useStore = create<UploaderState>()(
         }
       },
 
-      // Start a fresh batch after a completed upload, keeping the deployment,
-      // uploader, target collection, and description so a researcher can chain
-      // batches for the same site without re-entering everything.
+      // Start a fresh batch after a completed upload. Assignment values belong
+      // to the card that just finished and must not silently carry over to the
+      // next card; the uploader identity and run preferences remain available.
       nextBatch: () => {
         invalidateRetryPartialRun();
         invalidateFileIndex();
@@ -704,6 +708,11 @@ export const useStore = create<UploaderState>()(
           dirHandle: null,
           fileAccessMode: 'reselect-required',
           flipId: null,
+          selectedLocationId: null,
+          selectedBucket: null,
+          uploadDescription: '',
+          uploadTimeZone: '',
+          requireCollectionSelection: true,
           activeRun: null,
           streamingRun: null,
           streamingQueueClosed: false,
@@ -732,6 +741,7 @@ export const useStore = create<UploaderState>()(
         uploaderUser: s.uploaderUser,
         selectedLocationId: s.selectedLocationId,
         selectedBucket: s.selectedBucket,
+        requireCollectionSelection: s.requireCollectionSelection,
         uploadDescription: s.uploadDescription,
         uploadTimeZone: s.uploadTimeZone,
         dryRun: s.dryRun,
