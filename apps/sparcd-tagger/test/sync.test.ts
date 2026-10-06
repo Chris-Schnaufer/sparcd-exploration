@@ -129,6 +129,7 @@ const NOW = new Date('2024-01-20T14:30:00');
 
 type Recorder = {
   snapshots: { key: string; body: string }[];
+  baselines: CanonicalState[];
   replaces: { key: string; body: string; etag: string }[];
   journals: SyncJournal[];
   cleared: number;
@@ -141,7 +142,7 @@ function fakeIO(
     replaceError?: (key: string) => Error | null;
   } = {},
 ): { io: SyncIO; rec: Recorder } {
-  const rec: Recorder = { snapshots: [], replaces: [], journals: [], cleared: 0 };
+  const rec: Recorder = { snapshots: [], baselines: [], replaces: [], journals: [], cleared: 0 };
   const io: SyncIO = {
     loadCanonical: async () => current,
     writeSnapshot: async (key, body) => {
@@ -701,6 +702,26 @@ describe('runSync — dry-run default writes nothing', () => {
 });
 
 describe('runSync — live write path', () => {
+  it('creates the immutable original baseline before the first rollback snapshot', async () => {
+    const cur = await canonical();
+    const { io, rec } = fakeIO(cur);
+    let baselineCreated = false;
+    io.ensureOriginalBaseline = async (state) => {
+      if (!baselineCreated) {
+        baselineCreated = true;
+        rec.baselines.push(state);
+      }
+    };
+    const res = await runSync(
+      { bucket: 'sparcd-x', uploadPrefix: PREFIX, user: 'jg', base: baseFrom(cur), plan: buildSyncPlan(IMAGES, ADD_DRAFTS, null), dryRun: false },
+      io,
+    );
+    expect(res.status).toBe('synced');
+    expect(rec.baselines).toHaveLength(1);
+    expect(rec.baselines[0].media.text).toBe(MEDIA_CSV);
+    expect(rec.snapshots[0].key).toContain('.sparcd-tagger-snapshots/');
+  });
+
   it('snapshots all four files (+manifest last), replaces changed files in order, clears the journal', async () => {
     const cur = await canonical();
     const { io, rec } = fakeIO(cur);
@@ -886,6 +907,7 @@ describe('runSync — resume a partial sync from the journal', () => {
   it('verifies the written object and continues from the first pending one', async () => {
     const cur = await canonical();
     const { io, rec } = fakeIO(cur);
+    io.ensureOriginalBaseline = async (state) => rec.baselines.push(state);
     const journal: SyncJournal = {
       id: `sparcd-x::${PREFIX}`,
       bucket: 'sparcd-x',
@@ -906,6 +928,7 @@ describe('runSync — resume a partial sync from the journal', () => {
     expect(res.status).toBe('synced');
     // Media was already written, so resume only writes the two pending objects.
     expect(rec.replaces.map((r) => r.key.split('/').pop())).toEqual(['observations.csv', 'UploadMeta.json']);
+    expect(rec.baselines).toHaveLength(1);
     expect(rec.cleared).toBe(1);
   });
 

@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { parseObservations, parseCsvRows, serializeCsvRows, OBS_COL } from '@sparcd/camtrap';
+import { parseObservations, parseMedia, parseCsvRows, serializeCsvRows, OBS_COL } from '@sparcd/camtrap';
 import {
   Given,
   When,
@@ -277,6 +277,22 @@ Given('an existing identification has original attribution', async ({ page, s3 }
   await expect(page.locator('[aria-label="Originally identified by fielduser"]')).toBeVisible();
 });
 
+Given('the original upload data is captured before a review', async ({ s3, scratch }) => {
+  // Keep this baseline scenario independent from the restore fixture's older
+  // snapshots: the captured canonical files are the upload's first observed
+  // state, so an unrelated historical snapshot must not become its source.
+  for (const key of s3.keys(BUCKET, `${PREFIX_A}.sparcd-tagger-snapshots/`)) s3.delete(BUCKET, key);
+  const mediaKey = parseMedia(s3.text(BUCKET, `${PREFIX_A}media.csv`))[0].mediaPath;
+  scratch.originalBaseline = {
+    media: s3.text(BUCKET, `${PREFIX_A}media.csv`),
+    deployments: s3.text(BUCKET, `${PREFIX_A}deployments.csv`),
+    observations: s3.text(BUCKET, `${PREFIX_A}observations.csv`),
+    uploadMeta: s3.text(BUCKET, `${PREFIX_A}UploadMeta.json`),
+    imageKey: mediaKey,
+    image: s3.get(BUCKET, mediaKey)?.body.toString('base64'),
+  };
+});
+
 When('a sync is previewed', async ({ page }) => {
   await openSyncDialog(page);
 });
@@ -316,6 +332,53 @@ Then('the original identifier and separate review remain visible in the stored i
     classificationTimestamp: '2024-01-11T00:00:00.000Z',
   });
   expect(row?.reviewEvents).toEqual([{ reviewedBy: 'testkey', reviewedAt: expect.stringMatching(ISO_TIMESTAMP) }]);
+});
+
+Then('the original uploaded data remains byte-for-byte intact', async ({ s3, scratch }) => {
+  const original = scratch.originalBaseline as {
+    media: string;
+    deployments: string;
+    observations: string;
+    uploadMeta: string;
+    imageKey: string;
+    image: string;
+  };
+  expect(s3.text(BUCKET, `${PREFIX_A}.sparcd-tagger-original/media.csv`)).toBe(original.media);
+  expect(s3.text(BUCKET, `${PREFIX_A}.sparcd-tagger-original/deployments.csv`)).toBe(original.deployments);
+  expect(s3.text(BUCKET, `${PREFIX_A}.sparcd-tagger-original/observations.csv`)).toBe(original.observations);
+  expect(s3.text(BUCKET, `${PREFIX_A}.sparcd-tagger-original/UploadMeta.json`)).toBe(original.uploadMeta);
+  expect(s3.get(BUCKET, original.imageKey)?.body.toString('base64')).toBe(original.image);
+  expect(s3.has(BUCKET, `${PREFIX_A}.sparcd-tagger-original/manifest.json`)).toBe(true);
+  expect(s3.putsFor(`${PREFIX_A}.sparcd-tagger-original/`)).toHaveLength(5);
+});
+
+When('another review is made locally', async ({ page }) => {
+  await focusFrame(page, 'IMG002.JPG');
+  await speciesApply(page, 'Canis latrans').click();
+});
+
+function expectAuditSnapshot(s3: { puts: { key: string; body: string }[] }): void {
+  const manifests = s3.puts.filter((put) =>
+    put.key.includes('.sparcd-tagger-snapshots/testkey/') && put.key.endsWith('manifest.json'),
+  );
+  expect(manifests.length).toBeGreaterThan(0);
+  for (const item of manifests) {
+    const manifest = JSON.parse(item.body) as { user?: string; editStamp?: string };
+    expect(manifest.user).toBe('testkey');
+    expect(manifest.editStamp).toMatch(/^\d{4}\.\d{2}\.\d{2}\.\d{2}\.\d{2}\.\d{2}$/);
+  }
+}
+
+Then('the live audit records the correction identity and time', async ({ s3 }) => {
+  const meta = JSON.parse(s3.text(BUCKET, `${PREFIX_A}UploadMeta.json`)) as { editComments: string[] };
+  expect(meta.editComments.some((comment) => comment.includes('testkey'))).toBe(true);
+  expectAuditSnapshot(s3);
+});
+
+Then('the live audit records the removal identity and time', async ({ s3 }) => {
+  const meta = JSON.parse(s3.text(BUCKET, `${PREFIX_A}UploadMeta.json`)) as { editComments: string[] };
+  expect(meta.editComments.some((comment) => comment.includes('testkey'))).toBe(true);
+  expectAuditSnapshot(s3);
 });
 
 Then(
