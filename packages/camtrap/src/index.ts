@@ -825,8 +825,8 @@ export function shiftTimestamp(iso: string, off: TimeOffset, timeZone?: string):
   const hour = Number(m[4]);
   const minute = Number(m[5]);
   const second = Number(m[6]);
-  const fraction = iso.match(/\.(\d{1,3})/)?.[1] ?? '';
-  const millisecond = Number(fraction.padEnd(3, '0') || 0);
+  const fraction = iso.match(/\.(\d{1,6})/)?.[1] ?? '';
+  const millisecond = Number(fraction.slice(0, 3).padEnd(3, '0') || 0);
 
   // plusYears — clamp the day within the same month of the new year.
   year += off.years;
@@ -859,8 +859,8 @@ export function shiftTimestamp(iso: string, off: TimeOffset, timeZone?: string):
   // A `Z` value's fields are UTC, not camera wall clock: shift them as UTC and
   // keep the `Z` so a later location rebase can still recover the wall clock.
   return timeZone && offset !== 'Z'
-    ? formatCaptureTimestamp(shifted, timeZone)
-    : formatCaptureTimestampWithOffset(shifted, offset ?? '+00:00');
+    ? formatCaptureTimestamp(shifted, timeZone, fraction.slice(3))
+    : formatCaptureTimestampWithOffset(shifted, offset ?? '+00:00', fraction.slice(3));
 }
 
 /** Resolve the corrected timestamp for one image: per-image override wins over the upload offset. */
@@ -888,9 +888,13 @@ export type CaptureTimestampParts = {
 };
 
 const CAPTURE_TIMESTAMP_RE =
-  /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?(?:\.(\d{1,3}))?(Z|[+-]\d{2}:?\d{2})?$/;
+  /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?(?:\.(\d{1,6}))?(Z|[+-]\d{2}:?\d{2})?$/;
 
-function parseCaptureTimestamp(value: string): { parts: CaptureTimestampParts; offset: string | null } | null {
+// Other tools may write microseconds. Milliseconds drive the arithmetic; the
+// digits past them (`subMillisecond`) are carried through to the output as-is.
+function parseCaptureTimestamp(
+  value: string,
+): { parts: CaptureTimestampParts; offset: string | null; subMillisecond: string } | null {
   const match = CAPTURE_TIMESTAMP_RE.exec(value.trim());
   if (!match) return null;
   const [, year, month, day, hour, minute, second = '0', fraction = '', offset = null] = match;
@@ -901,7 +905,7 @@ function parseCaptureTimestamp(value: string): { parts: CaptureTimestampParts; o
     hour: Number(hour),
     minute: Number(minute),
     second: Number(second),
-    millisecond: Number(fraction.padEnd(3, '0') || 0),
+    millisecond: Number(fraction.slice(0, 3).padEnd(3, '0') || 0),
   };
   if (offset) {
     const normalized = offset === 'Z' ? '+00:00' : offset.replace(/^([+-]\d{2})(\d{2})$/, '$1:$2');
@@ -917,7 +921,7 @@ function parseCaptureTimestamp(value: string): { parts: CaptureTimestampParts; o
     probe.getUTCMonth() !== parts.month - 1 ||
     probe.getUTCDate() !== parts.day
   ) return null;
-  return { parts, offset };
+  return { parts, offset, subMillisecond: fraction.slice(3) };
 }
 
 const zoneFormatters = new Map<string, Intl.DateTimeFormat>();
@@ -992,22 +996,22 @@ function localPartsAndOffset(parts: CaptureTimestampParts, timeZone: string): { 
   return { parts, offset };
 }
 
-function formatCaptureTimestamp(parts: CaptureTimestampParts, timeZone: string): string {
+function formatCaptureTimestamp(parts: CaptureTimestampParts, timeZone: string, subMillisecond = ''): string {
   const resolved = localPartsAndOffset(parts, timeZone);
   parts = resolved.parts;
   return (
     `${String(parts.year).padStart(4, '0')}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}T` +
     `${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}:${String(parts.second).padStart(2, '0')}.` +
-    `${String(parts.millisecond).padStart(3, '0')}${offsetText(resolved.offset)}`
+    `${String(parts.millisecond).padStart(3, '0')}${subMillisecond}${offsetText(resolved.offset)}`
   );
 }
 
-function formatCaptureTimestampWithOffset(parts: CaptureTimestampParts, offset: string): string {
+function formatCaptureTimestampWithOffset(parts: CaptureTimestampParts, offset: string, subMillisecond = ''): string {
   const normalized = offset === 'Z' ? 'Z' : offset.includes(':') ? offset : `${offset.slice(0, 3)}:${offset.slice(3)}`;
   return (
     `${String(parts.year).padStart(4, '0')}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}T` +
     `${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}:${String(parts.second).padStart(2, '0')}.` +
-    `${String(parts.millisecond).padStart(3, '0')}${normalized}`
+    `${String(parts.millisecond).padStart(3, '0')}${subMillisecond}${normalized}`
   );
 }
 
@@ -1015,14 +1019,14 @@ function formatCaptureTimestampWithOffset(parts: CaptureTimestampParts, offset: 
 export function normalizeCaptureTimestamp(value: string): string {
   const parsed = parseCaptureTimestamp(value);
   if (!parsed) throw new Error(`Invalid capture timestamp: ${value}`);
-  return formatCaptureTimestampWithOffset(parsed.parts, parsed.offset ?? '+00:00');
+  return formatCaptureTimestampWithOffset(parsed.parts, parsed.offset ?? '+00:00', parsed.subMillisecond);
 }
 
 /** Interpret a naive camera wall-clock timestamp in an IANA zone. */
 export function captureTimestampInZone(naive: string, timeZone: string): string {
   const parsed = parseCaptureTimestamp(naive);
   if (!parsed) throw new Error(`Invalid capture timestamp: ${naive}`);
-  return formatCaptureTimestamp(parsed.parts, timeZone);
+  return formatCaptureTimestamp(parsed.parts, timeZone, parsed.subMillisecond);
 }
 
 /** Reinterpret a capture timestamp's wall-clock value in another IANA zone. */
@@ -1043,7 +1047,7 @@ export function rebaseCaptureTimestamp(
       if (!Number.isNaN(instant)) parts = partsAt(instant, fromTimeZone);
     }
   }
-  return formatCaptureTimestamp(parts, toTimeZone);
+  return formatCaptureTimestamp(parts, toTimeZone, parsed.subMillisecond);
 }
 
 // --- Validators ------------------------------------------------------------

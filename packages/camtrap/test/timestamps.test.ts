@@ -8,6 +8,8 @@ import {
   parseCsvRows,
   captureTimestampInZone,
   rebaseCaptureTimestamp,
+  shiftTimestamp,
+  ZERO_OFFSET,
   type TimestampSource,
 } from '../src/index';
 
@@ -56,6 +58,18 @@ it('writes and rebases offset-bearing capture timestamps', () => {
   );
   expect(rebaseCaptureTimestamp('2026-01-15T12:00:00', 'America/Phoenix', 'America/New_York')).toBe(
     '2026-01-15T12:00:00.000-05:00',
+  );
+});
+
+it('rebases six-digit fractional seconds across zones without dropping digits', () => {
+  expect(rebaseCaptureTimestamp('2024-05-01T20:02:11.123456+00:00', 'UTC', 'America/New_York')).toBe(
+    '2024-05-01T20:02:11.123456-04:00',
+  );
+  expect(rebaseCaptureTimestamp('2024-05-01T20:02:11.123456Z', 'America/Phoenix', 'America/New_York')).toBe(
+    '2024-05-01T13:02:11.123456-04:00',
+  );
+  expect(shiftTimestamp('2024-05-01T20:02:11.123456+00:00', { ...ZERO_OFFSET, hours: 1 }, 'UTC')).toBe(
+    '2024-05-01T21:02:11.123456+00:00',
   );
 });
 
