@@ -178,11 +178,11 @@ export function Assign() {
     if (!location) return;
     if (isFirstLocationEffect.current) {
       isFirstLocationEffect.current = false;
-      if (location.id === mountedLocationIdRef.current) return;
+      if (selectedLocationId === mountedLocationIdRef.current) return;
     }
     setUploadTimeZone(timeZoneForCoords(location.latitude, location.longitude));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location?.id]);
+  }, [location?.key]);
 
   const needsCaptureTime = files.some(
     (f) => f.processState === 'ready' && (!f.exifNaive || f.exifTimestampSource === 'exif-modify'),

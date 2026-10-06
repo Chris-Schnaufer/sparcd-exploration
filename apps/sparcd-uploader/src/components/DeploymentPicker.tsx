@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Location } from '../lib/locations';
+import { findAllowedLocation } from '../lib/allowedLocations';
 import { metersToFeet, type ElevationUnit } from '../lib/coords';
 
 type Props = {
   locations: Location[];
-  value: string | null; // selected Location.id
-  onChange: (id: string) => void;
+  value: string | null; // selected Location.key (or a legacy bare id)
+  onChange: (key: string) => void;
   elevationUnit?: ElevationUnit;
 };
 
@@ -24,7 +25,7 @@ export function DeploymentPicker({ locations, value, onChange, elevationUnit = '
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const selected = useMemo(() => locations.find((l) => l.id === value) ?? null, [locations, value]);
+  const selected = useMemo(() => findAllowedLocation(locations, value), [locations, value]);
 
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -53,7 +54,7 @@ export function DeploymentPicker({ locations, value, onChange, elevationUnit = '
   }, [open]);
 
   function choose(loc: Location) {
-    onChange(loc.id);
+    onChange(loc.key);
     setQuery('');
     setOpen(false);
     setDetailKey(null);
@@ -157,7 +158,7 @@ export function DeploymentPicker({ locations, value, onChange, elevationUnit = '
               <li
                 key={loc.key}
                 role="option"
-                aria-selected={loc.id === value}
+                aria-selected={loc.key === selected?.key}
                 onMouseEnter={() => setHighlight(i)}
                 onClick={() => choose(loc)}
                 className={`px-3 py-2 cursor-pointer border-b border-ruleSoft last:border-b-0 ${

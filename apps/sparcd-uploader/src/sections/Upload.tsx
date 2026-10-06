@@ -3,6 +3,7 @@ import { OfflineBanner, useOnline } from '@sparcd/auth-ui';
 import { deleteFlipRecord } from '@sparcd/flip';
 import { useStore } from '../store';
 import { useLocations } from '../lib/useLocations';
+import { findAllowedLocation } from '../lib/allowedLocations';
 import { useCollections } from '../lib/useCollections';
 import { sanitizeUploaderUser } from '../lib/normalize';
 import { formatBytes } from '../lib/scanFiles';
@@ -91,7 +92,7 @@ export function Upload() {
   const collections = useCollections(s3Config, connectionId);
 
   const slug = sanitizeUploaderUser(uploaderUser);
-  const location = locData?.locations.find((l) => l.id === selectedLocationId) ?? null;
+  const location = findAllowedLocation(locData?.locations ?? [], selectedLocationId);
   const collection =
     collections.data?.find((c) => c.key === selectedBucket || c.bucket === selectedBucket) ?? null;
   const effectiveDryRun = dryRun;

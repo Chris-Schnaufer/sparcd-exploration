@@ -23,6 +23,7 @@ import {
   type EditResult,
 } from '../lib/publishedEdit';
 import { locationToDeployment, type Location } from '../lib/locations';
+import { findAllowedLocation } from '../lib/allowedLocations';
 import { javaEditStamp } from '@sparcd/camtrap';
 import { formatUploadHeader } from '../lib/uploadDisplay';
 import { DeploymentPicker } from './DeploymentPicker';
@@ -121,7 +122,7 @@ function UploadCard({
 
   async function saveDeployment() {
     if (!cfg) return;
-    const loc = locations.find((l) => l.id === locationId);
+    const loc = findAllowedLocation(locations, locationId);
     if (!loc) return;
     setBusy(true);
     setNote(null);

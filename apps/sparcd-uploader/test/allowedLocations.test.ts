@@ -25,4 +25,11 @@ describe('collection-scoped assignment locations', () => {
     expect(findAllowedLocation([oldLocation], oldLocation.id)).toBe(oldLocation);
     expect(findAllowedLocation([location('COY2')], oldLocation.id)).toBeNull();
   });
+
+  it('keeps two locations that share an id apart', () => {
+    const kept = { ...location('SAN19', 'Mansfield-3'), key: 'SAN19|31.5,-110.2', latitude: 31.5 };
+    const retired = { ...location('SAN19', '*DO NOT USE* Mansfield-3'), key: 'SAN19|32.9,-110.7', latitude: 32.9 };
+    expect(findAllowedLocation([retired, kept], kept.key)).toBe(kept);
+    expect(findAllowedLocation([retired, kept], 'SAN19')).toBeNull();
+  });
 });
