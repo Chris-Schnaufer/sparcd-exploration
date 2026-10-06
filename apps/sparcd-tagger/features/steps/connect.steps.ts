@@ -411,7 +411,7 @@ Given('there are no unsaved local edits', async ({ page }) => {
   // Something local to prove the wipe actually happens.
   await page.evaluate(() =>
     localStorage.setItem(
-      'sparcd-tagger-keybindings',
+      'sparcd-tagger-keybindings-v5',
       JSON.stringify({ state: { overrides: { 'Canis latrans': 'c' } }, version: 0 }),
     ),
   );
@@ -419,14 +419,18 @@ Given('there are no unsaved local edits', async ({ page }) => {
 
 When('Disconnect is chosen', async ({ page }) => {
   await openSettings(page);
+  // Disconnect wipes local state and reloads the same URL; the connect gate
+  // renders before the reload, so later storage reads would race it.
+  const reloaded = page.waitForEvent('load');
   await page.locator('main').getByRole('button', { name: 'Disconnect' }).click();
+  await reloaded;
 });
 
 Then(
   'local work is cleared while scoped keybinding profiles are retained',
   async ({ page }) => {
     await expect(page.getByRole('button', { name: 'Connect', exact: true })).toBeVisible();
-    expect(await page.evaluate(() => localStorage.getItem('sparcd-tagger-keybindings'))).not.toBeNull();
+    expect(await page.evaluate(() => localStorage.getItem('sparcd-tagger-keybindings-v5'))).not.toBeNull();
     expect(await readStore(page, 'drafts')).toHaveLength(0);
     expect(await readStore(page, 'uploads')).toHaveLength(0);
     expect(await readStore(page, 'syncJournals')).toHaveLength(0);
