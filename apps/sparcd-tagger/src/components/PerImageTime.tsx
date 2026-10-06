@@ -93,7 +93,7 @@ export function PerImageTime({
 
   return (
     <span className="inline-flex flex-wrap items-center gap-2.5 min-w-0">
-      <span className="flex flex-col leading-tight">
+      <span className="flex flex-col leading-tight" data-testid="focus-timestamp">
         <span className="font-mono text-[13.5px] font-[600] text-ink">
           {corrected
             ? formatDateTime(corrected, dateFormat, timeFormat)

@@ -510,7 +510,7 @@ Then('the tile still shows the species before the sync completes', async ({ page
 
 /** The corrected timestamp rendered in the Focus footer for its active frame. */
 async function focusShownTime(page: Page): Promise<string> {
-  const text = (await page.locator('div.mt-1 span.flex.flex-col').first().innerText()) ?? '';
+  const text = (await page.getByTestId('focus-timestamp').innerText()) ?? '';
   return text.match(/\d{4}-\d{1,2}-\d{1,2} \d{2}:\d{2}(?::\d{2})?/)?.[0] ?? text.split('\n')[0].trim();
 }
 

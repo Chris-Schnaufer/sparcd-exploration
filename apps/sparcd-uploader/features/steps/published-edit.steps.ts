@@ -219,7 +219,13 @@ Then('only then is the change applied', async ({ app }) => {
   const lastSnapshot = keys.map((k) => k.includes('.sparcd-uploader-snapshots/')).lastIndexOf(true);
   const canonical = keys.indexOf(`${PRIOR_UPLOAD_PREFIX}UploadMeta.json`);
   expect(canonical).toBeGreaterThan(lastSnapshot);
-  expect(app.s3.puts[canonical].ifMatch).toBeTruthy();
+  const ifMatch = app.s3.puts[canonical].ifMatch;
+  expect(ifMatch).toBeTruthy();
+  // The browser mock records the actual request header. Keep this end-to-end
+  // assertion alongside the SDK wire test so the app cannot reintroduce the
+  // quoted form that Ceph RGW rejects.
+  expect(ifMatch).not.toMatch(/^W\//);
+  expect(ifMatch).not.toMatch(/^".*"$/);
 });
 
 // --- conflicts -------------------------------------------------------------

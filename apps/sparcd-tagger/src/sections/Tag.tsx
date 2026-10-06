@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
+import { TransformWrapper, TransformComponent, type ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
 import { useStore } from '../store';
 import {
   useTagImages,
@@ -29,6 +29,7 @@ import { PerImageTime } from '../components/PerImageTime';
 import { SpeciesLoupe } from '../components/SpeciesLoupe';
 import { KeyConflictDialog } from '../components/KeyConflictDialog';
 import { ImageAdjustments } from '../components/ImageAdjustments';
+import { PawTrail } from '../components/Paw';
 import { cssFilter, NEUTRAL, type Adjustments } from '../lib/adjustments';
 import { Overview, type PickMods, type ViewKind } from '../components/Overview';
 import { groupBursts, type BurstGrouping } from '../lib/bursts';
@@ -402,6 +403,7 @@ export function Tag() {
   const overrides = useKeyBindings((state) => activeKeyProfile(state).overrides);
   const assignKey = useKeyBindings((state) => state.assignKey);
   const clearKey = useKeyBindings((state) => state.clearKey);
+  const keysUnsaved = useKeyBindings((state) => state.unsaved);
   const speciesList = localRecord ? DEFAULT_SPECIES : species.data?.species ?? [];
 
   const bindingFor = (sci: string): string | null => {
@@ -1261,6 +1263,7 @@ export function Tag() {
       capturingFor,
       onStartCapture: setCapturingFor,
       onClearKey: clearKey,
+      keysUnsaved,
       recent,
       appliedSet: new Set(observations.map((o) => o.scientificName)),
       hasFocus: !!current,
@@ -1543,28 +1546,60 @@ function FocusImage({
   filter?: string;
 }) {
   const { url, isError, markLoaded } = useMediaUrl(objectKey, 'high');
+  const [loadedToken, setLoadedToken] = useState<string>();
+  // A key can be revisited while its previous request is still represented in
+  // state. The generation makes every key/URL admission a distinct readiness
+  // token, so a stale successful load can never hide a new request's loader.
+  const identity = useRef({ objectKey, url, generation: 0 });
+  if (identity.current.objectKey !== objectKey || identity.current.url !== url) {
+    identity.current = { objectKey, url, generation: identity.current.generation + 1 };
+  }
+  const mediaToken = url
+    ? `${objectKey}\u0000${url}\u0000${identity.current.generation}`
+    : undefined;
   if (isError)
     return <div className="text-[13px] font-mono text-warn">Could not load this image.</div>;
-  if (!url)
-    return (
-      <div className="w-full h-full grid place-items-center">
-        <img
-          src={`${import.meta.env.BASE_URL}loading.gif`}
-          alt="Loading focused image"
-          className="w-48 h-48 object-contain"
-        />
-      </div>
-    );
-  if (isVideo)
-    return <FocusVideo src={url} alt={alt} resetKey={objectKey} onLoaded={markLoaded} />;
+  const onLoaded = () => {
+    markLoaded();
+    if (mediaToken) setLoadedToken(mediaToken);
+  };
+  const onMediaError = () => {
+    // Keep the native video element available for the existing media-error
+    // affordance, but do not confuse metadata/error with first-frame readiness.
+    markLoaded();
+  };
+  // The loader covers the pane until the bytes arrive, not just until the URL
+  // is ready: a full-size JPEG can take seconds after its <img> mounts.
   return (
-    <ZoomableImage
-      src={url}
-      alt={alt}
-      resetKey={objectKey}
-      filter={filter}
-      onLoaded={markLoaded}
-    />
+    <>
+      {url &&
+        (isVideo ? (
+          <FocusVideo
+            src={url}
+            alt={alt}
+            resetKey={objectKey}
+            onLoaded={onLoaded}
+            onError={onMediaError}
+          />
+        ) : (
+          <ZoomableImage
+            src={url}
+            alt={alt}
+            resetKey={objectKey}
+            filter={filter}
+            onLoaded={onLoaded}
+          />
+        ))}
+      {(!url || loadedToken !== mediaToken) && (
+        <div
+          role="status"
+          className="fn-appear absolute inset-0 grid place-content-center justify-items-center gap-4 bg-paper"
+        >
+          <PawTrail />
+          <span className="font-mono text-[12px] text-inkMute">loading {alt}</span>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -1577,11 +1612,13 @@ function FocusVideo({
   alt,
   resetKey,
   onLoaded,
+  onError,
 }: {
   src: string;
   alt: string;
   resetKey: string;
   onLoaded: () => void;
+  onError: () => void;
 }) {
   return (
     <video
@@ -1591,8 +1628,8 @@ function FocusVideo({
       controls
       playsInline
       preload="metadata"
-      onLoadedMetadata={onLoaded}
-      onError={onLoaded}
+      onLoadedData={onLoaded}
+      onError={onError}
       className="w-full h-full object-contain"
     />
   );
@@ -1609,6 +1646,38 @@ const ZOOM_PROPS = {
   panning: { velocityDisabled: true },
 };
 
+/**
+ * Pan bounds come from the zoom content's box, so size it to the fitted picture
+ * rather than the pane: a letterboxed portrait or panorama then can't be
+ * dragged out of view. `paneRef` goes on the element the zoom wrapper fills.
+ */
+function useFittedZoom(src: string) {
+  const paneRef = useRef<HTMLDivElement>(null);
+  const zoomRef = useRef<ReactZoomPanPinchRef>(null);
+  const [pane, setPane] = useState<{ w: number; h: number } | null>(null);
+  const [loaded, setLoaded] = useState<{ src: string; w: number; h: number } | null>(null);
+  const natural = loaded?.src === src ? loaded : null;
+  useLayoutEffect(() => {
+    const el = paneRef.current!;
+    const measure = () => setPane({ w: el.clientWidth, h: el.clientHeight });
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const fit = pane && natural ? Math.min(pane.w / natural.w, pane.h / natural.h) : null;
+  const fitted = fit && natural ? { width: natural.w * fit, height: natural.h * fit } : undefined;
+  useLayoutEffect(() => {
+    const zoom = zoomRef.current;
+    if (fitted && zoom && zoom.state.scale <= 1.01) zoom.centerView(1, 0);
+  }, [fitted?.width, fitted?.height]);
+  const onImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const img = e.currentTarget;
+    setLoaded({ src, w: img.naturalWidth, h: img.naturalHeight });
+  };
+  return { paneRef, zoomRef, fitted, onImageLoad };
+}
+
 function ZoomableImage({
   src,
   alt,
@@ -1624,11 +1693,13 @@ function ZoomableImage({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [zoomed, setZoomed] = useState(false);
+  const { paneRef, zoomRef, fitted, onImageLoad } = useFittedZoom(src);
   return (
-    <>
+    <div ref={paneRef} className="w-full h-full">
       {/* key forces a fresh fit-to-view (reset zoom/pan) on every image change */}
       <TransformWrapper
         key={resetKey}
+        ref={zoomRef}
         {...ZOOM_PROPS}
         onTransform={(_, s) => setZoomed(s.scale > 1.01)}
       >
@@ -1636,14 +1707,18 @@ function ZoomableImage({
           <>
             <TransformComponent
               wrapperClass="!w-full !h-full cursor-grab active:cursor-grabbing"
-              contentClass="!w-full !h-full"
+              contentClass={fitted ? '' : '!w-full !h-full'}
+              contentStyle={fitted}
             >
               <img
                 src={src}
                 alt={alt}
                 fetchPriority="high"
                 draggable={false}
-                onLoad={onLoaded}
+                onLoad={(e) => {
+                  onImageLoad(e);
+                  onLoaded();
+                }}
                 onError={onLoaded}
                 style={filter ? { filter } : undefined}
                 className="w-full h-full object-contain select-none"
@@ -1659,7 +1734,7 @@ function ZoomableImage({
         )}
       </TransformWrapper>
       {expanded && <Lightbox src={src} alt={alt} filter={filter} onClose={() => setExpanded(false)} />}
-    </>
+    </div>
   );
 }
 
@@ -1675,6 +1750,7 @@ function Lightbox({
   onClose: () => void;
 }) {
   const [zoomed, setZoomed] = useState(false);
+  const { paneRef, zoomRef, fitted, onImageLoad } = useFittedZoom(src);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     document.addEventListener('keydown', onKey);
@@ -1695,18 +1771,29 @@ function Lightbox({
           ✕
         </button>
       </div>
-      <div className="relative min-h-0" onClick={(e) => e.target === e.currentTarget && onClose()}>
-        <TransformWrapper {...ZOOM_PROPS} maxScale={10} onTransform={(_, s) => setZoomed(s.scale > 1.01)}>
+      <div
+        ref={paneRef}
+        className="relative min-h-0"
+        onClick={(e) => e.target === e.currentTarget && onClose()}
+      >
+        <TransformWrapper
+          ref={zoomRef}
+          {...ZOOM_PROPS}
+          maxScale={10}
+          onTransform={(_, s) => setZoomed(s.scale > 1.01)}
+        >
           {({ zoomIn, zoomOut, resetTransform }) => (
             <>
               <TransformComponent
                 wrapperClass="!w-full !h-full cursor-grab active:cursor-grabbing"
-                contentClass="!w-full !h-full"
+                contentClass={fitted ? '' : '!w-full !h-full'}
+                contentStyle={fitted}
               >
                 <img
                   src={src}
                   alt={alt}
                   draggable={false}
+                  onLoad={onImageLoad}
                   style={filter ? { filter } : undefined}
                   className="w-full h-full object-contain select-none"
                 />
