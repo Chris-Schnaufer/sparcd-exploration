@@ -279,8 +279,9 @@ Then(
       (o) => o.mediaId.endsWith('IMG001.JPG') && o.scientificName === 'Odocoileus hemionus',
     );
     expect(row).toBeTruthy();
-    expect(row!.classifiedBy).toBe('testkey');
-    expect(row!.classificationTimestamp).toMatch(ISO_TIMESTAMP);
+    // The fixture row has no original identifier; a review must not invent one.
+    expect(row!.classifiedBy).toBeUndefined();
+    expect(row!.classificationTimestamp).toBeUndefined();
     expect(row!.reviewEvents).toEqual([{ reviewedBy: 'testkey', reviewedAt: expect.stringMatching(ISO_TIMESTAMP) }]);
   },
 );
