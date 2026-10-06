@@ -140,9 +140,6 @@ Given('the focused image records a species with a count', async ({ page }) => {
 });
 
 Given('the focused image carries an existing species to correct', async ({ page }) => {
-  await sectionTab(page, 'Settings').click();
-  await page.locator('#user').fill('jgonzalez');
-  await sectionTab(page, 'Tag').click();
   await focusFrame(page, 'IMG004.JPG');
   await expandApplied(page);
   await expect(appliedChip(page, 'Mountain Lion')).toBeVisible();
@@ -165,9 +162,12 @@ Then('the stored replacement records the previous species as corrected', async (
   );
   expect(replacement).toBeTruthy();
   expect(replacement!.tags).toContain('[CORRECTED_FROM:Puma concolor]');
-  expect(replacement!.tags).not.toContain('[REMOVED:Puma concolor]');
   expect(
     observations.some((o) => o.mediaId.endsWith('IMG004.JPG') && o.scientificName === 'Puma concolor'),
+  ).toBe(false);
+  // The swap is recorded once, as the correction; no row also marks it removed.
+  expect(
+    observations.some((o) => o.mediaId.endsWith('IMG004.JPG') && o.tags.includes('[REMOVED:Puma concolor]')),
   ).toBe(false);
 });
 
