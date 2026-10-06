@@ -1049,3 +1049,31 @@ describe('removal provenance survives later edits', () => {
     expect(plan.tagEdits[0].removedSpecies).toEqual([]);
   });
 });
+
+describe('correction provenance survives later syncs', () => {
+  const images = (csv: string) => buildTagImages({ mediaCsv: MEDIA_CSV, observationsCsv: csv });
+  const k1Tags = (csv: string) => parseObservations(csv).filter((o) => o.mediaId === K1).map((o) => o.tags);
+  const BOB = { reviewedBy: 'bob', reviewedAt: NOW.toISOString() };
+
+  it('keeps [CORRECTED_FROM:…] when the replacement is confirmed in a later sync', () => {
+    const swap = buildSyncPlan(images(OBS_CSV), {
+      [K1]: draft({ mediaPath: K1, observations: [obs('Canis latrans', 1, 'Coyote')] }),
+    }, null);
+    const afterSwap = mergeObservations(OBS_CSV, swap.tagEdits);
+    expect(k1Tags(afterSwap)).toEqual(['[COMMONNAME:Coyote][CORRECTED_FROM:Puma concolor]']);
+
+    // The synced draft is clean and no longer holds the marker; the confirm starts from it.
+    const confirm = buildSyncPlan(images(afterSwap), {
+      [K1]: draft({
+        mediaPath: K1,
+        observations: [{ ...obs('Canis latrans', 1, 'Coyote'), reviewEvents: [BOB] }],
+        confirmedSpecies: ['Canis latrans'],
+      }),
+    }, null, null, 'bob');
+    expect(confirm.summary).toMatchObject({ confirmations: 1, modifications: 0 });
+    expect(confirm.tagEdits[0].observations[0].correctedFrom).toBe('Puma concolor');
+    expect(k1Tags(mergeObservations(afterSwap, confirm.tagEdits))).toEqual([
+      `[COMMONNAME:Coyote][CORRECTED_FROM:Puma concolor][REVIEWED_BY:bob][REVIEWED_AT:${BOB.reviewedAt}]`,
+    ]);
+  });
+});

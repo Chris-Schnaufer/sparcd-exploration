@@ -643,7 +643,7 @@ function buildObservationRow(
   row[OBS_COL.scientificName] = o.scientificName;
   row[OBS_COL.count] = String(o.count);
   row[OBS_COL.countNew] = '0';
-  const knownPrefixes = new Set(['COMMONNAME', 'REQUESTED_SPECIES', 'REVIEWED_BY', 'REVIEWED_AT']);
+  const knownPrefixes = new Set(['COMMONNAME', 'REQUESTED_SPECIES', 'CORRECTED_FROM', 'REVIEWED_BY', 'REVIEWED_AT']);
   const preservedMarkers = parseTagMarkers(existingRow?.[OBS_COL.comments] ?? '').filter(
     (marker) => !knownPrefixes.has(marker.prefix),
   );

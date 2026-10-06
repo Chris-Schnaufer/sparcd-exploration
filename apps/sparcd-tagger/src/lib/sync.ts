@@ -244,9 +244,10 @@ export function buildSyncPlan(
             requestedSpecies: o.requestedSpecies || undefined,
             removedSpecies: obs[0] === o ? removedSpecies : undefined,
             reviewEvents: mergeReviewEvents(base?.reviewEvents, o.reviewEvents),
-            correctedFrom: o.correctedFrom ?? (replacementFrom && o.scientificName === addedNames[0]
-              ? replacementFrom
-              : undefined),
+            // A clean draft left by an earlier sync no longer holds the marker,
+            // so the canonical row is the source, as for attribution.
+            correctedFrom: base?.correctedFrom ?? o.correctedFrom ??
+              (replacementFrom && o.scientificName === addedNames[0] ? replacementFrom : undefined),
             classifiedBy,
             classificationTimestamp,
           };
@@ -281,6 +282,7 @@ export function buildSyncPlan(
             classificationTimestamp: base?.classificationTimestamp ?? o.classificationTimestamp ??
               (explicitlyConfirmed ? new Date().toISOString() : undefined),
             reviewEvents: mergeReviewEvents(base?.reviewEvents, o.reviewEvents),
+            correctedFrom: base?.correctedFrom ?? o.correctedFrom,
           };
         }),
       });
