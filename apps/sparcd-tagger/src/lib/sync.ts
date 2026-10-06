@@ -35,6 +35,7 @@ import {
   type MediaEdit,
   type TimeOffset,
   type Deployment,
+  type ReviewEvent,
 } from '@sparcd/camtrap';
 import type { TagImage } from './workspace';
 import type { DraftRecord, DraftObservation } from './db';
@@ -107,6 +108,16 @@ function observationsEqual(a: DraftObservation[], b: DraftObservation[]): boolea
   if (ca.size !== cb.size) return false;
   for (const [k, n] of ca) if (cb.get(k) !== n) return false;
   return true;
+}
+
+/** Canonical review events plus any new ones from the draft. A draft left clean
+ *  by an earlier sync carries none, so the stored history must not depend on it. */
+function mergeReviewEvents(base: ReviewEvent[] = [], draft: ReviewEvent[] = []): ReviewEvent[] | undefined {
+  const out = [...base];
+  for (const e of draft) {
+    if (!out.some((b) => b.reviewedBy === e.reviewedBy && b.reviewedAt === e.reviewedAt)) out.push(e);
+  }
+  return out.length ? out : undefined;
 }
 
 /**
@@ -204,7 +215,7 @@ export function buildSyncPlan(
             count: Math.max(1, o.count),
             commonName: o.commonName || undefined,
             requestedSpecies: o.requestedSpecies || undefined,
-            reviewEvents: o.reviewEvents ?? base?.reviewEvents,
+            reviewEvents: mergeReviewEvents(base?.reviewEvents, o.reviewEvents),
             classifiedBy,
             classificationTimestamp,
           };
@@ -236,7 +247,7 @@ export function buildSyncPlan(
               (explicitlyConfirmed ? user.trim() || undefined : undefined),
             classificationTimestamp: base?.classificationTimestamp ?? o.classificationTimestamp ??
               (explicitlyConfirmed ? new Date().toISOString() : undefined),
-            reviewEvents: o.reviewEvents ?? base?.reviewEvents,
+            reviewEvents: mergeReviewEvents(base?.reviewEvents, o.reviewEvents),
           };
         }),
       });

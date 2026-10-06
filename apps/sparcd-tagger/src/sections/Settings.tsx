@@ -7,6 +7,11 @@ const kicker = 'font-body text-[11px] font-[600] tracking-[0.16em] uppercase tex
 const input =
   'w-full bg-paper border border-rule px-3 py-2 text-[14px] font-mono text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2';
 
+function maskedIdentity(value: string): string {
+  if (value.length <= 6) return '••••••';
+  return `${value.slice(0, 3)}…${value.slice(-3)}`;
+}
+
 // Connected sessions derive attribution from the storage account username.
 // Local-batch mode has no S3 connection, so it keeps the handoff identity here.
 export function Settings() {
@@ -58,7 +63,7 @@ export function Settings() {
           id="user"
           className={input}
           placeholder={cfg ? 'Connected storage username' : 'e.g. jgonzalez'}
-          value={taggerUser}
+          value={cfg ? maskedIdentity(taggerUser) : taggerUser}
           onChange={(e) => {
             if (!cfg) setTaggerUser(e.target.value);
           }}

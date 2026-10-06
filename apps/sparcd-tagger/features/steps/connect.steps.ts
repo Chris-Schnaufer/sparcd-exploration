@@ -219,12 +219,13 @@ Then('Browse, History and Settings remain available', async ({ page }) => {
 // --- Identity ---------------------------------------------------------------
 
 Then('Settings shows the connected storage username', async ({ page }) => {
-  await expect(page.locator('#user')).toHaveValue('testkey');
+  await expect(page.locator('#user')).toHaveValue('tes…key');
 });
 
 Then('Settings shows connected storage username {string}', async ({ page }, username: string) => {
   await openSettings(page);
-  await expect(page.locator('#user')).toHaveValue(username);
+  const displayed = username.length <= 6 ? '••••••' : `${username.slice(0, 3)}…${username.slice(-3)}`;
+  await expect(page.locator('#user')).toHaveValue(displayed);
   await sectionTab(page, 'Tag').click();
 });
 
@@ -289,7 +290,7 @@ Then(
   async ({ page, s3 }) => {
     await expect(settingsDryRunCheckbox(page)).not.toBeChecked();
     // An identity is required before the dialog will run anything at all.
-    await expect(page.locator('#user')).toHaveValue('testkey');
+    await expect(page.locator('#user')).toHaveValue('tes…key');
     await sectionTab(page, 'Browse').click();
     await collectionButton(page, COLLECTION_NAME).click();
     await openWorkspaceFromBrowse(page);
@@ -355,7 +356,7 @@ Given('there are no unsaved local edits', async ({ page }) => {
   // Something local to prove the wipe actually happens.
   await page.evaluate(() =>
     localStorage.setItem(
-      'sparcd-tagger-keybindings',
+      'sparcd-tagger-keybindings-v5',
       JSON.stringify({ state: { overrides: { 'Canis latrans': 'c' } }, version: 0 }),
     ),
   );
@@ -363,14 +364,18 @@ Given('there are no unsaved local edits', async ({ page }) => {
 
 When('Disconnect is chosen', async ({ page }) => {
   await openSettings(page);
+  // Disconnect wipes local state and reloads the same URL; the connect gate
+  // renders before the reload, so later storage reads would race it.
+  const reloaded = page.waitForEvent('load');
   await page.locator('main').getByRole('button', { name: 'Disconnect' }).click();
+  await reloaded;
 });
 
 Then(
   'local work is cleared while scoped keybinding profiles are retained',
   async ({ page }) => {
     await expect(page.getByRole('button', { name: 'Connect', exact: true })).toBeVisible();
-    expect(await page.evaluate(() => localStorage.getItem('sparcd-tagger-keybindings'))).not.toBeNull();
+    expect(await page.evaluate(() => localStorage.getItem('sparcd-tagger-keybindings-v5'))).not.toBeNull();
     expect(await readStore(page, 'drafts')).toHaveLength(0);
     expect(await readStore(page, 'uploads')).toHaveLength(0);
     expect(await readStore(page, 'syncJournals')).toHaveLength(0);

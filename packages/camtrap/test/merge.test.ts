@@ -137,6 +137,12 @@ describe('classified_by provenance', () => {
     expect(reviewEventsFromComments(comments)).toEqual(events);
   });
 
+  it('ignores unmatched markers without shifting later reviewer timestamps', () => {
+    expect(reviewEventsFromComments(
+      '[REVIEWED_AT:orphan][REVIEWED_BY:harold][REVIEWED_AT:2024-01-20T14:30:00.000Z]',
+    )).toEqual([{ reviewedBy: 'harold', reviewedAt: '2024-01-20T14:30:00.000Z' }]);
+  });
+
   it('preserves review markers when replacing an observation row', () => {
     const canonical = serializeCsvRows([
       ['obs-1', DEP, '', k('IMG001.JPG'), '2024-01-10T08:00:00', 'animal', '', '', 'Canis latrans', '1', '', '', '', '', '', '', 'anita', '2024-01-10T09:00:00.000Z', '', '[REVIEWED_BY:harold][REVIEWED_AT:2024-01-20T14:30:00.000Z]'],

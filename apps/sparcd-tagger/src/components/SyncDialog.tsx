@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Deployment } from '@sparcd/camtrap';
+import { correctedTimestamp } from '@sparcd/camtrap';
 import { useStore } from '../store';
 import { useDraftStore, type UploadCtx } from '../lib/drafts';
 import { performSync } from '../lib/syncRunner';
@@ -49,6 +50,7 @@ export function SyncDialog({
   const uploadName = uploadNameOf(ctx.uploadPrefix);
   const markUploadSynced = useDraftStore((s) => s.markUploadSynced);
   const setTimeOffset = useDraftStore((s) => s.setTimeOffset);
+  const timeOffset = useDraftStore((s) => s.timeOffset);
   const setPendingLocation = useDraftStore((s) => s.setPendingLocation);
   const discardUpload = useDraftStore((s) => s.discardUpload);
   const queryClient = useQueryClient();
@@ -75,6 +77,33 @@ export function SyncDialog({
     images,
     drafts,
   });
+
+  /**
+   * A successful time shift is written into media.csv by performSync. Keep
+   * the in-memory offset active until the refetched TagImage cache contains
+   * those written timestamps; clearing it sooner briefly renders the old
+   * canonical time while the query is still being committed.
+   */
+  const waitForCanonicalTimes = async (mediaIds: string[]) => {
+    if (!mediaIds.length) return;
+    const expected = new Map(
+      images
+        .filter((image) => mediaIds.includes(image.key))
+        .map((image) => [
+          image.key,
+          correctedTimestamp(image.baseTimestamp, timeOffset, drafts[image.key]?.timeOverride ?? null),
+        ]),
+    );
+    if (!expected.size) return;
+    const queryKey = ['tagImages', connectionId, collectionKey, ctx.uploadPrefix] as const;
+    const deadline = Date.now() + 10_000;
+    while (Date.now() < deadline) {
+      const fresh = queryClient.getQueryData<TagImage[]>(queryKey);
+      if (fresh && [...expected].every(([key, timestamp]) => fresh.find((image) => image.key === key)?.baseTimestamp === timestamp)) return;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    throw new Error('The refreshed tagger data did not include the written capture times.');
+  };
 
   // Preview on open — a forced dry-run that computes the diff and detects a
   // conflict without touching the bucket.
@@ -118,10 +147,11 @@ export function SyncDialog({
         // the pre-sync base, so the species/time just written would briefly
         // (or, on a slow backend, not-so-briefly) vanish from the tile.
         try {
-          await queryClient.invalidateQueries(
-            { queryKey: ['tagImages', connectionId] },
+          await queryClient.refetchQueries(
+            { queryKey: ['tagImages', connectionId], type: 'active' },
             { throwOnError: true },
           );
+          await waitForCanonicalTimes(r.syncedMediaIds ?? []);
           await queryClient.invalidateQueries({ queryKey: ['currentDeployment', connectionId] });
           // Clear dirty only on the drafts actually written — questionable-only
           // drafts (no canonical target) stay surfaced as unsaved.

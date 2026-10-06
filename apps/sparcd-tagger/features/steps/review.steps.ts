@@ -89,6 +89,29 @@ Given('an image with existing identifications is focused', async ({ page }) => {
   await focusFrame(page, 'IMG004.JPG');
 });
 
+Given('an image with mixed reviewed and unreviewed identifications is focused', async ({ page }) => {
+  await focusFrame(page, 'IMG004.JPG');
+  await expandApplied(page);
+});
+
+Then('each identification shows whether it is reviewed', async ({ page }) => {
+  await expect(appliedChip(page, 'Coyote').getByText(/Reviewed by fielduser/)).toBeVisible();
+  await expect(appliedChip(page, 'Mountain Lion').getByText('Not reviewed', { exact: true })).toBeVisible();
+});
+
+Then('the image tile reports a mixed review status', async ({ page }) => {
+  await expect(gridCell(page, 'IMG004.JPG').locator('[data-column="review-status"]')).toHaveText('Mixed review');
+});
+
+Then('the list row reports a mixed review status', async ({ page }) => {
+  await showList(page);
+  await expect(listRow(page, 'IMG004.JPG').locator('[data-column="review-status"]')).toHaveText('Mixed review');
+});
+
+Then('an identification without a review event is labelled not reviewed', async ({ page }) => {
+  await expect(listRow(page, 'IMG003.JPG').locator('[data-column="review-status"]')).toHaveText('Not reviewed');
+});
+
 Then('each recorded species is shown with its count', async ({ page }) => {
   await expandApplied(page);
   await expect(appliedChip(page, 'Mountain Lion').locator('input[type="number"]')).toHaveValue('1');
@@ -375,7 +398,7 @@ Then(
 
 Given('identifications were corrected locally', async ({ page }) => {
   await sectionTab(page, 'Settings').click();
-  await expect(page.locator('#user')).toHaveValue('testkey');
+  await expect(page.locator('#user')).toHaveValue('tes…key');
   await sectionTab(page, 'Tag').click();
   await focusFrame(page, 'IMG002.JPG');
   await speciesApply(page, 'Canis latrans').click();
@@ -423,7 +446,7 @@ Then('its tile carries an unsaved-edit marker', async ({ page }) => {
 
 Then('the marker is cleared for that image once its change has been synced', async ({ page }) => {
   await sectionTab(page, 'Settings').click();
-  await expect(page.locator('#user')).toHaveValue('testkey');
+  await expect(page.locator('#user')).toHaveValue('tes…key');
   await sectionTab(page, 'Tag').click();
   await openSyncDialog(page);
   await setSyncDryRun(page, false);

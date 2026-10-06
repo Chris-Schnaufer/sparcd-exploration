@@ -521,11 +521,16 @@ export function requestedSpeciesFromComments(comments: string): string | null {
 /** Read repeatable reviewer events from an observation's comments markers. */
 export function reviewEventsFromComments(comments: string): ReviewEvent[] {
   const markers = parseTagMarkers(comments);
-  const reviewers = markers.filter((m) => m.prefix === REVIEWED_BY_PREFIX).map((m) => m.value);
-  const timestamps = markers.filter((m) => m.prefix === REVIEWED_AT_PREFIX).map((m) => m.value);
-  return reviewers
-    .map((reviewedBy, i) => ({ reviewedBy, reviewedAt: timestamps[i] ?? '' }))
-    .filter((event) => event.reviewedBy && event.reviewedAt);
+  const events: ReviewEvent[] = [];
+  for (let i = 0; i < markers.length - 1; i++) {
+    const reviewer = markers[i];
+    const timestamp = markers[i + 1];
+    if (reviewer.prefix === REVIEWED_BY_PREFIX && timestamp.prefix === REVIEWED_AT_PREFIX && reviewer.value && timestamp.value) {
+      events.push({ reviewedBy: reviewer.value, reviewedAt: timestamp.value });
+      i++;
+    }
+  }
+  return events;
 }
 
 /**
@@ -910,6 +915,24 @@ export function correctedTimestamp(
   if (override) return override;
   if (offset) return shiftTimestamp(original, offset);
   return original;
+}
+
+/** Format an instant as a local `YYYY-MM-DD HH:mm:ss` string with a 24-hour clock. */
+export function formatDateTime24(value: Date | string, timeZone?: string): string {
+  const date = typeof value === 'string' ? new Date(value) : value;
+  if (Number.isNaN(date.getTime())) return 'unknown date';
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(date);
+  const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${byType.year}-${byType.month}-${byType.day} ${byType.hour}:${byType.minute}:${byType.second}`;
 }
 
 // --- Validators ------------------------------------------------------------

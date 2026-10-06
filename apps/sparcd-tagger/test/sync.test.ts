@@ -399,6 +399,38 @@ describe('buildSyncPlan', () => {
     expect(plan.tagEdits[0].observations[1].reviewEvents).toBeUndefined();
   });
 
+  // A sync leaves the draft clean, without the review events it wrote, so the
+  // next confirm or count edit starts from a draft that holds only its own event.
+  const HAROLD = { reviewedBy: 'harold', reviewedAt: '2024-01-12T00:00:00.000Z' };
+  const BOB = { reviewedBy: 'bob', reviewedAt: NOW.toISOString() };
+  const reviewedPuma: TagImage[] = [{
+    ...IMAGES[0],
+    baseObservations: [{ ...obs('Puma concolor', 1), classifiedBy: 'fielduser', reviewEvents: [HAROLD] }],
+  }];
+
+  it('keeps a stored review when the species is confirmed again', () => {
+    const plan = buildSyncPlan(reviewedPuma, {
+      [K1]: draft({
+        mediaPath: K1,
+        observations: [{ ...obs('Puma concolor', 1), classifiedBy: 'fielduser', reviewEvents: [BOB] }],
+        confirmedSpecies: ['Puma concolor'],
+      }),
+    }, null, null, 'bob');
+    expect(plan.tagEdits[0].observations[0].reviewEvents).toEqual([HAROLD, BOB]);
+  });
+
+  it('keeps a stored review when the count is edited later', () => {
+    const plan = buildSyncPlan(reviewedPuma, {
+      [K1]: draft({
+        mediaPath: K1,
+        observations: [{ ...obs('Puma concolor', 2), classifiedBy: 'fielduser', reviewEvents: [BOB] }],
+        confirmedSpecies: ['Puma concolor'],
+      }),
+    }, null, null, 'bob');
+    expect(plan.tagEdits[0].observations[0].count).toBe(2);
+    expect(plan.tagEdits[0].observations[0].reviewEvents).toEqual([HAROLD, BOB]);
+  });
+
   it('keeps edit-time attribution when the connected account changes before sync', () => {
     const plan = buildSyncPlan(
       [{ ...IMAGES[1], baseObservations: [] }],

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { DraftObservation } from '../lib/db';
-import { isGhostObs } from '../lib/effective';
+import { isGhostObs, reviewStatus, reviewSummary } from '../lib/effective';
 
 // The compact applied-species strip under the SpeciesPanel header. A single
 // wrapping line of chips for the focused image — the 99% single-species case is
@@ -27,6 +27,12 @@ function reviewLabel(o: DraftObservation): string | null {
   return review ? `Reviewed by ${review.reviewedBy} at ${review.reviewedAt}` : null;
 }
 
+function reviewStateLabel(o: DraftObservation): string {
+  const reviewEvents = o.reviewEvents ?? [];
+  if (!reviewEvents.length) return 'Not reviewed';
+  return reviewLabel(o) ?? 'Reviewed';
+}
+
 export function AppliedSpecies(props: AppliedSpeciesProps) {
   const [expanded, setExpanded] = useState(false);
   const obs = props.observations;
@@ -36,6 +42,7 @@ export function AppliedSpecies(props: AppliedSpeciesProps) {
   const multi = obs.length > 1;
   // Collapsed multi-species summary: first chip + "+N more".
   const summary = multi ? `${labelOf(obs[0])}${obs[0].count > 1 ? ` ×${obs[0].count}` : ''}` : '';
+  const summaryReview = multi ? reviewSummary(obs) : null;
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
@@ -51,6 +58,7 @@ export function AppliedSpecies(props: AppliedSpeciesProps) {
           <span className="text-[20px] leading-none">▸</span>
           <span>{summary}</span>
           <span className="text-inkMute">+{obs.length - 1} more</span>
+          {summaryReview && <span className="text-inkMute">· {summaryReview}</span>}
         </button>
       ) : multi ? (
         <button
@@ -109,11 +117,12 @@ function Chip({
           Originally identified by {obs.classifiedBy}
         </span>
       )}
-      {reviewLabel(obs) && (
-        <span className="text-[11px] text-inkMute" aria-label={reviewLabel(obs)!}>
-          {reviewLabel(obs)}
-        </span>
-      )}
+      <span
+        className={`text-[11px] ${reviewStatus(obs) === 'reviewed' ? 'text-inkMute' : 'text-warn'}`}
+        aria-label={reviewStateLabel(obs)}
+      >
+        {reviewStateLabel(obs)}
+      </span>
       {obs.requestedSpecies && (
         <span className="font-mono text-inkMute text-[11px]">requested</span>
       )}
