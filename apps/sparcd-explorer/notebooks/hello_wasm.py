@@ -2499,6 +2499,10 @@ def _(
     selected_total,
     show_image_event_table,
 ):
+    def format_timestamp_24(value):
+        """Render stored ISO timestamps without locale-dependent AM/PM text."""
+        return str(value or "").replace("T", " ")[:19]
+
     if not selected_location_ids:
         image_event_table = mo.Html(
             "<div class='sparcd-note'>Select an area on the map to list its detections.</div>"
@@ -2542,6 +2546,9 @@ def _(
                 "media_path": "Media path",
                 "deployment_id": "Deployment",
             })
+        )
+        _event_rows = _event_rows.with_columns(
+            pl.col("Timestamp").map_elements(format_timestamp_24, return_dtype=pl.Utf8)
         )
         if _event_rows.height == 0:
             image_event_table = mo.Html(
