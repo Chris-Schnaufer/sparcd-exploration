@@ -166,8 +166,6 @@ export function buildSyncPlan(
     const baseForObservation = (o: (typeof obs)[number]) => img.baseObservations.find(
       (candidate) => candidate.scientificName === o.scientificName,
     );
-    const baseByName = (o: (typeof obs)[number]) =>
-      img.baseObservations.find((candidate) => candidate.scientificName === o.scientificName);
     // Re-applying an existing species is an explicit confirmation action. The
     // draft records that action directly; comparing attribution fields would
     // mistake legacy drafts that lack those fields for confirmations.
@@ -210,7 +208,7 @@ export function buildSyncPlan(
             count: Math.max(1, o.count),
             commonName: o.commonName || undefined,
             requestedSpecies: o.requestedSpecies || undefined,
-            reviewEvents: mergeReviewEvents(baseByName(o)?.reviewEvents, o.reviewEvents),
+            reviewEvents: mergeReviewEvents(base?.reviewEvents, o.reviewEvents),
             classifiedBy,
             classificationTimestamp,
           };
