@@ -10,6 +10,7 @@ import {
   rebaseCaptureTimestamp,
   shiftTimestamp,
   ZERO_OFFSET,
+  formatDateTime24,
   type TimestampSource,
 } from '../src/index';
 
@@ -89,4 +90,9 @@ it('moves a spring-forward wall clock through the nonexistent hour', () => {
   expect(captureTimestampInZone('2026-03-08T02:30:00', 'America/New_York')).toBe(
     '2026-03-08T03:30:00.000-04:00',
   );
+});
+
+it('formats midnight and late-night instants with a 24-hour clock', () => {
+  expect(formatDateTime24('2026-09-11T00:05:10.000Z', 'UTC')).toBe('2026-09-11 00:05:10');
+  expect(formatDateTime24('2026-09-11T22:15:10.000Z', 'UTC')).toBe('2026-09-11 22:15:10');
 });

@@ -5,9 +5,9 @@
 | ID | target scenario title | status | as-built scenarios | reason |
 | --- | --- | --- | --- | --- |
 | F1-1 | Every image in a batch is stored and retrievable after a completed upload | covered | uploader: upload-run.feature: Every file in the batch is stored under one upload folder in the collection; uploader: upload-run.feature: Every stored object is confirmed once the batch is written | Together they store every file and verify retrieval by size or fingerprint. |
-| F1-2 | Preparing a batch requires no connection until Frank chooses to upload | partial | uploader: connect-and-session.feature: A loaded uploader can inspect its first batch without network access | Drop and inspection work offline, but the full preparation flow is not covered. |
+| F1-2 | Preparing a batch requires no connection until Frank chooses to upload | covered | uploader: connect-and-session.feature: A loaded uploader can inspect its first batch without network access | The offline boundary is the end of Inspect: dropping and examining the batch work offline; Assign intentionally asks for a connection, and returning to Inspect preserves the batch. |
 | F1-3 | A partial transfer is never presented as a completed upload | covered | uploader: upload-run.feature: The upload is only published once every file has landed; uploader: upload-run.feature: A batch where some files failed is left unpublished and shown as partial | Together they keep partial data unpublished and label the run partial. |
-| F1-4 | Frank can tell at a glance whether he is currently able to upload | partial | uploader: upload-run.feature: The run monitor shows one offline warning per outage, not one per poll tick | Offline and recovery are logged, but upload availability is not checked at a glance. |
+| F1-4 | Frank can tell at a glance whether he is currently able to upload | covered | uploader: upload-run.feature: Upload availability is visible as the browser goes offline and online | The upload screen visibly reports offline/online state and disables or enables real upload accordingly. |
 | F1-5 | An incomplete upload continues from where it stopped | covered | uploader: resume-and-retry.feature: An interrupted upload can be continued from where it stopped; uploader: resume-and-retry.feature: Files already stored and verified are not sent again | Together they resume at the stopping point and skip verified objects. |
 | F1-6 | Only image files are taken from the SD card | partial | uploader: choose-folder.feature: Only JPEG images and MP4 videos are taken from the chosen folder | Non-media is excluded, but MP4 video is accepted while the target says only images. |
 | F1-7 | An upload that never completes does not add images to the collection | covered | uploader: upload-run.feature: An upload that fails or is abandoned announces nothing | Without published metadata, collection readers see no abandoned images. |
@@ -79,7 +79,7 @@
 | AL1-3 | An unattended upload is found either complete or clearly resumable | covered | uploader: resume-and-retry.feature: Uploads left running unattended are found either complete or ready to resume | A finished upload shows as complete with nothing to do; one cut off by closing the tab says how many files are left and names Resume upload. |
 | AL1-4 | An upload is never left in a silent, stuck state | untestable | uploader: resume-and-retry.feature: An interrupted upload is listed as open, never as complete | NOTES.md says no threshold defines when silence becomes stuck. |
 | AL1-5 | Repeated interruptions still end in one finished upload | covered | uploader: upload-run.feature: Repeated connection drops still end in one finished upload | Three drops fail writes in flight; the run still ends in one upload folder, one History entry, and a media.csv listing every image once. |
-| AL1-6 | An interrupted upload is not presented as complete | covered | uploader: resume-and-retry.feature: An interrupted upload is listed as open, never as complete | Only uploads with published metadata are marked complete. |
+| AL1-6 | An interrupted upload is not presented as complete | covered | uploader: resume-and-retry.feature: An interrupted upload is listed as open, never as complete; uploader: resume-and-retry.feature: A resumed publication accepts matching existing metadata and completes | Only uploads with published metadata are marked complete; a resumed immutable-publication race accepts the existing object only after verifying its bytes and still writes the completion sentinel. |
 
 ## AL2
 
@@ -87,7 +87,7 @@
 | --- | --- | --- | --- | --- |
 | AL2-1 | The retry targets the same collection and location as the original attempt | covered | uploader: resume-and-retry.feature: A resumed upload lands in the same place as the original attempt | The recorded collection, folder, object paths, and deployment are reused. |
 | AL2-2 | The destination ends up with exactly one upload | covered | uploader: resume-and-retry.feature: Retrying the failed files of a partial run completes that same upload | The same folder is published and exactly one upload remains. |
-| AL2-3 | No leftover partial data from the failed attempt remains | partial | uploader: resume-and-retry.feature: Retrying the failed files of a partial run completes that same upload | Stored files remain and the same folder completes, but all failed-attempt residue is not checked. |
+| AL2-3 | Leftover partial data from a failed attempt is not presented by any app | covered | uploader: `publicationVisibility.test.ts` (published-upload and deployment discovery gate); tagger: AL2-hide-incomplete-uploads.feature: An interrupted upload without UploadMeta is not presented; explorer: `test_upload_visibility.py` (local and WASM notebook helpers) | Partial prefixes remain in storage for recovery, but the UploadMeta visibility marker keeps them out of Uploader, Tagger, and Explorer surfaces; the completed retry remains visible. |
 | AL2-4 | Retrying does not require re-entering the location | covered | uploader: resume-and-retry.feature: Retrying does not require choosing the location again | The collection and deployment are not requested again. |
 | AL2-5 | Retrying does not require re-identifying species already tagged | covered | uploader: tag-before-upload.feature: Retrying a failed upload of a tagged batch does not ask for the tags again | After a reload, History resumes the tagged batch without Inspect or the Tagger and publishes every species row. |
 | AL2-6 | A retry cannot be misdirected to a different destination by accident | covered | uploader: resume-and-retry.feature: A resumed upload lands in the same place as the original attempt | The retry cannot silently change its recorded destination. |
@@ -132,15 +132,15 @@
 
 | story | covered | partial | missing | untestable | total |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| F1 | 4 | 3 | 0 | 0 | 7 |
+| F1 | 5 | 2 | 0 | 0 | 7 |
 | F2 | 1 | 3 | 2 | 0 | 6 |
 | F3 | 0 | 5 | 1 | 0 | 6 |
 | F4 | 0 | 0 | 7 | 3 | 10 |
 | A1 | 5 | 0 | 1 | 0 | 6 |
 | A2 | 3 | 0 | 2 | 0 | 5 |
 | AL1 | 5 | 0 | 0 | 1 | 6 |
-| AL2 | 5 | 1 | 0 | 0 | 6 |
+| AL2 | 6 | 0 | 0 | 0 | 6 |
 | H1 | 4 | 0 | 0 | 2 | 6 |
 | H2 | 3 | 1 | 2 | 1 | 7 |
 | H3 | 1 | 5 | 2 | 0 | 8 |
-| Overall | 31 | 18 | 17 | 7 | 73 |
+| Overall | 32 | 17 | 17 | 7 | 73 |
