@@ -103,7 +103,7 @@ type UploaderState = {
   // shared record's id, so "Edit tags" re-enters the same tagging session.
   flipId: string | null;
   uploaderUser: string; // free-text identity, normalized into a slug for keys
-  selectedLocationKey: string | null; // chosen deployment location key (Assign)
+  selectedLocationId: string | null; // chosen deployment location ID (Assign)
   selectedBucket: string | null; // selected collection key `${bucket}::${uuid}` (Assign)
   requireCollectionSelection: boolean; // keep a new batch visibly unassigned
   uploadDescription: string; // free-text description for UploadMeta
@@ -186,7 +186,7 @@ type UploaderState = {
   ) => void;
   resetBatch: () => void;
   setUploaderUser: (value: string) => void;
-  setSelectedLocationKey: (key: string | null) => void;
+  setSelectedLocationId: (id: string | null) => void;
   setSelectedBucket: (bucket: string | null) => void;
   setUploadDescription: (value: string) => void;
   setUploadTimeZone: (value: string) => void;
@@ -214,7 +214,7 @@ function disconnectedState(s: UploaderState): Partial<UploaderState> {
     dirHandle: null,
     fileAccessMode: 'reselect-required',
     flipId: null,
-    selectedLocationKey: null,
+    selectedLocationId: null,
     selectedBucket: null,
     requireCollectionSelection: false,
     uploaderUser: '',
@@ -330,7 +330,7 @@ export const useStore = create<UploaderState>()(
       fileAccessMode: 'reselect-required',
       flipId: null,
       uploaderUser: '',
-      selectedLocationKey: null,
+      selectedLocationId: null,
       selectedBucket: null,
       requireCollectionSelection: false,
       uploadDescription: '',
@@ -357,7 +357,7 @@ export const useStore = create<UploaderState>()(
           s3Config: config,
           connectionId: s.connectionId + 1,
           loginDeferred: false,
-          selectedLocationKey: null,
+          selectedLocationId: null,
           selectedBucket: null,
           requireCollectionSelection: false,
         }));
@@ -647,7 +647,7 @@ export const useStore = create<UploaderState>()(
 
       // Stored raw; sanitizeUploaderUser derives the key-safe slug at point of use.
       setUploaderUser: (value) => set({ uploaderUser: value }),
-      setSelectedLocationKey: (key) => set({ selectedLocationKey: key }),
+      setSelectedLocationId: (id) => set({ selectedLocationId: id }),
       setSelectedBucket: (bucket) => set({ selectedBucket: bucket, requireCollectionSelection: false }),
       setUploadDescription: (value) => set({ uploadDescription: value }),
       setUploadTimeZone: (value) => set({ uploadTimeZone: value }),
@@ -710,7 +710,7 @@ export const useStore = create<UploaderState>()(
           dirHandle: null,
           fileAccessMode: 'reselect-required',
           flipId: null,
-          selectedLocationKey: null,
+          selectedLocationId: null,
           selectedBucket: null,
           uploadDescription: '',
           uploadTimeZone: '',
@@ -734,14 +734,14 @@ export const useStore = create<UploaderState>()(
       // timezone, description) are plain strings — safe to persist, unlike
       // files/handles — and nextBatch() already keeps them in memory across
       // batches with exactly this in mind; this just makes that survive a
-      // reload too. A stale selectedLocationKey/selectedBucket from a
+      // reload too. A stale selectedLocationId/selectedBucket from a
       // different connection is harmless: Assign already clears/reselects
       // either one when it doesn't match the connected backend's data. The run
       // options ride along for the same reason.
       partialize: (s) => ({
         elevationUnit: s.elevationUnit,
         uploaderUser: s.uploaderUser,
-        selectedLocationKey: s.selectedLocationKey,
+        selectedLocationId: s.selectedLocationId,
         selectedBucket: s.selectedBucket,
         requireCollectionSelection: s.requireCollectionSelection,
         uploadDescription: s.uploadDescription,
