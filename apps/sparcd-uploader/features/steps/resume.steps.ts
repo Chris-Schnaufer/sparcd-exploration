@@ -200,6 +200,9 @@ Given('a second upload was cut off part-way while nobody was watching', async ({
   await app.waitForInspected();
   await app.continueToAssign();
   await app.waitForCollections();
+  // Next batch starts with nothing assigned (#338), so pick it all again.
+  await app.chooseCollection(COLLECTION_A_NAME);
+  await app.chooseDeployment('Bear Canyon');
   await app.continueToUpload();
   // Two files land; the rest are still in flight when the tab goes away.
   let media = 0;
