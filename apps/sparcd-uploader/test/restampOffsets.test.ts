@@ -39,4 +39,17 @@ describe('uploader restampDeployment', () => {
     );
     expect(parseDeployments(out.deployments)[0].latitude).toBe(31.6);
   });
+
+  it('re-picking the recorded location is a no-op', () => {
+    const csv = {
+      deployments: serializeDeployments([PHX]),
+      media: serializeCsvRows([mediaRow('a', PHX.deploymentId, '2024-07-10T08:00:00.000-07:00')]),
+      observations: '',
+    };
+    const out = restampDeployment(csv, {
+      fromDeploymentId: PHX.deploymentId, toDeploymentId: PHX.deploymentId, location: { ...PHX },
+      fromTimeZone: 'America/Phoenix', toTimeZone: 'America/Phoenix',
+    });
+    expect(out).toBe(csv);
+  });
 });

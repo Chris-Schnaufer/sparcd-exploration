@@ -26,6 +26,7 @@ import {
   parseUploadMeta,
   serializeUploadMeta,
   serializeDeployments,
+  parseDeployments,
   parseCsvRows,
   serializeCsvRows,
   rebaseCaptureTimestamp,
@@ -138,6 +139,10 @@ function restampTimestamps(
   return serializeCsvRows(rows);
 }
 
+const sameLocation = (a: Deployment, b: Deployment): boolean =>
+  a.locationId === b.locationId && a.locationName === b.locationName &&
+  a.latitude === b.latitude && a.longitude === b.longitude && a.elevation === b.elevation;
+
 /**
  * Re-stamp `deployment_id` consistently across the three CSVs to fix a
  * misassigned camera site. Matching media and observation rows also have their
@@ -149,6 +154,11 @@ export function restampDeployment(
   csv: { deployments: string; media: string; observations: string },
   opts: RestampInput,
 ): { deployments: string; media: string; observations: string } {
+  // Re-picking the recorded location changes nothing. Location ids repeat in
+  // locations.json, so a same-id pick with other coordinates still updates.
+  const recorded = parseDeployments(csv.deployments).find((d) => d.deploymentId === opts.fromDeploymentId);
+  if (opts.fromDeploymentId !== undefined && opts.fromDeploymentId === opts.toDeploymentId
+    && recorded && sameLocation(recorded, opts.location)) return csv;
   // deployments.csv: replace only the row(s) for the old deployment with the
   // chosen location's full row; any unrelated deployment rows survive verbatim.
   const depRows = parseCsvRows(csv.deployments);
