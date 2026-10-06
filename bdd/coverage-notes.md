@@ -79,7 +79,7 @@
 | AL1-3 | An unattended upload is found either complete or clearly resumable | covered | uploader: resume-and-retry.feature: Uploads left running unattended are found either complete or ready to resume | A finished upload shows as complete with nothing to do; one cut off by closing the tab says how many files are left and names Resume upload. |
 | AL1-4 | An upload is never left in a silent, stuck state | untestable | uploader: resume-and-retry.feature: An interrupted upload is listed as open, never as complete | NOTES.md says no threshold defines when silence becomes stuck. |
 | AL1-5 | Repeated interruptions still end in one finished upload | covered | uploader: upload-run.feature: Repeated connection drops still end in one finished upload | Three drops fail writes in flight; the run still ends in one upload folder, one History entry, and a media.csv listing every image once. |
-| AL1-6 | An interrupted upload is not presented as complete | covered | uploader: resume-and-retry.feature: An interrupted upload is listed as open, never as complete | Only uploads with published metadata are marked complete. |
+| AL1-6 | An interrupted upload is not presented as complete | covered | uploader: resume-and-retry.feature: An interrupted upload is listed as open, never as complete; uploader: resume-and-retry.feature: A resumed publication accepts matching existing metadata and completes | Only uploads with published metadata are marked complete; a resumed immutable-publication race accepts the existing object only after verifying its bytes and still writes the completion sentinel. |
 
 ## AL2
 

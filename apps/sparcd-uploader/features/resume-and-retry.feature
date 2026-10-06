@@ -41,6 +41,13 @@ Feature: Resume an interrupted upload and retry a failed one
     Then the finished upload is shown as complete with nothing left to do
     And the cut-off upload says how many files are still to send and names "Resume upload" as the next step
 
+  @AL1 @AL1-6
+  Scenario: A resumed publication accepts matching existing metadata and completes
+    Given an interrupted upload has a matching UploadMeta publication already stored
+    When it is resumed
+    Then the resumed publication completes without replacing that metadata
+    And its completion record is written
+
   @AL1
   Scenario: History renders a late batch start with a 24-hour clock
     Given a completed upload started late in the day is recorded
