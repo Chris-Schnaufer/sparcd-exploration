@@ -489,6 +489,7 @@ export function timestampSourceFromComments(comments: string): TimestampSource |
 
 export const COMMONNAME_PREFIX = 'COMMONNAME';
 export const REQUESTED_SPECIES_PREFIX = 'REQUESTED_SPECIES';
+export const REMOVED_PREFIX = 'REMOVED';
 export const REVIEWED_BY_PREFIX = 'REVIEWED_BY';
 export const REVIEWED_AT_PREFIX = 'REVIEWED_AT';
 
@@ -518,6 +519,14 @@ export function requestedSpeciesFromComments(comments: string): string | null {
   return m ? m.value : null;
 }
 
+/** All scientific names explicitly removed in this edit, or an empty list. */
+export function removedSpeciesFromComments(comments: string): string[] {
+  return parseTagMarkers(comments)
+    .filter((t) => t.prefix === REMOVED_PREFIX)
+    .map((t) => t.value)
+    .filter(Boolean);
+}
+
 /** Read repeatable reviewer events from an observation's comments markers. */
 export function reviewEventsFromComments(comments: string): ReviewEvent[] {
   const markers = parseTagMarkers(comments);
@@ -541,6 +550,7 @@ export function reviewEventsFromComments(comments: string): ReviewEvent[] {
 export function buildObservationComments(input: {
   commonName?: string;
   requestedSpecies?: string;
+  removedSpecies?: string[];
   reviewEvents?: ReviewEvent[];
   extra?: TagMarker[];
 }): string {
@@ -548,6 +558,8 @@ export function buildObservationComments(input: {
   if (input.commonName) markers.push({ prefix: COMMONNAME_PREFIX, value: input.commonName });
   if (input.requestedSpecies)
     markers.push({ prefix: REQUESTED_SPECIES_PREFIX, value: input.requestedSpecies });
+  for (const species of input.removedSpecies ?? [])
+    if (species) markers.push({ prefix: REMOVED_PREFIX, value: species });
   for (const event of input.reviewEvents ?? []) {
     if (event.reviewedBy && event.reviewedAt) {
       markers.push({ prefix: REVIEWED_BY_PREFIX, value: event.reviewedBy });
@@ -566,6 +578,7 @@ export type ObservationInput = {
   count: number; // col 9
   commonName?: string; // → [COMMONNAME:…] in col 19
   requestedSpecies?: string; // → [REQUESTED_SPECIES:…] in col 19
+  removedSpecies?: string[]; // → [REMOVED:…] in col 19
   reviewEvents?: ReviewEvent[]; // → [REVIEWED_BY/REVIEWED_AT:…] in col 19
   extraMarkers?: TagMarker[]; // preserved through-markers
   /** Existing attribution is retained when Tagger replaces an observation row. */
@@ -587,6 +600,8 @@ export type MediaEdit = {
   mediaTimestamp?: string; // if set, overwrite media.csv col 4 for this image
   /** When a flagged capture time is corrected, replace its source marker in col 10. */
   timestampSource?: TimestampSource;
+  /** Species explicitly removed in this edit; written once on the replacement row. */
+  removedSpecies?: string[];
   observations: ObservationInput[];
 };
 
@@ -621,6 +636,7 @@ function buildObservationRow(
   row[OBS_COL.comments] = buildObservationComments({
     commonName: o.commonName,
     requestedSpecies: o.requestedSpecies,
+    removedSpecies: o.removedSpecies,
     reviewEvents: o.reviewEvents,
     extra: [...preservedMarkers, ...(o.extraMarkers ?? [])],
   });
@@ -637,6 +653,7 @@ function buildBlankObservationRow(edit: MediaEdit, observationId: string): strin
   row[OBS_COL.timestamp] = edit.timestamp;
   row[OBS_COL.observationType] = 'blank';
   row[OBS_COL.cameraSetup] = 'false';
+  row[OBS_COL.comments] = buildObservationComments({ removedSpecies: edit.removedSpecies });
   return row;
 }
 
