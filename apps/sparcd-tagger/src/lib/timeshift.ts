@@ -5,7 +5,7 @@
 // needs, kept pure so they can be unit-tested without React or Dexie.
 
 import type { TimeOffsetRecord } from './db';
-import { normalizeCaptureTimestamp } from '@sparcd/camtrap';
+import { captureTimestampInZone, normalizeCaptureTimestamp } from '@sparcd/camtrap';
 
 /** The earliest already-corrected timestamp among the bulk targets — the anchor a
  *  selection-scoped shift previews against. It MUST be the corrected time (not the
@@ -63,11 +63,13 @@ const INPUT_RE = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?(?:\.(
 /** Normalize a user-typed corrected timestamp to the offset-bearing ISO 8601
  *  form stored in media.csv / observations.csv. Returns null on a shape or
  *  range violation so the caller can reject the edit instead of writing junk.
- *  A bare value is treated as +00:00, never as the browser's zone. */
-export function normalizeTimestampInput(raw: string, fallbackOffset?: string): string | null {
+ *  A bare value takes the location's zone when known, else the image's existing
+ *  offset, else +00:00 — never the browser's zone. */
+export function normalizeTimestampInput(raw: string, fallbackOffset?: string, timeZone?: string): string | null {
   const m = INPUT_RE.exec(raw.trim());
   if (!m) return null;
-  const [, y, mo, d, h, mi, s, fraction = '', zone = fallbackOffset ?? '+00:00'] = m;
+  const [, y, mo, d, h, mi, s, fraction = '', typedZone] = m;
+  const zone = typedZone ?? (timeZone ? undefined : fallbackOffset ?? '+00:00');
   const month = Number(mo);
   const day = Number(d);
   const hour = Number(h);
@@ -81,10 +83,9 @@ export function normalizeTimestampInput(raw: string, fallbackOffset?: string): s
   // date into the following month.
   const probe = new Date(Date.UTC(Number(y), month - 1, day));
   if (probe.getUTCMonth() !== month - 1 || probe.getUTCDate() !== day) return null;
+  const local = `${y}-${mo}-${d}T${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}.${fraction.padEnd(3, '0')}`;
   try {
-    return normalizeCaptureTimestamp(
-      `${y}-${mo}-${d}T${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}.${fraction.padEnd(3, '0')}${zone}`,
-    );
+    return zone ? normalizeCaptureTimestamp(`${local}${zone}`) : captureTimestampInZone(local, timeZone!);
   } catch {
     return null;
   }

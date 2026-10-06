@@ -1176,7 +1176,8 @@ export function Tag() {
               corrected={correctedTs}
               hasUploadShift={hasUploadShift}
               overridden={!!draft?.timeOverride}
-          onSetTime={(iso) =>
+              timeZone={captureTimeZone}
+              onSetTime={(iso) =>
                 current && setTimeOverrideFn(ctx, current.key, current.deploymentId, currentBase, iso)
               }
               onClearTime={() =>
@@ -1306,6 +1307,7 @@ function FocusPane({
   corrected,
   hasUploadShift,
   overridden,
+  timeZone,
   onSetTime,
   onClearTime,
   onDetag,
@@ -1320,6 +1322,7 @@ function FocusPane({
   corrected: string;
   hasUploadShift: boolean;
   overridden: boolean;
+  timeZone?: string;
   onSetTime: (iso: string) => void;
   onClearTime: () => void;
   onDetag: () => void;
@@ -1426,6 +1429,7 @@ function FocusPane({
                 hasUploadShift={hasUploadShift}
                 overridden={overridden}
                 timestampSource={current.timestampSource}
+                timeZone={timeZone}
                 onSet={onSetTime}
                 onClear={onClearTime}
               />

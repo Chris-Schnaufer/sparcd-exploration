@@ -856,9 +856,11 @@ export function shiftTimestamp(iso: string, off: TimeOffset, timeZone?: string):
     second: d.getUTCSeconds(),
     millisecond: d.getUTCMilliseconds(),
   };
-  return timeZone
+  // A `Z` value's fields are UTC, not camera wall clock: shift them as UTC and
+  // keep the `Z` so a later location rebase can still recover the wall clock.
+  return timeZone && offset !== 'Z'
     ? formatCaptureTimestamp(shifted, timeZone)
-    : formatCaptureTimestampWithOffset(shifted, offset === 'Z' || !offset ? '+00:00' : offset);
+    : formatCaptureTimestampWithOffset(shifted, offset ?? '+00:00');
 }
 
 /** Resolve the corrected timestamp for one image: per-image override wins over the upload offset. */
@@ -1001,7 +1003,7 @@ function formatCaptureTimestamp(parts: CaptureTimestampParts, timeZone: string):
 }
 
 function formatCaptureTimestampWithOffset(parts: CaptureTimestampParts, offset: string): string {
-  const normalized = offset === 'Z' ? '+00:00' : offset.includes(':') ? offset : `${offset.slice(0, 3)}:${offset.slice(3)}`;
+  const normalized = offset === 'Z' ? 'Z' : offset.includes(':') ? offset : `${offset.slice(0, 3)}:${offset.slice(3)}`;
   return (
     `${String(parts.year).padStart(4, '0')}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}T` +
     `${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}:${String(parts.second).padStart(2, '0')}.` +

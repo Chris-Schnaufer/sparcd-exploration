@@ -293,15 +293,19 @@ function rewriteDeploymentAndRebase(
   fromDeploymentId: string | undefined,
   toDeploymentId: string,
   fromTimeZone: string | undefined,
+  recoveryTimeZone: string | undefined,
   toTimeZone: string,
+  // Rows this sync just wrote already carry the new deployment id but still
+  // hold timestamps in the old zone.
+  isFreshRow: (row: string[]) => boolean = () => false,
 ): string {
   const rows = parseCsvRows(csv);
   for (const row of rows) {
-    if (fromDeploymentId !== undefined && row[deploymentColumn] !== fromDeploymentId) continue;
+    if (fromDeploymentId !== undefined && row[deploymentColumn] !== fromDeploymentId && !isFreshRow(row)) continue;
     const timestamp = row[timestampColumn] ?? '';
     if (timestamp && fromTimeZone && fromTimeZone !== toTimeZone) {
       try {
-        row[timestampColumn] = rebaseCaptureTimestamp(timestamp, fromTimeZone, toTimeZone);
+        row[timestampColumn] = rebaseCaptureTimestamp(timestamp, recoveryTimeZone, toTimeZone);
       } catch {
         // Preserve malformed legacy values while still correcting the location.
       }
@@ -314,7 +318,7 @@ function rewriteDeploymentAndRebase(
 function replaceDeploymentRow(csv: string, fromDeploymentId: string | undefined, replacement: string[]): string {
   const rows = parseCsvRows(csv);
   const replacementId = replacement[0] ?? '';
-  const targetExists = rows.some((row) => row[0] === replacementId);
+  const targetExists = replacementId !== fromDeploymentId && rows.some((row) => row[0] === replacementId);
   const out: string[][] = [];
   let placed = false;
   for (const row of rows) {
@@ -362,12 +366,14 @@ async function buildWrites(
       : undefined;
     const toTimeZone = tzlookup(plan.locationEdit.latitude, plan.locationEdit.longitude);
     const legacyTimeZone = parseUploadMeta(current.uploadMeta.text).captureTimeZone ?? fromTimeZone;
+    const tagged = new Set(plan.tagEdits.map((e) => e.mediaId));
     mediaBody = rewriteDeploymentAndRebase(
       mediaBody,
       MEDIA_COL.deploymentId,
       MEDIA_COL.timestamp,
       fromDeploymentId,
       plan.locationEdit.deploymentId,
+      fromTimeZone,
       legacyTimeZone,
       toTimeZone,
     );
@@ -377,8 +383,10 @@ async function buildWrites(
       OBS_COL.timestamp,
       fromDeploymentId,
       plan.locationEdit.deploymentId,
+      fromTimeZone,
       legacyTimeZone,
       toTimeZone,
+      (row) => tagged.has(row[OBS_COL.mediaId]),
     );
     const replacement = parseCsvRows(serializeDeployments([plan.locationEdit]))[0];
     deploymentsBody = replaceDeploymentRow(current.deployments.text, fromDeploymentId, replacement);

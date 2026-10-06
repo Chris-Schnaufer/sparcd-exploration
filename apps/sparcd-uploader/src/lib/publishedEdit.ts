@@ -119,6 +119,7 @@ function restampTimestamps(
   timestampColumn: number,
   fromDeploymentId: string | undefined,
   fromTimeZone: string | undefined,
+  recoveryTimeZone: string | undefined,
   toTimeZone: string | undefined,
 ): string {
   if (!fromTimeZone || !toTimeZone || fromTimeZone === toTimeZone) return csv;
@@ -128,7 +129,7 @@ function restampTimestamps(
     const value = row[timestampColumn] ?? '';
     if (!value) continue;
     try {
-      row[timestampColumn] = rebaseCaptureTimestamp(value, fromTimeZone, toTimeZone);
+      row[timestampColumn] = rebaseCaptureTimestamp(value, recoveryTimeZone, toTimeZone);
     } catch {
       // Preserve malformed legacy values; the surrounding deployment edit can
       // still be applied without inventing a timestamp.
@@ -148,12 +149,12 @@ export function restampDeployment(
   csv: { deployments: string; media: string; observations: string },
   opts: RestampInput,
 ): { deployments: string; media: string; observations: string } {
-  if (opts.fromDeploymentId !== undefined && opts.fromDeploymentId === opts.toDeploymentId) return csv;
   // deployments.csv: replace only the row(s) for the old deployment with the
   // chosen location's full row; any unrelated deployment rows survive verbatim.
   const depRows = parseCsvRows(csv.deployments);
   const correctedRow = parseCsvRows(serializeDeployments([opts.location]))[0];
-  const targetExists = depRows.some((row) => row[DEPLOY_COL.deploymentId] === opts.toDeploymentId);
+  const targetExists = opts.toDeploymentId !== opts.fromDeploymentId
+    && depRows.some((row) => row[DEPLOY_COL.deploymentId] === opts.toDeploymentId);
   const out: string[][] = [];
   let placed = false;
   for (const row of depRows) {
@@ -177,6 +178,7 @@ export function restampDeployment(
         MEDIA_COL.deploymentId,
         MEDIA_COL.timestamp,
         opts.fromDeploymentId,
+        opts.fromTimeZone ?? opts.legacyTimeZone,
         opts.legacyTimeZone ?? opts.fromTimeZone,
         opts.toTimeZone,
       ),
@@ -190,6 +192,7 @@ export function restampDeployment(
         OBS_COL.deploymentId,
         OBS_COL.timestamp,
         opts.fromDeploymentId,
+        opts.fromTimeZone ?? opts.legacyTimeZone,
         opts.legacyTimeZone ?? opts.fromTimeZone,
         opts.toTimeZone,
       ),
