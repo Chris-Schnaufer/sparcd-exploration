@@ -21,6 +21,7 @@ export type SpeciesPanelProps = {
   capturingFor: string | null;
   onStartCapture: (scientificName: string) => void;
   onClearKey: (scientificName: string) => void;
+  keysUnsaved: boolean; // the last key-settings write to localStorage failed
   recent: string[]; // scientificNames, most-recent first
   appliedSet: Set<string>; // scientificNames applied on the focused image (✓ + add-only NO-OP)
   hasFocus: boolean; // an image is focused
@@ -64,6 +65,11 @@ export function SpeciesPanel(props: SpeciesPanelProps) {
 
   return (
     <div data-testid="species-panel" className="h-full flex flex-col border-l border-rule bg-panel min-h-0">
+      {props.keysUnsaved && (
+        <div role="alert" className="px-3 py-1.5 border-b border-warn text-[12px] font-mono text-warn">
+          Couldn't save your key settings in this browser. They'll reset when you reload.
+        </div>
+      )}
       {props.selectionCount > 1 && (
         <div className="px-3 py-1.5 bg-mark border-b border-rule text-[12px] font-mono text-accent">
           Applying to {props.selectionCount} selected images
