@@ -105,7 +105,7 @@ describe('tag edit + location change in one sync', () => {
     ];
     const drafts = { [K2]: draft({ mediaPath: K2, observations: [{ scientificName: 'Canis latrans', commonName: 'Coyote', count: 1, requestedSpecies: '', freeTags: '' }] }) };
     // Tag.tsx passes the CURRENT deployment's zone (tzlookup of deployments.csv) as timeZone.
-    const plan = buildSyncPlan(images, drafts, null, NYC, 'America/Phoenix');
+    const plan = buildSyncPlan(images, drafts, null, NYC, '', 'America/Phoenix');
     const { io, replaces } = fakeIO(cur);
     const res = await runSync({ bucket: 'sparcd-x', uploadPrefix: PREFIX, user: 'jg', base: baseFrom(cur), plan, dryRun: false }, io);
     expect(res.status).toBe('synced');
@@ -129,6 +129,7 @@ describe('a Z (UTC) value read as local wall clock', () => {
       {},
       { ...ZERO_OFFSET, hours: 1 },
       null,
+      '',
       'America/Phoenix',
     );
     expect(plan.timeEdits[0].mediaTimestamp).toBe('2024-01-10T09:00:00.000-07:00');
@@ -166,7 +167,7 @@ describe('stale UploadMeta.captureTimeZone on a second location change', () => {
       META('America/New_York'),
     );
     const images: TagImage[] = [{ key: K1, fileName: 'IMG001.JPG', deploymentId: DEP, baseTimestamp: ts, baseObservations: [{ scientificName: 'Puma concolor', commonName: '', count: 1, requestedSpecies: '', freeTags: '' }] }];
-    const plan = buildSyncPlan(images, {}, null, NYC, 'America/Phoenix');
+    const plan = buildSyncPlan(images, {}, null, NYC, '', 'America/Phoenix');
     const { io, replaces } = fakeIO(cur);
     await runSync({ bucket: 'sparcd-x', uploadPrefix: PREFIX, user: 'jg', base: baseFrom(cur), plan, dryRun: false }, io);
     const media = parseCsvRows(replaces.find((r) => r.key.endsWith('media.csv'))!.body);
@@ -187,7 +188,7 @@ describe('same deployment id, different coordinates (duplicate locations.json id
     // Same locationId (so same deploymentId), different name/coords — allowed by ChangeLocationModal.sameLocation.
     const sameIdOtherCoords: Deployment = { ...PHX, locationName: '*DO NOT USE* San Pedro 15', latitude: 31.6, longitude: -110.3 };
     const images: TagImage[] = [{ key: K1, fileName: 'IMG001.JPG', deploymentId: DEP, baseTimestamp: ts, baseObservations: [{ scientificName: 'Puma concolor', commonName: '', count: 1, requestedSpecies: '', freeTags: '' }] }];
-    const plan = buildSyncPlan(images, {}, null, sameIdOtherCoords, 'America/Phoenix');
+    const plan = buildSyncPlan(images, {}, null, sameIdOtherCoords, '', 'America/Phoenix');
     const { io, replaces } = fakeIO(cur);
     const res = await runSync({ bucket: 'sparcd-x', uploadPrefix: PREFIX, user: 'jg', base: baseFrom(cur), plan, dryRun: false }, io);
     expect(res.status).toBe('synced');

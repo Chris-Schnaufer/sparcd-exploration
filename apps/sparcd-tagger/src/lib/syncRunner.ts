@@ -51,7 +51,7 @@ export async function performSync(args: SyncArgs): Promise<SyncResult> {
     base = await getUpload(bucket, uploadPrefix);
   }
 
-  const plan = buildSyncPlan(images, drafts, base?.timeOffset ?? null, base?.pendingLocation ?? null, timeZone);
+  const plan = buildSyncPlan(images, drafts, base?.timeOffset ?? null, base?.pendingLocation ?? null, user, timeZone);
   const resumeJournal = await loadSyncJournal(bucket, uploadPrefix);
 
   const io = makeSyncIO(cfg, bucket, uploadPrefix, {
