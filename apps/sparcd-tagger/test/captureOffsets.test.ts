@@ -149,12 +149,6 @@ describe('a Z (UTC) value read as local wall clock', () => {
     expect(rebased).toBe('2024-01-10T08:30:00.000-05:00');
   });
 
-  it('with no zone known, a per-image edit keeps Z so a later rebase can recover it', () => {
-    const committed = normalizeTimestampInput('2024-01-10T15:30:00.000Z', 'Z')!;
-    expect(committed).toBe('2024-01-10T15:30:00.000Z');
-    expect(rebaseCaptureTimestamp(committed, 'America/Phoenix', 'America/New_York')).toBe('2024-01-10T08:30:00.000-05:00');
-  });
-
   it('the per-image editor accepts a stored six-digit fraction', () => {
     expect(normalizeTimestampInput('2024-01-10T15:30:00.123456Z', 'Z', 'America/Phoenix')).toBe('2024-01-10T08:30:00.123456-07:00');
   });

@@ -805,9 +805,8 @@ function daysInMonth(year: number, month0: number): number {
 
 /**
  * Shift a timestamp (naive or full ISO) by a signed offset. Numeric-offset
- * values remain numeric-offset values. A legacy `Z` value names a UTC instant:
- * with a zone it is shifted as that zone's local time and written with the
- * zone's offset; without one it stays `Z`.
+ * values remain numeric-offset values; legacy `Z` values are upgraded to the
+ * canonical numeric `+00:00` spelling.
  *
  * Mirrors `LocalDateTime.plusYears(y).plusMonths(mo).plusDays(d).plusHours(h)...`
  * semantics carried over from the original desktop tooling: the year and month
@@ -828,8 +827,7 @@ export function shiftTimestamp(iso: string, off: TimeOffset, timeZone?: string):
     hour: Number(m[4]), minute: Number(m[5]), second: Number(m[6]), millisecond,
   };
   // A `Z` value's fields are UTC, not camera wall clock. With a zone, shift the
-  // wall clock that instant shows there; without one, shift the UTC fields and
-  // keep the `Z` so a later location rebase can still recover the wall clock.
+  // wall clock that instant shows there.
   const start = timeZone && offset === 'Z' ? partsAt(partsAsUtcMs(written), timeZone) : written;
   let year = start.year;
   let month0 = start.month - 1;
@@ -865,7 +863,7 @@ export function shiftTimestamp(iso: string, off: TimeOffset, timeZone?: string):
   };
   return timeZone
     ? formatCaptureTimestamp(shifted, timeZone, fraction.slice(3))
-    : formatCaptureTimestampWithOffset(shifted, offset ?? '+00:00', fraction.slice(3));
+    : formatCaptureTimestampWithOffset(shifted, offset === 'Z' || !offset ? '+00:00' : offset, fraction.slice(3));
 }
 
 /** Resolve the corrected timestamp for one image: per-image override wins over the upload offset. */
@@ -1012,7 +1010,7 @@ function formatCaptureTimestamp(parts: CaptureTimestampParts, timeZone: string, 
 }
 
 function formatCaptureTimestampWithOffset(parts: CaptureTimestampParts, offset: string, subMillisecond = ''): string {
-  const normalized = offset === 'Z' ? 'Z' : offset.includes(':') ? offset : `${offset.slice(0, 3)}:${offset.slice(3)}`;
+  const normalized = offset === 'Z' ? '+00:00' : offset.includes(':') ? offset : `${offset.slice(0, 3)}:${offset.slice(3)}`;
   return (
     `${String(parts.year).padStart(4, '0')}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}T` +
     `${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}:${String(parts.second).padStart(2, '0')}.` +
@@ -1020,8 +1018,7 @@ function formatCaptureTimestampWithOffset(parts: CaptureTimestampParts, offset: 
   );
 }
 
-/** Normalize a user or legacy timestamp to the canonical offset-bearing form.
- *  A `Z` value stays `Z`: with no zone, its location wall clock is unknown. */
+/** Normalize a user or legacy timestamp to the canonical offset-bearing form. */
 export function normalizeCaptureTimestamp(value: string): string {
   const parsed = parseCaptureTimestamp(value);
   if (!parsed) throw new Error(`Invalid capture timestamp: ${value}`);

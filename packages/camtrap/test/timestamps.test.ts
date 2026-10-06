@@ -77,7 +77,7 @@ it('shifts a Z value as the local time of its instant when the zone is known', (
   expect(shiftTimestamp('2026-01-15T15:00:00.000Z', { ...ZERO_OFFSET, hours: 1 }, 'America/Phoenix')).toBe(
     '2026-01-15T09:00:00.000-07:00',
   );
-  expect(shiftTimestamp('2026-01-15T15:00:00.000Z', { ...ZERO_OFFSET, hours: 1 })).toBe('2026-01-15T16:00:00.000Z');
+  expect(shiftTimestamp('2026-01-15T15:00:00.000Z', { ...ZERO_OFFSET, hours: 1 })).toBe('2026-01-15T16:00:00.000+00:00');
 });
 
 it('keeps daylight-saving offsets tied to the local date', () => {
