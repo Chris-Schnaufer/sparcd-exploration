@@ -131,22 +131,32 @@ describe('a Z (UTC) value read as local wall clock', () => {
       null,
       'America/Phoenix',
     );
-    const written = plan.timeEdits[0].mediaTimestamp!;
-    expect(Date.parse(written)).toBe(Date.parse('2024-01-10T16:00:00.000Z'));
+    expect(plan.timeEdits[0].mediaTimestamp).toBe('2024-01-10T09:00:00.000-07:00');
   });
 
   it('bulk/selection shift (shiftTimestamp with a zone) keeps the instant of a Z value', () => {
     const out = shiftTimestamp('2024-01-10T15:00:00.000Z', { ...ZERO_OFFSET, minutes: 15 }, 'America/Phoenix');
-    expect(Date.parse(out)).toBe(Date.parse('2024-01-10T15:15:00.000Z'));
+    expect(out).toBe('2024-01-10T08:15:00.000-07:00');
   });
 
   it('a per-image edit on a Z image, then a location change, keeps the capture instant', () => {
     // PerImageTime seeds the box with the raw Z value; user changes 15:00 → 15:30 and commits.
-    const committed = normalizeTimestampInput('2024-01-10T15:30:00.000Z', 'Z')!;
+    const committed = normalizeTimestampInput('2024-01-10T15:30:00.000Z', 'Z', 'America/Phoenix')!;
+    expect(committed).toBe('2024-01-10T08:30:00.000-07:00');
     // Later location correction Phoenix → New York.
     const rebased = rebaseCaptureTimestamp(committed, 'America/Phoenix', 'America/New_York');
     // 15:30Z was 08:30 Phoenix wall clock → 08:30 New York wall clock.
     expect(rebased).toBe('2024-01-10T08:30:00.000-05:00');
+  });
+
+  it('with no zone known, a per-image edit keeps Z so a later rebase can recover it', () => {
+    const committed = normalizeTimestampInput('2024-01-10T15:30:00.000Z', 'Z')!;
+    expect(committed).toBe('2024-01-10T15:30:00.000Z');
+    expect(rebaseCaptureTimestamp(committed, 'America/Phoenix', 'America/New_York')).toBe('2024-01-10T08:30:00.000-05:00');
+  });
+
+  it('the per-image editor accepts a stored six-digit fraction', () => {
+    expect(normalizeTimestampInput('2024-01-10T15:30:00.123456Z', 'Z', 'America/Phoenix')).toBe('2024-01-10T08:30:00.123456-07:00');
   });
 });
 

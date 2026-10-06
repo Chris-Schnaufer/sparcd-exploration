@@ -5,7 +5,7 @@
 // needs, kept pure so they can be unit-tested without React or Dexie.
 
 import type { TimeOffsetRecord } from './db';
-import { captureTimestampInZone, normalizeCaptureTimestamp } from '@sparcd/camtrap';
+import { captureTimestampInZone, normalizeCaptureTimestamp, rebaseCaptureTimestamp } from '@sparcd/camtrap';
 
 /** The earliest already-corrected timestamp among the bulk targets — the anchor a
  *  selection-scoped shift previews against. It MUST be the corrected time (not the
@@ -55,21 +55,20 @@ export function formatOffsetDelta(o: TimeOffsetRecord | null | undefined): strin
 }
 
 // Accepts a space or `T` separator, an optional seconds field, and an optional
-// trailing `.sss` + `Z`/offset — the shape `PerImageTime` seeds its edit box
+// trailing fraction (up to six digits) + `Z`/offset — the shape `PerImageTime` seeds its edit box
 // with `corrected`, so a user who commits without touching the text must still
 // round-trip cleanly without dropping its offset.
-const INPUT_RE = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?(?:\.(\d{1,3}))?(Z|[+-]\d{2}:?\d{2})?$/;
+const INPUT_RE = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?(?:\.(\d{1,6}))?(Z|[+-]\d{2}:?\d{2})?$/;
 
 /** Normalize a user-typed corrected timestamp to the offset-bearing ISO 8601
  *  form stored in media.csv / observations.csv. Returns null on a shape or
  *  range violation so the caller can reject the edit instead of writing junk.
- *  A bare value takes the location's zone when known, else the image's existing
- *  offset, else +00:00 — never the browser's zone. */
+ *  A bare value keeps the image's existing offset; with none, it takes the
+ *  location's zone when known, else +00:00 — never the browser's zone. */
 export function normalizeTimestampInput(raw: string, fallbackOffset?: string, timeZone?: string): string | null {
   const m = INPUT_RE.exec(raw.trim());
   if (!m) return null;
-  const [, y, mo, d, h, mi, s, fraction = '', typedZone] = m;
-  const zone = typedZone ?? (timeZone ? undefined : fallbackOffset ?? '+00:00');
+  const [, y, mo, d, h, mi, s, fraction = '', zone = fallbackOffset] = m;
   const month = Number(mo);
   const day = Number(d);
   const hour = Number(h);
@@ -85,7 +84,10 @@ export function normalizeTimestampInput(raw: string, fallbackOffset?: string, ti
   if (probe.getUTCMonth() !== month - 1 || probe.getUTCDate() !== day) return null;
   const local = `${y}-${mo}-${d}T${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}.${fraction.padEnd(3, '0')}`;
   try {
-    return zone ? normalizeCaptureTimestamp(`${local}${zone}`) : captureTimestampInZone(local, timeZone!);
+    if (!zone) return timeZone ? captureTimestampInZone(local, timeZone) : normalizeCaptureTimestamp(`${local}+00:00`);
+    // A `Z` value is a UTC instant: with a zone, write it as that zone's local time.
+    if (zone === 'Z' && timeZone) return rebaseCaptureTimestamp(`${local}Z`, timeZone, timeZone);
+    return normalizeCaptureTimestamp(`${local}${zone}`);
   } catch {
     return null;
   }

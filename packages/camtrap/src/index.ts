@@ -805,8 +805,9 @@ function daysInMonth(year: number, month0: number): number {
 
 /**
  * Shift a timestamp (naive or full ISO) by a signed offset. Numeric-offset
- * values remain numeric-offset values; legacy `Z` values are upgraded to the
- * canonical numeric `+00:00` spelling.
+ * values remain numeric-offset values. A legacy `Z` value names a UTC instant:
+ * with a zone it is shifted as that zone's local time and written with the
+ * zone's offset; without one it stays `Z`.
  *
  * Mirrors `LocalDateTime.plusYears(y).plusMonths(mo).plusDays(d).plusHours(h)...`
  * semantics carried over from the original desktop tooling: the year and month
@@ -819,14 +820,21 @@ function daysInMonth(year: number, month0: number): number {
 export function shiftTimestamp(iso: string, off: TimeOffset, timeZone?: string): string {
   const m = TS_RE.exec(iso);
   if (!m) return iso;
-  let year = Number(m[1]);
-  let month0 = Number(m[2]) - 1;
-  let day = Number(m[3]);
-  const hour = Number(m[4]);
-  const minute = Number(m[5]);
-  const second = Number(m[6]);
   const fraction = iso.match(/\.(\d{1,6})/)?.[1] ?? '';
   const millisecond = Number(fraction.slice(0, 3).padEnd(3, '0') || 0);
+  const offset = iso.match(/(Z|[+-]\d{2}:?\d{2})$/)?.[1];
+  const written = {
+    year: Number(m[1]), month: Number(m[2]), day: Number(m[3]),
+    hour: Number(m[4]), minute: Number(m[5]), second: Number(m[6]), millisecond,
+  };
+  // A `Z` value's fields are UTC, not camera wall clock. With a zone, shift the
+  // wall clock that instant shows there; without one, shift the UTC fields and
+  // keep the `Z` so a later location rebase can still recover the wall clock.
+  const start = timeZone && offset === 'Z' ? partsAt(partsAsUtcMs(written), timeZone) : written;
+  let year = start.year;
+  let month0 = start.month - 1;
+  let day = start.day;
+  const { hour, minute, second } = start;
 
   // plusYears — clamp the day within the same month of the new year.
   year += off.years;
@@ -846,7 +854,6 @@ export function shiftTimestamp(iso: string, off: TimeOffset, timeZone?: string):
       off.seconds * 1_000,
   );
   d.setUTCMilliseconds(millisecond);
-  const offset = iso.match(/(Z|[+-]\d{2}:?\d{2})$/)?.[1];
   const shifted = {
     year: d.getUTCFullYear(),
     month: d.getUTCMonth() + 1,
@@ -856,9 +863,7 @@ export function shiftTimestamp(iso: string, off: TimeOffset, timeZone?: string):
     second: d.getUTCSeconds(),
     millisecond: d.getUTCMilliseconds(),
   };
-  // A `Z` value's fields are UTC, not camera wall clock: shift them as UTC and
-  // keep the `Z` so a later location rebase can still recover the wall clock.
-  return timeZone && offset !== 'Z'
+  return timeZone
     ? formatCaptureTimestamp(shifted, timeZone, fraction.slice(3))
     : formatCaptureTimestampWithOffset(shifted, offset ?? '+00:00', fraction.slice(3));
 }
@@ -1015,7 +1020,8 @@ function formatCaptureTimestampWithOffset(parts: CaptureTimestampParts, offset: 
   );
 }
 
-/** Normalize a user or legacy timestamp to the canonical offset-bearing form. */
+/** Normalize a user or legacy timestamp to the canonical offset-bearing form.
+ *  A `Z` value stays `Z`: with no zone, its location wall clock is unknown. */
 export function normalizeCaptureTimestamp(value: string): string {
   const parsed = parseCaptureTimestamp(value);
   if (!parsed) throw new Error(`Invalid capture timestamp: ${value}`);
