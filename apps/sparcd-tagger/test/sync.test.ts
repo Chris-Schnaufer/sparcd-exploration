@@ -1048,6 +1048,23 @@ describe('removal provenance survives later edits', () => {
     const plan = buildSyncPlan(imgs, { [K1]: draft({ mediaPath: K1, observations: [obs('Puma concolor', 1)] }) }, null);
     expect(plan.tagEdits[0].removedSpecies).toEqual([]);
   });
+
+  it('writes a stored [REMOVED:…] marker once when the surviving row is rewritten', () => {
+    const csv = serializeCsvRows([rowWith('Canis latrans', '[COMMONNAME:Coyote][REMOVED:Puma concolor]')]);
+    const recount = buildSyncPlan(images([rowWith('Canis latrans', '[COMMONNAME:Coyote][REMOVED:Puma concolor]')]), {
+      [K1]: draft({ mediaPath: K1, observations: [obs('Canis latrans', 3, 'Coyote')] }),
+    }, null);
+    expect(parseObservations(mergeObservations(csv, recount.tagEdits)).map((o) => o.tags)).toEqual([
+      '[COMMONNAME:Coyote][REMOVED:Puma concolor]',
+    ]);
+    const restored = buildSyncPlan(images([rowWith('Canis latrans', '[COMMONNAME:Coyote][REMOVED:Puma concolor]')]), {
+      [K1]: draft({ mediaPath: K1, observations: [obs('Canis latrans', 1, 'Coyote'), obs('Puma concolor', 1)] }),
+    }, null);
+    expect(parseObservations(mergeObservations(csv, restored.tagEdits)).map((o) => o.tags)).toEqual([
+      '[COMMONNAME:Coyote]',
+      '',
+    ]);
+  });
 });
 
 describe('correction provenance survives later syncs', () => {
