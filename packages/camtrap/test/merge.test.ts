@@ -8,6 +8,8 @@ import {
   parseUploadMeta,
   serializeUploadMeta,
   parseObservations,
+  parseCsvRows,
+  OBS_COL,
   serializeCsvRows,
   buildObservationComments,
   reviewEventsFromComments,
@@ -154,13 +156,36 @@ describe('classified_by provenance', () => {
 
   it('carries existing attribution onto replacement rows', () => {
     const canonical = serializeCsvRows([
-      ['obs-1', DEP, k('IMG001.JPG'), '2024-01-10T08:00:00', '2024-01-10T08:00:00', 'animal', '', '', 'Canis latrans', '1', '', '', '', '', '', '', 'anita', '', '', ''],
+      ['obs-1', DEP, '', k('IMG001.JPG'), '2024-01-10T08:00:00', 'animal', '', '', 'Canis latrans', '1', '', 'Adult', '', 'Walking', 'ind-1', '', 'anita', '', '0.95', '[OTHER:keep]'],
     ]);
     const out = parseObservations(mergeObservations(canonical, [{
       mediaId: k('IMG001.JPG'), deploymentId: DEP, timestamp: '2024-01-10T08:00:00',
       observations: [{ scientificName: 'Canis latrans', count: 2, commonName: 'Coyote', classifiedBy: 'anita' }],
     }]));
     expect(out[0].classifiedBy).toBe('anita');
+    const row = parseCsvRows(mergeObservations(canonical, [{
+      mediaId: k('IMG001.JPG'), deploymentId: DEP, timestamp: '2024-01-10T08:00:00',
+      observations: [{ scientificName: 'Canis latrans', count: 2, commonName: 'Coyote', classifiedBy: 'anita' }],
+    }]))[0];
+    expect(row[OBS_COL.lifeStage]).toBe('Adult');
+    expect(row[OBS_COL.behaviour]).toBe('Walking');
+    expect(row[OBS_COL.individualId]).toBe('ind-1');
+    expect(row[OBS_COL.classificationConfidence]).toBe('0.95');
+    expect(row[OBS_COL.comments]).toContain('[OTHER:keep]');
+  });
+
+  it('carries the old row onto its replacement when the producer left observation_type empty', () => {
+    const canonical = serializeCsvRows([
+      ['obs-1', DEP, '', k('IMG001.JPG'), '2024-01-10T08:00:00', '', '', '', 'Canis latrans', '1', '', 'Adult', '', 'Walking', 'ind-1', '', 'anita', '', '0.95', '[OTHER:keep]'],
+    ]);
+    const row = parseCsvRows(mergeObservations(canonical, [{
+      mediaId: k('IMG001.JPG'), deploymentId: DEP, timestamp: '2024-01-10T08:00:00',
+      observations: [{ scientificName: 'Canis latrans', count: 2, commonName: 'Coyote', classifiedBy: 'anita' }],
+    }]))[0];
+    expect(row[OBS_COL.lifeStage]).toBe('Adult');
+    expect(row[OBS_COL.behaviour]).toBe('Walking');
+    expect(row[OBS_COL.individualId]).toBe('ind-1');
+    expect(row[OBS_COL.comments]).toContain('[OTHER:keep]');
   });
 
   // #368: a review (confirm or correction) records who and when — col 17
