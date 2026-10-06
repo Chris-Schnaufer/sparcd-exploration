@@ -25,6 +25,12 @@ Feature: Upload and publish a batch
     Then the complete status explains itself on hover and keyboard focus
 
   @unmapped
+  Scenario: The Upload step names where the batch is going
+    Given the upload has not been started
+    Then it names the collection, the location with its id, and the chosen folder
+    And no storage path is shown
+
+  @unmapped
   Scenario: A real upload is offered by default; a dry run is opt-in
     Given the upload has not been started
     Then dry run is switched off by default
@@ -162,6 +168,17 @@ Feature: Upload and publish a batch
     Then it is retried up to five attempts with an increasing, randomized delay
     And the retry is recorded in the run log
 
+  @F1 @F1-4
+  Scenario: Upload availability is visible as the browser goes offline and online
+    Given the upload has not been started
+    When the browser reports offline before upload
+    Then the upload status says it is offline and real upload is disabled
+    And dry run remains available while offline
+    When the operator allows a real upload while offline
+    Then the real upload action is available despite the offline signal
+    When the browser reports online again
+    Then the upload status says it is online and real upload is enabled
+
   @unmapped
   Scenario: A transient error during the resume verify pass is retried rather than counted as a file failure
     Given a resumed run is verifying files already stored in a previous session
@@ -181,6 +198,43 @@ Feature: Upload and publish a batch
     And no further offline entries appear for that outage
     # Before this fix, ensureOnline logged inside the poll loop — a 5-minute
     # outage with 10 lanes produced 100 warning lines in the run monitor.
+
+  @AL1 @AL1-1
+  Scenario: An upload cut off by a dropped connection carries on by itself when the connection returns
+    Given a real upload of many images is under way
+    And the connection drops while the upload is in progress
+    When the connection returns
+    Then the upload continues and is published with every image
+    And nothing had to be clicked to restart it
+
+  @AL1 @AL1-1
+  Scenario: An upload whose connection dies while the browser still reports online finishes by itself
+    Given a real upload of many images is under way
+    When storage stops answering while the browser still reports being online
+    Then the run stops as partial and says it picks up again on its own
+    When storage answers again
+    Then the upload continues and is published with every image
+    And nothing had to be clicked to restart it
+    # No `online` event comes in this case, so the retry is on a backoff timer
+    # that starts at 15 seconds.
+
+  @AL1 @AL1-1
+  Scenario: An upload whose connection drops while it is being published finishes by itself
+    Given a real upload of many images is under way
+    When storage stops answering just as the upload is being published
+    Then the run stops as partial and says it picks up again on its own
+    When storage answers again
+    Then the upload continues and is published with every image
+    And nothing had to be clicked to restart it
+
+  @AL1 @AL1-5
+  Scenario: Repeated connection drops still end in one finished upload
+    Given a real upload of many images is under way
+    When the connection drops and returns three times during the upload
+    And the upload finally completes
+    Then the collection holds the batch in exactly one upload folder
+    And History lists that upload once, as complete
+    And every image appears exactly once in the stored media.csv
 
   @unmapped
   Scenario: A run paused because the browser reports offline still completes if packets actually flow
@@ -236,12 +290,14 @@ Feature: Upload and publish a batch
     Given a run is in progress
     Then the Back button is disabled
 
-  @unmapped
-  Scenario: The next batch from the same site keeps the previous choices
+  @US-007
+  Scenario: The next batch starts with assignment details cleared
     Given a real upload has completed
     When "Next batch" is chosen
     Then the wizard returns to the Files step with an empty batch
-    And the collection, deployment, uploader identity, description and timezone of the previous batch are kept
+    And the next batch has no collection, deployment, description or timezone selected
+    And the uploader identity is still filled in
+    And continuing without a timezone is disabled
 
   @unmapped
   Scenario: The screen wake lock is held while a dry run is in progress
