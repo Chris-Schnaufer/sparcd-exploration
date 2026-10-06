@@ -25,6 +25,7 @@ import { sha256Hex } from '../src/lib/hash';
 import type { TagImage } from '../src/lib/workspace';
 import type { DraftRecord, DraftObservation } from '../src/lib/db';
 import { blankDraft, addObservation } from '../src/lib/drafts';
+import { buildTagImages } from '../src/lib/workspace';
 
 const obs = (
   scientificName: string,
@@ -468,9 +469,31 @@ describe('buildSyncPlan', () => {
   });
 
   it('classifies a detag as a removal with empty observations', () => {
-    const plan = buildSyncPlan(IMAGES, { [K1]: draft({ mediaPath: K1, observations: [] }) }, null);
+    const plan = buildSyncPlan(IMAGES, {
+      [K1]: draft({ mediaPath: K1, observations: [], removedSpecies: ['Puma concolor'] }),
+    }, null);
     expect(plan.summary.removals).toBe(1);
     expect(plan.tagEdits[0].observations).toEqual([]);
+    expect(plan.tagEdits[0].removedSpecies).toEqual(['Puma concolor']);
+  });
+
+  it('records a partial removal without inferring removals from a changed legacy draft', () => {
+    const seeded = blankDraft({ bucket: 'sparcd-x', uploadPrefix: PREFIX }, K1, DEP, {
+      observations: [obs('Puma concolor', 1), obs('Canis latrans', 1, 'Coyote')],
+    });
+    const plan = buildSyncPlan(
+      [{ ...IMAGES[0], baseObservations: seeded.observations }],
+      { [K1]: { ...seeded, observations: [obs('Canis latrans', 1, 'Coyote')], removedSpecies: ['Puma concolor'], dirty: true } },
+      null,
+    );
+    expect(plan.tagEdits[0].removedSpecies).toEqual(['Puma concolor']);
+    expect(plan.tagEdits[0].observations[0].removedSpecies).toEqual(['Puma concolor']);
+    const legacy = buildSyncPlan(
+      [{ ...IMAGES[0], baseObservations: seeded.observations }],
+      { [K1]: { ...seeded, observations: [obs('Canis latrans', 1, 'Coyote')], dirty: true } },
+      null,
+    );
+    expect(legacy.tagEdits[0].removedSpecies).toEqual([]);
   });
 
   it('ignores a questionable-only toggle (no canonical change)', () => {
@@ -964,3 +987,26 @@ function emptyPlan(): SyncPlan {
     summary: { additions: 0, modifications: 0, removals: 0, timeCorrections: 0 },
   };
 }
+
+describe('removal provenance survives later edits', () => {
+  const rowWith = (sci: string, comments: string, type = 'animal') => {
+    const r = new Array<string>(OBS_COLUMN_COUNT).fill('');
+    r[OBS_COL.observationId] = `${K1}:0`; r[OBS_COL.deploymentId] = DEP; r[OBS_COL.mediaId] = K1;
+    r[OBS_COL.timestamp] = '2024-01-10T08:00:00'; r[OBS_COL.observationType] = type;
+    r[OBS_COL.scientificName] = sci; r[OBS_COL.count] = sci ? '1' : ''; r[OBS_COL.comments] = comments;
+    return r;
+  };
+  const images = (rows: string[][]) => buildTagImages({ mediaCsv: MEDIA_CSV, observationsCsv: serializeCsvRows(rows) });
+
+  it('re-emits a stored [REMOVED:…] marker when the image is edited again', () => {
+    const imgs = images([rowWith('Canis latrans', '[COMMONNAME:Coyote][REMOVED:Puma concolor]')]);
+    const plan = buildSyncPlan(imgs, { [K1]: draft({ mediaPath: K1, observations: [obs('Canis latrans', 3, 'Coyote')] }) }, null);
+    expect(plan.tagEdits[0].observations[0].removedSpecies).toEqual(['Puma concolor']);
+  });
+
+  it('drops the stored marker once the removed species is back on the image', () => {
+    const imgs = images([rowWith('', '[REMOVED:Puma concolor]', 'blank')]);
+    const plan = buildSyncPlan(imgs, { [K1]: draft({ mediaPath: K1, observations: [obs('Puma concolor', 1)] }) }, null);
+    expect(plan.tagEdits[0].removedSpecies).toEqual([]);
+  });
+});

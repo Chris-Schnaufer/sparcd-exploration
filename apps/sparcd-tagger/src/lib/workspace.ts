@@ -9,6 +9,7 @@ import {
   parseObservations,
   commonNameFromComments,
   requestedSpeciesFromComments,
+  removedSpeciesFromComments,
   timestampSourceFromComments,
   type Observation,
   type TimestampSource,
@@ -31,6 +32,8 @@ export type TagImage = {
    *  `[TIMESTAMP:…]` marker in media col 10. Absent for a camera-written time. */
   timestampSource?: TimestampSource;
   baseObservations: DraftObservation[]; // ALL canonical observation rows, in CSV order
+  /** Species already recorded as removed on this image's rows ([REMOVED:…]). */
+  baseRemovedSpecies?: string[];
   /** Known for a local batch, where the uploader's worker sniffed the bytes.
    *  Absent for a canonical record, whose `media.csv` gives us only the key. */
   mediaKind?: 'image' | 'video';
@@ -72,6 +75,7 @@ export function buildTagImages(bundle: CanonicalBundle): TagImage[] {
       deploymentId: m.deploymentId,
       baseTimestamp: m.timestamp,
       timestampSource: timestampSourceFromComments(m.comments ?? '') ?? undefined,
+      baseRemovedSpecies: [...new Set((obsByMedia.get(m.mediaId) ?? []).flatMap((o) => removedSpeciesFromComments(o.tags)))],
       baseObservations: (obsByMedia.get(m.mediaId) ?? []).filter((o) => o.observationType === 'animal').map((o) => ({
         scientificName: o.scientificName,
         commonName: commonNameFromComments(o.tags) ?? '',

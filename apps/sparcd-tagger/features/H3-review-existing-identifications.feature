@@ -47,6 +47,13 @@ Feature: Review, correct and remove identifications that already exist
     Then only that species is dropped
     And the remaining species and their counts are preserved
 
+  @H3 @H3-4
+  Scenario: Removing an existing species records the removal
+    Given the focused image carries several species
+    When one of them is removed
+    And a live sync is run
+    Then the removed species is absent from the stored image and marked as removed
+
   @H3
   Scenario: Every identification on an image can be cleared at once
     Given the focused image carries at least one species
