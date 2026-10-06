@@ -35,6 +35,7 @@ import {
   type MediaEdit,
   type TimeOffset,
   type Deployment,
+  type ReviewEvent,
 } from '@sparcd/camtrap';
 import type { TagImage } from './workspace';
 import type { DraftRecord, DraftObservation } from './db';
@@ -109,6 +110,16 @@ function observationsEqual(a: DraftObservation[], b: DraftObservation[]): boolea
   return true;
 }
 
+/** Canonical review events plus any new ones from the draft. A draft left clean
+ *  by an earlier sync carries none, so the stored history must not depend on it. */
+function mergeReviewEvents(base: ReviewEvent[] = [], draft: ReviewEvent[] = []): ReviewEvent[] | undefined {
+  const out = [...base];
+  for (const e of draft) {
+    if (!out.some((b) => b.reviewedBy === e.reviewedBy && b.reviewedAt === e.reviewedAt)) out.push(e);
+  }
+  return out.length ? out : undefined;
+}
+
 /**
  * Diff the loaded drafts against the canonical base into the edits the merge
  * helpers consume. A draft whose observation multiset equals its base produces
@@ -155,6 +166,8 @@ export function buildSyncPlan(
     const baseForObservation = (o: (typeof obs)[number]) => img.baseObservations.find(
       (candidate) => candidate.scientificName === o.scientificName,
     );
+    const baseByName = (o: (typeof obs)[number]) =>
+      img.baseObservations.find((candidate) => candidate.scientificName === o.scientificName);
     // Re-applying an existing species is an explicit confirmation action. The
     // draft records that action directly; comparing attribution fields would
     // mistake legacy drafts that lack those fields for confirmations.
@@ -197,7 +210,7 @@ export function buildSyncPlan(
             count: Math.max(1, o.count),
             commonName: o.commonName || undefined,
             requestedSpecies: o.requestedSpecies || undefined,
-            reviewEvents: o.reviewEvents ?? base?.reviewEvents,
+            reviewEvents: mergeReviewEvents(baseByName(o)?.reviewEvents, o.reviewEvents),
             classifiedBy,
             classificationTimestamp,
           };
@@ -216,20 +229,16 @@ export function buildSyncPlan(
         // `addObservation` already refreshed at apply time is written through.
         observations: obs.map((o) => {
           const base = baseForObservation(o);
-          const explicitlyConfirmed = confirmedSpecies.includes(o.scientificName);
           return {
             scientificName: o.scientificName,
             count: Math.max(1, o.count),
             commonName: o.commonName || undefined,
             requestedSpecies: o.requestedSpecies || undefined,
-            // Only the explicitly re-applied species receives the current
-            // reviewer identity. Other legacy rows keep their canonical
-            // attribution (or remain unattributed).
-            classifiedBy: base?.classifiedBy ?? o.classifiedBy ??
-              (explicitlyConfirmed ? user.trim() || undefined : undefined),
-            classificationTimestamp: base?.classificationTimestamp ?? o.classificationTimestamp ??
-              (explicitlyConfirmed ? new Date().toISOString() : undefined),
-            reviewEvents: o.reviewEvents ?? base?.reviewEvents,
+            // A confirmation adds a review event only. An unattributed row
+            // stays unattributed: the reviewer did not make the original call.
+            classifiedBy: base?.classifiedBy ?? o.classifiedBy,
+            classificationTimestamp: base?.classificationTimestamp ?? o.classificationTimestamp,
+            reviewEvents: mergeReviewEvents(base?.reviewEvents, o.reviewEvents),
           };
         }),
       });
