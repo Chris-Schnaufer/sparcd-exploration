@@ -356,31 +356,27 @@ export function isNotFound(err: unknown): boolean {
  * before this version first created its immutable baseline. There is no way to
  * recover an older byte state from the live canonical files alone; an existing
  * snapshot is the earliest durable evidence available. Missing snapshot roles
- * fall back to the current canonical role. */
+ * fall back to the current canonical role. A listing or read failure throws
+ * rather than falling back: the baseline is written once, so a fallback would
+ * record already-edited files as the original for good. */
 async function originalBaselineSource(
   cfg: S3Config,
   bucket: string,
   uploadPrefix: string,
   current: CanonicalState,
 ): Promise<CanonicalState> {
-  try {
-    const snapshots = await listSnapshots(cfg, bucket, uploadPrefix);
-    const oldest = snapshots.at(-1);
-    if (!oldest) return current;
-    const bodies = await loadSnapshotBodies(cfg, bucket, oldest.prefix);
-    const source = { ...current };
-    for (const role of ORIGINAL_BASELINE_ROLES) {
-      const text = bodies[role];
-      if (text !== undefined) {
-        source[role] = { text, etag: '', hash: await sha256Hex(text) };
-      }
+  const snapshots = await listSnapshots(cfg, bucket, uploadPrefix);
+  const oldest = snapshots.at(-1);
+  if (!oldest) return current;
+  const bodies = await loadSnapshotBodies(cfg, bucket, oldest.prefix);
+  const source = { ...current };
+  for (const role of ORIGINAL_BASELINE_ROLES) {
+    const text = bodies[role];
+    if (text !== undefined) {
+      source[role] = { text, etag: '', hash: await sha256Hex(text) };
     }
-    return source;
-  } catch {
-    // Snapshot discovery is best-effort. The first live state remains the
-    // only available source when an older snapshot cannot be read.
-    return current;
   }
+  return source;
 }
 
 /**
