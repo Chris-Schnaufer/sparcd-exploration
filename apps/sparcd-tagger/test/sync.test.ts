@@ -227,7 +227,22 @@ describe('buildSyncPlan', () => {
       'harold',
     );
     expect(plan.tagEdits[0].observations.find((o) => o.scientificName === 'Puma concolor')?.classifiedBy).toBe('fielduser');
-    expect(plan.tagEdits[0].observations.find((o) => o.scientificName === 'Canis latrans')?.classifiedBy).toBe('harold');
+    expect(plan.tagEdits[0].observations.find((o) => o.scientificName === 'Canis latrans')?.classifiedBy).toBeUndefined();
+  });
+
+  it("does not credit the editor for an old image's species they didn't touch", () => {
+    const images: TagImage[] = [{
+      ...IMAGES[0],
+      baseObservations: [obs('Puma concolor', 1), obs('Canis latrans', 1, 'Coyote')],
+    }];
+    const plan = buildSyncPlan(
+      images,
+      { [K1]: draft({ mediaPath: K1, observations: [obs('Puma concolor', 2), obs('Canis latrans', 1, 'Coyote')] }) },
+      null,
+      null,
+      'harold',
+    );
+    expect(plan.tagEdits[0].observations.find((o) => o.scientificName === 'Canis latrans')?.classifiedBy).toBeUndefined();
   });
 
   // #368 (Q12): a review of an existing identification must record the

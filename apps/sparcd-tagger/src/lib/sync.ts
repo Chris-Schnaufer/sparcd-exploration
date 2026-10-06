@@ -198,7 +198,7 @@ export function buildSyncPlan(
           // modeled can omit them. Preserve the canonical values rather than
           // blanking them when another observation on the image is edited.
           const classifiedBy = base
-            ? base.classifiedBy ?? o.classifiedBy ?? (user.trim() || undefined)
+            ? base.classifiedBy ?? o.classifiedBy
             : o.classifiedBy ?? (user.trim() || undefined);
           const classificationTimestamp = base
             ? base.classificationTimestamp ?? o.classificationTimestamp
