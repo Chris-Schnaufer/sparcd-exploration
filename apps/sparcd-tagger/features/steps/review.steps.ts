@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { parseObservations } from '@sparcd/camtrap';
+import { parseObservations, parseCsvRows, serializeCsvRows, OBS_COL } from '@sparcd/camtrap';
 import {
   Given,
   When,
@@ -87,6 +87,29 @@ Then('an image with no species is labelled "untagged" in the list view', async (
 
 Given('an image with existing identifications is focused', async ({ page }) => {
   await focusFrame(page, 'IMG004.JPG');
+});
+
+Given('an image with mixed reviewed and unreviewed identifications is focused', async ({ page }) => {
+  await focusFrame(page, 'IMG004.JPG');
+  await expandApplied(page);
+});
+
+Then('each identification shows whether it is reviewed', async ({ page }) => {
+  await expect(appliedChip(page, 'Coyote').getByText(/Reviewed by fielduser/)).toBeVisible();
+  await expect(appliedChip(page, 'Mountain Lion').getByText('Not reviewed', { exact: true })).toBeVisible();
+});
+
+Then('the image tile reports a mixed review status', async ({ page }) => {
+  await expect(gridCell(page, 'IMG004.JPG').locator('[data-column="review-status"]')).toHaveText('Mixed review');
+});
+
+Then('the list row reports a mixed review status', async ({ page }) => {
+  await showList(page);
+  await expect(listRow(page, 'IMG004.JPG').locator('[data-column="review-status"]')).toHaveText('Mixed review');
+});
+
+Then('an identification without a review event is labelled not reviewed', async ({ page }) => {
+  await expect(listRow(page, 'IMG003.JPG').locator('[data-column="review-status"]')).toHaveText('Not reviewed');
 });
 
 Then('each recorded species is shown with its count', async ({ page }) => {
@@ -248,6 +271,19 @@ Given('an existing identification is re-applied unchanged', async ({ page }) => 
   await speciesApply(page, 'Odocoileus hemionus').click();
 });
 
+Given('an existing identification has original attribution', async ({ page, s3 }) => {
+  const key = `${PREFIX_A}observations.csv`;
+  const rows = parseCsvRows(s3.text(BUCKET, key));
+  const row = rows.find((cells) => cells[OBS_COL.mediaId]?.endsWith('IMG001.JPG'))!;
+  row[OBS_COL.classifiedBy] = 'fielduser';
+  row[OBS_COL.classificationTimestamp] = '2024-01-11T00:00:00.000Z';
+  s3.put(BUCKET, key, serializeCsvRows(rows), 'text/csv');
+  await page.reload();
+  await openWorkspace(page);
+  await expect(gridCell(page, 'IMG001.JPG')).toContainText('Mule Deer');
+  await expect(page.locator('[aria-label="Originally identified by fielduser"]')).toBeVisible();
+});
+
 When('a sync is previewed', async ({ page }) => {
   await openSyncDialog(page);
 });
@@ -275,8 +311,19 @@ Then(
     expect(row).toBeTruthy();
     expect(row!.classifiedBy).toBe('testkey');
     expect(row!.classificationTimestamp).toMatch(ISO_TIMESTAMP);
+    expect(row!.reviewEvents).toEqual([{ reviewedBy: 'testkey', reviewedAt: expect.stringMatching(ISO_TIMESTAMP) }]);
   },
 );
+
+Then('the original identifier and separate review remain visible in the stored image', async ({ s3 }) => {
+  const obs = parseObservations(s3.text(BUCKET, `${PREFIX_A}observations.csv`));
+  const row = obs.find((o) => o.mediaId.endsWith('IMG001.JPG') && o.scientificName === 'Odocoileus hemionus');
+  expect(row).toMatchObject({
+    classifiedBy: 'fielduser',
+    classificationTimestamp: '2024-01-11T00:00:00.000Z',
+  });
+  expect(row?.reviewEvents).toEqual([{ reviewedBy: 'testkey', reviewedAt: expect.stringMatching(ISO_TIMESTAMP) }]);
+});
 
 Then(
   "the corrected image's stored identification is stamped with the reviewer and the time of the review",
@@ -295,7 +342,7 @@ Then(
 
 Given('identifications were corrected locally', async ({ page }) => {
   await sectionTab(page, 'Settings').click();
-  await expect(page.locator('#user')).toHaveValue('testkey');
+  await expect(page.locator('#user')).toHaveValue('tes…key');
   await sectionTab(page, 'Tag').click();
   await focusFrame(page, 'IMG002.JPG');
   await speciesApply(page, 'Canis latrans').click();
@@ -343,7 +390,7 @@ Then('its tile carries an unsaved-edit marker', async ({ page }) => {
 
 Then('the marker is cleared for that image once its change has been synced', async ({ page }) => {
   await sectionTab(page, 'Settings').click();
-  await expect(page.locator('#user')).toHaveValue('testkey');
+  await expect(page.locator('#user')).toHaveValue('tes…key');
   await sectionTab(page, 'Tag').click();
   await openSyncDialog(page);
   await setSyncDryRun(page, false);

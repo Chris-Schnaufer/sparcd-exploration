@@ -83,6 +83,7 @@ export function buildTagImages(bundle: CanonicalBundle): TagImage[] {
         requestedSpecies: requestedSpeciesFromComments(o.tags) ?? '',
         classifiedBy: o.classifiedBy,
         classificationTimestamp: o.classificationTimestamp,
+        ...(o.reviewEvents?.length ? { reviewEvents: o.reviewEvents } : {}),
         // Base free-tags aren't surfaced today; keep '' to match prior behaviour.
         freeTags: '',
       })),

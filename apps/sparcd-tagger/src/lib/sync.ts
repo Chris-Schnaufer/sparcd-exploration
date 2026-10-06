@@ -35,6 +35,7 @@ import {
   type MediaEdit,
   type TimeOffset,
   type Deployment,
+  type ReviewEvent,
 } from '@sparcd/camtrap';
 import type { TagImage } from './workspace';
 import type { DraftRecord, DraftObservation } from './db';
@@ -109,6 +110,16 @@ function observationsEqual(a: DraftObservation[], b: DraftObservation[]): boolea
   return true;
 }
 
+/** Canonical review events plus any new ones from the draft. A draft left clean
+ *  by an earlier sync carries none, so the stored history must not depend on it. */
+function mergeReviewEvents(base: ReviewEvent[] = [], draft: ReviewEvent[] = []): ReviewEvent[] | undefined {
+  const out = [...base];
+  for (const e of draft) {
+    if (!out.some((b) => b.reviewedBy === e.reviewedBy && b.reviewedAt === e.reviewedAt)) out.push(e);
+  }
+  return out.length ? out : undefined;
+}
+
 /**
  * Diff the loaded drafts against the canonical base into the edits the merge
  * helpers consume. A draft whose observation multiset equals its base produces
@@ -153,11 +164,7 @@ export function buildSyncPlan(
     const tagChanged = !observationsEqual(obs, img.baseObservations);
     const confirmedSpecies = d?.confirmedSpecies ?? [];
     const baseForObservation = (o: (typeof obs)[number]) => img.baseObservations.find(
-      (candidate) =>
-        candidate.scientificName === o.scientificName &&
-        Math.max(1, candidate.count) === Math.max(1, o.count) &&
-        (candidate.commonName ?? '') === (o.commonName ?? '') &&
-        (candidate.requestedSpecies ?? '') === (o.requestedSpecies ?? ''),
+      (candidate) => candidate.scientificName === o.scientificName,
     );
     // Re-applying an existing species is an explicit confirmation action. The
     // draft records that action directly; comparing attribution fields would
@@ -195,14 +202,18 @@ export function buildSyncPlan(
         removedSpecies,
         observations: obs.map((o) => {
           const base = baseForObservation(o);
+          // The editor is credited only for a species changed or re-applied
+          // here, never for one that rides along with another species' edit.
+          const touched = !base || Math.max(1, base.count) !== Math.max(1, o.count) ||
+            confirmedSpecies.includes(o.scientificName);
           // Drafts written before classifiedBy/classificationTimestamp were
           // modeled can omit them. Preserve the canonical values rather than
           // blanking them when another observation on the image is edited.
           const classifiedBy = base
-            ? o.classifiedBy ?? base.classifiedBy
+            ? base.classifiedBy ?? o.classifiedBy ?? (touched ? user.trim() || undefined : undefined)
             : o.classifiedBy ?? (user.trim() || undefined);
           const classificationTimestamp = base
-            ? o.classificationTimestamp ?? base.classificationTimestamp
+            ? base.classificationTimestamp ?? o.classificationTimestamp
             : o.classificationTimestamp;
           return {
             scientificName: o.scientificName,
@@ -210,6 +221,7 @@ export function buildSyncPlan(
             commonName: o.commonName || undefined,
             requestedSpecies: o.requestedSpecies || undefined,
             removedSpecies: obs[0] === o ? removedSpecies : undefined,
+            reviewEvents: mergeReviewEvents(base?.reviewEvents, o.reviewEvents),
             classifiedBy,
             classificationTimestamp,
           };
@@ -239,10 +251,11 @@ export function buildSyncPlan(
             // Only the explicitly re-applied species receives the current
             // reviewer identity. Other legacy rows keep their canonical
             // attribution (or remain unattributed).
-            classifiedBy: o.classifiedBy ?? base?.classifiedBy ??
+            classifiedBy: base?.classifiedBy ?? o.classifiedBy ??
               (explicitlyConfirmed ? user.trim() || undefined : undefined),
-            classificationTimestamp: o.classificationTimestamp ??
-              (explicitlyConfirmed ? new Date().toISOString() : base?.classificationTimestamp),
+            classificationTimestamp: base?.classificationTimestamp ?? o.classificationTimestamp ??
+              (explicitlyConfirmed ? new Date().toISOString() : undefined),
+            reviewEvents: mergeReviewEvents(base?.reviewEvents, o.reviewEvents),
           };
         }),
       });

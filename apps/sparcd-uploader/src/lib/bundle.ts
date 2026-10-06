@@ -109,6 +109,7 @@ function observationRowsFor(
     tags: buildObservationComments({
       commonName: o.commonName || undefined,
       requestedSpecies: o.requestedSpecies || undefined,
+      reviewEvents: o.reviewEvents,
       extra: parseTagMarkers(o.freeTags),
     }),
     classifiedBy: (o.classifiedBy ?? file.preTaggerUser) || undefined,

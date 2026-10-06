@@ -90,6 +90,14 @@ Feature: Assign species to images in an upload
     And the assigned key is shown on the species row
 
   @H2
+  Scenario: A key assignment the browser cannot save says so
+    Given a species row is shown
+    And the browser has no room left to save key settings
+    When a key is assigned to it and that key is pressed with an image focused
+    Then the assigned key is shown on the species row
+    And a notice says the key settings will reset on reload
+
+  @H2
   Scenario Outline: Printable bindings, including former shortcuts, take precedence
     Given an image is focused
     When "<key>" is assigned to a species and pressed
@@ -272,6 +280,29 @@ Feature: Assign species to images in an upload
     Then the binding the user set for the removed species is kept and the message stays acknowledged
 
   @H2
+  Scenario: A collection's own species list is accepted quietly the first time it is opened
+    Given Backcountry Survey has its own species list
+    When Backcountry Survey is opened from Browse
+    Then no vocabulary-change message is shown
+
+  @H2
+  Scenario: Switching between collections with different species lists shows no message
+    Given Backcountry Survey has its own species list
+    When Backcountry Survey is opened from Browse
+    And Educational Test is opened from Browse
+    And Backcountry Survey is opened from Browse
+    Then no vocabulary-change message is shown
+
+  @H2
+  Scenario: A collection's species list that changes on the server is still reported
+    Given Backcountry Survey has its own species list
+    And Backcountry Survey is opened from Browse
+    When Backcountry Survey's species list gains Ringtail on the server
+    And the tagger is refreshed with its restored session
+    And Backcountry Survey is opened from Browse
+    Then a blocking message lists Ringtail as added
+
+  @H2
   Scenario: A stale vocabulary refresh reports a server change when the tab regains focus
     Given the server vocabulary gains Ringtail
     When the stale tagger tab regains focus
@@ -349,3 +380,14 @@ Feature: Assign species to images in an upload
     Then the identifications are kept in this browser
     And the workspace reports how many local edits are unsaved
     And the collection's stored files are unchanged until a sync is run
+
+  @H2 @H2-6
+  Scenario: An image left without a species stays untagged after moving on and syncing
+    Given an upload with only uploader-written blank rows is open in the tagging workspace
+    And the connected account is ready for attribution
+    And its first image is focused
+    When focus moves on to the next image without a species being applied
+    And a species is applied to that next image
+    And the sync is run
+    Then the image left behind still reads as untagged
+    And the stored observations record no species for the image left behind

@@ -48,7 +48,8 @@ export type Observation = {
   count?: number; // undefined → column written blank (no species identified)
   tags: string; // concatenated [PREFIX:value] markers
   classifiedBy?: string;
-  classificationTimestamp?: string; // ISO; when classifiedBy last reviewed this row
+  classificationTimestamp?: string; // ISO; when the original identification was made
+  reviewEvents?: ReviewEvent[];
 };
 
 /** All three collections for one upload bundle. */
@@ -449,6 +450,8 @@ export function parseObservations(csv: string): Observation[] {
     const observationType = rawType === 'animal' || (rawType === '' && scientificName !== '' && count > 0)
       ? 'animal'
       : 'blank';
+    const tags = r[OBS_COL.comments] ?? '';
+    const reviewEvents = reviewEventsFromComments(tags);
     return {
       observationId: r[OBS_COL.observationId] ?? '',
       mediaId: r[OBS_COL.mediaId] ?? '',
@@ -457,9 +460,10 @@ export function parseObservations(csv: string): Observation[] {
       observationType,
       scientificName,
       count,
-      tags: r[OBS_COL.comments] ?? '',
+      tags,
       classifiedBy: r[OBS_COL.classifiedBy] || undefined,
       classificationTimestamp: r[OBS_COL.classificationTimestamp] || undefined,
+      ...(reviewEvents.length ? { reviewEvents } : {}),
     };
   });
 }
@@ -467,6 +471,7 @@ export function parseObservations(csv: string): Observation[] {
 // --- Tag marker grammar ----------------------------------------------------
 
 export type TagMarker = { prefix: string; value: string };
+export type ReviewEvent = { reviewedBy: string; reviewedAt: string };
 
 /** Reserved prefixes for v0. Unknown prefixes are tolerated and preserved. */
 export const TIMESTAMP_PREFIX = 'TIMESTAMP';
@@ -482,6 +487,8 @@ export function timestampSourceFromComments(comments: string): TimestampSource |
 export const COMMONNAME_PREFIX = 'COMMONNAME';
 export const REQUESTED_SPECIES_PREFIX = 'REQUESTED_SPECIES';
 export const REMOVED_PREFIX = 'REMOVED';
+export const REVIEWED_BY_PREFIX = 'REVIEWED_BY';
+export const REVIEWED_AT_PREFIX = 'REVIEWED_AT';
 
 // `[PREFIX:value]` markers concatenated in the col-19 comments field. Prefixes
 // are upper snake; values run to the next `]`.
@@ -517,6 +524,21 @@ export function removedSpeciesFromComments(comments: string): string[] {
     .filter(Boolean);
 }
 
+/** Read repeatable reviewer events from an observation's comments markers. */
+export function reviewEventsFromComments(comments: string): ReviewEvent[] {
+  const markers = parseTagMarkers(comments);
+  const events: ReviewEvent[] = [];
+  for (let i = 0; i < markers.length - 1; i++) {
+    const reviewer = markers[i];
+    const timestamp = markers[i + 1];
+    if (reviewer.prefix === REVIEWED_BY_PREFIX && timestamp.prefix === REVIEWED_AT_PREFIX && reviewer.value && timestamp.value) {
+      events.push({ reviewedBy: reviewer.value, reviewedAt: timestamp.value });
+      i++;
+    }
+  }
+  return events;
+}
+
 /**
  * Build the col-19 comments string for one observation. `commonName` and
  * `requestedSpecies` land as reserved markers; `extra` carries through any
@@ -526,6 +548,7 @@ export function buildObservationComments(input: {
   commonName?: string;
   requestedSpecies?: string;
   removedSpecies?: string[];
+  reviewEvents?: ReviewEvent[];
   extra?: TagMarker[];
 }): string {
   const markers: TagMarker[] = [];
@@ -534,6 +557,12 @@ export function buildObservationComments(input: {
     markers.push({ prefix: REQUESTED_SPECIES_PREFIX, value: input.requestedSpecies });
   for (const species of input.removedSpecies ?? [])
     if (species) markers.push({ prefix: REMOVED_PREFIX, value: species });
+  for (const event of input.reviewEvents ?? []) {
+    if (event.reviewedBy && event.reviewedAt) {
+      markers.push({ prefix: REVIEWED_BY_PREFIX, value: event.reviewedBy });
+      markers.push({ prefix: REVIEWED_AT_PREFIX, value: event.reviewedAt });
+    }
+  }
   if (input.extra) markers.push(...input.extra);
   return serializeTagMarkers(markers);
 }
@@ -547,10 +576,11 @@ export type ObservationInput = {
   commonName?: string; // → [COMMONNAME:…] in col 19
   requestedSpecies?: string; // → [REQUESTED_SPECIES:…] in col 19
   removedSpecies?: string[]; // → [REMOVED:…] in col 19
+  reviewEvents?: ReviewEvent[]; // → [REVIEWED_BY/REVIEWED_AT:…] in col 19
   extraMarkers?: TagMarker[]; // preserved through-markers
   /** Existing attribution is retained when Tagger replaces an observation row. */
   classifiedBy?: string;
-  /** ISO timestamp paired with classifiedBy — when that attribution was made. */
+  /** ISO timestamp paired with classifiedBy — when the original attribution was made. */
   classificationTimestamp?: string;
 };
 
@@ -599,6 +629,7 @@ function buildObservationRow(
     commonName: o.commonName,
     requestedSpecies: o.requestedSpecies,
     removedSpecies: o.removedSpecies,
+    reviewEvents: o.reviewEvents,
     extra: o.extraMarkers,
   });
   row[OBS_COL.classifiedBy] = o.classifiedBy ?? '';
@@ -879,6 +910,24 @@ export function correctedTimestamp(
   if (override) return override;
   if (offset) return shiftTimestamp(original, offset);
   return original;
+}
+
+/** Format an instant as a local `YYYY-MM-DD HH:mm:ss` string with a 24-hour clock. */
+export function formatDateTime24(value: Date | string, timeZone?: string): string {
+  const date = typeof value === 'string' ? new Date(value) : value;
+  if (Number.isNaN(date.getTime())) return 'unknown date';
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(date);
+  const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${byType.year}-${byType.month}-${byType.day} ${byType.hour}:${byType.minute}:${byType.second}`;
 }
 
 // --- Validators ------------------------------------------------------------

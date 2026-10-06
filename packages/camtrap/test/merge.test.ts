@@ -11,6 +11,7 @@ import {
   serializeCsvRows,
   buildObservationComments,
   removedSpeciesFromComments,
+  reviewEventsFromComments,
 } from '../src/index';
 import { fixture } from './fixtures';
 
@@ -145,6 +146,36 @@ describe('zero-count filtering (sparcd-web parity)', () => {
 });
 
 describe('classified_by provenance', () => {
+  it('serializes repeatable review events as paired markers and parses them back', () => {
+    const events = [
+      { reviewedBy: 'harold', reviewedAt: '2024-01-20T14:30:00.000Z' },
+      { reviewedBy: 'anita', reviewedAt: '2024-01-21T09:00:00.000Z' },
+    ];
+    const comments = buildObservationComments({ commonName: 'Coyote', reviewEvents: events });
+    expect(comments).toBe(
+      '[COMMONNAME:Coyote][REVIEWED_BY:harold][REVIEWED_AT:2024-01-20T14:30:00.000Z]' +
+      '[REVIEWED_BY:anita][REVIEWED_AT:2024-01-21T09:00:00.000Z]',
+    );
+    expect(reviewEventsFromComments(comments)).toEqual(events);
+  });
+
+  it('ignores unmatched markers without shifting later reviewer timestamps', () => {
+    expect(reviewEventsFromComments(
+      '[REVIEWED_AT:orphan][REVIEWED_BY:harold][REVIEWED_AT:2024-01-20T14:30:00.000Z]',
+    )).toEqual([{ reviewedBy: 'harold', reviewedAt: '2024-01-20T14:30:00.000Z' }]);
+  });
+
+  it('preserves review markers when replacing an observation row', () => {
+    const canonical = serializeCsvRows([
+      ['obs-1', DEP, '', k('IMG001.JPG'), '2024-01-10T08:00:00', 'animal', '', '', 'Canis latrans', '1', '', '', '', '', '', '', 'anita', '2024-01-10T09:00:00.000Z', '', '[REVIEWED_BY:harold][REVIEWED_AT:2024-01-20T14:30:00.000Z]'],
+    ]);
+    const out = parseObservations(mergeObservations(canonical, [{
+      mediaId: k('IMG001.JPG'), deploymentId: DEP, timestamp: '2024-01-10T08:00:00',
+      observations: [{ scientificName: 'Canis latrans', count: 2, classifiedBy: 'anita', reviewEvents: [{ reviewedBy: 'harold', reviewedAt: '2024-01-20T14:30:00.000Z' }] }],
+    }]));
+    expect(out[0].reviewEvents).toEqual([{ reviewedBy: 'harold', reviewedAt: '2024-01-20T14:30:00.000Z' }]);
+  });
+
   it('carries existing attribution onto replacement rows', () => {
     const canonical = serializeCsvRows([
       ['obs-1', DEP, k('IMG001.JPG'), '2024-01-10T08:00:00', '2024-01-10T08:00:00', 'animal', '', '', 'Canis latrans', '1', '', '', '', '', '', '', 'anita', '', '', ''],
