@@ -165,6 +165,7 @@ Then('the stored replacement records the previous species as corrected', async (
   );
   expect(replacement).toBeTruthy();
   expect(replacement!.tags).toContain('[CORRECTED_FROM:Puma concolor]');
+  expect(replacement!.tags).not.toContain('[REMOVED:Puma concolor]');
   expect(
     observations.some((o) => o.mediaId.endsWith('IMG004.JPG') && o.scientificName === 'Puma concolor'),
   ).toBe(false);

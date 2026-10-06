@@ -214,6 +214,9 @@ export function buildSyncPlan(
       const replacementFrom = removedNames.length === 1 && addedNames.length === 1
         ? removedNames[0]
         : undefined;
+      // The swapped-out species is recorded once, as the correction, not also
+      // as a removal.
+      const removed = removedSpecies.filter((name) => name !== replacementFrom);
 
       tagEdits.push({
         mediaId: img.key,
@@ -221,7 +224,7 @@ export function buildSyncPlan(
         timestamp: corrected,
         mediaTimestamp: timeChanged ? corrected : undefined,
         timestampSource,
-        removedSpecies,
+        removedSpecies: removed,
         observations: obs.map((o) => {
           const base = baseForObservation(o);
           // The editor is credited only for a species changed or re-applied
@@ -242,7 +245,7 @@ export function buildSyncPlan(
             count: Math.max(1, o.count),
             commonName: o.commonName || undefined,
             requestedSpecies: o.requestedSpecies || undefined,
-            removedSpecies: obs[0] === o ? removedSpecies : undefined,
+            removedSpecies: obs[0] === o ? removed : undefined,
             reviewEvents: mergeReviewEvents(base?.reviewEvents, o.reviewEvents),
             // A clean draft left by an earlier sync no longer holds the marker,
             // so the canonical row is the source, as for attribution.

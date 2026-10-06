@@ -1077,3 +1077,45 @@ describe('correction provenance survives later syncs', () => {
     ]);
   });
 });
+
+describe('a one-for-one swap is recorded as a correction, not also as a removal', () => {
+  const k1Tags = (plan: SyncPlan, csv: string) => parseObservations(mergeObservations(csv, plan.tagEdits))
+    .filter((o) => o.mediaId === K1)
+    .map((o) => `${o.scientificName} ${o.tags}`);
+  const twoSpecies = (a: string, b: string) => serializeCsvRows([
+    obsRow(K1, '2024-01-10T08:00:00', a),
+    obsRow(K1, '2024-01-10T08:00:00', b),
+  ]);
+  const imagesOf = (csv: string) => buildTagImages({ mediaCsv: MEDIA_CSV, observationsCsv: csv });
+
+  it('writes only [CORRECTED_FROM:…] for a swap made by removing one species and adding another', () => {
+    const plan = buildSyncPlan(imagesOf(OBS_CSV), {
+      [K1]: draft({ mediaPath: K1, observations: [obs('Canis latrans', 1, 'Coyote')], removedSpecies: ['Puma concolor'] }),
+    }, null);
+    expect(plan.tagEdits[0].removedSpecies).toEqual([]);
+    expect(k1Tags(plan, OBS_CSV)).toEqual(['Canis latrans [COMMONNAME:Coyote][CORRECTED_FROM:Puma concolor]']);
+  });
+
+  it('writes only [REMOVED:…] for a removal with no replacement', () => {
+    const csv = twoSpecies('Puma concolor', 'Canis latrans');
+    const plan = buildSyncPlan(imagesOf(csv), {
+      [K1]: draft({ mediaPath: K1, observations: [obs('Canis latrans', 1, 'Coyote')], removedSpecies: ['Puma concolor'] }),
+    }, null);
+    expect(k1Tags(plan, csv)).toEqual(['Canis latrans [COMMONNAME:Coyote][REMOVED:Puma concolor]']);
+  });
+
+  it('writes each removal once and no correction when several species are swapped at once', () => {
+    const csv = twoSpecies('Puma concolor', 'Odocoileus hemionus');
+    const plan = buildSyncPlan(imagesOf(csv), {
+      [K1]: draft({
+        mediaPath: K1,
+        observations: [obs('Canis latrans', 1, 'Coyote'), obs('Lynx rufus', 1, 'Bobcat')],
+        removedSpecies: ['Puma concolor', 'Odocoileus hemionus'],
+      }),
+    }, null);
+    expect(k1Tags(plan, csv)).toEqual([
+      'Canis latrans [COMMONNAME:Coyote][REMOVED:Puma concolor][REMOVED:Odocoileus hemionus]',
+      'Lynx rufus [COMMONNAME:Bobcat]',
+    ]);
+  });
+});
