@@ -111,7 +111,8 @@ function observationRowsFor(
       requestedSpecies: o.requestedSpecies || undefined,
       extra: parseTagMarkers(o.freeTags),
     }),
-    classifiedBy: file.preTaggerUser || undefined,
+    classifiedBy: (o.classifiedBy ?? file.preTaggerUser) || undefined,
+    classificationTimestamp: o.classificationTimestamp,
   }));
 }
 

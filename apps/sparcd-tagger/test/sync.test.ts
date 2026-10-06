@@ -302,6 +302,66 @@ describe('buildSyncPlan', () => {
     expect(plan.tagEdits).toHaveLength(0);
   });
 
+  it('does not credit unrelated legacy species when one species is confirmed', () => {
+    const images: TagImage[] = [{
+      ...IMAGES[0],
+      baseObservations: [
+        { ...obs('Puma concolor', 1), classifiedBy: 'fielduser' },
+        obs('Canis latrans', 1, 'Coyote'),
+      ],
+    }];
+    const seeded = blankDraft({ bucket: 'sparcd-x', uploadPrefix: PREFIX }, K1, DEP, {
+      observations: images[0].baseObservations,
+    });
+    const reapplied = addObservation(seeded.observations, {
+      scientificName: 'Puma concolor',
+      commonName: '',
+      count: 1,
+      classifiedBy: 'harold',
+      classificationTimestamp: NOW.toISOString(),
+    });
+    const plan = buildSyncPlan(images, {
+      [K1]: { ...seeded, observations: reapplied, confirmedSpecies: ['Puma concolor'], dirty: true },
+    }, null);
+    const rows = plan.tagEdits[0].observations;
+    expect(plan.summary.confirmations).toBe(1);
+    expect(rows.find((o) => o.scientificName === 'Puma concolor')?.classifiedBy).toBe('harold');
+    expect(rows.find((o) => o.scientificName === 'Canis latrans')?.classifiedBy).toBeUndefined();
+  });
+
+  it('counts an explicit confirmation alongside another species edit', () => {
+    const images: TagImage[] = [{
+      ...IMAGES[0],
+      baseObservations: [{ ...obs('Puma concolor', 1), classifiedBy: 'fielduser' }],
+    }];
+    const seeded = blankDraft({ bucket: 'sparcd-x', uploadPrefix: PREFIX }, K1, DEP, {
+      observations: images[0].baseObservations,
+    });
+    const plan = buildSyncPlan(images, {
+      [K1]: {
+        ...seeded,
+        observations: [
+          { ...obs('Puma concolor', 1), classifiedBy: 'harold', classificationTimestamp: NOW.toISOString() },
+          obs('Canis latrans', 1, 'Coyote'),
+        ],
+        confirmedSpecies: ['Puma concolor'],
+        dirty: true,
+      },
+    }, null, null, 'harold');
+    expect(plan.summary).toMatchObject({ modifications: 1, confirmations: 1 });
+  });
+
+  it('keeps edit-time attribution when the connected account changes before sync', () => {
+    const plan = buildSyncPlan(
+      [{ ...IMAGES[1], baseObservations: [] }],
+      { [K2]: draft({ mediaPath: K2, observations: [{ ...obs('Canis latrans', 1), classifiedBy: 'alice', classificationTimestamp: NOW.toISOString() }] }) },
+      null,
+      null,
+      'bob',
+    );
+    expect(plan.tagEdits[0].observations[0].classifiedBy).toBe('alice');
+  });
+
   it('keeps confirmation attribution when a time correction is combined with the review', () => {
     const images: TagImage[] = [{
       ...IMAGES[0],

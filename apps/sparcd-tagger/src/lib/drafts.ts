@@ -123,7 +123,16 @@ export function incrementObservation(obs: DraftObservation[], tag: AppliedTag): 
   const existing = withoutGhost.find((o) => o.scientificName === tag.scientificName);
   if (existing) {
     return withoutGhost.map((o) =>
-      o.scientificName === tag.scientificName ? { ...o, count: o.count + 1 } : o,
+      o.scientificName === tag.scientificName
+        ? {
+            ...o,
+            count: o.count + 1,
+            classifiedBy: tag.classifiedBy ?? o.classifiedBy,
+            classificationTimestamp: tag.classifiedBy
+              ? tag.classificationTimestamp
+              : o.classificationTimestamp,
+          }
+        : o,
     );
   }
   return addObservation(withoutGhost, { ...tag, count: 1 });
@@ -177,6 +186,8 @@ type DraftState = {
     base: BaseSeed | undefined,
     scientificName: string,
     count: number,
+    classifiedBy?: string,
+    classificationTimestamp?: string,
   ) => void;
   /** Detag = clear ALL species on one focused image OR every target in a selection. */
   detag: (ctx: UploadCtx, targets: TagTarget[]) => void;
@@ -366,9 +377,13 @@ export const useDraftStore = create<DraftState>((set, get) => {
         };
       }),
 
-    setSpeciesCount: (ctx, mediaPath, deploymentId, base, sci, count) =>
+    setSpeciesCount: (ctx, mediaPath, deploymentId, base, sci, count, classifiedBy, classificationTimestamp) =>
       mutateMany(ctx, [{ mediaPath, deploymentId, base }], (prev) => ({
-        observations: setObservationCount(prev.observations, sci, count),
+        observations: setObservationCount(prev.observations, sci, count).map((o) =>
+          o.scientificName === sci && classifiedBy
+            ? { ...o, classifiedBy, classificationTimestamp }
+            : o,
+        ),
       })),
 
     detag: (ctx, targets) => mutateMany(ctx, targets, (prev) => {

@@ -132,6 +132,24 @@ describe('uploader bundle is valid v016 Camtrap data', () => {
     expect(rows[0].classifiedBy).toBe('anita');
   });
 
+  it('prefers per-observation attribution when a local batch changed identities', async () => {
+    const b = await build([ready('a/IMG001.JPG', {
+      preTags: [{
+        scientificName: 'Canis latrans',
+        commonName: 'Coyote',
+        count: 1,
+        requestedSpecies: '',
+        freeTags: '',
+        classifiedBy: 'alice',
+        classificationTimestamp: '2024-01-20T14:30:00.000Z',
+      }],
+      preTaggerUser: 'bob',
+    })]);
+    const rows = parseObservations(b.observationsCsv);
+    expect(rows[0].classifiedBy).toBe('alice');
+    expect(rows[0].classificationTimestamp).toBe('2024-01-20T14:30:00.000Z');
+  });
+
   it('media.csv carries the DST-corrected full ISO capture time in col 4', async () => {
     // The uploader is the writer-of-record for capture time: the naive EXIF
     // wall-clock 08:00 interpreted in America/Phoenix (UTC-7, no DST) is 15:00Z,

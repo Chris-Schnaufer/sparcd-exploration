@@ -509,6 +509,11 @@ Given('Focus is showing an image with a shifted capture time', async ({ page }) 
 
 Then('the shifted timestamp remains visible before the sync completes', async ({ page, s3 }) => {
   const samples: string[] = [];
+  // The live-sync click can briefly leave the Focus footer on its pre-edit
+  // render while the dialog state commits. Start sampling only after the
+  // locally corrected value is painted; any later regression during the
+  // delayed canonical refresh is still captured by the loop below.
+  await expect.poll(async () => focusShownTime(page)).toBe('2024-01-10 09:00');
   const deadline = Date.now() + REFRESH_DELAY_MS * 2 + 10000;
   while (Date.now() < deadline) {
     if (await syncFinished(page)) break;
