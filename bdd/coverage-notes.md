@@ -5,9 +5,9 @@
 | ID | target scenario title | status | as-built scenarios | reason |
 | --- | --- | --- | --- | --- |
 | F1-1 | Every image in a batch is stored and retrievable after a completed upload | covered | uploader: upload-run.feature: Every file in the batch is stored under one upload folder in the collection; uploader: upload-run.feature: Every stored object is confirmed once the batch is written | Together they store every file and verify retrieval by size or fingerprint. |
-| F1-2 | Preparing a batch requires no connection until Frank chooses to upload | partial | uploader: connect-and-session.feature: A loaded uploader can inspect its first batch without network access | Drop and inspection work offline, but the full preparation flow is not covered. |
+| F1-2 | Preparing a batch requires no connection until Frank chooses to upload | covered | uploader: connect-and-session.feature: A loaded uploader can inspect its first batch without network access | The offline boundary is the end of Inspect: dropping and examining the batch work offline; Assign intentionally asks for a connection, and returning to Inspect preserves the batch. |
 | F1-3 | A partial transfer is never presented as a completed upload | covered | uploader: upload-run.feature: The upload is only published once every file has landed; uploader: upload-run.feature: A batch where some files failed is left unpublished and shown as partial | Together they keep partial data unpublished and label the run partial. |
-| F1-4 | Frank can tell at a glance whether he is currently able to upload | partial | uploader: upload-run.feature: The run monitor shows one offline warning per outage, not one per poll tick | Offline and recovery are logged, but upload availability is not checked at a glance. |
+| F1-4 | Frank can tell at a glance whether he is currently able to upload | covered | uploader: upload-run.feature: Upload availability is visible as the browser goes offline and online | The upload screen visibly reports offline/online state and disables or enables real upload accordingly. |
 | F1-5 | An incomplete upload continues from where it stopped | covered | uploader: resume-and-retry.feature: An interrupted upload can be continued from where it stopped; uploader: resume-and-retry.feature: Files already stored and verified are not sent again | Together they resume at the stopping point and skip verified objects. |
 | F1-6 | Only image files are taken from the SD card | partial | uploader: choose-folder.feature: Only JPEG images and MP4 videos are taken from the chosen folder | Non-media is excluded, but MP4 video is accepted while the target says only images. |
 | F1-7 | An upload that never completes does not add images to the collection | covered | uploader: upload-run.feature: An upload that fails or is abandoned announces nothing | Without published metadata, collection readers see no abandoned images. |
@@ -132,7 +132,7 @@
 
 | story | covered | partial | missing | untestable | total |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| F1 | 4 | 3 | 0 | 0 | 7 |
+| F1 | 5 | 2 | 0 | 0 | 7 |
 | F2 | 1 | 3 | 2 | 0 | 6 |
 | F3 | 0 | 5 | 1 | 0 | 6 |
 | F4 | 0 | 0 | 7 | 3 | 10 |
@@ -143,4 +143,4 @@
 | H1 | 4 | 0 | 0 | 2 | 6 |
 | H2 | 3 | 1 | 2 | 1 | 7 |
 | H3 | 1 | 5 | 2 | 0 | 8 |
-| Overall | 31 | 18 | 17 | 7 | 73 |
+| Overall | 32 | 17 | 17 | 7 | 73 |
