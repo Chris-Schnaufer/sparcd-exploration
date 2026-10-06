@@ -94,7 +94,7 @@ export function SyncDialog({
         .filter((image) => mediaIds.includes(image.key))
         .map((image) => [
           image.key,
-          correctedTimestamp(image.baseTimestamp, timeOffset, drafts[image.key]?.timeOverride ?? null),
+          correctedTimestamp(image.baseTimestamp, timeOffset, drafts[image.key]?.timeOverride ?? null, timeZone),
         ]),
     );
     if (!expected.size) return;
