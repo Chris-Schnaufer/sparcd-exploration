@@ -87,7 +87,7 @@
 | --- | --- | --- | --- | --- |
 | AL2-1 | The retry targets the same collection and location as the original attempt | covered | uploader: resume-and-retry.feature: A resumed upload lands in the same place as the original attempt | The recorded collection, folder, object paths, and deployment are reused. |
 | AL2-2 | The destination ends up with exactly one upload | covered | uploader: resume-and-retry.feature: Retrying the failed files of a partial run completes that same upload | The same folder is published and exactly one upload remains. |
-| AL2-3 | No leftover partial data from the failed attempt remains | partial | uploader: resume-and-retry.feature: Retrying the failed files of a partial run completes that same upload | Stored files remain and the same folder completes, but all failed-attempt residue is not checked. |
+| AL2-3 | Leftover partial data from a failed attempt is not presented by any app | covered | uploader: `publicationVisibility.test.ts` (published-upload and deployment discovery gate); tagger: AL2-hide-incomplete-uploads.feature: An interrupted upload without UploadMeta is not presented; explorer: `test_upload_visibility.py` (local and WASM notebook helpers) | Partial prefixes remain in storage for recovery, but the UploadMeta visibility marker keeps them out of Uploader, Tagger, and Explorer surfaces; the completed retry remains visible. |
 | AL2-4 | Retrying does not require re-entering the location | covered | uploader: resume-and-retry.feature: Retrying does not require choosing the location again | The collection and deployment are not requested again. |
 | AL2-5 | Retrying does not require re-identifying species already tagged | covered | uploader: tag-before-upload.feature: Retrying a failed upload of a tagged batch does not ask for the tags again | After a reload, History resumes the tagged batch without Inspect or the Tagger and publishes every species row. |
 | AL2-6 | A retry cannot be misdirected to a different destination by accident | covered | uploader: resume-and-retry.feature: A resumed upload lands in the same place as the original attempt | The retry cannot silently change its recorded destination. |
@@ -139,7 +139,7 @@
 | A1 | 5 | 0 | 1 | 0 | 6 |
 | A2 | 3 | 0 | 2 | 0 | 5 |
 | AL1 | 5 | 0 | 0 | 1 | 6 |
-| AL2 | 5 | 1 | 0 | 0 | 6 |
+| AL2 | 6 | 0 | 0 | 0 | 6 |
 | H1 | 4 | 0 | 0 | 2 | 6 |
 | H2 | 3 | 1 | 2 | 1 | 7 |
 | H3 | 1 | 5 | 2 | 0 | 8 |
