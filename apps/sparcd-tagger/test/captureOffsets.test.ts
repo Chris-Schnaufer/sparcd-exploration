@@ -154,15 +154,6 @@ describe('a Z (UTC) value read as local wall clock', () => {
   });
 });
 
-describe('bare typed time on a legacy naive image', () => {
-  it('a bare time typed for a naive base image gets the location offset, not +00:00', () => {
-    const corrected = '2024-01-10T08:00:00'; // legacy naive value, no upload shift active
-    const existingOffset = corrected.match(/(Z|[+-]\d{2}:?\d{2})$/)?.[1]; // what PerImageTime.commit computes
-    const iso = normalizeTimestampInput('2024-01-10 08:30', existingOffset, 'America/Phoenix');
-    expect(iso).toBe('2024-01-10T08:30:00.000-07:00');
-  });
-});
-
 describe('stale UploadMeta.captureTimeZone on a second location change', () => {
   it('Phoenix → (already rebased) → back to New York still rebases', async () => {
     // Upload was made in New York (captureTimeZone persisted), then corrected once to Phoenix,

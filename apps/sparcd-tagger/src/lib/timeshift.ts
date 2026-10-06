@@ -5,7 +5,7 @@
 // needs, kept pure so they can be unit-tested without React or Dexie.
 
 import type { TimeOffsetRecord } from './db';
-import { captureTimestampInZone, normalizeCaptureTimestamp, rebaseCaptureTimestamp } from '@sparcd/camtrap';
+import { normalizeCaptureTimestamp, rebaseCaptureTimestamp } from '@sparcd/camtrap';
 
 /** The earliest already-corrected timestamp among the bulk targets — the anchor a
  *  selection-scoped shift previews against. It MUST be the corrected time (not the
@@ -63,8 +63,7 @@ const INPUT_RE = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?(?:\.(
 /** Normalize a user-typed corrected timestamp to the offset-bearing ISO 8601
  *  form stored in media.csv / observations.csv. Returns null on a shape or
  *  range violation so the caller can reject the edit instead of writing junk.
- *  A bare value keeps the image's existing offset; with none, it takes the
- *  location's zone when known, else +00:00 — never the browser's zone. */
+ *  A bare value is treated as +00:00, never as the browser's zone. */
 export function normalizeTimestampInput(raw: string, fallbackOffset?: string, timeZone?: string): string | null {
   const m = INPUT_RE.exec(raw.trim());
   if (!m) return null;
@@ -84,7 +83,7 @@ export function normalizeTimestampInput(raw: string, fallbackOffset?: string, ti
   if (probe.getUTCMonth() !== month - 1 || probe.getUTCDate() !== day) return null;
   const local = `${y}-${mo}-${d}T${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}.${fraction.padEnd(3, '0')}`;
   try {
-    if (!zone) return timeZone ? captureTimestampInZone(local, timeZone) : normalizeCaptureTimestamp(`${local}+00:00`);
+    if (!zone) return normalizeCaptureTimestamp(`${local}+00:00`);
     // A `Z` value is a UTC instant: with a zone, write it as that zone's local time.
     if (zone === 'Z' && timeZone) return rebaseCaptureTimestamp(`${local}Z`, timeZone, timeZone);
     return normalizeCaptureTimestamp(`${local}${zone}`);
