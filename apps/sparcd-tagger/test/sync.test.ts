@@ -227,7 +227,7 @@ describe('buildSyncPlan', () => {
       'harold',
     );
     expect(plan.tagEdits[0].observations.find((o) => o.scientificName === 'Puma concolor')?.classifiedBy).toBe('fielduser');
-    expect(plan.tagEdits[0].observations.find((o) => o.scientificName === 'Canis latrans')?.classifiedBy).toBeUndefined();
+    expect(plan.tagEdits[0].observations.find((o) => o.scientificName === 'Canis latrans')?.classifiedBy).toBe('harold');
   });
 
   it("does not credit the editor for an old image's species they didn't touch", () => {
@@ -242,6 +242,7 @@ describe('buildSyncPlan', () => {
       null,
       'harold',
     );
+    expect(plan.tagEdits[0].observations.find((o) => o.scientificName === 'Puma concolor')?.classifiedBy).toBe('harold');
     expect(plan.tagEdits[0].observations.find((o) => o.scientificName === 'Canis latrans')?.classifiedBy).toBeUndefined();
   });
 
@@ -427,21 +428,6 @@ describe('buildSyncPlan', () => {
     }, null, null, 'bob');
     expect(plan.tagEdits[0].observations[0].count).toBe(2);
     expect(plan.tagEdits[0].observations[0].reviewEvents).toEqual([HAROLD, BOB]);
-  });
-
-  it('leaves an unattributed row unattributed when it is confirmed', () => {
-    const images: TagImage[] = [{ ...IMAGES[0], baseObservations: [obs('Puma concolor', 1)] }];
-    const plan = buildSyncPlan(images, {
-      [K1]: draft({
-        mediaPath: K1,
-        observations: [{ ...obs('Puma concolor', 1), reviewEvents: [BOB] }],
-        confirmedSpecies: ['Puma concolor'],
-      }),
-    }, null, null, 'bob');
-    const row = plan.tagEdits[0].observations[0];
-    expect(row.classifiedBy).toBeUndefined();
-    expect(row.classificationTimestamp).toBeUndefined();
-    expect(row.reviewEvents).toEqual([BOB]);
   });
 
   it('keeps edit-time attribution when the connected account changes before sync', () => {

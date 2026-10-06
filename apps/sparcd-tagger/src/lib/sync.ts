@@ -194,11 +194,15 @@ export function buildSyncPlan(
         timestampSource,
         observations: obs.map((o) => {
           const base = baseForObservation(o);
+          // The editor is credited only for a species changed or re-applied
+          // here, never for one that rides along with another species' edit.
+          const touched = !base || Math.max(1, base.count) !== Math.max(1, o.count) ||
+            confirmedSpecies.includes(o.scientificName);
           // Drafts written before classifiedBy/classificationTimestamp were
           // modeled can omit them. Preserve the canonical values rather than
           // blanking them when another observation on the image is edited.
           const classifiedBy = base
-            ? base.classifiedBy ?? o.classifiedBy
+            ? base.classifiedBy ?? o.classifiedBy ?? (touched ? user.trim() || undefined : undefined)
             : o.classifiedBy ?? (user.trim() || undefined);
           const classificationTimestamp = base
             ? base.classificationTimestamp ?? o.classificationTimestamp
