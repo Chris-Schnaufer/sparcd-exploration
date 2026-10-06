@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { parseObservations } from '@sparcd/camtrap';
+import { parseObservations, parseMedia, parseCsvRows, serializeCsvRows, OBS_COL } from '@sparcd/camtrap';
 import {
   Given,
   When,
@@ -17,6 +17,12 @@ import {
 } from './support/world';
 import { BUCKET, PREFIX_A, MEDIA_A } from './support/data';
 import { openSyncDialog, setSyncDryRun, readStore, waitForDirtyDrafts, waitForSyncDialogClosed } from './support/flows';
+
+/** One cell of the preview's Added / Changed / Removed / Time-corrected / Confirmed grid. */
+const summaryCell = (page: Page, label: string) =>
+  page.locator('div.border.text-center').filter({ hasText: label });
+
+const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
 const appliedChip = (page: Page, label: string) =>
   page.locator('span.inline-flex:not([data-testid="applied-species-summary"])').filter({ hasText: label }).first();
@@ -81,6 +87,29 @@ Then('an image with no species is labelled "untagged" in the list view', async (
 
 Given('an image with existing identifications is focused', async ({ page }) => {
   await focusFrame(page, 'IMG004.JPG');
+});
+
+Given('an image with mixed reviewed and unreviewed identifications is focused', async ({ page }) => {
+  await focusFrame(page, 'IMG004.JPG');
+  await expandApplied(page);
+});
+
+Then('each identification shows whether it is reviewed', async ({ page }) => {
+  await expect(appliedChip(page, 'Coyote').getByText(/Reviewed by fielduser/)).toBeVisible();
+  await expect(appliedChip(page, 'Mountain Lion').getByText('Not reviewed', { exact: true })).toBeVisible();
+});
+
+Then('the image tile reports a mixed review status', async ({ page }) => {
+  await expect(gridCell(page, 'IMG004.JPG').locator('[data-column="review-status"]')).toHaveText('Mixed review');
+});
+
+Then('the list row reports a mixed review status', async ({ page }) => {
+  await showList(page);
+  await expect(listRow(page, 'IMG004.JPG').locator('[data-column="review-status"]')).toHaveText('Mixed review');
+});
+
+Then('an identification without a review event is labelled not reviewed', async ({ page }) => {
+  await expect(listRow(page, 'IMG003.JPG').locator('[data-column="review-status"]')).toHaveText('Not reviewed');
 });
 
 Then('each recorded species is shown with its count', async ({ page }) => {
@@ -190,6 +219,13 @@ Then('the remaining species and their counts are preserved', async ({ page }) =>
   await expect(gridCell(page, 'IMG004.JPG')).not.toContainText('+1');
 });
 
+Then('the removed species is absent from the stored image and marked as removed', async ({ s3 }) => {
+  const obs = parseObservations(s3.text(BUCKET, `${PREFIX_A}observations.csv`));
+  expect(obs.some((o) => o.mediaId.endsWith('IMG004.JPG') && o.scientificName === 'Canis latrans')).toBe(false);
+  const remaining = obs.find((o) => o.mediaId.endsWith('IMG004.JPG') && o.scientificName === 'Puma concolor');
+  expect(remaining?.tags).toContain('[REMOVED:Canis latrans]');
+});
+
 // --- Clear Species ------------------------------------------------------------------
 
 // The Focus footer's own control and the applied-species strip's control
@@ -259,29 +295,148 @@ Then('a selection of images can be marked in one action', async ({ page }) => {
   }
 });
 
-// --- Confirmation records nothing -------------------------------------------
+// --- Confirmation records a review (#368) -----------------------------------
 
 Given('an existing identification is re-applied unchanged', async ({ page }) => {
   await focusFrame(page, 'IMG001.JPG');
   await speciesApply(page, 'Odocoileus hemionus').click();
 });
 
+Given('an existing identification has original attribution', async ({ page, s3 }) => {
+  const key = `${PREFIX_A}observations.csv`;
+  const rows = parseCsvRows(s3.text(BUCKET, key));
+  const row = rows.find((cells) => cells[OBS_COL.mediaId]?.endsWith('IMG001.JPG'))!;
+  row[OBS_COL.classifiedBy] = 'fielduser';
+  row[OBS_COL.classificationTimestamp] = '2024-01-11T00:00:00.000Z';
+  s3.put(BUCKET, key, serializeCsvRows(rows), 'text/csv');
+  await page.reload();
+  await openWorkspace(page);
+  await expect(gridCell(page, 'IMG001.JPG')).toContainText('Mule Deer');
+  await expect(page.locator('[aria-label="Originally identified by fielduser"]')).toBeVisible();
+});
+
+Given('the original upload data is captured before a review', async ({ s3, scratch }) => {
+  // Keep this baseline scenario independent from the restore fixture's older
+  // snapshots: the captured canonical files are the upload's first observed
+  // state, so an unrelated historical snapshot must not become its source.
+  for (const key of s3.keys(BUCKET, `${PREFIX_A}.sparcd-tagger-snapshots/`)) s3.delete(BUCKET, key);
+  const mediaKey = parseMedia(s3.text(BUCKET, `${PREFIX_A}media.csv`))[0].mediaPath;
+  scratch.originalBaseline = {
+    media: s3.text(BUCKET, `${PREFIX_A}media.csv`),
+    deployments: s3.text(BUCKET, `${PREFIX_A}deployments.csv`),
+    observations: s3.text(BUCKET, `${PREFIX_A}observations.csv`),
+    uploadMeta: s3.text(BUCKET, `${PREFIX_A}UploadMeta.json`),
+    imageKey: mediaKey,
+    image: s3.get(BUCKET, mediaKey)?.body.toString('base64'),
+  };
+});
+
 When('a sync is previewed', async ({ page }) => {
   await openSyncDialog(page);
 });
 
-Then('no change is reported for that image', async ({ page, s3 }) => {
-  await expect(
-    page.getByText('No local edits to sync — everything matches the canonical files.'),
-  ).toBeVisible();
-  expect(s3.puts).toHaveLength(0);
+Then('the preview reports one confirmed image and no other change', async ({ page }) => {
+  await expect(summaryCell(page, 'Added')).toHaveText('0Added');
+  await expect(summaryCell(page, 'Changed')).toHaveText('0Changed');
+  await expect(summaryCell(page, 'Removed')).toHaveText('0Removed');
+  await expect(summaryCell(page, 'Confirmed')).toHaveText('1Confirmed');
 });
+
+When('that sync is run live', async ({ page }) => {
+  await setSyncDryRun(page, false);
+  await page.getByRole('button', { name: 'Sync now' }).click();
+  await expect(page.getByText('Synced — canonical files replaced.')).toBeVisible();
+});
+
+Then(
+  "the confirmed image's stored identification is stamped with the reviewer and the time of the review",
+  async ({ s3 }) => {
+    const obs = parseObservations(s3.text(BUCKET, `${PREFIX_A}observations.csv`));
+    const row = obs.find(
+      (o) => o.mediaId.endsWith('IMG001.JPG') && o.scientificName === 'Odocoileus hemionus',
+    );
+    expect(row).toBeTruthy();
+    expect(row!.classifiedBy).toBe('testkey');
+    expect(row!.classificationTimestamp).toMatch(ISO_TIMESTAMP);
+    expect(row!.reviewEvents).toEqual([{ reviewedBy: 'testkey', reviewedAt: expect.stringMatching(ISO_TIMESTAMP) }]);
+  },
+);
+
+Then('the original identifier and separate review remain visible in the stored image', async ({ s3 }) => {
+  const obs = parseObservations(s3.text(BUCKET, `${PREFIX_A}observations.csv`));
+  const row = obs.find((o) => o.mediaId.endsWith('IMG001.JPG') && o.scientificName === 'Odocoileus hemionus');
+  expect(row).toMatchObject({
+    classifiedBy: 'fielduser',
+    classificationTimestamp: '2024-01-11T00:00:00.000Z',
+  });
+  expect(row?.reviewEvents).toEqual([{ reviewedBy: 'testkey', reviewedAt: expect.stringMatching(ISO_TIMESTAMP) }]);
+});
+
+Then('the original uploaded data remains byte-for-byte intact', async ({ s3, scratch }) => {
+  const original = scratch.originalBaseline as {
+    media: string;
+    deployments: string;
+    observations: string;
+    uploadMeta: string;
+    imageKey: string;
+    image: string;
+  };
+  expect(s3.text(BUCKET, `${PREFIX_A}.sparcd-tagger-original/media.csv`)).toBe(original.media);
+  expect(s3.text(BUCKET, `${PREFIX_A}.sparcd-tagger-original/deployments.csv`)).toBe(original.deployments);
+  expect(s3.text(BUCKET, `${PREFIX_A}.sparcd-tagger-original/observations.csv`)).toBe(original.observations);
+  expect(s3.text(BUCKET, `${PREFIX_A}.sparcd-tagger-original/UploadMeta.json`)).toBe(original.uploadMeta);
+  expect(s3.get(BUCKET, original.imageKey)?.body.toString('base64')).toBe(original.image);
+  expect(s3.has(BUCKET, `${PREFIX_A}.sparcd-tagger-original/manifest.json`)).toBe(true);
+  expect(s3.putsFor(`${PREFIX_A}.sparcd-tagger-original/`)).toHaveLength(5);
+});
+
+When('another review is made locally', async ({ page }) => {
+  await focusFrame(page, 'IMG002.JPG');
+  await speciesApply(page, 'Canis latrans').click();
+});
+
+function expectAuditSnapshot(s3: { puts: { key: string; body: string }[] }): void {
+  const manifests = s3.puts.filter((put) =>
+    put.key.includes('.sparcd-tagger-snapshots/testkey/') && put.key.endsWith('manifest.json'),
+  );
+  expect(manifests.length).toBeGreaterThan(0);
+  for (const item of manifests) {
+    const manifest = JSON.parse(item.body) as { user?: string; editStamp?: string };
+    expect(manifest.user).toBe('testkey');
+    expect(manifest.editStamp).toMatch(/^\d{4}\.\d{2}\.\d{2}\.\d{2}\.\d{2}\.\d{2}$/);
+  }
+}
+
+Then('the live audit records the correction identity and time', async ({ s3 }) => {
+  const meta = JSON.parse(s3.text(BUCKET, `${PREFIX_A}UploadMeta.json`)) as { editComments: string[] };
+  expect(meta.editComments.some((comment) => comment.includes('testkey'))).toBe(true);
+  expectAuditSnapshot(s3);
+});
+
+Then('the live audit records the removal identity and time', async ({ s3 }) => {
+  const meta = JSON.parse(s3.text(BUCKET, `${PREFIX_A}UploadMeta.json`)) as { editComments: string[] };
+  expect(meta.editComments.some((comment) => comment.includes('testkey'))).toBe(true);
+  expectAuditSnapshot(s3);
+});
+
+Then(
+  "the corrected image's stored identification is stamped with the reviewer and the time of the review",
+  async ({ s3 }) => {
+    const obs = parseObservations(s3.text(BUCKET, `${PREFIX_A}observations.csv`));
+    const row = obs.find(
+      (o) => o.mediaId.endsWith('IMG002.JPG') && o.scientificName === 'Canis latrans',
+    );
+    expect(row).toBeTruthy();
+    expect(row!.classifiedBy).toBe('testkey');
+    expect(row!.classificationTimestamp).toMatch(ISO_TIMESTAMP);
+  },
+);
 
 // --- Attribution ------------------------------------------------------------
 
 Given('identifications were corrected locally', async ({ page }) => {
   await sectionTab(page, 'Settings').click();
-  await page.locator('#user').fill('jgonzalez');
+  await expect(page.locator('#user')).toHaveValue('tes…key');
   await sectionTab(page, 'Tag').click();
   await focusFrame(page, 'IMG002.JPG');
   await speciesApply(page, 'Canis latrans').click();
@@ -296,13 +451,13 @@ When('a live sync is run', async ({ page }) => {
 });
 
 Then(
-  'the upload\'s metadata gains an edit comment carrying the tagger identity and the time of the edit',
+  'the upload\'s metadata gains an edit comment carrying the connected account and the time of the edit',
   async ({ s3 }) => {
     const meta = JSON.parse(s3.text(BUCKET, `${PREFIX_A}UploadMeta.json`)) as {
       editComments: string[];
     };
     const last = meta.editComments[meta.editComments.length - 1];
-    expect(last).toContain('jgonzalez');
+    expect(last).toContain('testkey');
     expect(last).toMatch(/\d{4}\.\d{2}\.\d{2}\.\d{2}\.\d{2}\.\d{2}/);
   },
 );
@@ -310,7 +465,7 @@ Then(
 Then('the pre-change snapshot of the upload is filed under that same identity', async ({ s3 }) => {
   const snapshots = s3.puts.filter((p) => p.key.includes('.sparcd-tagger-snapshots/'));
   expect(snapshots.length).toBeGreaterThan(0);
-  for (const p of snapshots) expect(p.key).toContain('.sparcd-tagger-snapshots/jgonzalez/');
+  for (const p of snapshots) expect(p.key).toContain('.sparcd-tagger-snapshots/testkey/');
   expect(snapshots.some((p) => p.key.endsWith('manifest.json'))).toBe(true);
 });
 
@@ -329,7 +484,7 @@ Then('its tile carries an unsaved-edit marker', async ({ page }) => {
 
 Then('the marker is cleared for that image once its change has been synced', async ({ page }) => {
   await sectionTab(page, 'Settings').click();
-  await page.locator('#user').fill('jgonzalez');
+  await expect(page.locator('#user')).toHaveValue('tes…key');
   await sectionTab(page, 'Tag').click();
   await openSyncDialog(page);
   await setSyncDryRun(page, false);

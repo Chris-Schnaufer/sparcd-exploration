@@ -40,8 +40,10 @@ Feature: Identify species before the batch is uploaded
     When "Tag species first" is chosen through the unified dev origin
     Then the real Tagger opens the batch written by the Uploader
     When Coyote is applied in the real Tagger
+    And the real Tagger identity is set to Anita
     And the real Tagger hands the batch back
     Then the Uploader receives Coyote from the shared hand-off record
+    And the hand-off records Anita as the tagger
     # No step seeds sparcd-flip directly: the Uploader creates the record, the
     # Tagger reads and updates it, and the Uploader consumes it on return.
 
@@ -89,6 +91,12 @@ Feature: Identify species before the batch is uploaded
     And each row carries the common name the tagger used
     And the upload metadata counts every identified image, empty frames included
 
+  @A1 @A1-5
+  Scenario: Tags made before upload are attributed to the person who made them
+    Given a batch was tagged in the Tagger and handed back
+    When it is published
+    Then the pre-upload identifications are attributed to Anita
+
   @unmapped
   Scenario: The hand-off is thrown away once its batch is published
     Given a batch was tagged in the Tagger and handed back
@@ -113,3 +121,29 @@ Feature: Identify species before the batch is uploaded
     And every media row carries the media type the examination sniffed
     # Not a guess from the file extension: a batch that went through the Tagger
     # must publish the same media.csv as one uploaded straight through.
+
+  @A2 @A2-5
+  Scenario: The identifications made before upload are tied to the batch's location
+    Given a batch was tagged in the Tagger and handed back
+    When it is published
+    Then every identification in observations.csv points at the location assigned to the batch
+
+  @A1 @A1-6
+  Scenario: Tags survive weeks of waiting for a connection
+    Given a batch was handed to the Tagger 40 days ago
+    And it was tagged in the Tagger 25 days later
+    When the batch is handed back 15 days after that
+    And it is published
+    Then observations.csv has one row per species applied, against the right image
+    And each row carries the common name the tagger used
+    # Unused hand-offs are swept 30 days after last use. The batch here is 40
+    # days old but was last tagged 15 days ago, so its tags must still be there.
+
+  @AL2 @AL2-5
+  Scenario: Retrying a failed upload of a tagged batch does not ask for the tags again
+    Given a batch was tagged in the Tagger and handed back
+    And its upload failed part-way
+    When the page is reloaded and the upload is resumed from History
+    Then the upload finishes without going back to Inspect or the Tagger
+    And observations.csv has one row per species applied, against the right image
+    And each row carries the common name the tagger used

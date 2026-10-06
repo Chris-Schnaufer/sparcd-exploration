@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
+import { TransformWrapper, TransformComponent, type ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
 import { useStore } from '../store';
 import {
   useTagImages,
@@ -14,6 +14,7 @@ import {
 import { useMediaUrl } from '../lib/useMediaUrl';
 import { parseCollectionKey } from '../lib/s3';
 import { correctedTimestamp, shiftTimestamp } from '@sparcd/camtrap';
+import tzlookup from 'tz-lookup';
 import { SpeciesPanel } from '../components/SpeciesPanel';
 import { AppliedSpecies } from '../components/AppliedSpecies';
 import { Cheatsheet } from '../components/Cheatsheet';
@@ -28,6 +29,7 @@ import { PerImageTime } from '../components/PerImageTime';
 import { SpeciesLoupe } from '../components/SpeciesLoupe';
 import { KeyConflictDialog } from '../components/KeyConflictDialog';
 import { ImageAdjustments } from '../components/ImageAdjustments';
+import { PawTrail } from '../components/Paw';
 import { cssFilter, NEUTRAL, type Adjustments } from '../lib/adjustments';
 import { Overview, type PickMods, type ViewKind } from '../components/Overview';
 import { groupBursts, type BurstGrouping } from '../lib/bursts';
@@ -81,6 +83,7 @@ type PendingKeyConflict = {
 
 export function Tag() {
   const cfg = useStore((s) => s.s3Config);
+  const taggerUser = useStore((s) => s.taggerUser);
   const connectionId = useStore((s) => s.connectionId);
   const collectionKey = useStore((s) => s.selectedCollectionKey);
   const uploadPrefix = useStore((s) => s.selectedUploadPrefix);
@@ -100,6 +103,9 @@ export function Tag() {
   const species = useSpecies(cfg, connectionId, collectionKey);
   const locations = useLocations(cfg, connectionId, collectionKey);
   const currentDeployment = useCurrentDeployment(cfg, connectionId, collectionKey, uploadPrefix);
+  const captureTimeZone = currentDeployment.data
+    ? tzlookup(currentDeployment.data.latitude, currentDeployment.data.longitude)
+    : undefined;
   const collections = useCollections(cfg, connectionId);
   const collection = collections.data?.find((c) => c.key === collectionKey);
   const snapshots = useUploadSnapshots(cfg, connectionId, collectionKey, uploadPrefix);
@@ -264,7 +270,7 @@ export function Tag() {
         return matchesImageFilter(
           {
             fileName: image.fileName,
-            timestamp: correctedTimestamp(image.baseTimestamp, timeOffset, draft?.timeOverride ?? null),
+            timestamp: correctedTimestamp(image.baseTimestamp, timeOffset, draft?.timeOverride ?? null, captureTimeZone),
             observations: effectiveOf(image, draft).observations,
           },
           imageFilter,
@@ -336,7 +342,7 @@ export function Tag() {
   const tsOf = useMemo(
     () =>
       offsetActive(timeOffset)
-        ? (img: TagImage) => shiftTimestamp(img.baseTimestamp, timeOffset!)
+        ? (img: TagImage) => shiftTimestamp(img.baseTimestamp, timeOffset!, captureTimeZone)
         : undefined,
     [timeOffset],
   );
@@ -398,6 +404,7 @@ export function Tag() {
   const overrides = useKeyBindings((state) => activeKeyProfile(state).overrides);
   const assignKey = useKeyBindings((state) => state.assignKey);
   const clearKey = useKeyBindings((state) => state.clearKey);
+  const keysUnsaved = useKeyBindings((state) => state.unsaved);
   const speciesList = localRecord ? DEFAULT_SPECIES : species.data?.species ?? [];
 
   const bindingFor = (sci: string): string | null => {
@@ -504,7 +511,7 @@ export function Tag() {
     // species to other frames, so it advances its focused image once.
     const shouldAdvance =
       autoAdvanceOnTag && !!current && (selected.size > 0 || !carriesSpecies(current, tag.scientificName));
-    addSpeciesFn(ctx, targets, tag);
+    addSpeciesFn(ctx, targets, { ...tag, classifiedBy: taggerUser.trim() || undefined, classificationTimestamp: new Date().toISOString() });
     if (tag.scientificName) pushRecent(tag.scientificName);
     if (shouldAdvance) advanceFocus();
   };
@@ -526,7 +533,7 @@ export function Tag() {
           base: { observations: image.baseObservations },
         },
       ],
-      tag,
+      { ...tag, classifiedBy: taggerUser.trim() || undefined, classificationTimestamp: new Date().toISOString() },
     );
     if (tag.scientificName) pushRecent(tag.scientificName);
     if (shouldAdvance) advanceFocus();
@@ -538,7 +545,7 @@ export function Tag() {
     const targets = targetsOf();
     if (!targets.length) return;
     const shouldAdvance = autoAdvanceOnTag && !!current;
-    incrementSpeciesFn(ctx, targets, tag);
+    incrementSpeciesFn(ctx, targets, { ...tag, classifiedBy: taggerUser.trim() || undefined, classificationTimestamp: new Date().toISOString() });
     if (tag.scientificName) pushRecent(tag.scientificName);
     if (shouldAdvance) advanceFocus();
   };
@@ -558,9 +565,10 @@ export function Tag() {
             img.baseTimestamp,
             timeOffset,
             drafts[img.key]?.timeOverride ?? null,
+            captureTimeZone,
           ),
         })),
-    [selectedForActions, list, drafts, timeOffset],
+    [selectedForActions, list, drafts, timeOffset, captureTimeZone],
   );
   const scopedTimeApplicableCount = bulkTimeTargets.length;
   const scopedTimeUnavailableReason = selected.size === 0
@@ -696,10 +704,10 @@ export function Tag() {
         Object.values(drafts).filter((r) => r.dirty),
         list.map((image) => ({
           ...image,
-          restoredTimestamp: correctedTimestamp(image.baseTimestamp, timeOffset, null),
+          restoredTimestamp: correctedTimestamp(image.baseTimestamp, timeOffset, null, captureTimeZone),
         })),
       ),
-    [drafts, list, timeOffset],
+    [drafts, list, timeOffset, captureTimeZone],
   );
 
   if (!localRecord) {
@@ -721,7 +729,7 @@ export function Tag() {
   const discardTitle = `Discard ${nDirty} image${nDirty !== 1 ? 's' : ''}: ${discardDetails.join('; ')}`;
   const hasUploadShift = offsetActive(timeOffset);
   const correctedTs = current
-    ? correctedTimestamp(current.baseTimestamp, timeOffset, draft?.timeOverride ?? null)
+    ? correctedTimestamp(current.baseTimestamp, timeOffset, draft?.timeOverride ?? null, captureTimeZone)
     : '';
 
   return (
@@ -1137,6 +1145,7 @@ export function Tag() {
                     onSelectBurst={selectBurst}
                     onDrill={drill}
                     onDropSpecies={applyIncrementAt}
+                    timeZone={captureTimeZone}
                   />
                 )}
               </div>
@@ -1158,6 +1167,7 @@ export function Tag() {
                 kind="list"
                 onPick={pick}
                 onSelectBurst={selectBurst}
+                timeZone={captureTimeZone}
               />
             </div>
             <FocusPane
@@ -1167,6 +1177,7 @@ export function Tag() {
               corrected={correctedTs}
               hasUploadShift={hasUploadShift}
               overridden={!!draft?.timeOverride}
+              timeZone={captureTimeZone}
               onSetTime={(iso) =>
                 current && setTimeOverrideFn(ctx, current.key, current.deploymentId, currentBase, iso)
               }
@@ -1193,7 +1204,7 @@ export function Tag() {
         />
       )}
       {showSync && (
-        <SyncDialog ctx={ctx} images={list} drafts={drafts} onClose={closeSync} />
+        <SyncDialog ctx={ctx} images={list} drafts={drafts} timeZone={captureTimeZone} onClose={closeSync} />
       )}
       {showSnapshots && <SnapshotsDialog ctx={ctx} onClose={() => setShowSnapshots(false)} />}
       {showTimeShift && (
@@ -1221,7 +1232,7 @@ export function Tag() {
           count={bulkTime.targets.length}
           requestedCount={bulkTime.requestedCount}
           anchorTimestamp={bulkTime.anchor}
-          onApply={(delta) => applyTimeOffsetToSelectionFn(ctx, bulkTime.targets, delta)}
+          onApply={(delta) => applyTimeOffsetToSelectionFn(ctx, bulkTime.targets, delta, captureTimeZone)}
           onClose={closeBulkTime}
         />
       )}
@@ -1254,6 +1265,7 @@ export function Tag() {
       capturingFor,
       onStartCapture: setCapturingFor,
       onClearKey: clearKey,
+      keysUnsaved,
       recent,
       appliedSet: new Set(observations.map((o) => o.scientificName)),
       hasFocus: !!current,
@@ -1267,7 +1279,16 @@ export function Tag() {
           observations={observations}
           disabled={!current}
           onSetCount={(sci, n) =>
-            current && setSpeciesCountFn(ctx, current.key, current.deploymentId, currentBase, sci, n)
+            current && setSpeciesCountFn(
+              ctx,
+              current.key,
+              current.deploymentId,
+              currentBase,
+              sci,
+              n,
+              taggerUser.trim() || undefined,
+              new Date().toISOString(),
+            )
           }
           onRemove={(sci) =>
             current && removeSpeciesFn(ctx, current.key, current.deploymentId, currentBase, sci)
@@ -1296,6 +1317,7 @@ function FocusPane({
   corrected,
   hasUploadShift,
   overridden,
+  timeZone,
   onSetTime,
   onClearTime,
   onDetag,
@@ -1310,6 +1332,7 @@ function FocusPane({
   corrected: string;
   hasUploadShift: boolean;
   overridden: boolean;
+  timeZone?: string;
   onSetTime: (iso: string) => void;
   onClearTime: () => void;
   onDetag: () => void;
@@ -1416,6 +1439,7 @@ function FocusPane({
                 hasUploadShift={hasUploadShift}
                 overridden={overridden}
                 timestampSource={current.timestampSource}
+                timeZone={timeZone}
                 onSet={onSetTime}
                 onClear={onClearTime}
               />
@@ -1536,28 +1560,60 @@ function FocusImage({
   filter?: string;
 }) {
   const { url, isError, markLoaded } = useMediaUrl(objectKey, 'high');
+  const [loadedToken, setLoadedToken] = useState<string>();
+  // A key can be revisited while its previous request is still represented in
+  // state. The generation makes every key/URL admission a distinct readiness
+  // token, so a stale successful load can never hide a new request's loader.
+  const identity = useRef({ objectKey, url, generation: 0 });
+  if (identity.current.objectKey !== objectKey || identity.current.url !== url) {
+    identity.current = { objectKey, url, generation: identity.current.generation + 1 };
+  }
+  const mediaToken = url
+    ? `${objectKey}\u0000${url}\u0000${identity.current.generation}`
+    : undefined;
   if (isError)
     return <div className="text-[13px] font-mono text-warn">Could not load this image.</div>;
-  if (!url)
-    return (
-      <div className="w-full h-full grid place-items-center">
-        <img
-          src={`${import.meta.env.BASE_URL}loading.gif`}
-          alt="Loading focused image"
-          className="w-48 h-48 object-contain"
-        />
-      </div>
-    );
-  if (isVideo)
-    return <FocusVideo src={url} alt={alt} resetKey={objectKey} onLoaded={markLoaded} />;
+  const onLoaded = () => {
+    markLoaded();
+    if (mediaToken) setLoadedToken(mediaToken);
+  };
+  const onMediaError = () => {
+    // Keep the native video element available for the existing media-error
+    // affordance, but do not confuse metadata/error with first-frame readiness.
+    markLoaded();
+  };
+  // The loader covers the pane until the bytes arrive, not just until the URL
+  // is ready: a full-size JPEG can take seconds after its <img> mounts.
   return (
-    <ZoomableImage
-      src={url}
-      alt={alt}
-      resetKey={objectKey}
-      filter={filter}
-      onLoaded={markLoaded}
-    />
+    <>
+      {url &&
+        (isVideo ? (
+          <FocusVideo
+            src={url}
+            alt={alt}
+            resetKey={objectKey}
+            onLoaded={onLoaded}
+            onError={onMediaError}
+          />
+        ) : (
+          <ZoomableImage
+            src={url}
+            alt={alt}
+            resetKey={objectKey}
+            filter={filter}
+            onLoaded={onLoaded}
+          />
+        ))}
+      {(!url || loadedToken !== mediaToken) && (
+        <div
+          role="status"
+          className="fn-appear absolute inset-0 grid place-content-center justify-items-center gap-4 bg-paper"
+        >
+          <PawTrail />
+          <span className="font-mono text-[12px] text-inkMute">loading {alt}</span>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -1570,11 +1626,13 @@ function FocusVideo({
   alt,
   resetKey,
   onLoaded,
+  onError,
 }: {
   src: string;
   alt: string;
   resetKey: string;
   onLoaded: () => void;
+  onError: () => void;
 }) {
   return (
     <video
@@ -1584,8 +1642,8 @@ function FocusVideo({
       controls
       playsInline
       preload="metadata"
-      onLoadedMetadata={onLoaded}
-      onError={onLoaded}
+      onLoadedData={onLoaded}
+      onError={onError}
       className="w-full h-full object-contain"
     />
   );
@@ -1602,6 +1660,38 @@ const ZOOM_PROPS = {
   panning: { velocityDisabled: true },
 };
 
+/**
+ * Pan bounds come from the zoom content's box, so size it to the fitted picture
+ * rather than the pane: a letterboxed portrait or panorama then can't be
+ * dragged out of view. `paneRef` goes on the element the zoom wrapper fills.
+ */
+function useFittedZoom(src: string) {
+  const paneRef = useRef<HTMLDivElement>(null);
+  const zoomRef = useRef<ReactZoomPanPinchRef>(null);
+  const [pane, setPane] = useState<{ w: number; h: number } | null>(null);
+  const [loaded, setLoaded] = useState<{ src: string; w: number; h: number } | null>(null);
+  const natural = loaded?.src === src ? loaded : null;
+  useLayoutEffect(() => {
+    const el = paneRef.current!;
+    const measure = () => setPane({ w: el.clientWidth, h: el.clientHeight });
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const fit = pane && natural ? Math.min(pane.w / natural.w, pane.h / natural.h) : null;
+  const fitted = fit && natural ? { width: natural.w * fit, height: natural.h * fit } : undefined;
+  useLayoutEffect(() => {
+    const zoom = zoomRef.current;
+    if (fitted && zoom && zoom.state.scale <= 1.01) zoom.centerView(1, 0);
+  }, [fitted?.width, fitted?.height]);
+  const onImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const img = e.currentTarget;
+    setLoaded({ src, w: img.naturalWidth, h: img.naturalHeight });
+  };
+  return { paneRef, zoomRef, fitted, onImageLoad };
+}
+
 function ZoomableImage({
   src,
   alt,
@@ -1617,11 +1707,13 @@ function ZoomableImage({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [zoomed, setZoomed] = useState(false);
+  const { paneRef, zoomRef, fitted, onImageLoad } = useFittedZoom(src);
   return (
-    <>
+    <div ref={paneRef} className="w-full h-full">
       {/* key forces a fresh fit-to-view (reset zoom/pan) on every image change */}
       <TransformWrapper
         key={resetKey}
+        ref={zoomRef}
         {...ZOOM_PROPS}
         onTransform={(_, s) => setZoomed(s.scale > 1.01)}
       >
@@ -1629,14 +1721,18 @@ function ZoomableImage({
           <>
             <TransformComponent
               wrapperClass="!w-full !h-full cursor-grab active:cursor-grabbing"
-              contentClass="!w-full !h-full"
+              contentClass={fitted ? '' : '!w-full !h-full'}
+              contentStyle={fitted}
             >
               <img
                 src={src}
                 alt={alt}
                 fetchPriority="high"
                 draggable={false}
-                onLoad={onLoaded}
+                onLoad={(e) => {
+                  onImageLoad(e);
+                  onLoaded();
+                }}
                 onError={onLoaded}
                 style={filter ? { filter } : undefined}
                 className="w-full h-full object-contain select-none"
@@ -1652,7 +1748,7 @@ function ZoomableImage({
         )}
       </TransformWrapper>
       {expanded && <Lightbox src={src} alt={alt} filter={filter} onClose={() => setExpanded(false)} />}
-    </>
+    </div>
   );
 }
 
@@ -1668,6 +1764,7 @@ function Lightbox({
   onClose: () => void;
 }) {
   const [zoomed, setZoomed] = useState(false);
+  const { paneRef, zoomRef, fitted, onImageLoad } = useFittedZoom(src);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     document.addEventListener('keydown', onKey);
@@ -1688,18 +1785,29 @@ function Lightbox({
           ✕
         </button>
       </div>
-      <div className="relative min-h-0" onClick={(e) => e.target === e.currentTarget && onClose()}>
-        <TransformWrapper {...ZOOM_PROPS} maxScale={10} onTransform={(_, s) => setZoomed(s.scale > 1.01)}>
+      <div
+        ref={paneRef}
+        className="relative min-h-0"
+        onClick={(e) => e.target === e.currentTarget && onClose()}
+      >
+        <TransformWrapper
+          ref={zoomRef}
+          {...ZOOM_PROPS}
+          maxScale={10}
+          onTransform={(_, s) => setZoomed(s.scale > 1.01)}
+        >
           {({ zoomIn, zoomOut, resetTransform }) => (
             <>
               <TransformComponent
                 wrapperClass="!w-full !h-full cursor-grab active:cursor-grabbing"
-                contentClass="!w-full !h-full"
+                contentClass={fitted ? '' : '!w-full !h-full'}
+                contentStyle={fitted}
               >
                 <img
                   src={src}
                   alt={alt}
                   draggable={false}
+                  onLoad={onImageLoad}
                   style={filter ? { filter } : undefined}
                   className="w-full h-full object-contain select-none"
                 />
