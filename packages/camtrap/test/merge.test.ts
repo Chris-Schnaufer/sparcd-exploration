@@ -168,6 +168,20 @@ describe('classified_by provenance', () => {
     expect(row[OBS_COL.comments]).toContain('[OTHER:keep]');
   });
 
+  it('carries the old row onto its replacement when the producer left observation_type empty', () => {
+    const canonical = serializeCsvRows([
+      ['obs-1', DEP, '', k('IMG001.JPG'), '2024-01-10T08:00:00', '', '', '', 'Canis latrans', '1', '', 'Adult', '', 'Walking', 'ind-1', '', 'anita', '', '0.95', '[OTHER:keep]'],
+    ]);
+    const row = parseCsvRows(mergeObservations(canonical, [{
+      mediaId: k('IMG001.JPG'), deploymentId: DEP, timestamp: '2024-01-10T08:00:00',
+      observations: [{ scientificName: 'Canis latrans', count: 2, commonName: 'Coyote', classifiedBy: 'anita' }],
+    }]))[0];
+    expect(row[OBS_COL.lifeStage]).toBe('Adult');
+    expect(row[OBS_COL.behaviour]).toBe('Walking');
+    expect(row[OBS_COL.individualId]).toBe('ind-1');
+    expect(row[OBS_COL.comments]).toContain('[OTHER:keep]');
+  });
+
   // #368: a review (confirm or correction) records who and when — col 17
   // round-trips the same way col 16 (classified_by) already does.
   it('writes and reads back classification_timestamp alongside classified_by', () => {

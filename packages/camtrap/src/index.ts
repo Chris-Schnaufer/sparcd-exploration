@@ -436,20 +436,23 @@ export function parseMedia(csv: string): Media[] {
   }));
 }
 
+// Some producers (e.g. video ingestion) never populate observationType at
+// all, leaving it empty even on rows that name a real species — infer
+// "animal" from scientificName in that case. An explicit non-'animal'
+// value (e.g. "human", "vehicle") is trusted as-is and stays 'blank',
+// since other producers do use it to mean something other than blank.
+function isAnimalRow(r: string[]): boolean {
+  const rawType = r[OBS_COL.observationType] ?? '';
+  return rawType === 'animal' ||
+    (rawType === '' && (r[OBS_COL.scientificName] ?? '') !== '' && Number(r[OBS_COL.count] ?? '0') > 0);
+}
+
 /** Parse `observations.csv` into typed rows. `tags` is the raw col-19 comments. */
 export function parseObservations(csv: string): Observation[] {
   return parseCsvRows(csv).map((r) => {
-    const rawType = r[OBS_COL.observationType] ?? '';
     const scientificName = r[OBS_COL.scientificName] ?? '';
     const count = Number(r[OBS_COL.count] ?? '0');
-    // Some producers (e.g. video ingestion) never populate observationType at
-    // all, leaving it empty even on rows that name a real species — infer
-    // "animal" from scientificName in that case. An explicit non-'animal'
-    // value (e.g. "human", "vehicle") is trusted as-is and stays 'blank',
-    // since other producers do use it to mean something other than blank.
-    const observationType = rawType === 'animal' || (rawType === '' && scientificName !== '' && count > 0)
-      ? 'animal'
-      : 'blank';
+    const observationType = isAnimalRow(r) ? 'animal' : 'blank';
     const tags = r[OBS_COL.comments] ?? '';
     const reviewEvents = reviewEventsFromComments(tags);
     return {
@@ -695,7 +698,7 @@ export function mergeObservations(
       .filter(positiveCount)
       .map((o, i) => {
         const prior = existing.find(
-          (row) => !used.has(row) && row[OBS_COL.observationType] === 'animal' && row[OBS_COL.scientificName] === o.scientificName,
+          (row) => !used.has(row) && isAnimalRow(row) && row[OBS_COL.scientificName] === o.scientificName,
         );
         if (prior) used.add(prior);
         return buildObservationRow(e, o, genId(e.mediaId, i), prior);
