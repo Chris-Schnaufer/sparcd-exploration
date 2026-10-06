@@ -233,15 +233,19 @@ export function buildSyncPlan(
         // `addObservation` already refreshed at apply time is written through.
         observations: obs.map((o) => {
           const base = baseForObservation(o);
+          const explicitlyConfirmed = confirmedSpecies.includes(o.scientificName);
           return {
             scientificName: o.scientificName,
             count: Math.max(1, o.count),
             commonName: o.commonName || undefined,
             requestedSpecies: o.requestedSpecies || undefined,
-            // A confirmation adds a review event only. An unattributed row
-            // stays unattributed: the reviewer did not make the original call.
-            classifiedBy: base?.classifiedBy ?? o.classifiedBy,
-            classificationTimestamp: base?.classificationTimestamp ?? o.classificationTimestamp,
+            // Only the explicitly re-applied species receives the current
+            // reviewer identity. Other legacy rows keep their canonical
+            // attribution (or remain unattributed).
+            classifiedBy: base?.classifiedBy ?? o.classifiedBy ??
+              (explicitlyConfirmed ? user.trim() || undefined : undefined),
+            classificationTimestamp: base?.classificationTimestamp ?? o.classificationTimestamp ??
+              (explicitlyConfirmed ? new Date().toISOString() : undefined),
             reviewEvents: mergeReviewEvents(base?.reviewEvents, o.reviewEvents),
           };
         }),
