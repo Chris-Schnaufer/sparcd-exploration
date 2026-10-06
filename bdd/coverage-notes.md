@@ -16,8 +16,8 @@
 
 | ID | target scenario title | status | as-built scenarios | reason |
 | --- | --- | --- | --- | --- |
-| F2-1 | Only locations valid for the chosen collection can be assigned | partial | uploader: assign-collection-and-deployment.feature: Locations the chosen collection has already used are offered first | Collection locations are prioritized, not enforced. |
-| F2-2 | A location outside the collection cannot be assigned | missing | — | Outside locations are allowed rather than refused. |
+| F2-1 | Only locations valid for the chosen collection can be assigned | covered | uploader: assign-collection-and-deployment.feature: Only locations valid for the chosen collection can be assigned; Changing collections clears a location that is no longer allowed | The collection-specific list is the only source offered for new assignments; historical deployments only order entries that remain allowed, and a collection switch clears an invalid persisted selection. |
+| F2-2 | A location outside the collection cannot be assigned | covered | uploader: assign-collection-and-deployment.feature: A location outside the collection cannot be assigned | Outside locations are absent from the picker, and the assignment remains unavailable. |
 | F2-3 | An upload cannot be finalized while any batch is missing a location | partial | uploader: assign-collection-and-deployment.feature: The batch cannot be uploaded until a camera location is assigned | The single-batch gate requires a location but does not handle or name multiple batches. |
 | F2-4 | An upload can be finalized once every batch has a location | partial | uploader: assign-collection-and-deployment.feature: The batch cannot be uploaded until a camera location is assigned | A located single batch continues; all batches in a multi-batch upload are not checked. |
 | F2-5 | Each stored image carries the location Frank assigned to its batch | covered | uploader: assign-collection-and-deployment.feature: Every stored image carries the location assigned to its batch | Two batches uploaded one after the other to two locations each store their own location, and every media and observation row points at it. |
@@ -64,8 +64,8 @@
 
 | ID | target scenario title | status | as-built scenarios | reason |
 | --- | --- | --- | --- | --- |
-| A2-1 | Only locations valid for her collection can be assigned | missing | uploader: assign-collection-and-deployment.feature: Locations the chosen collection has already used are offered first | Used locations come first, but every registry location remains selectable. |
-| A2-2 | A location outside her collection cannot be assigned | missing | — | The uploader does not refuse registry locations outside the collection. |
+| A2-1 | Only locations valid for her collection can be assigned | covered | uploader: assign-collection-and-deployment.feature: Only locations valid for Anita's chosen collection can be assigned | Anita receives the same collection-scoped assignment list. |
+| A2-2 | A location outside her collection cannot be assigned | covered | uploader: assign-collection-and-deployment.feature: A location outside Anita's collection cannot be assigned | Outside locations are absent from the picker, and the assignment remains unavailable. |
 | A2-3 | The upload cannot be finalized without a location | covered | uploader: assign-collection-and-deployment.feature: The batch cannot be uploaded until a camera location is assigned | Continue is disabled and explains that a deployment is required. |
 | A2-4 | The stored location matches what Anita assigned | covered | uploader: assign-collection-and-deployment.feature: Every stored image carries the location assigned to its batch | The stored deployment carries the assigned location's id, name and coordinates, and every image row points at it. |
 | A2-5 | The location applies to the identifications she already made | covered | uploader: tag-before-upload.feature: The identifications made before upload are tied to the batch's location | Every species row from the Tagger points at the assigned location's deployment. |
@@ -124,8 +124,8 @@
 | H3-3 | Harold can correct an existing identification | partial | tagger: H3-review-existing-identifications.feature: A recorded count can be corrected; tagger: H3-review-existing-identifications.feature: A correction is attributed to the person who synced it | Correction and audit identity exist, but species correction is not recorded explicitly. |
 | H3-4 | Harold can remove an existing identification | covered | tagger: H3-review-existing-identifications.feature: Removing an existing species records the removal | Explicit draft removal provenance is serialized as `[REMOVED:<scientific name>]` while the species row is removed; full detags retain the marker on the blank placeholder and snapshots preserve the prior file. |
 | H3-5 | A review records who carried it out | partial | tagger: H3-review-existing-identifications.feature: A correction is attributed to the person who synced it | Correction records identity and time; confirmation without change records no reviewer. |
-| H3-6 | The original identifier's work remains attributable | missing | — | No scenario displays original attribution beside a separate review. |
-| H3-7 | A review does not destroy the original uploaded data | partial | tagger: sync-identifications-to-the-collection.feature: The previous state is preserved before anything is replaced; tagger: H3-review-existing-identifications.feature: A correction is attributed to the person who synced it | The change is traceable, but the stored files are replaced and the upload record is rewritten on sync; the original survives only as a snapshot copy. |
+| H3-6 | The original identifier's work remains attributable | covered | tagger: H3-review-existing-identifications.feature: A review keeps original attribution separate from the review event | The original identifier and repeatable review event are both visible and persisted. |
+| H3-7 | A review does not destroy the original uploaded data | covered | tagger: H3-review-existing-identifications.feature: A correction preserves the immutable original upload baseline; tagger: H3-review-existing-identifications.feature: A removal preserves the immutable original upload baseline | The original media bytes and all four initial canonical files are retained byte-for-byte in the idempotent baseline; live audit data records the change. |
 | H3-8 | Harold can tell reviewed identifications from unreviewed ones | covered | tagger: H3-review-existing-identifications.feature: Reviewed and unreviewed identifications are visibly distinguished | The focused species chips identify each observation as reviewed or not reviewed, and Overview reports mixed and unreviewed image states. |
 
 ## Totals
@@ -133,14 +133,14 @@
 | story | covered | partial | missing | untestable | total |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | F1 | 6 | 1 | 0 | 0 | 7 |
-| F2 | 1 | 3 | 2 | 0 | 6 |
+| F2 | 3 | 2 | 1 | 0 | 6 |
 | F3 | 0 | 5 | 1 | 0 | 6 |
 | F4 | 0 | 0 | 7 | 3 | 10 |
 | A1 | 6 | 0 | 0 | 0 | 6 |
-| A2 | 3 | 0 | 2 | 0 | 5 |
+| A2 | 5 | 0 | 0 | 0 | 5 |
 | AL1 | 5 | 0 | 0 | 1 | 6 |
 | AL2 | 6 | 0 | 0 | 0 | 6 |
 | H1 | 4 | 0 | 0 | 2 | 6 |
 | H2 | 4 | 0 | 2 | 1 | 7 |
-| H3 | 3 | 4 | 1 | 0 | 8 |
-| Overall | 38 | 13 | 15 | 7 | 73 |
+| H3 | 5 | 3 | 0 | 0 | 8 |
+| Overall | 44 | 11 | 11 | 7 | 73 |

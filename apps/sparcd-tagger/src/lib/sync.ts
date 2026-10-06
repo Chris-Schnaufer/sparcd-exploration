@@ -163,6 +163,9 @@ export function buildSyncPlan(
     const timestampSource = timeChanged && img.timestampSource ? 'manual' : undefined;
     const tagChanged = !observationsEqual(obs, img.baseObservations);
     const confirmedSpecies = d?.confirmedSpecies ?? [];
+    // Match provenance by the stable species key even when count/name fields
+    // changed. A count correction must retain the canonical review history and
+    // original attribution for that species.
     const baseForObservation = (o: (typeof obs)[number]) => img.baseObservations.find(
       (candidate) => candidate.scientificName === o.scientificName,
     );
@@ -300,6 +303,10 @@ export function snapshotStamp(d: Date): string {
 export const snapshotPrefixOf = (uploadPrefix: string, user: string, stamp: string): string =>
   `${uploadPrefix}.sparcd-tagger-snapshots/${encodeURIComponent(user)}/${stamp}/`;
 
+/** Prefix for the one immutable copy of the upload's initial canonical state. */
+export const originalBaselinePrefixOf = (uploadPrefix: string): string =>
+  `${uploadPrefix}.sparcd-tagger-original/`;
+
 // --- Orchestrator ----------------------------------------------------------
 
 /** Every S3/Dexie effect the sync performs, injected so it is fully testable. */
@@ -308,6 +315,8 @@ export type SyncIO = {
   loadCanonical: () => Promise<CanonicalState>;
   /** Conditional `writeImmutable` of one snapshot object; rejects with a 412-typed error if the key exists. */
   writeSnapshot: (key: string, body: string, contentType: string) => Promise<void>;
+  /** Create the immutable first-state baseline if this upload has none yet. */
+  ensureOriginalBaseline?: (current: CanonicalState) => Promise<void>;
   /** `replaceIfUnchanged` of one canonical object; rejects with a conflict-typed error on a stale ETag. */
   replace: (key: string, body: string, etag: string, contentType: string) => Promise<{ etag?: string }>;
   saveJournal: (journal: SyncJournal) => Promise<void>;
@@ -505,6 +514,16 @@ async function writeSnapshotSet(
 }
 
 /**
+ * The first live edit needs a durable copy of the upload as it arrived. This
+ * is deliberately separate from timestamped rollback snapshots: the baseline
+ * is created once and is never replaced or removed. The storage adapter owns
+ * the idempotent conditional-write details.
+ */
+async function ensureOriginalBaseline(io: SyncIO, current: CanonicalState): Promise<void> {
+  await io.ensureOriginalBaseline?.(current);
+}
+
+/**
  * Resume a prior partial sync/restore: verify written/pending objects against
  * the current remote, then continue from the first pending one. Returns the
  * terminal `SyncResult` when a journal is present (whether it conflicts,
@@ -525,6 +544,11 @@ async function tryResume(
   const decision = planResume(journal, remoteStates(cur));
   if (decision.kind === 'conflict')
     return { status: 'conflict', role: decision.role, reason: decision.reason };
+  // A journal may have been created by an older version before the immutable
+  // baseline was introduced. Establish the baseline before completing any
+  // resumed canonical write; the S3 adapter can use any available pre-change
+  // snapshot when one exists.
+  if (!dryRun) await ensureOriginalBaseline(io, cur);
   if (decision.kind === 'done') {
     if (dryRun)
       return { status: 'dry-run', summary: EMPTY_SUMMARY, snapshotPrefix: journal.snapshotPrefix, writes: [] };
@@ -564,7 +588,10 @@ type CommitCtx = {
  * conflict so the next attempt resumes instead of restarting.
  */
 async function commitWrites(io: SyncIO, c: CommitCtx, summary: DiffSummary): Promise<SyncResult> {
-  // 1. Immutable pre-change snapshot, with a single +1s re-stamp on collision.
+  // 1. Preserve the first uploaded state before creating any later snapshot.
+  await ensureOriginalBaseline(io, c.current);
+
+  // 2. Immutable pre-change snapshot, with a single +1s re-stamp on collision.
   let activePrefix = c.snapshotPrefix;
   try {
     await writeSnapshotSet(io, activePrefix, c.current, c.user, c.editStamp);
@@ -575,7 +602,7 @@ async function commitWrites(io: SyncIO, c: CommitCtx, summary: DiffSummary): Pro
     await writeSnapshotSet(io, activePrefix, c.current, c.user, c.editStamp);
   }
 
-  // 2. Journal the intended writes before the first canonical PUT.
+  // 3. Journal the intended writes before the first canonical PUT.
   const journal: SyncJournal = {
     id: `${c.bucket}::${c.uploadPrefix}`,
     bucket: c.bucket,
@@ -595,7 +622,7 @@ async function commitWrites(io: SyncIO, c: CommitCtx, summary: DiffSummary): Pro
   };
   await io.saveJournal(journal);
 
-  // 3. Conditional canonical replacement, in order, recording each new ETag.
+  // 4. Conditional canonical replacement, in order, recording each new ETag.
   const result = await writePending(io, journal, 0);
   if (result.status === 'synced') return { ...result, summary };
   return result;
