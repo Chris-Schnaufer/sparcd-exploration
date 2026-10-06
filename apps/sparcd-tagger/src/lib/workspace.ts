@@ -9,6 +9,7 @@ import {
   parseObservations,
   commonNameFromComments,
   requestedSpeciesFromComments,
+  correctedFromFromComments,
   removedSpeciesFromComments,
   timestampSourceFromComments,
   type Observation,
@@ -81,6 +82,7 @@ export function buildTagImages(bundle: CanonicalBundle): TagImage[] {
         commonName: commonNameFromComments(o.tags) ?? '',
         count: o.count ?? 0, // parseObservations always yields a real number; 0 is the type-safe fallback
         requestedSpecies: requestedSpeciesFromComments(o.tags) ?? '',
+        correctedFrom: correctedFromFromComments(o.tags) ?? undefined,
         classifiedBy: o.classifiedBy,
         classificationTimestamp: o.classificationTimestamp,
         ...(o.reviewEvents?.length ? { reviewEvents: o.reviewEvents } : {}),

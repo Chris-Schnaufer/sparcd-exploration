@@ -496,6 +496,45 @@ describe('buildSyncPlan', () => {
     expect(legacy.tagEdits[0].removedSpecies).toEqual([]);
   });
 
+  it('marks a one-for-one species replacement with the previous scientific name', () => {
+    const plan = buildSyncPlan(
+      IMAGES,
+      {
+        [K1]: draft({
+          mediaPath: K1,
+          observations: [obs('Canis latrans', 1, 'Coyote')],
+        }),
+      },
+      null,
+    );
+    expect(plan.tagEdits[0].observations).toEqual([
+      expect.objectContaining({ scientificName: 'Canis latrans', correctedFrom: 'Puma concolor' }),
+    ]);
+  });
+
+  it('does not mark count-only, add-only, or removal-only edits as replacements', () => {
+    const count = buildSyncPlan(
+      IMAGES,
+      { [K1]: draft({ mediaPath: K1, observations: [obs('Puma concolor', 2)] }) },
+      null,
+    );
+    expect(count.tagEdits[0].observations[0].correctedFrom).toBeUndefined();
+
+    const addition = buildSyncPlan(
+      IMAGES,
+      { [K2]: draft({ mediaPath: K2, observations: [obs('Canis latrans', 1, 'Coyote')] }) },
+      null,
+    );
+    expect(addition.tagEdits[0].observations[0].correctedFrom).toBeUndefined();
+
+    const removal = buildSyncPlan(
+      IMAGES,
+      { [K1]: draft({ mediaPath: K1, observations: [] }) },
+      null,
+    );
+    expect(removal.tagEdits[0].observations).toEqual([]);
+  });
+
   it('ignores a questionable-only toggle (no canonical change)', () => {
     const plan = buildSyncPlan(
       IMAGES,
@@ -1008,5 +1047,92 @@ describe('removal provenance survives later edits', () => {
     const imgs = images([rowWith('', '[REMOVED:Puma concolor]', 'blank')]);
     const plan = buildSyncPlan(imgs, { [K1]: draft({ mediaPath: K1, observations: [obs('Puma concolor', 1)] }) }, null);
     expect(plan.tagEdits[0].removedSpecies).toEqual([]);
+  });
+
+  it('writes a stored [REMOVED:…] marker once when the surviving row is rewritten', () => {
+    const csv = serializeCsvRows([rowWith('Canis latrans', '[COMMONNAME:Coyote][REMOVED:Puma concolor]')]);
+    const recount = buildSyncPlan(images([rowWith('Canis latrans', '[COMMONNAME:Coyote][REMOVED:Puma concolor]')]), {
+      [K1]: draft({ mediaPath: K1, observations: [obs('Canis latrans', 3, 'Coyote')] }),
+    }, null);
+    expect(parseObservations(mergeObservations(csv, recount.tagEdits)).map((o) => o.tags)).toEqual([
+      '[COMMONNAME:Coyote][REMOVED:Puma concolor]',
+    ]);
+    const restored = buildSyncPlan(images([rowWith('Canis latrans', '[COMMONNAME:Coyote][REMOVED:Puma concolor]')]), {
+      [K1]: draft({ mediaPath: K1, observations: [obs('Canis latrans', 1, 'Coyote'), obs('Puma concolor', 1)] }),
+    }, null);
+    expect(parseObservations(mergeObservations(csv, restored.tagEdits)).map((o) => o.tags)).toEqual([
+      '[COMMONNAME:Coyote]',
+      '',
+    ]);
+  });
+});
+
+describe('correction provenance survives later syncs', () => {
+  const images = (csv: string) => buildTagImages({ mediaCsv: MEDIA_CSV, observationsCsv: csv });
+  const k1Tags = (csv: string) => parseObservations(csv).filter((o) => o.mediaId === K1).map((o) => o.tags);
+  const BOB = { reviewedBy: 'bob', reviewedAt: NOW.toISOString() };
+
+  it('keeps [CORRECTED_FROM:…] when the replacement is confirmed in a later sync', () => {
+    const swap = buildSyncPlan(images(OBS_CSV), {
+      [K1]: draft({ mediaPath: K1, observations: [obs('Canis latrans', 1, 'Coyote')] }),
+    }, null);
+    const afterSwap = mergeObservations(OBS_CSV, swap.tagEdits);
+    expect(k1Tags(afterSwap)).toEqual(['[COMMONNAME:Coyote][CORRECTED_FROM:Puma concolor]']);
+
+    // The synced draft is clean and no longer holds the marker; the confirm starts from it.
+    const confirm = buildSyncPlan(images(afterSwap), {
+      [K1]: draft({
+        mediaPath: K1,
+        observations: [{ ...obs('Canis latrans', 1, 'Coyote'), reviewEvents: [BOB] }],
+        confirmedSpecies: ['Canis latrans'],
+      }),
+    }, null, null, 'bob');
+    expect(confirm.summary).toMatchObject({ confirmations: 1, modifications: 0 });
+    expect(confirm.tagEdits[0].observations[0].correctedFrom).toBe('Puma concolor');
+    expect(k1Tags(mergeObservations(afterSwap, confirm.tagEdits))).toEqual([
+      `[COMMONNAME:Coyote][CORRECTED_FROM:Puma concolor][REVIEWED_BY:bob][REVIEWED_AT:${BOB.reviewedAt}]`,
+    ]);
+  });
+});
+
+describe('a one-for-one swap is recorded as a correction, not also as a removal', () => {
+  const k1Tags = (plan: SyncPlan, csv: string) => parseObservations(mergeObservations(csv, plan.tagEdits))
+    .filter((o) => o.mediaId === K1)
+    .map((o) => `${o.scientificName} ${o.tags}`);
+  const twoSpecies = (a: string, b: string) => serializeCsvRows([
+    obsRow(K1, '2024-01-10T08:00:00', a),
+    obsRow(K1, '2024-01-10T08:00:00', b),
+  ]);
+  const imagesOf = (csv: string) => buildTagImages({ mediaCsv: MEDIA_CSV, observationsCsv: csv });
+
+  it('writes only [CORRECTED_FROM:…] for a swap made by removing one species and adding another', () => {
+    const plan = buildSyncPlan(imagesOf(OBS_CSV), {
+      [K1]: draft({ mediaPath: K1, observations: [obs('Canis latrans', 1, 'Coyote')], removedSpecies: ['Puma concolor'] }),
+    }, null);
+    expect(plan.tagEdits[0].removedSpecies).toEqual([]);
+    expect(k1Tags(plan, OBS_CSV)).toEqual(['Canis latrans [COMMONNAME:Coyote][CORRECTED_FROM:Puma concolor]']);
+  });
+
+  it('writes only [REMOVED:…] for a removal with no replacement', () => {
+    const csv = twoSpecies('Puma concolor', 'Canis latrans');
+    const plan = buildSyncPlan(imagesOf(csv), {
+      [K1]: draft({ mediaPath: K1, observations: [obs('Canis latrans', 1, 'Coyote')], removedSpecies: ['Puma concolor'] }),
+    }, null);
+    expect(k1Tags(plan, csv)).toEqual(['Canis latrans [COMMONNAME:Coyote][REMOVED:Puma concolor]']);
+  });
+
+  it('writes each removal once and no correction when several species are swapped at once', () => {
+    const csv = twoSpecies('Puma concolor', 'Odocoileus hemionus');
+    const plan = buildSyncPlan(imagesOf(csv), {
+      [K1]: draft({
+        mediaPath: K1,
+        observations: [obs('Canis latrans', 1, 'Coyote'), obs('Lynx rufus', 1, 'Bobcat')],
+        removedSpecies: ['Puma concolor', 'Odocoileus hemionus'],
+      }),
+    }, null);
+    expect(k1Tags(plan, csv)).toEqual([
+      'Canis latrans [COMMONNAME:Coyote][REMOVED:Puma concolor][REMOVED:Odocoileus hemionus]',
+      'Lynx rufus [COMMONNAME:Bobcat]',
+    ]);
   });
 });

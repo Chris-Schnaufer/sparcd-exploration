@@ -198,13 +198,33 @@ export function buildSyncPlan(
         img.baseObservations.some((o) => o.scientificName === name),
       ).length;
 
+      // A species replacement is the one-to-one case where an existing name
+      // disappeared and a different name was added on the same image. Keep
+      // that relationship on the replacement row so the canonical record
+      // explains what was corrected. Additions, removals, and count-only edits
+      // deliberately remain unmarked.
+      const baseNames = new Set(img.baseObservations.map((o) => o.scientificName));
+      const nextNames = new Set(obs.map((o) => o.scientificName));
+      const removedNames = img.baseObservations
+        .map((o) => o.scientificName)
+        .filter((name) => !nextNames.has(name));
+      const addedNames = obs
+        .map((o) => o.scientificName)
+        .filter((name) => !baseNames.has(name));
+      const replacementFrom = removedNames.length === 1 && addedNames.length === 1
+        ? removedNames[0]
+        : undefined;
+      // The swapped-out species is recorded once, as the correction, not also
+      // as a removal.
+      const removed = removedSpecies.filter((name) => name !== replacementFrom);
+
       tagEdits.push({
         mediaId: img.key,
         deploymentId,
         timestamp: corrected,
         mediaTimestamp: timeChanged ? corrected : undefined,
         timestampSource,
-        removedSpecies,
+        removedSpecies: removed,
         observations: obs.map((o) => {
           const base = baseForObservation(o);
           // The editor is credited only for a species changed or re-applied
@@ -225,8 +245,12 @@ export function buildSyncPlan(
             count: Math.max(1, o.count),
             commonName: o.commonName || undefined,
             requestedSpecies: o.requestedSpecies || undefined,
-            removedSpecies: obs[0] === o ? removedSpecies : undefined,
+            removedSpecies: obs[0] === o ? removed : undefined,
             reviewEvents: mergeReviewEvents(base?.reviewEvents, o.reviewEvents),
+            // A clean draft left by an earlier sync no longer holds the marker,
+            // so the canonical row is the source, as for attribution.
+            correctedFrom: base?.correctedFrom ?? o.correctedFrom ??
+              (replacementFrom && o.scientificName === addedNames[0] ? replacementFrom : undefined),
             classifiedBy,
             classificationTimestamp,
           };
@@ -261,6 +285,7 @@ export function buildSyncPlan(
             classificationTimestamp: base?.classificationTimestamp ?? o.classificationTimestamp ??
               (explicitlyConfirmed ? new Date().toISOString() : undefined),
             reviewEvents: mergeReviewEvents(base?.reviewEvents, o.reviewEvents),
+            correctedFrom: base?.correctedFrom ?? o.correctedFrom,
           };
         }),
       });

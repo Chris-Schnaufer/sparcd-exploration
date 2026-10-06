@@ -26,6 +26,7 @@ export type DraftObservation = {
   classifiedBy?: string; // canonical attribution, preserved when rows are replaced
   classificationTimestamp?: string; // ISO; when the original identification was made
   reviewEvents?: ReviewEvent[];
+  correctedFrom?: string; // prior scientific name for an explicit replacement
 };
 
 /** One image's local edit. `id` = `${bucket}::${uploadPrefix}::${mediaPath}`.

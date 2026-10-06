@@ -492,6 +492,7 @@ export function timestampSourceFromComments(comments: string): TimestampSource |
 
 export const COMMONNAME_PREFIX = 'COMMONNAME';
 export const REQUESTED_SPECIES_PREFIX = 'REQUESTED_SPECIES';
+export const CORRECTED_FROM_PREFIX = 'CORRECTED_FROM';
 export const REMOVED_PREFIX = 'REMOVED';
 export const REVIEWED_BY_PREFIX = 'REVIEWED_BY';
 export const REVIEWED_AT_PREFIX = 'REVIEWED_AT';
@@ -520,6 +521,12 @@ export function commonNameFromComments(comments: string): string | null {
 export function requestedSpeciesFromComments(comments: string): string | null {
   const m = parseTagMarkers(comments).find((t) => t.prefix === REQUESTED_SPECIES_PREFIX);
   return m ? m.value : null;
+}
+
+/** Prior scientific name for an explicit species correction, or null. */
+export function correctedFromFromComments(comments: string): string | null {
+  const m = parseTagMarkers(comments).find((t) => t.prefix === CORRECTED_FROM_PREFIX);
+  return m?.value || null;
 }
 
 /** All scientific names explicitly removed in this edit, or an empty list. */
@@ -553,6 +560,7 @@ export function reviewEventsFromComments(comments: string): ReviewEvent[] {
 export function buildObservationComments(input: {
   commonName?: string;
   requestedSpecies?: string;
+  correctedFrom?: string;
   removedSpecies?: string[];
   reviewEvents?: ReviewEvent[];
   extra?: TagMarker[];
@@ -561,6 +569,8 @@ export function buildObservationComments(input: {
   if (input.commonName) markers.push({ prefix: COMMONNAME_PREFIX, value: input.commonName });
   if (input.requestedSpecies)
     markers.push({ prefix: REQUESTED_SPECIES_PREFIX, value: input.requestedSpecies });
+  if (input.correctedFrom)
+    markers.push({ prefix: CORRECTED_FROM_PREFIX, value: input.correctedFrom });
   for (const species of input.removedSpecies ?? [])
     if (species) markers.push({ prefix: REMOVED_PREFIX, value: species });
   for (const event of input.reviewEvents ?? []) {
@@ -584,6 +594,7 @@ export type ObservationInput = {
   removedSpecies?: string[]; // → [REMOVED:…] in col 19
   reviewEvents?: ReviewEvent[]; // → [REVIEWED_BY/REVIEWED_AT:…] in col 19
   extraMarkers?: TagMarker[]; // preserved through-markers
+  correctedFrom?: string; // prior scientific name for an explicit replacement
   /** Existing attribution is retained when Tagger replaces an observation row. */
   classifiedBy?: string;
   /** ISO timestamp paired with classifiedBy — when the original attribution was made. */
@@ -632,13 +643,14 @@ function buildObservationRow(
   row[OBS_COL.scientificName] = o.scientificName;
   row[OBS_COL.count] = String(o.count);
   row[OBS_COL.countNew] = '0';
-  const knownPrefixes = new Set(['COMMONNAME', 'REQUESTED_SPECIES', 'REVIEWED_BY', 'REVIEWED_AT']);
+  const knownPrefixes = new Set(['COMMONNAME', 'REQUESTED_SPECIES', 'CORRECTED_FROM', 'REMOVED', 'REVIEWED_BY', 'REVIEWED_AT']);
   const preservedMarkers = parseTagMarkers(existingRow?.[OBS_COL.comments] ?? '').filter(
     (marker) => !knownPrefixes.has(marker.prefix),
   );
   row[OBS_COL.comments] = buildObservationComments({
     commonName: o.commonName,
     requestedSpecies: o.requestedSpecies,
+    correctedFrom: o.correctedFrom,
     removedSpecies: o.removedSpecies,
     reviewEvents: o.reviewEvents,
     extra: [...preservedMarkers, ...(o.extraMarkers ?? [])],

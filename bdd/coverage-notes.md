@@ -121,7 +121,7 @@
 | --- | --- | --- | --- | --- |
 | H3-1 | Existing identifications are shown when Harold opens the image | covered | tagger: H3-review-existing-identifications.feature: The focused image's identifications and counts are listed in full | Focus lists every species and count. |
 | H3-2 | Harold can confirm an existing identification | partial | tagger: H3-review-existing-identifications.feature: A review that changes nothing leaves the stored data untouched | The value remains, but no review record is created. |
-| H3-3 | Harold can correct an existing identification | partial | tagger: H3-review-existing-identifications.feature: A recorded count can be corrected; tagger: H3-review-existing-identifications.feature: A correction is attributed to the person who synced it | Correction and audit identity exist, but species correction is not recorded explicitly. |
+| H3-3 | Harold can correct an existing identification | covered | tagger: H3-review-existing-identifications.feature: Replacing an existing species records the correction; tagger: H3-review-existing-identifications.feature: A correction is attributed to the person who synced it | One-for-one species replacements write `[CORRECTED_FROM:<previous scientific name>]` on the replacement observation while preserving the existing audit snapshot and edit comment. The swapped-out species is not also marked `[REMOVED:…]`. Count-only and add-only edits, removals without a replacement, and swaps of several species at once carry no correction marker. |
 | H3-4 | Harold can remove an existing identification | covered | tagger: H3-review-existing-identifications.feature: Removing an existing species records the removal | Explicit draft removal provenance is serialized as `[REMOVED:<scientific name>]` while the species row is removed; full detags retain the marker on the blank placeholder and snapshots preserve the prior file. |
 | H3-5 | A review records who carried it out | partial | tagger: H3-review-existing-identifications.feature: A correction is attributed to the person who synced it | Correction records identity and time; confirmation without change records no reviewer. |
 | H3-6 | The original identifier's work remains attributable | covered | tagger: H3-review-existing-identifications.feature: A review keeps original attribution separate from the review event | The original identifier and repeatable review event are both visible and persisted. |
@@ -142,5 +142,5 @@
 | AL2 | 6 | 0 | 0 | 0 | 6 |
 | H1 | 4 | 0 | 0 | 2 | 6 |
 | H2 | 4 | 0 | 2 | 1 | 7 |
-| H3 | 5 | 3 | 0 | 0 | 8 |
-| Overall | 44 | 11 | 11 | 7 | 73 |
+| H3 | 6 | 2 | 0 | 0 | 8 |
+| Overall | 45 | 10 | 11 | 7 | 73 |
