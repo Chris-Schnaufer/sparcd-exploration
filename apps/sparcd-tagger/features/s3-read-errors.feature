@@ -12,3 +12,8 @@ Feature: Canonical S3 read diagnostics
     When the Sync dialog is opened
     Then the pending change is computed against the currently stored files
     And the Sync dialog does not show an access-denied error
+
+  Scenario: A confirmed media permission denial remains actionable
+    Given the next canonical media GET is denied with AccessDenied
+    When the Sync dialog is opened
+    Then the Sync dialog shows the confirmed access-denied error

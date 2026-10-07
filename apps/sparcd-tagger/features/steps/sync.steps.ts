@@ -66,8 +66,16 @@ Given('the next canonical media HEAD fails without an S3 error code', async ({ s
   s3.failHeads(`${PREFIX_A}media.csv`);
 });
 
+Given('the next canonical media GET is denied with AccessDenied', async ({ s3 }) => {
+  s3.failGetsWith(`${PREFIX_A}media.csv`, 0, 403, 'AccessDenied');
+});
+
 Then('the Sync dialog does not show an access-denied error', async ({ page }) => {
   await expect(page.getByText(/Access denied reading media\.csv/)).toHaveCount(0);
+});
+
+Then('the Sync dialog shows the confirmed access-denied error', async ({ page }) => {
+  await expect(page.getByText(/Access denied reading media\.csv/)).toBeVisible();
 });
 
 // --- The write itself -------------------------------------------------------

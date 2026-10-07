@@ -53,6 +53,8 @@ export class MockS3 {
 
   /** Fail GETs after a fixed number of successful reads of an object. */
   readonly getFailures = new Map<string, { successfulReadsRemaining: number }>();
+  /** Optional status/code returned when a configured GET failure is reached. */
+  readonly getFailureResponses = new Map<string, { status: number; code: string }>();
 
   /** Delay one GET after a fixed number of successful reads of an object. */
   readonly delayedGets = new Map<string, { successfulReadsRemaining: number; ms: number }>();
@@ -75,6 +77,11 @@ export class MockS3 {
 
   failGetsAfter(key: string, successfulReads: number): void {
     this.getFailures.set(key, { successfulReadsRemaining: successfulReads });
+  }
+
+  failGetsWith(key: string, successfulReads: number, status: number, code: string): void {
+    this.failGetsAfter(key, successfulReads);
+    this.getFailureResponses.set(key, { status, code });
   }
 
   delayGetAfter(key: string, successfulReads: number, ms: number): void {
@@ -311,10 +318,14 @@ export async function installS3Mock(page: Page | BrowserContext, s3: MockS3): Pr
       const getDelay = s3.consumeGetDelay(key);
       if (getDelay) await new Promise((r) => setTimeout(r, getDelay));
       if (s3.shouldFailGet(key)) {
-        await route.fulfill({
+        const response = s3.getFailureResponses.get(key) ?? {
           status: 503,
+          code: 'ServiceUnavailable',
+        };
+        await route.fulfill({
+          status: response.status,
           headers: XML,
-          body: errorXml('ServiceUnavailable', `temporary read failure for ${key}`),
+          body: errorXml(response.code, `temporary read failure for ${key}`),
         });
         return;
       }
