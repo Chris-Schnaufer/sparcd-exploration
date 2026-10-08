@@ -2639,6 +2639,267 @@ def _(applied_filters, locations, mo, observations_filtered, pl):
 
 
 @app.cell(hide_code=True)
+def _(pl):
+    """Build detection-based annual metrics without depending on the UI."""
+    import datetime as _dt_trend
+    import re as _re_trend
+
+    _common_pattern = _re_trend.compile(r"COMMONNAME:([^\]]+)")
+    _puma_pattern = _re_trend.compile(
+        r"^(?:puma(?: concolor)?|mountain\s+lion|cougar|lion)$",
+        _re_trend.IGNORECASE,
+    )
+    _TREND_COLUMNS = [
+        "year",
+        "total_detections",
+        "sites_with_detections",
+        "first_detection_date",
+        "last_detection_date",
+        "monitored_sites",
+        "camera_days",
+        "observed_species_richness",
+        "relative_abundance_index_per_100_camera_days",
+        "percent_of_all_detections",
+        "detections_per_site",
+        "percent_sites_with_detections",
+        "trend_rank",
+        "highest_detection_rate",
+    ]
+
+    def _empty_trend():
+        _schema = {
+            "year": pl.Int64,
+            "total_detections": pl.Int64,
+            "sites_with_detections": pl.Int64,
+            "first_detection_date": pl.Utf8,
+            "last_detection_date": pl.Utf8,
+            "monitored_sites": pl.Int64,
+            "camera_days": pl.Int64,
+            "observed_species_richness": pl.Int64,
+            "relative_abundance_index_per_100_camera_days": pl.Float64,
+            "percent_of_all_detections": pl.Float64,
+            "detections_per_site": pl.Float64,
+            "percent_sites_with_detections": pl.Float64,
+            "trend_rank": pl.Int64,
+            "highest_detection_rate": pl.Utf8,
+        }
+        return pl.DataFrame({column: pl.Series(name=column, values=[], dtype=dtype)
+                             for column, dtype in _schema.items()})
+
+    def _date(value):
+        raw = str(value or "")
+        if len(raw) < 10:
+            return None
+        try:
+            return _dt_trend.date.fromisoformat(raw[:10])
+        except ValueError:
+            return None
+
+    def _count(value):
+        try:
+            parsed = float(value)
+            return parsed if parsed >= 0 else 0.0
+        except (TypeError, ValueError):
+            return 1.0
+
+    def _species_names(row):
+        tags = row.get("tags") or ""
+        commons = [name.strip() for name in _common_pattern.findall(tags) if name.strip()]
+        scientific = str(row.get("scientific_name") or "").strip()
+        if commons:
+            return commons
+        return [scientific] if len(scientific) >= 3 else []
+
+    def _matches_target(row, target):
+        scientific = str(row.get("scientific_name") or "").strip()
+        commons = [name.strip() for name in _common_pattern.findall(row.get("tags") or "")]
+        if target == "__puma__":
+            return any(_puma_pattern.match(name) for name in [scientific, *commons])
+        if target.startswith("common:"):
+            wanted = target.split(":", 1)[1].casefold()
+            return any(name.casefold() == wanted for name in commons)
+        if target.startswith("scientific:"):
+            return scientific.casefold() == target.split(":", 1)[1].casefold()
+        return False
+
+    def build_trend_metrics(observations, media, deployments, target="__puma__", start_year=2018):
+        """Return annual detection metrics and a no-data reason.
+
+        Every join uses (bucket, upload, deployment_id). Camera effort comes
+        from dated media, so an untagged camera day still contributes effort.
+        The observations/media inputs are already scoped by the active Search.
+        """
+        deployment_lookup = {}
+        for row in deployments.iter_rows(named=True):
+            key = (row.get("bucket") or "", row.get("upload") or "", row.get("deployment_id") or "")
+            location_id = str(row.get("location_id") or "").strip()
+            if location_id:
+                deployment_lookup[key] = location_id
+
+        observation_rows = []
+        for row in observations.iter_rows(named=True):
+            date = _date(row.get("timestamp"))
+            names = _species_names(row)
+            if date is None or date.year < start_year or not names:
+                continue
+            key = (row.get("bucket") or "", row.get("upload") or "", row.get("deployment_id") or "")
+            observation_rows.append({
+                "row": row,
+                "date": date,
+                "year": date.year,
+                "names": names,
+                "site_key": (*key, deployment_lookup.get(key, "")),
+                "count": _count(row.get("count")),
+            })
+
+        if not observation_rows:
+            return _empty_trend(), "no dated identifications from 2018 onward"
+
+        media_days = set()
+        for row in media.iter_rows(named=True):
+            date = _date(row.get("timestamp"))
+            if date is None or date.year < start_year:
+                continue
+            key = (row.get("bucket") or "", row.get("upload") or "", row.get("deployment_id") or "")
+            location_id = deployment_lookup.get(key, "")
+            if location_id:
+                media_days.add((date.year, *key, location_id, date))
+
+        years = list(range(start_year, max(item["year"] for item in observation_rows) + 1))
+        community = {year: {"detections": 0.0, "species": set()} for year in years}
+        target_by_year = {}
+        for item in observation_rows:
+            year = item["year"]
+            community[year]["detections"] += item["count"]
+            community[year]["species"].update(
+                name for name in item["names"]
+                if not any(skip in name.casefold() for skip in ("ghost", "test"))
+            )
+            if _matches_target(item["row"], target):
+                entry = target_by_year.setdefault(year, {"detections": 0.0, "sites": set(), "dates": []})
+                entry["detections"] += item["count"]
+                if item["site_key"][-1]:
+                    entry["sites"].add(item["site_key"])
+                entry["dates"].append(item["date"])
+
+        effort_by_year = {year: {"sites": set(), "days": set()} for year in years}
+        for year, *parts in media_days:
+            key = tuple(parts[:4])
+            date = parts[4]
+            effort_by_year[year]["sites"].add(key)
+            effort_by_year[year]["days"].add((*key, date))
+
+        rows = []
+        for year in years:
+            target_data = target_by_year.get(year, {"detections": 0.0, "sites": set(), "dates": []})
+            effort = effort_by_year[year]
+            total = target_data["detections"]
+            camera_days = len(effort["days"])
+            monitored_sites = len(effort["sites"])
+            all_detections = community[year]["detections"]
+            rows.append({
+                "year": year,
+                "total_detections": int(round(total)),
+                "sites_with_detections": len(target_data["sites"]),
+                "first_detection_date": min(target_data["dates"]).isoformat() if target_data["dates"] else "",
+                "last_detection_date": max(target_data["dates"]).isoformat() if target_data["dates"] else "",
+                "monitored_sites": monitored_sites,
+                "camera_days": camera_days,
+                "observed_species_richness": len(community[year]["species"]),
+                "relative_abundance_index_per_100_camera_days": round(total / camera_days * 100, 2) if camera_days else None,
+                "percent_of_all_detections": round(total / all_detections * 100, 1) if all_detections else None,
+                "detections_per_site": round(total / monitored_sites, 2) if monitored_sites else None,
+                "percent_sites_with_detections": round(len(target_data["sites"]) / monitored_sites * 100, 1) if monitored_sites else None,
+                "trend_rank": None,
+                "highest_detection_rate": "",
+            })
+
+        valid_rates = sorted({row["relative_abundance_index_per_100_camera_days"] for row in rows if row["relative_abundance_index_per_100_camera_days"] is not None}, reverse=True)
+        for row in rows:
+            rate = row["relative_abundance_index_per_100_camera_days"]
+            if rate is not None:
+                row["trend_rank"] = valid_rates.index(rate) + 1
+                row["highest_detection_rate"] = "highest" if row["trend_rank"] == 1 else ""
+        return pl.DataFrame(rows), None
+
+    return (build_trend_metrics,)
+
+
+@app.cell(hide_code=True)
+def _(build_trend_metrics, deployments, media_filtered, mo, observations_filtered, pl):
+    import re as _re_trend_ui
+
+    _common_pattern = _re_trend_ui.compile(r"COMMONNAME:([^\]]+)")
+    _common_names = set()
+    _scientific_names = set()
+    for _row in observations_filtered.select("scientific_name", "tags").iter_rows(named=True):
+        _scientific = str(_row["scientific_name"] or "").strip()
+        if len(_scientific) >= 3:
+            _scientific_names.add(_scientific)
+        _common_names.update(name.strip() for name in _common_pattern.findall(_row["tags"] or "") if name.strip())
+
+    _target_options = {"Puma / mountain lion / cougar": "__puma__"}
+    _target_options.update({f"Common: {name}": f"common:{name}" for name in sorted(_common_names)})
+    _target_options.update({f"Scientific: {name}": f"scientific:{name}" for name in sorted(_scientific_names)})
+    trend_target = mo.ui.dropdown(options=_target_options, value="Puma / mountain lion / cougar", label="Species", full_width=False)
+    trend_sort = mo.ui.dropdown(
+        options={
+            "Year": "year",
+            "Highest detection rate": "relative_abundance_index_per_100_camera_days",
+            "Highest total detections": "total_detections",
+            "Highest richness": "observed_species_richness",
+            "Highest occupancy": "percent_sites_with_detections",
+            "Most monitored sites": "monitored_sites",
+        },
+        value="Year",
+        label="Sort by",
+        full_width=False,
+    )
+    trend_table, trend_reason = build_trend_metrics(
+        observations_filtered,
+        media_filtered,
+        deployments,
+        target=trend_target.value or "__puma__",
+    )
+    if trend_reason:
+        trend_view = mo.vstack([
+            mo.hstack([trend_target, trend_sort], widths="equal"),
+            mo.Html(f"<div class='sparcd-note'>No trend data: {trend_reason}.</div>"),
+        ])
+    else:
+        _sort_column = trend_sort.value or "year"
+        _descending = _sort_column != "year"
+        _display = trend_table.sort(_sort_column, descending=_descending, nulls_last=True)
+        _display = _display.select([
+            "year",
+            "total_detections",
+            "relative_abundance_index_per_100_camera_days",
+            "camera_days",
+            "monitored_sites",
+            "observed_species_richness",
+            "percent_sites_with_detections",
+            "first_detection_date",
+            "last_detection_date",
+        ]).rename({
+            "year": "Year",
+            "total_detections": "Detections",
+            "relative_abundance_index_per_100_camera_days": "Detections / 100 camera days",
+            "camera_days": "Camera days",
+            "monitored_sites": "Monitored sites",
+            "observed_species_richness": "Species richness",
+            "percent_sites_with_detections": "Occupancy %",
+            "first_detection_date": "First detection",
+            "last_detection_date": "Last detection",
+        })
+        trend_view = mo.vstack([
+            mo.hstack([trend_target, trend_sort], widths="equal"),
+            mo.Html("<div class='sparcd-note'>Detection-based indices; these are not estimates of true population abundance.</div>"),
+            mo.ui.table(_display, show_column_summaries=False, show_data_types=False, selection=None, pagination=False),
+        ])
+    return (trend_view,)
+
+
+@app.cell(hide_code=True)
 def _(
     basemap_choice,
     camera_map,
@@ -2649,6 +2910,7 @@ def _(
     map_dashboard,
     mo,
     selection_report,
+    trend_view,
     thumbnail_grid,
 ):
     # Map + side dashboard, then the drill-in tabs (E.5). The empty-state /
@@ -2684,11 +2946,13 @@ def _(
     _images_tab = mo.vstack([thumbnail_grid])
     _detections_tab = mo.vstack([detection_table_controls, image_event_table, location_summary_card])
     _locations_tab = mo.vstack([locations_table_view])
+    _trends_tab = mo.vstack([trend_view])
 
     _tabs = mo.ui.tabs({
         "Images": _images_tab,
         "Detections": _detections_tab,
         "Locations": _locations_tab,
+        "Trends": _trends_tab,
     })
     mo.vstack([_map_row, _tabs])
     return
