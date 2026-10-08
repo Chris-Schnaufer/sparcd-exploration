@@ -1294,10 +1294,12 @@ def _(SEARCH_DEFAULTS, deployments, media, observations, pl, search_form):
         pl.col("elevation").is_null()
         | ((pl.col("elevation") >= _elev_min) & (pl.col("elevation") <= _elev_max))
     )
-    _deployment_ids = _deployments_scope["deployment_id"].unique().to_list()
-
-    _obs_scope = observations.filter(pl.col("deployment_id").is_in(_deployment_ids))
-    _media_scope = media.filter(pl.col("deployment_id").is_in(_deployment_ids))
+    # Deployment IDs are only unique within an upload. Preserve the complete
+    # provenance key while narrowing the data so one upload cannot leak into
+    # another upload that reused the same deployment ID.
+    _scope_keys = _deployments_scope.select("bucket", "upload", "deployment_id").unique()
+    _obs_scope = observations.join(_scope_keys, on=["bucket", "upload", "deployment_id"], how="inner")
+    _media_scope = media.join(_scope_keys, on=["bucket", "upload", "deployment_id"], how="inner")
 
     def _dated(col):
         # Undated rows pass the date range but not a year or month pick.
@@ -1311,6 +1313,10 @@ def _(SEARCH_DEFAULTS, deployments, media, observations, pl, search_form):
             _ok = _ok & _ts.str.slice(5, 2).is_in(list(_months))
         return _ok
 
+    # Trends use all dated media in the selected provenance scope. This is
+    # independent of species filters so an untagged day, or a day whose
+    # observations were excluded, still counts as camera effort.
+    trend_media = _media_scope.filter(_dated("timestamp"))
     _obs_dated = _obs_scope.filter(_dated("timestamp"))
 
     if not _included and not _excluded:
@@ -1360,6 +1366,7 @@ def _(SEARCH_DEFAULTS, deployments, media, observations, pl, search_form):
         media_filtered,
         observations_filtered,
         query_deployment_ids,
+        trend_media,
     )
 
 
@@ -2734,7 +2741,15 @@ def _(pl):
             key = (row.get("bucket") or "", row.get("upload") or "", row.get("deployment_id") or "")
             location_id = str(row.get("location_id") or "").strip()
             if location_id:
-                deployment_lookup[key] = location_id
+                # Location IDs can be reused for different physical sites.
+                # Name and coordinates distinguish those sites while allowing
+                # repeated uploads of the same site to share one effort key.
+                deployment_lookup[key] = (
+                    location_id,
+                    str(row.get("location_name") or "").strip(),
+                    str(row.get("latitude") or "").strip(),
+                    str(row.get("longitude") or "").strip(),
+                )
 
         observation_rows = []
         for row in observations.iter_rows(named=True):
@@ -2748,7 +2763,7 @@ def _(pl):
                 "date": date,
                 "year": date.year,
                 "names": names,
-                "site_key": (*key, deployment_lookup.get(key, "")),
+                "site_key": deployment_lookup.get(key),
                 "count": _count(row.get("count")),
             })
 
@@ -2761,9 +2776,9 @@ def _(pl):
             if date is None or date.year < start_year:
                 continue
             key = (row.get("bucket") or "", row.get("upload") or "", row.get("deployment_id") or "")
-            location_id = deployment_lookup.get(key, "")
-            if location_id:
-                media_days.add((date.year, *key, location_id, date))
+            site_key = deployment_lookup.get(key)
+            if site_key is not None:
+                media_days.add((date.year, site_key, date))
 
         years = list(range(start_year, max(item["year"] for item in observation_rows) + 1))
         community = {year: {"detections": 0.0, "species": set()} for year in years}
@@ -2778,16 +2793,14 @@ def _(pl):
             if _matches_target(item["row"], target):
                 entry = target_by_year.setdefault(year, {"detections": 0.0, "sites": set(), "dates": []})
                 entry["detections"] += item["count"]
-                if item["site_key"][-1]:
+                if item["site_key"] is not None:
                     entry["sites"].add(item["site_key"])
                 entry["dates"].append(item["date"])
 
         effort_by_year = {year: {"sites": set(), "days": set()} for year in years}
-        for year, *parts in media_days:
-            key = tuple(parts[:4])
-            date = parts[4]
-            effort_by_year[year]["sites"].add(key)
-            effort_by_year[year]["days"].add((*key, date))
+        for year, site_key, date in media_days:
+            effort_by_year[year]["sites"].add(site_key)
+            effort_by_year[year]["days"].add((site_key, date))
 
         rows = []
         for year in years:
@@ -2826,7 +2839,7 @@ def _(pl):
 
 
 @app.cell(hide_code=True)
-def _(build_trend_metrics, deployments, media_filtered, mo, observations_filtered, pl):
+def _(build_trend_metrics, deployments, mo, observations_filtered, pl, trend_media):
     import re as _re_trend_ui
 
     _common_pattern = _re_trend_ui.compile(r"COMMONNAME:([^\]]+)")
@@ -2857,7 +2870,7 @@ def _(build_trend_metrics, deployments, media_filtered, mo, observations_filtere
     )
     trend_table, trend_reason = build_trend_metrics(
         observations_filtered,
-        media_filtered,
+        trend_media,
         deployments,
         target=trend_target.value or "__puma__",
     )
@@ -2878,6 +2891,9 @@ def _(build_trend_metrics, deployments, media_filtered, mo, observations_filtere
             "monitored_sites",
             "observed_species_richness",
             "percent_sites_with_detections",
+            "percent_of_all_detections",
+            "detections_per_site",
+            "trend_rank",
             "first_detection_date",
             "last_detection_date",
         ]).rename({
@@ -2888,12 +2904,24 @@ def _(build_trend_metrics, deployments, media_filtered, mo, observations_filtere
             "monitored_sites": "Monitored sites",
             "observed_species_richness": "Species richness",
             "percent_sites_with_detections": "Occupancy %",
+            "percent_of_all_detections": "% of all detections",
+            "detections_per_site": "Detections / site",
+            "trend_rank": "Rate rank",
             "first_detection_date": "First detection",
             "last_detection_date": "Last detection",
         })
         trend_view = mo.vstack([
             mo.hstack([trend_target, trend_sort], widths="equal"),
-            mo.Html("<div class='sparcd-note'>Detection-based indices; these are not estimates of true population abundance.</div>"),
+            mo.Html(
+                "<div class='sparcd-note'>"
+                "<strong>Detection-based trend metrics.</strong> "
+                "Camera days count one dated media day per monitored site. "
+                "Occupancy is the percentage of monitored sites with a detection "
+                "of the selected target; species richness counts observed species "
+                "labels. These are effort-adjusted indices, not estimates of true "
+                "population abundance."
+                "</div>"
+            ),
             mo.ui.table(_display, show_column_summaries=False, show_data_types=False, selection=None, pagination=False),
         ])
     return (trend_view,)

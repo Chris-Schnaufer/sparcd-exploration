@@ -62,6 +62,11 @@ try {
   }
   await assert.equal(await textFields.count(), 2, 'the connection form has endpoint and access-key fields');
   await assert.equal(await checkboxes.count(), 2, 'the connection form has HTTPS and remember controls');
+  const encodedNotebookSource = await page.locator('marimo-code').textContent();
+  const notebookSource = encodedNotebookSource ? decodeURIComponent(encodedNotebookSource) : '';
+  assert.match(notebookSource ?? '', /"Trends": _trends_tab/, 'the exported notebook includes the Trends tab');
+  assert.match(notebookSource ?? '', /Detection-based trend metrics/, 'the exported notebook includes the metric explanation');
+  console.log('Explorer Trends WASM bundle check passed.');
   await expect(textFields.nth(0)).toHaveValue('shared.example', { timeout: wasmStartupTimeout });
   await expect(textFields.nth(1)).toHaveValue('shared-access', { timeout: wasmStartupTimeout });
   await assert.equal(await checkboxes.nth(0).isChecked(), true);

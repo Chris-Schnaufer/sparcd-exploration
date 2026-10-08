@@ -66,6 +66,25 @@ class TrendMetricsTest(unittest.TestCase):
         self.assertEqual(row["camera_days"], 2)
         self.assertEqual(row["relative_abundance_index_per_100_camera_days"], 50.0)
 
+    def test_repeated_uploads_of_one_site_day_are_counted_once(self):
+        deployments = frame([
+            ["bucket-a", "upload-a", "dep-a", "A01", "Alpha", "32.0", "-110.0"],
+            ["bucket-a", "upload-b", "dep-b", "A01", "Alpha", "32.0", "-110.0"],
+        ], ["bucket", "upload", "deployment_id", "location_id", "location_name", "latitude", "longitude"])
+        media = frame([
+            ["bucket-a", "upload-a", "dep-a", "2024-06-01T08:00:00-07:00"],
+            ["bucket-a", "upload-b", "dep-b", "2024-06-01T09:00:00-07:00"],
+        ], MEDIA_COLUMNS)
+        observations = frame([
+            ["bucket-a", "upload-a", "dep-a", "2024-06-01T08:00:00-07:00", "Puma concolor", "1", ""],
+        ], OBSERVATION_COLUMNS)
+
+        result, _reason = self.build(observations, media, deployments)
+
+        row = result.filter(pl.col("year") == 2024).row(0, named=True)
+        self.assertEqual(row["monitored_sites"], 1)
+        self.assertEqual(row["camera_days"], 1)
+
     def test_common_name_target_and_count_are_supported(self):
         deployments = frame([["bucket-a", "upload-a", "dep-a", "A01"]], DEPLOYMENT_COLUMNS)
         media = frame([["bucket-a", "upload-a", "dep-a", "2024-06-01"]], MEDIA_COLUMNS)

@@ -50,6 +50,37 @@ class SearchFiltersTest(unittest.TestCase):
     def test_include_filter_leaves_untagged_images_out(self):
         self.assertEqual(sites_and_images({"include_common": ["Owl"]}), (1, 2))
 
+    def test_trend_effort_keeps_all_media_after_species_filtering(self):
+        ns, _ = run_explorer(collection(), search={"include_common": ["Owl"]})
+
+        # The Browse image set follows species filtering, but camera effort does
+        # not: all five dated media records remain in the selected scope.
+        self.assertEqual(ns["media_filtered"].height, 2)
+        self.assertEqual(ns["trend_media"].height, 5)
+
+    def test_trend_scope_joins_upload_provenance(self):
+        s3 = (
+            FakeS3()
+            .upload(
+                "u1",
+                deployments=[["test:shared", "AAA01", "Alpha", -110.0, 32.0] + [""] * 7 + [1000]],
+                media=[media("u1", "alpha.jpg", "shared", "2024-01-01T10:00:00")],
+                observations=[observation("u1", "alpha.jpg", "shared", "2024-01-01T10:00:00", common="Owl")],
+            )
+            .upload(
+                "u2",
+                deployments=[["test:shared", "BBB01", "Bravo", -111.0, 33.0] + [""] * 7 + [1000]],
+                media=[media("u2", "bravo.jpg", "shared", "2024-01-01T10:00:00")],
+                observations=[observation("u2", "bravo.jpg", "shared", "2024-01-01T10:00:00", common="Deer")],
+            )
+        )
+        ns, _ = run_explorer(s3, search={"site_code": ["AAA01"]})
+
+        # Both rows have the same deployment ID, but the selected scope keeps
+        # each upload's provenance intact rather than joining by ID alone.
+        self.assertEqual(ns["trend_media"].height, 1)
+        self.assertEqual(ns["trend_media"]["upload"].to_list(), ["Collections/test/Uploads/u1/"])
+
     def test_malformed_media_date_leaves_the_date_bounds_alone(self):
         s3 = collection().upload(
             "u3",
