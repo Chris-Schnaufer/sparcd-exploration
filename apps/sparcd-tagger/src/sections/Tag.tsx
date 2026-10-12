@@ -223,18 +223,31 @@ export function Tag() {
       if (event.key !== 'Tab') return;
       if ((event.target as Element | null)?.closest?.('[data-focus-lightbox]')) return;
       const dialog = document.querySelector<HTMLElement>('[role="dialog"][aria-label="Focus image viewer"]');
+      const adjustments = document.querySelector<HTMLElement>('[role="dialog"][aria-label="Image adjustments"]');
       if (!dialog) return;
-      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      )).filter((element) => element.getClientRects().length > 0);
+      const roots = [dialog, adjustments].filter((root): root is HTMLElement => root !== null);
+      const selector = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+      const focusable = roots.flatMap((root) =>
+        Array.from(root.querySelectorAll<HTMLElement>(selector)).filter((element) => element.getClientRects().length > 0),
+      );
       if (!focusable.length) return;
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
+      const adjustmentFocusable = adjustments
+        ? Array.from(adjustments.querySelectorAll<HTMLElement>(selector)).filter((element) => element.getClientRects().length > 0)
+        : [];
       const active = document.activeElement;
-      if (event.shiftKey && (active === first || !dialog.contains(active))) {
+      const insideModal = roots.some((root) => root.contains(active));
+      if (event.shiftKey && adjustmentFocusable.length > 0 && active === adjustmentFocusable[0]) {
+        event.preventDefault();
+        adjustmentFocusable[adjustmentFocusable.length - 1].focus();
+      } else if (!event.shiftKey && adjustmentFocusable.length > 0 && active === adjustmentFocusable[adjustmentFocusable.length - 1]) {
+        event.preventDefault();
+        first.focus();
+      } else if (event.shiftKey && (active === first || !insideModal)) {
         event.preventDefault();
         last.focus();
-      } else if (!event.shiftKey && (active === last || !dialog.contains(active))) {
+      } else if (!event.shiftKey && (active === last || !insideModal)) {
         event.preventDefault();
         first.focus();
       }

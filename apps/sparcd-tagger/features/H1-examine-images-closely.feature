@@ -171,6 +171,7 @@ Feature: Examine an image closely enough to catch every species
     Given the focused item is a still image
     When the adjustment panel is opened
     Then keyboard focus enters the adjustment panel
+    And Tab wraps between the Focus viewer and the adjustment panel
     And Escape closes the adjustment panel and returns focus to Adjust
 
   @H1

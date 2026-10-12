@@ -800,6 +800,20 @@ Then('keyboard focus enters the adjustment panel', async ({ page }) => {
   await expect(page.getByLabel('Brightness')).toBeFocused();
 });
 
+Then('Tab wraps between the Focus viewer and the adjustment panel', async ({ page }) => {
+  const focusDialog = page.getByRole('dialog', { name: 'Focus image viewer' });
+  const brightness = page.getByLabel('Brightness');
+  const saturation = page.getByLabel('Saturation');
+  await brightness.focus();
+  await page.keyboard.press('Shift+Tab');
+  await expect(saturation).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: 'Close Focus' })).toBeFocused();
+  await adjustToggle(page).click();
+  await expect(brightness).toBeFocused();
+  await expect(focusDialog).toBeVisible();
+});
+
 Then('Escape closes the adjustment panel and returns focus to Adjust', async ({ page }) => {
   await page.keyboard.press('Escape');
   await expect(adjustmentPanel(page)).toHaveCount(0);
