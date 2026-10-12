@@ -9,8 +9,8 @@ const GROUPS: { title: string; rows: Shortcut[] }[] = [
   {
     title: 'Navigate',
     rows: [
-      { keys: ['↓'], action: 'Next image' },
-      { keys: ['↑'], action: 'Previous image' },
+      { keys: ['↓', '→'], action: 'Next image' },
+      { keys: ['↑', '←'], action: 'Previous image' },
       { keys: ['PgDn'], action: 'Next burst' },
       { keys: ['PgUp'], action: 'Previous burst' },
       { keys: ['Enter'], action: 'Open focused image (Overview)' },

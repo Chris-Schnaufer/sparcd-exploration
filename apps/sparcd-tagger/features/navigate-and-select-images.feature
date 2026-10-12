@@ -17,7 +17,7 @@ Feature: Move through an upload and choose which images an action applies to
   Scenario: The upload can be surveyed as a grid or as a list
     Then the Overview can be switched between a grid of tiles and a list of rows
     And the workspace shows the position of the focused image within the upload
-    And the Focus view keeps the list alongside the enlarged image
+    And the Focus view keeps the species picker beside the enlarged image
 
   @unmapped
   Scenario: List rows expose the useful image details without ambiguous status clutter
@@ -37,9 +37,10 @@ Feature: Move through an upload and choose which images an action applies to
     Then the collection name and upload name are shown
 
   @unmapped
-  Scenario: Images can be stepped through from the keyboard
+  Scenario: Images can be stepped through from the keyboard in either view
     When the next-image or previous-image key is pressed
     Then focus moves one image in that direction
+    And Left and Right also move one image in that direction
     And it stops at the first and last image of the upload
     And any selection is cleared by the move
 
@@ -96,7 +97,15 @@ Feature: Move through an upload and choose which images an action applies to
     Given the Overview is shown
     When the focused image is opened
     Then the Focus view shows that image
-    And on-screen previous and next controls move between images there
+    And on-screen previous and next controls move between images there at every viewport size
+
+  @unmapped
+  Scenario: Browser Back closes the Focus viewer before leaving the workspace
+    Given the Overview is shown
+    And the workspace has a browser history entry
+    When the focused image is opened
+    And the browser Back button is pressed
+    Then the Focus viewer is closed and the Overview is shown
 
   @unmapped
   Scenario: The upload can be ordered by name, type, date or species count

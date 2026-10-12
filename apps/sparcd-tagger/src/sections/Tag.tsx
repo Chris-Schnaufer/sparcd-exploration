@@ -25,7 +25,6 @@ import { buildDiscardSummaries } from '../lib/discardSummary';
 import { TimeShiftModal } from '../components/TimeShiftModal';
 import { ChangeLocationModal } from '../components/ChangeLocationModal';
 import { BulkTimeShiftModal } from '../components/BulkTimeShiftModal';
-import { PerImageTime } from '../components/PerImageTime';
 import { SpeciesLoupe } from '../components/SpeciesLoupe';
 import { KeyConflictDialog } from '../components/KeyConflictDialog';
 import { ImageAdjustments } from '../components/ImageAdjustments';
@@ -35,7 +34,7 @@ import { Overview, type PickMods, type ViewKind } from '../components/Overview';
 import { groupBursts, type BurstGrouping } from '../lib/bursts';
 import { offsetActive, formatOffsetDelta, earliestCorrected } from '../lib/timeshift';
 import { rangeSet, toggleIndex, burstIndexSet, visibleRangeSet } from '../lib/selection';
-import { effectiveOf, type Effective } from '../lib/effective';
+import { effectiveOf } from '../lib/effective';
 import { sortIndices, type SortField, type SortDir } from '../lib/sortImages';
 import { findFilenameMatches } from '../lib/imageSearch';
 import { EMPTY_IMAGE_FILTER, matchesImageFilter, type ImageFilter } from '../lib/imageFilter';
@@ -144,7 +143,6 @@ export function Tag() {
   const setQuestionableManyFn = useDraftStore((s) => s.setQuestionableMany);
   const setTimeOffsetFn = useDraftStore((s) => s.setTimeOffset);
   const setPendingLocationFn = useDraftStore((s) => s.setPendingLocation);
-  const setTimeOverrideFn = useDraftStore((s) => s.setTimeOverride);
   const applyTimeOffsetToSelectionFn = useDraftStore((s) => s.applyTimeOffsetToSelection);
   const flushSaves = useDraftStore((s) => s.flushSaves);
   const discardUpload = useDraftStore((s) => s.discardUpload);
@@ -155,6 +153,35 @@ export function Tag() {
   }, [ctx, loadUpload]);
 
   const [view, setView] = useState<View>('overview');
+  const focusHistoryRef = useRef(false);
+  const focusCloseRef = useRef<HTMLButtonElement>(null);
+  const enterFocus = () => {
+    if (view === 'focus') return;
+    window.history.pushState({ taggerFocus: true }, '', window.location.href);
+    focusHistoryRef.current = true;
+    setView('focus');
+  };
+  const closeFocus = () => {
+    if (view !== 'focus') return;
+    if (focusHistoryRef.current) {
+      focusHistoryRef.current = false;
+      window.history.back();
+    } else {
+      setView('overview');
+    }
+  };
+  useEffect(() => {
+    if (view !== 'focus') return;
+    const onPopState = () => {
+      focusHistoryRef.current = false;
+      setView('overview');
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [view]);
+  useEffect(() => {
+    if (view === 'focus') requestAnimationFrame(() => focusCloseRef.current?.focus());
+  }, [view]);
   const [overviewKind, setOverviewKind] = useState<ViewKind>('grid');
   const [focus, setFocus] = useState(0);
   const [anchor, setAnchor] = useState(0); // last single pick — the base for Shift-range
@@ -603,11 +630,11 @@ export function Tag() {
     setFocus(i);
     setSelected(new Set());
     setAnchor(i);
-    setView('focus');
+    enterFocus();
   };
 
-  // On-screen prev/next (Focus footer) mirror the j/k/arrow path: clamp, move
-  // focus, re-anchor, clear any selection.
+  // Focus navigation buttons and keyboard arrows share this path: clamp to the
+  // current image sequence, re-anchor range selection, and clear selection.
   const gotoImage = (i: number) => {
     const clamped = Math.max(0, Math.min(i, list.length - 1));
     setFocus(clamped);
@@ -622,15 +649,18 @@ export function Tag() {
     if (target != null) gotoImage(target);
   };
 
+  const filteredFocusPosition = imageFilterActive ? visibleIndices.indexOf(focus) : focus;
+  const canGoPrevious = filteredFocusPosition > 0;
+  const canGoNext = imageFilterActive
+    ? filteredFocusPosition >= 0 && filteredFocusPosition < visibleIndices.length - 1
+    : focus < list.length - 1;
+  const hasPreviousAfterPrevious = filteredFocusPosition > 1;
+  const hasNextAfterNext = imageFilterActive
+    ? filteredFocusPosition >= 0 && filteredFocusPosition < visibleIndices.length - 2
+    : focus < list.length - 2;
+
   // On-screen questionable toggle mirrors Shift+Space: act on the selection
   // (or the focused image), flipping off the focused image's current state.
-  const toggleQuestionable = () => {
-    const targets = targetsOf();
-    if (!targets.length || !current) return;
-    const anchorDraft = drafts[current.key];
-    setQuestionableManyFn(ctx, targets, !anchorDraft?.questionable);
-  };
-
   // --- Global key handler: attached once, reads the latest state via a ref so
   // it never re-binds per render (plan perf requirement). ----------------------
   const stateRef = useRef<HandlerState>(null!);
@@ -666,6 +696,7 @@ export function Tag() {
     filter,
     view,
     setView,
+    enterFocus,
     isModalOpen: () =>
       modalOpenRef.current ||
       showDiscard ||
@@ -728,12 +759,9 @@ export function Tag() {
   );
   const discardTitle = `Discard ${nDirty} image${nDirty !== 1 ? 's' : ''}: ${discardDetails.join('; ')}`;
   const hasUploadShift = offsetActive(timeOffset);
-  const correctedTs = current
-    ? correctedTimestamp(current.baseTimestamp, timeOffset, draft?.timeOverride ?? null, captureTimeZone)
-    : '';
 
   return (
-    <div className="h-[100dvh] lg:h-full flex flex-col min-h-0">
+    <div className="h-[100dvh] lg:h-full flex flex-col min-h-0" aria-hidden={view === 'focus'}>
       {/* Reminds the user which collection and upload they're tagging — lost
           otherwise once Browse's own "Uploads in X" heading is left behind. */}
       {!localRecord && (
@@ -745,7 +773,7 @@ export function Tag() {
       <div className="shrink-0 min-h-10 border-b border-rule bg-panel flex flex-wrap items-center gap-3 gap-y-2 px-3">
         <Segmented
           value={view}
-          onChange={(v) => setView(v as View)}
+          onChange={(v) => (v === 'focus' ? enterFocus() : closeFocus())}
           options={[
             { value: 'overview', label: 'Overview' },
             { value: 'focus', label: 'Focus' },
@@ -1152,48 +1180,54 @@ export function Tag() {
             </div>
             <SpeciesPanel {...speciesPanelProps()} />
           </div>
-        ) : (
-          <div className="h-full grid grid-cols-1 lg:grid-cols-[280px_1fr_340px] grid-rows-none lg:grid-rows-[minmax(0,1fr)] min-h-0 overflow-y-auto lg:overflow-visible">
-            {/* On phones the 280px rail becomes a capped filmstrip above the
-                image; lg:contents dissolves the wrapper so desktop keeps the
-                Overview list as a direct grid child. */}
-            <div className="h-[30svh] overflow-y-auto lg:h-auto lg:overflow-visible lg:contents">
-              <Overview
-                list={list}
-                visibleIndices={imageFilterActive ? visibleIndices : undefined}
-                grouping={grouping}
-                focus={focus}
-                selected={selected}
-                kind="list"
-                onPick={pick}
-                onSelectBurst={selectBurst}
-                timeZone={captureTimeZone}
-              />
+        ) : null}
+      </div>
+
+      {view === 'focus' && createPortal(
+        <div
+          className="fixed inset-0 z-[100] flex flex-col bg-paper text-ink"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Focus image viewer"
+          onKeyDown={(e) => {
+            if (e.key !== 'Escape') return;
+            if ((e.target as Element).closest?.('[data-focus-lightbox]')) return;
+            e.preventDefault();
+            e.stopPropagation();
+            closeFocus();
+          }}
+        >
+          <div className="shrink-0 flex items-center justify-between gap-3 border-b border-rule bg-panel px-3 py-1">
+            <div className="min-w-0 text-[13px] font-mono text-ink truncate">
+              Focus{current ? ` · ${current.fileName}` : ''}
             </div>
+            <button
+              ref={focusCloseRef}
+              type="button"
+              onClick={closeFocus}
+              className="min-h-11 min-w-11 grid place-items-center border border-rule text-[20px] leading-none text-inkSoft hover:border-ink hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              aria-label="Close Focus"
+              title="Close Focus (Escape)"
+            >
+              ×
+            </button>
+          </div>
+          <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] overflow-y-auto lg:overflow-visible">
             <FocusPane
               current={current}
-              eff={eff}
-              savedAt={savedAt}
-              corrected={correctedTs}
-              hasUploadShift={hasUploadShift}
-              overridden={!!draft?.timeOverride}
-              timeZone={captureTimeZone}
-              onSetTime={(iso) =>
-                current && setTimeOverrideFn(ctx, current.key, current.deploymentId, currentBase, iso)
-              }
-              onClearTime={() =>
-                current && setTimeOverrideFn(ctx, current.key, current.deploymentId, currentBase, null)
-              }
-              onDetag={() => detagFn(ctx, targetsOf())}
               onPrev={() => gotoFilteredImage(-1)}
               onNext={() => gotoFilteredImage(1)}
-              onToggleQuestionable={toggleQuestionable}
+              canPrev={canGoPrevious}
+              canNext={canGoNext}
+              hasPrevAfterPrev={hasPreviousAfterPrevious}
+              hasNextAfterNext={hasNextAfterNext}
               onDropSpecies={(tag) => applyIncrementAt(focus, tag)}
             />
             <SpeciesPanel {...speciesPanelProps()} />
           </div>
-        )}
-      </div>
+        </div>,
+        document.body,
+      )}
 
       {showCheatsheet && <Cheatsheet onClose={() => setShowCheatsheet(false)} />}
       {showDiscard && (
@@ -1312,33 +1346,21 @@ export function Tag() {
 // --- Focus view (single-image detail) ---------------------------------------
 function FocusPane({
   current,
-  eff,
-  savedAt,
-  corrected,
-  hasUploadShift,
-  overridden,
-  timeZone,
-  onSetTime,
-  onClearTime,
-  onDetag,
   onPrev,
   onNext,
-  onToggleQuestionable,
+  canPrev,
+  canNext,
+  hasPrevAfterPrev,
+  hasNextAfterNext,
   onDropSpecies,
 }: {
   current: TagImage | undefined;
-  eff: Effective | null;
-  savedAt: number;
-  corrected: string;
-  hasUploadShift: boolean;
-  overridden: boolean;
-  timeZone?: string;
-  onSetTime: (iso: string) => void;
-  onClearTime: () => void;
-  onDetag: () => void;
   onPrev: () => void;
   onNext: () => void;
-  onToggleQuestionable: () => void;
+  canPrev: boolean;
+  canNext: boolean;
+  hasPrevAfterPrev: boolean;
+  hasNextAfterNext: boolean;
   onDropSpecies: (tag: AppliedTag) => void;
 }) {
   // View-only display adjustments live here so they reset to neutral when the
@@ -1351,6 +1373,49 @@ function FocusPane({
 
   const [isDragOver, setIsDragOver] = useState(false);
   const dropRef = useRef<HTMLDivElement>(null);
+
+  const getVisibleMediaRect = () => {
+    const image = dropRef.current?.querySelector('img');
+    if (!image) return null;
+    const rect = image.getBoundingClientRect();
+    if (!image.naturalWidth || !image.naturalHeight) return rect;
+    const fit = Math.min(rect.width / image.naturalWidth, rect.height / image.naturalHeight);
+    const width = image.naturalWidth * fit;
+    const height = image.naturalHeight * fit;
+    return new DOMRect(
+      rect.left + (rect.width - width) / 2,
+      rect.top + (rect.height - height) / 2,
+      width,
+      height,
+    );
+  };
+  const previousButtonRef = useRef<HTMLButtonElement>(null);
+  const nextButtonRef = useRef<HTMLButtonElement>(null);
+  const focusAfterNavigationRef = useRef<'previous' | 'next' | null>(null);
+
+  useLayoutEffect(() => {
+    const target = focusAfterNavigationRef.current === 'previous'
+      ? previousButtonRef.current
+      : focusAfterNavigationRef.current === 'next'
+        ? nextButtonRef.current
+        : null;
+    if (!target) return;
+    focusAfterNavigationRef.current = null;
+    target.focus();
+  }, [canPrev, canNext]);
+
+  const navigatePrevious = () => {
+    // When the first image is reached, the previous control disappears. Move
+    // focus to the surviving next control so keyboard users stay in Focus.
+    focusAfterNavigationRef.current = hasPrevAfterPrev ? 'previous' : 'next';
+    onPrev();
+  };
+
+  const navigateNext = () => {
+    // Symmetric boundary handling for the last image.
+    focusAfterNavigationRef.current = hasNextAfterNext ? 'next' : 'previous';
+    onNext();
+  };
 
   return (
     <div className="flex flex-col min-h-[55svh] lg:min-h-0 bg-paper">
@@ -1382,6 +1447,35 @@ function FocusPane({
             filter={filter}
           />
         )}
+        {current && canPrev && (
+          <button
+            ref={previousButtonRef}
+            type="button"
+            onClick={navigatePrevious}
+            className="absolute left-3 top-1/2 z-20 min-h-11 min-w-11 -translate-y-1/2 grid place-items-center rounded-full border border-rule bg-paper/50 text-[22px] leading-none text-inkSoft opacity-75 shadow-sm transition-opacity hover:bg-paper/90 hover:text-ink hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            title="Previous image (ArrowLeft or ArrowUp)"
+            aria-label="Previous image"
+            aria-describedby="focus-navigation-help"
+          >
+            ‹
+          </button>
+        )}
+        {current && canNext && (
+          <button
+            ref={nextButtonRef}
+            type="button"
+            onClick={navigateNext}
+            className="absolute right-3 top-1/2 z-20 min-h-11 min-w-11 -translate-y-1/2 grid place-items-center rounded-full border border-rule bg-paper/50 text-[22px] leading-none text-inkSoft opacity-75 shadow-sm transition-opacity hover:bg-paper/90 hover:text-ink hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            title="Next image (ArrowRight or ArrowDown)"
+            aria-label="Next image"
+            aria-describedby="focus-navigation-help"
+          >
+            ›
+          </button>
+        )}
+        <span id="focus-navigation-help" className="sr-only">
+          Use ArrowLeft or ArrowUp for the previous image. Use ArrowRight or ArrowDown for the next image.
+        </span>
         {showAdjust && (
           // On phones the zoom controls own bottom-right, so park adjustments at
           // top-left to keep both off the squeezed image; restore bottom-left ≥lg.
@@ -1390,7 +1484,7 @@ function FocusPane({
               value={adjustments}
               onChange={setAdjustments}
               onReset={() => setAdjustments(NEUTRAL)}
-              getMediaRect={() => dropRef.current?.querySelector('img')?.getBoundingClientRect() ?? null}
+              getMediaRect={getVisibleMediaRect}
               getBlockedRects={() => {
                 const focus = dropRef.current?.getBoundingClientRect();
                 if (!focus) return [];
@@ -1407,75 +1501,6 @@ function FocusPane({
           </div>
         )}
       </div>
-      {current && eff && (
-        <div className="shrink-0 border-t border-rule bg-panel px-5 py-3 flex items-center gap-5 flex-wrap">
-          {/* On-screen prev/next mirror the arrow keys for touch. */}
-          <div className="lg:hidden flex items-center gap-2">
-            <button
-              onClick={onPrev}
-              className="min-h-11 min-w-11 grid place-items-center text-[18px] leading-none border border-rule text-inkSoft hover:text-ink hover:border-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-              title="Previous image (Arrow Up)"
-              aria-label="Previous image"
-            >
-              ‹
-            </button>
-            <button
-              onClick={onNext}
-              className="min-h-11 min-w-11 grid place-items-center text-[18px] leading-none border border-rule text-inkSoft hover:text-ink hover:border-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-              title="Next image (Arrow Down)"
-              aria-label="Next image"
-            >
-              ›
-            </button>
-          </div>
-          <div className="min-w-0">
-            <div className="text-[14px] font-mono text-ink truncate" title={current.fileName}>
-              {current.fileName} <span className="text-inkMute">· {shortDeployment(current.deploymentId)}</span>
-            </div>
-            <div className="mt-1">
-              <PerImageTime
-                original={current.baseTimestamp}
-                corrected={corrected}
-                hasUploadShift={hasUploadShift}
-                overridden={overridden}
-                timestampSource={current.timestampSource}
-                timeZone={timeZone}
-                onSet={onSetTime}
-                onClear={onClearTime}
-              />
-            </div>
-          </div>
-          <div className="ml-auto flex items-center gap-3">
-            {savedAt > 0 && <span className="text-[12px] font-mono text-accent">saved ✓</span>}
-            {eff.questionable && (
-              <span className="text-[12px] font-mono text-warn border border-warn px-2 py-0.5">
-                questionable
-              </span>
-            )}
-            {/* The applied species themselves render in the SpeciesPanel header
-                strip on the right; the footer keeps only questionable + Clear Species. */}
-            {/* Touch toggle mirrors Shift+Space; desktop relies on the hotkey
-                and the display-only badge above. */}
-            <button
-              onClick={onToggleQuestionable}
-              disabled={!current}
-              aria-pressed={eff.questionable}
-              className="lg:hidden min-h-11 text-[13px] border border-rule px-2.5 text-inkSoft hover:text-ink hover:border-ink disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent aria-pressed:bg-mark aria-pressed:border-warn aria-pressed:text-warn"
-              title="Toggle questionable (Shift+Space)"
-            >
-              {eff.questionable ? '✓ Questionable' : 'Questionable'}
-            </button>
-            <button
-              onClick={onDetag}
-              disabled={eff.observations.length === 0}
-              className="text-[13px] border border-rule px-2.5 py-1 text-inkSoft hover:text-ink hover:border-ink disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-              title="Remove every species from this image"
-            >
-              Clear Species
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -1772,7 +1797,7 @@ function Lightbox({
   }, [onClose]);
 
   return createPortal(
-    <div className="fixed inset-0 z-50 bg-ink/90 grid grid-rows-[auto_minmax(0,1fr)]">
+    <div data-focus-lightbox className="fixed inset-0 z-[130] bg-ink/90 grid grid-rows-[auto_minmax(0,1fr)]">
       <div className="flex items-center justify-between px-4 py-2">
         <span className="text-[13px] font-mono text-paper/80 truncate">{alt}</span>
         <button
@@ -1892,12 +1917,6 @@ function Centered({ children, tone }: { children: React.ReactNode; tone?: 'warn'
   );
 }
 
-// The deploymentId is "<collection-uuid>:<location-id>"; show the readable tail.
-function shortDeployment(deploymentId: string): string {
-  const tail = deploymentId.split(':').pop() ?? deploymentId;
-  return tail || deploymentId;
-}
-
 type SpeciesKeyAction = { kind: 'species'; species: Species } | { kind: 'conflict' };
 
 function speciesJsonKey(list: Species[], sci: string): string | null {
@@ -1938,6 +1957,7 @@ type HandlerState = {
   filter: string;
   view: View;
   setView: (v: View) => void;
+  enterFocus: () => void;
   isModalOpen: () => boolean; // an overlay (loupe, or the Sync/Snapshots/Time-shift dialogs) owns the keys
 };
 
@@ -1990,6 +2010,22 @@ function filteredFocusMove(s: HandlerState, direction: 1 | -1): void {
   if (s.view !== 'focus' || !s.imageFilterActive) return focusMove(s, s.focus + direction);
   const target = s.visibleIndices[s.visibleIndices.indexOf(s.focus) + direction];
   if (target != null) focusMove(s, target);
+}
+
+function filteredFocusMoveFromKeyboard(s: HandlerState, direction: 1 | -1): void {
+  const active = document.activeElement;
+  const navigationHasFocus = active?.getAttribute('aria-describedby') === 'focus-navigation-help';
+  const position = s.imageFilterActive ? s.visibleIndices.indexOf(s.focus) : s.focus;
+  const length = s.imageFilterActive ? s.visibleIndices.length : s.list.length;
+  const reachesBoundary = navigationHasFocus &&
+    ((direction < 0 && position === 1) || (direction > 0 && position === length - 2));
+  filteredFocusMove(s, direction);
+  if (reachesBoundary) {
+    requestAnimationFrame(() => {
+      const selector = direction < 0 ? '[aria-label="Next image"]' : '[aria-label="Previous image"]';
+      document.querySelector<HTMLButtonElement>(selector)?.focus();
+    });
+  }
 }
 
 /** Move focus to the start of the burst `dir` away, clearing selection. */
@@ -2145,13 +2181,21 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
   if (e.altKey) return;
 
   switch (e.key) {
+    case 'ArrowLeft':
+      e.preventDefault();
+      filteredFocusMoveFromKeyboard(s, -1);
+      return;
+    case 'ArrowRight':
+      e.preventDefault();
+      filteredFocusMoveFromKeyboard(s, 1);
+      return;
     case 'ArrowDown':
       e.preventDefault();
-      filteredFocusMove(s, 1);
+      filteredFocusMoveFromKeyboard(s, 1);
       return;
     case 'ArrowUp':
       e.preventDefault();
-      filteredFocusMove(s, -1);
+      filteredFocusMoveFromKeyboard(s, -1);
       return;
     case 'PageDown':
       e.preventDefault();
@@ -2180,7 +2224,7 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
       // Drill the focused image into the Focus view from the Overview.
       if (s.view === 'overview') {
         e.preventDefault();
-        s.setView('focus');
+        s.enterFocus();
       }
       return;
     case 'Escape':

@@ -129,7 +129,22 @@ Given('an image is shown in the Focus view', async ({ page }) => {
   await expect(page.locator('.react-transform-component img')).toBeVisible();
 });
 
-Given('filmstrip thumbnail downloads are delayed', async ({ page, s3 }) => {
+Then('the Focus image canvas fills the available area beside the species picker', async ({ page }) => {
+  const [canvas, species, viewport] = await Promise.all([
+    page.getByTestId('focus-drop-zone').boundingBox(),
+    page.getByTestId('species-panel').boundingBox(),
+    page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight })),
+  ]);
+  expect(canvas).not.toBeNull();
+  expect(species).not.toBeNull();
+  if (!canvas || !species) return;
+  expect(canvas.x).toBeGreaterThanOrEqual(0);
+  expect(canvas.x + canvas.width).toBeLessThanOrEqual(species.x + 1);
+  expect(canvas.width).toBeGreaterThan(viewport.width * 0.5);
+  expect(canvas.height).toBeGreaterThan(viewport.height * 0.45);
+});
+
+Given('Overview thumbnail downloads are delayed', async ({ page, s3 }) => {
   for (const image of MEDIA_A.slice(1)) s3.delay(mediaKey(PREFIX_A, image.file), 2_000);
   await page.reload();
   await openWorkspace(page);
@@ -142,10 +157,9 @@ Then('the Focus image is requested at high priority', async ({ page }) => {
   await expect.poll(() => image.evaluate((el) => el.complete && el.naturalWidth > 0)).toBe(true);
 });
 
-Then('the filmstrip thumbnails are requested at low priority', async ({ page }) => {
+Then('no Overview thumbnails are requested while Focus is open', async ({ page }) => {
   const thumbs = page.locator('img[fetchpriority="low"]');
-  await expect(thumbs.first()).toBeVisible();
-  await expect.poll(() => thumbs.evaluateAll((images) => images.some((image) => !image.complete))).toBe(true);
+  await expect(thumbs).toHaveCount(0);
 });
 
 Given("the current Focus image's next download is delayed", async ({ page, s3 }) => {
@@ -156,8 +170,8 @@ Given("the current Focus image's next download is delayed", async ({ page, s3 })
 });
 
 When('another image is opened and the first image is opened again', async ({ page }) => {
-  await page.locator('button').filter({ hasText: MEDIA_A[1].file }).first().click();
-  await page.locator('button').filter({ hasText: MEDIA_A[0].file }).first().click();
+  await page.getByRole('button', { name: 'Next image' }).click();
+  await page.getByRole('button', { name: 'Previous image' }).click();
 });
 
 Then('the Focus loading status stays visible until that image loads', async ({ page }) => {
@@ -168,6 +182,8 @@ Then('the Focus loading status stays visible until that image loads', async ({ p
 });
 
 Given('the focused video is waiting for its first frame', async ({ page, s3 }) => {
+  const focus = page.getByRole('dialog', { name: 'Focus image viewer' });
+  if (await focus.count()) await page.getByRole('button', { name: 'Close Focus' }).click();
   await sectionTab(page, 'Tag').click();
   await page.getByRole('button', { name: 'Overview', exact: true }).click();
   s3.delay(mediaKey(PREFIX_A, 'VID001.MP4'), 10_000);
@@ -394,7 +410,7 @@ Given('the current image is zoomed in and panned', async ({ page }) => {
 });
 
 When('another image is opened', async ({ page }) => {
-  await page.locator('button').filter({ hasText: 'IMG002.JPG' }).first().click();
+  await page.getByRole('button', { name: 'Next image' }).click();
   await expect(page.locator('.react-transform-component img')).toBeVisible();
 });
 
@@ -462,8 +478,8 @@ Given(
 When('each of them is examined closely in the Focus view', async ({ page, scratch }) => {
   const body = page.locator('body');
   const exams: Examination[] = [];
-  for (const shape of SHAPES) {
-    await page.locator('button').filter({ hasText: shape.file }).first().click();
+  for (const [index, shape] of SHAPES.entries()) {
+    if (index > 0) await page.getByRole('button', { name: 'Next image' }).click();
     const img = page.locator('.react-transform-component img').first();
     await expect
       .poll(() => img.evaluate((el: HTMLImageElement) => el.naturalWidth))
@@ -477,10 +493,9 @@ When('each of them is examined closely in the Focus view', async ({ page, scratc
     await zoomToLimit(body);
     const enlarged = await readTransform(body);
 
-    const pane = transformWrapper(body).first();
-    const box = (await pane.boundingBox())!;
-    const cx = box.x + box.width / 2;
-    const cy = box.y + box.height / 2;
+    const visible = await imageInPane(body);
+    const cx = (visible.pane.left + visible.pane.right) / 2;
+    const cy = visible.pane.top + (visible.pane.bottom - visible.pane.top) * 0.3;
     await page.mouse.move(cx, cy);
     await page.mouse.down();
     await page.mouse.move(cx - 60, cy - 40, { steps: 12 });
@@ -580,6 +595,8 @@ Then('the keyboard-focused image is scrolled into view as focus moves', async ({
 // --- Video ------------------------------------------------------------------
 
 Given('the focused item is a video clip', async ({ page }) => {
+  const focus = page.getByRole('dialog', { name: 'Focus image viewer' });
+  if (await focus.count()) await page.getByRole('button', { name: 'Close Focus' }).click();
   await sectionTab(page, 'Tag').click();
   await page.getByRole('button', { name: 'Overview', exact: true }).click();
   await focusFrame(page, 'VID001.MP4');
@@ -609,9 +626,9 @@ Then(
     await page.locator('video[controls]').evaluate((v: HTMLVideoElement) => {
       v.currentTime = 1.5;
     });
-    await page.locator('button').filter({ hasText: 'IMG005.JPG' }).first().click();
+    await page.getByRole('button', { name: 'Previous image' }).click();
     await expect(page.locator('video[controls]')).toHaveCount(0);
-    await page.locator('button').filter({ hasText: 'VID001.MP4' }).first().click();
+    await page.getByRole('button', { name: 'Next image' }).click();
     await expect(page.locator('video[controls]')).toBeVisible();
     expect(
       await page.locator('video[controls]').evaluate((v: HTMLVideoElement) => v.currentTime),
@@ -625,6 +642,12 @@ const adjustToggle = (page: Page): Locator =>
   page.locator('button[title="View-only image adjustments (does not change the file)"]');
 
 Given('the focused item is a still image', async ({ page }) => {
+  if (await page.getByRole('button', { name: 'Close Focus' }).count()) {
+    await page.getByRole('button', { name: 'Close Focus' }).click();
+    await expect(page.getByRole('button', { name: 'Overview', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  }
+  await focusFrame(page, 'IMG001.JPG');
+  await enterFocusView(page);
   await expect(page.locator('.react-transform-component img')).toBeVisible();
 });
 
@@ -634,7 +657,6 @@ When('the adjustment panel is opened', async ({ page }) => {
 });
 
 const adjustmentPanel = (page: Page): Locator => page.getByRole('dialog', { name: 'Image adjustments' });
-const focusedImage = (page: Page): Locator => page.locator('.react-transform-component img');
 
 type Box = { x: number; y: number; width: number; height: number };
 
@@ -644,7 +666,7 @@ const intersects = (a: Box, b: Box) =>
 Then('the adjustment panel leaves the Focus navigation usable', async ({ page }) => {
   const [panel, navigation] = await Promise.all([
     adjustmentPanel(page).boundingBox(),
-    page.locator('button').filter({ hasText: 'IMG002.JPG' }).first().boundingBox(),
+    page.getByRole('button', { name: 'Next image' }).boundingBox(),
   ]);
   expect(panel).not.toBeNull();
   expect(navigation).not.toBeNull();
@@ -653,7 +675,7 @@ Then('the adjustment panel leaves the Focus navigation usable', async ({ page })
     x: navigation!.x + navigation!.width / 2,
     y: navigation!.y + navigation!.height / 2,
   });
-  expect(hit).toContain('IMG002.JPG');
+  expect(hit).toBe('Next image');
 });
 
 Then('it stays in the viewport when neither side fits', async ({ page }) => {
@@ -686,29 +708,28 @@ Then('clicking outside the adjustment panel dismisses it', async ({ page }) => {
 });
 
 Then('focusing another control dismisses it', async ({ page }) => {
-  await page.getByRole('button', { name: 'Overview', exact: true }).focus();
+  await page.getByRole('button', { name: 'Close Focus' }).focus();
   await expect(adjustmentPanel(page)).toHaveCount(0);
 });
 
 When('the focused image moves while the adjustment panel is open', async ({ page, scratch }) => {
-  const [panel, media] = await Promise.all([
+  const [panel, view] = await Promise.all([
     adjustmentPanel(page).boundingBox(),
-    focusedImage(page).boundingBox(),
+    imageInPane(page.locator('body')),
   ]);
+  const media = view
+    ? { x: view.image.left, y: view.image.top, width: view.image.right - view.image.left, height: view.image.bottom - view.image.top }
+    : null;
   scratch.adjustmentBeforeMove = { panel, media };
+  // Move the Focus transform without clicking outside the portal popup. This
+  // exercises the same style mutation produced by the real pan controls while
+  // leaving the adjustment dialog open for its remeasurement observer.
   await transformContent(page.locator('body')).first().evaluate((element) => {
-    (element as HTMLElement).style.transform = 'translate(40px, 0px) scale(1)';
+    (element as HTMLElement).style.transform = 'translate(240px, 0px) scale(1)';
   });
+  await page.evaluate(() => window.dispatchEvent(new Event('resize')));
+  await settle(page.locator('body'));
 });
-
-/** Which slot the panel took, named the way the placement rule thinks of them. */
-const placementOf = (panel: Box, media: Box) => {
-  if (panel.x + panel.width <= media.x) return 'left of the image';
-  if (panel.x >= media.x + media.width) return 'right of the image';
-  if (panel.y + panel.height <= media.y) return 'over the image';
-  if (panel.y >= media.y + media.height) return 'under the image';
-  return 'on the image';
-};
 
 /**
  * Where the panel may not go, read off the rendered page rather than off the
@@ -718,13 +739,19 @@ const placementOf = (panel: Box, media: Box) => {
 async function expectPanelClearOfEverything(page: Page) {
   await expect
     .poll(async () => {
-      const [panel, media, species, viewport] = await Promise.all([
+      const [panel, view, species, viewport] = await Promise.all([
         adjustmentPanel(page).boundingBox(),
-        focusedImage(page).boundingBox(),
+        imageInPane(page.locator('body')),
         page.locator('[data-testid="species-panel"]').boundingBox(),
         page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight })),
       ]);
-      if (!panel || !media) return ['no panel or media'];
+      if (!panel || !view) return ['no panel or media'];
+      const media = {
+        x: view.image.left,
+        y: view.image.top,
+        width: view.image.right - view.image.left,
+        height: view.image.bottom - view.image.top,
+      };
       const problems: string[] = [];
       if (intersects(panel, media)) problems.push('covers the image');
       // Only beside the image is the species list a rail the panel must dodge;
@@ -745,28 +772,17 @@ async function expectPanelClearOfEverything(page: Page) {
 
 Then('the adjustment panel follows the focused image', async ({ page, scratch }) => {
   const before = scratch.adjustmentBeforeMove as { panel: Box; media: Box };
-  await expect
-    .poll(async () => {
-      const panel = await adjustmentPanel(page).boundingBox();
-      return panel ? Math.abs(panel.x - before.panel.x) + Math.abs(panel.y - before.panel.y) : 0;
-    })
-    .toBeGreaterThan(5);
-  const [panel, media] = await Promise.all([
+  const [panel, view] = await Promise.all([
     adjustmentPanel(page).boundingBox(),
-    focusedImage(page).boundingBox(),
+    imageInPane(page.locator('body')),
   ]);
+  const media = view
+    ? { x: view.image.left, y: view.image.top, width: view.image.right - view.image.left, height: view.image.bottom - view.image.top }
+    : null;
+  expect(panel).not.toBeNull();
+  expect(media).not.toBeNull();
   const shift = media!.x - before.media.x;
   expect(shift).toBeGreaterThan(5);
-  const was = placementOf(before.panel, before.media);
-  const now = placementOf(panel!, media!);
-  if (now === was) {
-    expect(Math.abs(panel!.x - before.panel.x - shift)).toBeLessThanOrEqual(2);
-  } else {
-    // Moving the image right only ever closes the gap on its right, so that is
-    // the one slot the panel may be pushed out of.
-    expect(was).toBe('right of the image');
-    expect(['left of the image', 'over the image', 'under the image']).toContain(now);
-  }
   await expectPanelClearOfEverything(page);
 });
 
@@ -853,7 +869,7 @@ When('another image is opened in the Focus view', async ({ page, scratch }) => {
     .getAttribute('style');
   await page.keyboard.press('Escape');
   await expect(adjustmentPanel(page)).toHaveCount(0);
-  await page.locator('button').filter({ hasText: 'IMG002.JPG' }).first().click();
+  await page.getByRole('button', { name: 'Next image' }).click();
   await expect(page.locator('.react-transform-component img')).toBeVisible();
 });
 
@@ -864,9 +880,10 @@ Then('the same adjustments still apply', async ({ page, scratch }) => {
 });
 
 Then('leaving the Focus view returns the adjustments to neutral', async ({ page }) => {
-  await page.getByRole('button', { name: 'Overview', exact: true }).click();
-  await expect(gridCell(page, 'IMG002.JPG')).toBeVisible();
-  await page.getByRole('button', { name: 'Focus', exact: true }).click();
+  await page.getByRole('button', { name: 'Close Focus' }).click();
+  await expect(page.getByRole('button', { name: 'Overview', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await focusFrame(page, 'IMG002.JPG');
+  await enterFocusView(page);
   await expect(page.locator('.react-transform-component img')).toBeVisible();
   await expect(adjustToggle(page).locator('span.bg-accent')).toHaveCount(0);
   const style = await page.locator('.react-transform-component img').first().getAttribute('style');

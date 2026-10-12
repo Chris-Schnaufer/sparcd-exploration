@@ -17,6 +17,10 @@ Feature: Examine an image closely enough to catch every species
     And an image is shown in the Focus view
 
   @H1
+  Scenario: Focus gives the image the largest available canvas beside the species picker
+    Then the Focus image canvas fills the available area beside the species picker
+
+  @H1
   Scenario: An image can be enlarged well beyond its fit-to-screen size
     When the image is zoomed in
     Then it can be enlarged up to six times its fitted size
@@ -68,10 +72,10 @@ Feature: Examine an image closely enough to catch every species
     And the portrait and the panorama stay in view when enlarged fullscreen too
 
   @H1
-  Scenario: The focused image is prioritized over delayed filmstrip thumbnails
-    Given filmstrip thumbnail downloads are delayed
+  Scenario: The focused image is prioritized without a Focus filmstrip
+    Given Overview thumbnail downloads are delayed
     Then the Focus image is requested at high priority
-    And the filmstrip thumbnails are requested at low priority
+    And no Overview thumbnails are requested while Focus is open
     And the Focus image is the only media requested at high priority
 
   Scenario: Returning to an image shows its loader until it is ready
