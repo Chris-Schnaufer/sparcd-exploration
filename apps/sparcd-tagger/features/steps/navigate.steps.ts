@@ -345,23 +345,29 @@ Then('the image opener has focus again', async ({ page }) => {
   await expect(gridCell(page, 'IMG003.JPG')).toBeFocused();
 });
 
-Then('Tab stays inside the Focus viewer', async ({ page }) => {
+Then('Tab wraps within the Focus viewer at both boundaries', async ({ page }) => {
   const dialog = page.getByRole('dialog', { name: 'Focus image viewer' });
   await expect(dialog).toBeVisible();
-  for (let i = 0; i < 12; i++) {
-    await page.keyboard.press('Tab');
-    await expect
-      .poll(() => dialog.evaluate((element) => element.contains(document.activeElement)))
-      .toBe(true);
-  }
+  const focusable = dialog.locator(
+    'button:not([disabled]):visible, [href]:visible, input:not([disabled]):visible, select:not([disabled]):visible, textarea:not([disabled]):visible, [tabindex]:not([tabindex="-1"]):visible',
+  );
+  await expect(focusable).not.toHaveCount(0);
+  const first = focusable.first();
+  const last = focusable.last();
+  await last.focus();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: 'Close Focus' })).toBeFocused();
+  await first.focus();
   await page.keyboard.press('Shift+Tab');
-  await expect
-    .poll(() => dialog.evaluate((element) => element.contains(document.activeElement)))
-    .toBe(true);
+  await expect(last).toBeFocused();
 });
 
 When('Escape is pressed in Focus', async ({ page }) => {
   await page.keyboard.press('Escape');
+});
+
+When('the Close Focus control is clicked', async ({ page }) => {
+  await page.getByRole('button', { name: 'Close Focus' }).click();
 });
 
 Then('the Focus view shows that image', async ({ page }) => {

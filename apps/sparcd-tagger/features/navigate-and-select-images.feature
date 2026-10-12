@@ -112,8 +112,16 @@ Feature: Move through an upload and choose which images an action applies to
   Scenario: Focus traps keyboard navigation and Escape restores the opener
     Given the Overview is shown
     When the focused image is opened
-    Then Tab stays inside the Focus viewer
+    Then Tab wraps within the Focus viewer at both boundaries
     When Escape is pressed in Focus
+    Then the Focus viewer is closed and the Overview is shown
+    And the image opener has focus again
+
+  @H1
+  Scenario: Closing Focus with its close control restores the opener
+    Given the Overview is shown
+    When the focused image is opened
+    And the Close Focus control is clicked
     Then the Focus viewer is closed and the Overview is shown
     And the image opener has focus again
 
