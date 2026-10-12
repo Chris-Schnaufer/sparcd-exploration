@@ -106,6 +106,16 @@ Feature: Move through an upload and choose which images an action applies to
     When the focused image is opened
     And the browser Back button is pressed
     Then the Focus viewer is closed and the Overview is shown
+    And the image opener has focus again
+
+  @H1
+  Scenario: Focus traps keyboard navigation and Escape restores the opener
+    Given the Overview is shown
+    When the focused image is opened
+    Then Tab stays inside the Focus viewer
+    When Escape is pressed in Focus
+    Then the Focus viewer is closed and the Overview is shown
+    And the image opener has focus again
 
   @unmapped
   Scenario: The upload can be ordered by name, type, date or species count

@@ -155,14 +155,28 @@ export function Tag() {
   const [view, setView] = useState<View>('overview');
   const focusHistoryRef = useRef(false);
   const focusCloseRef = useRef<HTMLButtonElement>(null);
+  const focusOpenerRef = useRef<HTMLElement | null>(null);
+  const focusOpenerIdentityRef = useRef<{ title: string | null; testId: string | null; label: string | null; text: string } | null>(null);
+  const restoreFocusRef = useRef(false);
   const enterFocus = () => {
     if (view === 'focus') return;
+    const active = document.activeElement;
+    focusOpenerRef.current = active instanceof HTMLElement ? active : null;
+    focusOpenerIdentityRef.current = active instanceof HTMLElement
+      ? {
+          title: active.getAttribute('title'),
+          testId: active.getAttribute('data-testid'),
+          label: active.getAttribute('aria-label'),
+          text: active.textContent?.trim() ?? '',
+        }
+      : null;
     window.history.pushState({ taggerFocus: true }, '', window.location.href);
     focusHistoryRef.current = true;
     setView('focus');
   };
   const closeFocus = () => {
     if (view !== 'focus') return;
+    restoreFocusRef.current = true;
     if (focusHistoryRef.current) {
       focusHistoryRef.current = false;
       window.history.back();
@@ -173,6 +187,7 @@ export function Tag() {
   useEffect(() => {
     if (view !== 'focus') return;
     const onPopState = () => {
+      restoreFocusRef.current = true;
       focusHistoryRef.current = false;
       setView('overview');
     };
@@ -180,7 +195,52 @@ export function Tag() {
     return () => window.removeEventListener('popstate', onPopState);
   }, [view]);
   useEffect(() => {
+    if (view === 'focus' || !restoreFocusRef.current) return;
+    restoreFocusRef.current = false;
+    requestAnimationFrame(() => {
+      if (focusOpenerRef.current?.isConnected) {
+        focusOpenerRef.current.focus();
+        return;
+      }
+      const identity = focusOpenerIdentityRef.current;
+      if (!identity) return;
+      const replacement = Array.from(document.querySelectorAll<HTMLElement>('button'))
+        .find((button) =>
+          (identity.title && button.getAttribute('title') === identity.title) ||
+          (identity.testId && button.getAttribute('data-testid') === identity.testId) ||
+          (identity.label && button.getAttribute('aria-label') === identity.label) ||
+          (identity.text && button.textContent?.trim() === identity.text),
+        );
+      replacement?.focus();
+    });
+  }, [view]);
+  useEffect(() => {
     if (view === 'focus') requestAnimationFrame(() => focusCloseRef.current?.focus());
+  }, [view]);
+  useEffect(() => {
+    if (view !== 'focus') return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab') return;
+      if ((event.target as Element | null)?.closest?.('[data-focus-lightbox]')) return;
+      const dialog = document.querySelector<HTMLElement>('[role="dialog"][aria-label="Focus image viewer"]');
+      if (!dialog) return;
+      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      )).filter((element) => element.getClientRects().length > 0);
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || !dialog.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || !dialog.contains(active))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => document.removeEventListener('keydown', onKeyDown, true);
   }, [view]);
   const [overviewKind, setOverviewKind] = useState<ViewKind>('grid');
   const [focus, setFocus] = useState(0);

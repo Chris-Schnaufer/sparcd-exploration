@@ -341,6 +341,29 @@ Then('the Focus viewer is closed and the Overview is shown', async ({ page }) =>
   );
 });
 
+Then('the image opener has focus again', async ({ page }) => {
+  await expect(gridCell(page, 'IMG003.JPG')).toBeFocused();
+});
+
+Then('Tab stays inside the Focus viewer', async ({ page }) => {
+  const dialog = page.getByRole('dialog', { name: 'Focus image viewer' });
+  await expect(dialog).toBeVisible();
+  for (let i = 0; i < 12; i++) {
+    await page.keyboard.press('Tab');
+    await expect
+      .poll(() => dialog.evaluate((element) => element.contains(document.activeElement)))
+      .toBe(true);
+  }
+  await page.keyboard.press('Shift+Tab');
+  await expect
+    .poll(() => dialog.evaluate((element) => element.contains(document.activeElement)))
+    .toBe(true);
+});
+
+When('Escape is pressed in Focus', async ({ page }) => {
+  await page.keyboard.press('Escape');
+});
+
 Then('the Focus view shows that image', async ({ page }) => {
   await expect(page.getByRole('dialog', { name: 'Focus image viewer' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Close Focus' })).toBeFocused();
