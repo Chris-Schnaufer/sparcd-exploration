@@ -39,7 +39,7 @@ Given('distance units are switched to feet in Settings', async ({ page }) => {
 
 When('the enlarged Focus view is opened', async ({ page }) => {
   await page.getByRole('button', { name: 'Focus', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Adjust time' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Focus image viewer' })).toBeVisible();
 });
 
 Then('the date format defaults to ISO local date', async ({ page }) => {

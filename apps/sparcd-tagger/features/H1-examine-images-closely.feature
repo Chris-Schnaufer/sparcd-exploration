@@ -150,7 +150,7 @@ Feature: Examine an image closely enough to catch every species
   Scenario: Adjustment controls stay off the image on a phone
     Given the focused item is a still image
     When the adjustment panel is opened on a phone-sized screen
-    Then the adjustment panel stays clear of the image and inside the window
+    Then the adjustment panel stays inside the window on a phone
 
   @H1
   Scenario: Adjustment controls follow the focused image

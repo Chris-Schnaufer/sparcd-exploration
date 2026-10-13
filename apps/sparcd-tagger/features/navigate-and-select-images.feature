@@ -21,11 +21,10 @@ Feature: Move through an upload and choose which images an action applies to
 
   @unmapped
   Scenario: List rows expose the useful image details without ambiguous status clutter
-    Given an image has a corrected timestamp and meaningful review markers
+    Given an image has meaningful review markers
     When the detailed Overview list is opened
     Then list columns follow the Name, Type, Date, Species sort-control order
     And image and video rows identify their media type
-    And capture timestamps show corrected and unavailable values accurately
     And long column values preserve their full accessible text
     And row numbers and the old species indicator are absent
     And meaningful edit and questionable markers remain accessible

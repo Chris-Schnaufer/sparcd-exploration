@@ -131,9 +131,9 @@ When('the sync is run live', async ({ page }) => {
   await waitForSyncDialogClosed(page);
 });
 
-Then("every image's deployment is the new location", async ({ page }) => {
-  await enterFocusView(page);
-  await expect(page.locator('body')).toContainText(NEW_LOCATION_ID);
+Then("every image's deployment is the new location", async ({ page, s3 }) => {
+  await expect(page.getByRole('button', { name: 'Overview', exact: true })).toBeVisible();
+  expect(s3.text(BUCKET, `${PREFIX_A}deployments.csv`)).toContain(NEW_LOCATION_ID);
 });
 
 Then('media and observation timestamps are rebased to the new location offset', async ({ s3 }) => {

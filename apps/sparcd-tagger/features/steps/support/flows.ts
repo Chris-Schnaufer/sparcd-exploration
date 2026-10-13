@@ -5,6 +5,11 @@ import { expect, type Page } from '@playwright/test';
 import { focusFrame, gridCell, speciesApply } from './world';
 
 export async function openSyncDialog(page: Page): Promise<void> {
+  const focusClose = page.getByRole('button', { name: 'Close Focus', exact: true });
+  if (await focusClose.count()) {
+    await focusClose.click();
+    await expect(page.getByRole('dialog', { name: 'Focus image viewer' })).toHaveCount(0);
+  }
   await page.getByRole('button', { name: 'Sync…' }).click();
   await expect(page.getByRole('heading', { name: 'Sync to S3' })).toBeVisible();
   await expect(page.getByText('Checking the canonical base…')).toBeHidden();

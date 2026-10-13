@@ -1,3 +1,5 @@
+import { useEffect, useRef } from 'react';
+
 // The `?` keyboard cheatsheet. Mirrors the plan's "Keyboard shortcuts (initial
 // set)" table; the actual handling lives in Tag.tsx so this stays a passive
 // reference card. Closes on backdrop click, the × button, Escape, or `?` again
@@ -39,9 +41,37 @@ const GROUPS: { title: string; rows: Shortcut[] }[] = [
 ];
 
 export function Cheatsheet({ onClose }: { onClose: () => void }) {
+  const closeRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    closeRef.current?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab') return;
+      const dialog = (event.target as Element | null)?.closest('[role="dialog"]');
+      if (!dialog) return;
+      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      )).filter((element) => element.getClientRects().length > 0);
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => {
+      document.removeEventListener('keydown', onKey, true);
+      previous?.focus();
+    };
+  }, []);
   return (
     <div
-      className="fixed inset-0 z-50 grid place-items-center bg-ink/40 p-6"
+      className="fixed inset-0 z-[200] grid place-items-center bg-ink/40 p-6"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -54,6 +84,7 @@ export function Cheatsheet({ onClose }: { onClose: () => void }) {
         <div className="flex items-center justify-between border-b border-rule px-5 py-3">
           <h2 className="font-display text-[18px] font-[600] text-ink">Keyboard shortcuts</h2>
           <button
+            ref={closeRef}
             onClick={onClose}
             className="w-11 h-11 md:w-7 md:h-7 grid place-items-center border border-rule text-inkSoft hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
             aria-label="Close"

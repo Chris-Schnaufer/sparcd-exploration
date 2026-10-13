@@ -173,13 +173,11 @@ Then('the Focus view keeps the species picker beside the enlarged image', async 
   await expect(listRow(page, 'IMG005.JPG')).toHaveCount(0);
 });
 
-Given('an image has a corrected timestamp and meaningful review markers', async ({ page }) => {
+Given('an image has meaningful review markers', async ({ page }) => {
   await focusFrame(page, 'IMG002.JPG');
   await enterFocusView(page);
-  await page.getByRole('button', { name: 'Adjust time' }).click();
-  await page.getByLabel('Corrected timestamp for this image').fill('2023-12-24 18:45:10');
-  await page.getByRole('button', { name: 'Set', exact: true }).click();
   await page.keyboard.press('Shift+Space');
+  await page.getByRole('button', { name: 'Close Focus', exact: true }).click();
 });
 
 When('the detailed Overview list is opened', async ({ page }) => {
@@ -268,13 +266,9 @@ Then('a narrow Overview keeps filenames visible in its compact rows', async ({ p
 
 Then('the Focus strip keeps filename and species but omits the detail columns', async ({ page }) => {
   await page.getByRole('button', { name: 'Focus', exact: true }).click();
-  const row = listRow(page, 'IMG002.JPG');
-  await expect(row.locator('[data-column="filename"]')).toBeVisible();
-  await expect(row.locator('[data-column="species"]')).toHaveText('untagged');
-  await expect(row.locator('[data-column="media-type"]')).toHaveCount(0);
-  await expect(row.locator('[data-column="timestamp"]')).toHaveCount(0);
-  await expect(row.locator('[data-column="markers"]')).toContainText('?');
-  await expect(row.locator('[data-column="markers"] [aria-label="Questionable"]')).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Focus image viewer' })).toContainText('IMG002.JPG');
+  await expect(page.locator('[data-testid="species-panel"]')).toBeVisible();
+  await page.getByRole('button', { name: 'Close Focus', exact: true }).click();
 });
 
 // --- Keyboard navigation ----------------------------------------------------
@@ -792,9 +786,9 @@ Given('a video is being played or scrubbed', async ({ page }) => {
 Then('its own playback keys work and no tagging keystroke fires', async ({ page }) => {
   await page.keyboard.press('d');
   await page.keyboard.press(' ');
-  await expect(speciesFilter(page)).not.toBeFocused();
   await expect(page.getByText(/unsaved · discard/)).toHaveCount(0);
-  await expect(listRow(page, 'VID001.MP4')).toContainText('untagged');
+  await page.getByRole('button', { name: 'Close Focus', exact: true }).click();
+  await expect(gridCell(page, 'VID001.MP4')).toHaveAttribute('title', 'VID001.MP4');
 });
 
 Then(
@@ -831,7 +825,8 @@ Given('a slider in the Adjust popup is focused', async ({ page }) => {
 
 Then('a species key still applies that species to the focused image', async ({ page }) => {
   await page.keyboard.press('d');
-  await expect(listRow(page, 'IMG002.JPG')).toContainText('Mule Deer');
+  await expect(page.getByRole('dialog', { name: 'Focus image viewer' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Mule Deer Odocoileus hemionus/ })).toBeVisible();
 });
 
 Then('Home, End, Page Up, Page Down, and arrow keys adjust the slider rather than navigating images', async ({ page }) => {

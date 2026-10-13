@@ -154,6 +154,7 @@ export function Tag() {
 
   const [view, setView] = useState<View>('overview');
   const focusHistoryRef = useRef(false);
+  const focusPreviousHistoryRef = useRef<{ state: unknown; title: string; url: string } | null>(null);
   const focusCloseRef = useRef<HTMLButtonElement>(null);
   const focusOpenerRef = useRef<HTMLElement | null>(null);
   const focusOpenerIdentityRef = useRef<{ title: string | null; testId: string | null; label: string | null; text: string } | null>(null);
@@ -170,6 +171,11 @@ export function Tag() {
           text: active.textContent?.trim() ?? '',
         }
       : null;
+    focusPreviousHistoryRef.current = {
+      state: window.history.state,
+      title: document.title,
+      url: window.location.href,
+    };
     window.history.pushState({ taggerFocus: true }, '', window.location.href);
     focusHistoryRef.current = true;
     setView('focus');
@@ -189,11 +195,22 @@ export function Tag() {
     const onPopState = () => {
       restoreFocusRef.current = true;
       focusHistoryRef.current = false;
+      focusPreviousHistoryRef.current = null;
       setView('overview');
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, [view]);
+  useEffect(() => () => {
+    // If the workspace disappears while Focus owns a synthetic same-URL
+    // history entry, restore the entry that was current before Focus opened.
+    // Otherwise the next browser Back appears to do nothing.
+    if (!focusHistoryRef.current) return;
+    const previous = focusPreviousHistoryRef.current;
+    if (previous) window.history.replaceState(previous.state, previous.title, previous.url);
+    focusHistoryRef.current = false;
+    focusPreviousHistoryRef.current = null;
+  }, []);
   useEffect(() => {
     if (view === 'focus' || !restoreFocusRef.current) return;
     restoreFocusRef.current = false;
@@ -225,6 +242,10 @@ export function Tag() {
       const dialog = document.querySelector<HTMLElement>('[role="dialog"][aria-label="Focus image viewer"]');
       const adjustments = document.querySelector<HTMLElement>('[role="dialog"][aria-label="Image adjustments"]');
       if (!dialog) return;
+      const activeDialog = (event.target as Element | null)?.closest?.('[role="dialog"]');
+      // Portalled child dialogs own their own focus and keyboard handling.
+      // The Focus trap must not redirect their Tab sequence back into Focus.
+      if (activeDialog && activeDialog !== dialog && activeDialog !== adjustments) return;
       const roots = [dialog, adjustments].filter((root): root is HTMLElement => root !== null);
       const selector = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
       const focusable = roots.flatMap((root) =>
@@ -1274,6 +1295,14 @@ export function Tag() {
             <div className="min-w-0 text-[13px] font-mono text-ink truncate">
               Focus{current ? ` · ${current.fileName}` : ''}
             </div>
+            {current?.timestampSource === 'exif-modify' && (
+              <span
+                className="shrink-0 font-body text-[10px] font-[600] tracking-[0.08em] uppercase text-inkSoft border border-rule px-1"
+                title="Read from EXIF ModifyDate. This can be metadata-edit time rather than the camera capture time."
+              >
+                EXIF Modified
+              </span>
+            )}
             <button
               ref={focusCloseRef}
               type="button"
@@ -1382,35 +1411,54 @@ export function Tag() {
       // in the panel header so it covers both Overview and Focus layouts (the
       // same panel renders in both) with one site.
       headerSlot: (
-        <AppliedSpecies
-          observations={observations}
-          disabled={!current}
-          onSetCount={(sci, n) =>
-            current && setSpeciesCountFn(
-              ctx,
-              current.key,
-              current.deploymentId,
-              currentBase,
-              sci,
-              n,
-              taggerUser.trim() || undefined,
-              new Date().toISOString(),
-            )
-          }
-          onRemove={(sci) =>
-            current && removeSpeciesFn(ctx, current.key, current.deploymentId, currentBase, sci)
-          }
-          onDetagAll={() =>
-            current &&
-            detagFn(ctx, [
-              {
-                mediaPath: current.key,
-                deploymentId: current.deploymentId,
-                base: currentBase,
-              },
-            ])
-          }
-        />
+        <div className="flex flex-wrap items-center gap-1.5">
+          <AppliedSpecies
+            observations={observations}
+            disabled={!current}
+            onSetCount={(sci, n) =>
+              current && setSpeciesCountFn(
+                ctx,
+                current.key,
+                current.deploymentId,
+                currentBase,
+                sci,
+                n,
+                taggerUser.trim() || undefined,
+                new Date().toISOString(),
+              )
+            }
+            onRemove={(sci) =>
+              current && removeSpeciesFn(ctx, current.key, current.deploymentId, currentBase, sci)
+            }
+            onDetagAll={() =>
+              current &&
+              detagFn(ctx, [
+                {
+                  mediaPath: current.key,
+                  deploymentId: current.deploymentId,
+                  base: currentBase,
+                },
+              ])
+            }
+          />
+          {current && (
+            <button
+              type="button"
+              aria-pressed={!!eff?.questionable}
+              aria-label={eff?.questionable ? 'Clear questionable flag' : 'Mark image questionable'}
+              title={eff?.questionable ? 'Clear questionable flag' : 'Mark image questionable'}
+              onClick={() => {
+                const targets = targetsOf();
+                if (targets.length) setQuestionableManyFn(ctx, targets, !eff?.questionable);
+              }}
+              className={`min-h-11 border px-2 text-[11px] font-mono focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
+                eff?.questionable ? 'border-warn text-warn' : 'border-rule text-inkMute hover:text-ink'
+              }`}
+            >
+              {eff?.questionable ? 'Questionable' : 'Mark questionable'}
+            </button>
+          )}
+        </div>
       ),
     };
   }
@@ -1472,10 +1520,10 @@ function FocusPane({
       : focusAfterNavigationRef.current === 'next'
         ? nextButtonRef.current
         : null;
-    if (!target) return;
     focusAfterNavigationRef.current = null;
+    if (!target) return;
     target.focus();
-  }, [canPrev, canNext]);
+  }, [current?.key, canPrev, canNext]);
 
   const navigatePrevious = () => {
     // When the first image is reached, the previous control disappears. Move
@@ -1862,18 +1910,50 @@ function Lightbox({
   onClose: () => void;
 }) {
   const [zoomed, setZoomed] = useState(false);
+  const closeRef = useRef<HTMLButtonElement>(null);
   const { paneRef, zoomRef, fitted, onImageLoad } = useFittedZoom(src);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+    const previous = document.activeElement as HTMLElement | null;
+    closeRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopPropagation();
+      onClose();
+    };
+    document.addEventListener('keydown', onKey, true);
+    const onTab = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab') return;
+      const dialog = (event.target as Element | null)?.closest('[data-focus-lightbox]');
+      if (!dialog) return;
+      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      )).filter((element) => element.getClientRects().length > 0);
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onTab, true);
+    return () => {
+      document.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('keydown', onTab, true);
+      previous?.focus();
+    };
   }, [onClose]);
 
   return createPortal(
-    <div data-focus-lightbox className="fixed inset-0 z-[130] bg-ink/90 grid grid-rows-[auto_minmax(0,1fr)]">
+    <div data-focus-lightbox role="dialog" aria-modal="true" aria-label="Fullscreen image" className="fixed inset-0 z-[130] bg-ink/90 grid grid-rows-[auto_minmax(0,1fr)]">
       <div className="flex items-center justify-between px-4 py-2">
         <span className="text-[13px] font-mono text-paper/80 truncate">{alt}</span>
         <button
+          ref={closeRef}
           type="button"
           onClick={onClose}
           className="w-11 h-11 md:w-8 md:h-8 grid place-items-center text-[18px] leading-none text-paper/80 hover:text-paper focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
@@ -2279,6 +2359,13 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
       gotoBurst(s, -1);
       return;
     case '/':
+      // The Overview search remains mounted for state continuity, but Focus
+      // owns the entire viewport and must not send a shortcut into that
+      // hidden control.
+      if (s.view === 'focus') {
+        e.preventDefault();
+        return;
+      }
       e.preventDefault();
       s.imgSearchRef.current?.focus();
       return;
