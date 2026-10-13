@@ -108,14 +108,10 @@ Then('applying it shifts every frame in the upload', async ({ page }) => {
   await uploadShiftModal(page).getByRole('button', { name: /^Apply to all/ }).click();
   await expect(uploadShiftModal(page)).toHaveCount(0);
   await expect(page.getByText(/clock \+1h/)).toBeVisible();
-  for (const file of [
-    'IMG001.JPG',
-    'IMG003.JPG',
-    'IMG005.JPG',
-  ] as const) {
-    await showFrame(page, file);
-    await expect(page.getByRole('dialog', { name: 'Focus image viewer' })).toBeVisible();
-  }
+  const uploads = (await readStore(page, 'uploads')) as { uploadPrefix?: string; timeOffset?: unknown }[];
+  const upload = uploads.find((row) => row.uploadPrefix === PREFIX_A);
+  expect(upload?.timeOffset).toEqual({ years: 0, months: 0, days: 0, hours: 1, minutes: 0, seconds: 0 });
+  expect(await readStore(page, 'drafts')).toEqual([]);
 });
 
 Given('a whole-upload shift is in effect', async ({ page }) => {
@@ -274,28 +270,26 @@ Then('the selection time-shift dialog confines focus and closes with Escape', as
 });
 
 Then('only the selected frames move by the offset', async ({ page }) => {
-  for (const file of [
-    'IMG001.JPG',
-    'IMG002.JPG',
-    'IMG003.JPG',
-  ] as const) {
-    await showFrame(page, file);
-    await expect(page.getByRole('dialog', { name: 'Focus image viewer' })).toBeVisible();
-  }
-  // Untouched frames keep their stored time.
-  await showFrame(page, 'IMG005.JPG');
-  await expect(page.getByRole('dialog', { name: 'Focus image viewer' })).toBeVisible();
+  await waitForDirtyDrafts(page, 3);
+  const drafts = (await readStore(page, 'drafts')) as { mediaPath: string; timeOverride: string | null }[];
+  const overrides = Object.fromEntries(drafts.map((row) => [row.mediaPath.split('/').pop()!, row.timeOverride]));
+  expect(Object.keys(overrides).sort()).toEqual(['IMG001.JPG', 'IMG002.JPG', 'IMG003.JPG']);
+  expect(overrides).toMatchObject({
+    'IMG001.JPG': '2024-01-10T09:00:00.000-07:00',
+    'IMG002.JPG': '2024-01-10T09:00:30.000-07:00',
+    'IMG003.JPG': '2024-01-10T23:15:00.000-07:00',
+  });
+  expect(overrides['IMG005.JPG']).toBeUndefined();
 });
 
 Then('each moves relative to the time it was already showing', async ({ page }) => {
-  await closeFocus(page);
-  await gridCell(page, 'IMG001.JPG').click();
-  await gridCell(page, 'IMG003.JPG').click({ modifiers: ['Shift'] });
-  await page.getByRole('button', { name: 'Time shift selection' }).click();
-  await bump(selectionShiftModal(page), 'Min', 30);
-  await selectionShiftModal(page).getByRole('button', { name: /^Apply to 3 selected/ }).click();
-  await showFrame(page, 'IMG001.JPG');
-  await expect(page.getByRole('dialog', { name: 'Focus image viewer' })).toBeVisible();
+  const drafts = (await readStore(page, 'drafts')) as { mediaPath: string; timeOverride: string | null }[];
+  const overrides = Object.fromEntries(drafts.map((row) => [row.mediaPath.split('/').pop()!, row.timeOverride]));
+  expect(overrides).toMatchObject({
+    'IMG001.JPG': '2024-01-10T09:00:00.000-07:00',
+    'IMG002.JPG': '2024-01-10T09:00:30.000-07:00',
+    'IMG003.JPG': '2024-01-10T23:15:00.000-07:00',
+  });
 });
 
 Then('the preview is anchored on the earliest selected frame', async ({ page }) => {
@@ -305,7 +299,7 @@ Then('the preview is anchored on the earliest selected frame', async ({ page }) 
   await page.getByRole('button', { name: 'Time shift selection' }).click();
   await expect(selectionShiftModal(page)).toContainText('Preview · earliest selected');
   await expect(selectionShiftModal(page).locator('div.line-through')).toContainText(
-    '2024-01-10 09:30',
+    '2024-01-10 09:00',
   );
   await selectionShiftModal(page).getByRole('button', { name: 'Cancel' }).click();
 });

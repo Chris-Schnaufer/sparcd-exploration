@@ -6,9 +6,10 @@ Feature: Correct capture times on an upload whose camera clock was wrong
   """
   As-built flow: camera clocks drift — wrong timezone, daylight saving, a dead
   clock battery. The tagger can shift the capture time of a whole upload or a
-  selection of frames. An exact per-image correction can also be entered. The
-  correction is held alongside the original until a sync writes it; the original
-  is never rewritten locally.
+  selection of frames. Focus does not provide an absolute per-image timestamp
+  editor; its supported correction actions are the whole-upload and selection
+  shifts. Corrections are held locally until a sync writes them; the original
+  capture data is never rewritten locally.
   """
 
   Background:
