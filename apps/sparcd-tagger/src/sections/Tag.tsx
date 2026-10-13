@@ -1295,6 +1295,15 @@ export function Tag() {
             <div className="min-w-0 text-[13px] font-mono text-ink truncate">
               Focus{current ? ` · ${current.fileName}` : ''}
             </div>
+            {current?.deploymentId && (
+              <span
+                className="shrink-0 max-w-[42vw] truncate font-mono text-[10px] text-inkSoft"
+                aria-label={`Deployment: ${current.deploymentId}`}
+                title={`Deployment: ${current.deploymentId}`}
+              >
+                {current.deploymentId}
+              </span>
+            )}
             {current?.timestampSource === 'exif-modify' && (
               <span
                 className="shrink-0 font-body text-[10px] font-[600] tracking-[0.08em] uppercase text-inkSoft border border-rule px-1"
@@ -1917,6 +1926,12 @@ function Lightbox({
     closeRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
+      const lightbox = document.querySelector<HTMLElement>('[data-focus-lightbox]');
+      const shortcuts = document.querySelector<HTMLElement>('[role="dialog"][aria-label="Keyboard shortcuts"]');
+      // A portalled child dialog can sit above Lightbox. Let that dialog own
+      // Escape first; the global handler closes Cheatsheet and restores its
+      // opener focus.
+      if (!lightbox || shortcuts || !lightbox.contains(document.activeElement)) return;
       e.preventDefault();
       e.stopPropagation();
       onClose();

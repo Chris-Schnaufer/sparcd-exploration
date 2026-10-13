@@ -44,7 +44,10 @@ Given('an image is open in the Focus view', async ({ page }) => {
 Then(
   'the deployment identifier recorded for that image is shown alongside its file name',
   async ({ page }) => {
-    await expect(page.getByRole('dialog', { name: 'Focus image viewer' })).toContainText('IMG001.JPG');
+    const focus = page.getByRole('dialog', { name: 'Focus image viewer' });
+    await expect(focus).toContainText('IMG001.JPG');
+    await expect(focus).toContainText(DEPLOYMENT);
+    await expect(focus.getByLabel(`Deployment: ${DEPLOYMENT}`)).toBeVisible();
   },
 );
 

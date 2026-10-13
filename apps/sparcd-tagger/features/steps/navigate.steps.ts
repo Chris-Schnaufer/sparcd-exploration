@@ -17,6 +17,7 @@ import {
   enterFocusView,
 } from './support/world';
 import { COLLECTION_NAME, STAMP_A } from './support/data';
+import { readStore } from './support/flows';
 
 const TOUCH = { width: 900, height: 860 };
 const DESKTOP = { width: 1440, height: 950 };
@@ -827,6 +828,14 @@ Then('a species key still applies that species to the focused image', async ({ p
   await page.keyboard.press('d');
   await expect(page.getByRole('dialog', { name: 'Focus image viewer' })).toBeVisible();
   await expect(page.getByRole('button', { name: /Mule Deer Odocoileus hemionus/ })).toBeVisible();
+  await expect.poll(async () => {
+    const drafts = (await readStore(page, 'drafts')) as {
+      mediaPath: string;
+      observations: { scientificName: string }[];
+    }[];
+    return drafts.find((draft) => draft.mediaPath.endsWith('IMG002.JPG'))?.observations
+      .some((observation) => observation.scientificName === 'Odocoileus hemionus') ?? false;
+  }).toBe(true);
 });
 
 Then('Home, End, Page Up, Page Down, and arrow keys adjust the slider rather than navigating images', async ({ page }) => {
