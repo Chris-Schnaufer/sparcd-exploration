@@ -55,6 +55,13 @@ Feature: Examine an image closely enough to catch every species
     # The zoom surface is stretched to the full pane, so a backdrop click never
     # reaches the element that carries the dismiss handler. See CORRECTIONS.md.
 
+  @H1
+  Scenario: Fullscreen Escape still closes after the top bar receives focus
+    When the image is opened fullscreen
+    And the fullscreen top bar is clicked
+    When Escape is pressed in the fullscreen viewer
+    Then the fullscreen viewer is closed
+
   @H1 @H1-5
   Scenario: Moving to another image starts it fitted to the pane
     Given the current image is zoomed in and panned

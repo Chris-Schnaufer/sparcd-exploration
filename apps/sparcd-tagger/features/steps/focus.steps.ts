@@ -358,6 +358,18 @@ When('the image is opened fullscreen', async ({ page }) => {
   await expect(lightbox(page)).toBeVisible();
 });
 
+When('the fullscreen top bar is clicked', async ({ page }) => {
+  await lightbox(page).locator(':scope > div').first().click({ position: { x: 4, y: 4 } });
+});
+
+When('Escape is pressed in the fullscreen viewer', async ({ page }) => {
+  await page.keyboard.press('Escape');
+});
+
+Then('the fullscreen viewer is closed', async ({ page }) => {
+  await expect(lightbox(page)).toHaveCount(0);
+});
+
 Then('it fills the window over a dimmed background', async ({ page }) => {
   const box = (await lightbox(page).boundingBox())!;
   const viewport = page.viewportSize()!;

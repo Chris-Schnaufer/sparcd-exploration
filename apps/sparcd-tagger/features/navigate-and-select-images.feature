@@ -117,6 +117,17 @@ Feature: Move through an upload and choose which images an action applies to
     And the image opener has focus again
 
   @H1
+  Scenario: Escape in Focus clears a pending count before closing the viewer
+    Given the Overview is shown
+    When the focused image is opened
+    And count 3 is pending
+    When Escape is pressed in Focus
+    Then no pending species count is shown
+    And the Focus viewer remains open
+    When the bound species key is pressed in Focus
+    Then the focused image carries that species at count one
+
+  @H1
   Scenario: Closing Focus with its close control restores the opener
     Given the Overview is shown
     When the focused image is opened

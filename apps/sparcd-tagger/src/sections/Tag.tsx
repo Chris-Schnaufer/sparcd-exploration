@@ -791,6 +791,7 @@ export function Tag() {
     view,
     setView,
     enterFocus,
+    closeFocus,
     isModalOpen: () =>
       modalOpenRef.current ||
       showDiscard ||
@@ -1283,13 +1284,6 @@ export function Tag() {
           role="dialog"
           aria-modal="true"
           aria-label="Focus image viewer"
-          onKeyDown={(e) => {
-            if (e.key !== 'Escape') return;
-            if ((e.target as Element).closest?.('[data-focus-lightbox]')) return;
-            e.preventDefault();
-            e.stopPropagation();
-            closeFocus();
-          }}
         >
           <div className="shrink-0 flex items-center justify-between gap-3 border-b border-rule bg-panel px-3 py-1">
             <div className="min-w-0 text-[13px] font-mono text-ink truncate">
@@ -1931,7 +1925,7 @@ function Lightbox({
       // A portalled child dialog can sit above Lightbox. Let that dialog own
       // Escape first; the global handler closes Cheatsheet and restores its
       // opener focus.
-      if (!lightbox || shortcuts || !lightbox.contains(document.activeElement)) return;
+      if (!lightbox || shortcuts) return;
       e.preventDefault();
       e.stopPropagation();
       onClose();
@@ -2126,6 +2120,7 @@ type HandlerState = {
   view: View;
   setView: (v: View) => void;
   enterFocus: () => void;
+  closeFocus: () => void;
   isModalOpen: () => boolean; // an overlay (loupe, or the Sync/Snapshots/Time-shift dialogs) owns the keys
 };
 
@@ -2407,7 +2402,11 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
         s.setSpeciesCountPrefix('');
         return;
       }
-      if (s.selected.size) s.setSelected(new Set());
+      if (s.selected.size) {
+        s.setSelected(new Set());
+        return;
+      }
+      if (s.view === 'focus') s.closeFocus();
       return;
   }
 }

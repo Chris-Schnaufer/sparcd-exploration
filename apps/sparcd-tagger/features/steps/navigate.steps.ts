@@ -324,6 +324,29 @@ When('the focused image is opened', async ({ page }) => {
   await page.keyboard.press('Enter');
 });
 
+When('the bound species key is pressed in Focus', async ({ page }) => {
+  await page.keyboard.press('d');
+});
+
+Then('the Focus viewer remains open', async ({ page }) => {
+  await expect(page.getByRole('dialog', { name: 'Focus image viewer' })).toBeVisible();
+});
+
+Then('the focused image carries that species at count one', async ({ page }) => {
+  await expect
+    .poll(async () => {
+      const drafts = (await readStore(page, 'drafts')) as {
+        mediaPath: string;
+        observations: { scientificName: string; count: number }[];
+      }[];
+      return drafts
+        .find((draft) => draft.mediaPath.endsWith('IMG003.JPG'))
+        ?.observations.find((observation) => observation.scientificName === 'Odocoileus hemionus')
+        ?.count;
+    })
+    .toBe(1);
+});
+
 When('the browser Back button is pressed', async ({ page }) => {
   await page.goBack();
 });
