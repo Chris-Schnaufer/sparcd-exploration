@@ -74,5 +74,5 @@ export function nextVisibleIndex(
  * jumping back to the very first match in the upload.
  */
 export function nearestVisibleIndex(visibleIndices: number[], focus: number): number | undefined {
-  return visibleIndices.find((i) => i >= focus) ?? [...visibleIndices].reverse().find((i) => i < focus);
+  return visibleIndices.find((i) => i >= focus) ?? visibleIndices[visibleIndices.length - 1];
 }

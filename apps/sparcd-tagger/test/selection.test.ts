@@ -100,3 +100,11 @@ describe('nearestVisibleIndex', () => {
     expect(nearestVisibleIndex(matches, 6)).toBe(5);
   });
 });
+
+describe('empty filtered navigation', () => {
+  it('has no destination or incidental fallback when no images match', () => {
+    expect(nextVisibleIndex([], 4, 1)).toBeUndefined();
+    expect(nextVisibleIndex([], 4, -1)).toBeUndefined();
+    expect(nearestVisibleIndex([], 4)).toBeUndefined();
+  });
+});

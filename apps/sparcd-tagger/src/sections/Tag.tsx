@@ -381,25 +381,21 @@ export function Tag() {
   }, [focusedImageKey, uploadPrefix]);
   const matches = useMemo(() => findFilenameMatches(list, imgQuery), [list, imgQuery]);
   const [imageFilter, setImageFilter] = useState<ImageFilter>(EMPTY_IMAGE_FILTER);
+  const exhaustedFocusRef = useRef<{ key: string; filter: ImageFilter } | null>(null);
   const [showImageFilter, setShowImageFilter] = useState(false);
   const imageFilterButtonRef = useRef<HTMLButtonElement>(null);
   const imageFilterTextRef = useRef<HTMLInputElement>(null);
+  const matchesCurrentFilter = (image: TagImage, draft: DraftRecord | undefined) => matchesImageFilter(
+    {
+      fileName: image.fileName,
+      timestamp: correctedTimestamp(image.baseTimestamp, timeOffset, draft?.timeOverride ?? null, captureTimeZone),
+      observations: effectiveOf(image, draft).observations,
+    },
+    imageFilter,
+  );
   const visibleIndices = useMemo(
-    () =>
-      list.flatMap((image, index) => {
-        const draft = drafts[image.key];
-        return matchesImageFilter(
-          {
-            fileName: image.fileName,
-            timestamp: correctedTimestamp(image.baseTimestamp, timeOffset, draft?.timeOverride ?? null, captureTimeZone),
-            observations: effectiveOf(image, draft).observations,
-          },
-          imageFilter,
-        )
-          ? [index]
-          : [];
-      }),
-    [drafts, imageFilter, list, timeOffset],
+    () => list.flatMap((image, index) => matchesCurrentFilter(image, drafts[image.key]) ? [index] : []),
+    [captureTimeZone, drafts, imageFilter, list, timeOffset],
   );
   const imageFilterActive =
     imageFilter.text !== '' ||
@@ -425,18 +421,22 @@ export function Tag() {
     if (showImageFilter) imageFilterTextRef.current?.focus();
   }, [showImageFilter]);
 
-  // Focus navigation always has a visible current item while a filter has
-  // matches. This only catches incidental cases (the filter just changed, or
-  // an edit elsewhere dropped the focused image) — a deliberate filtered move
-  // (`advanceFocus`, `filteredFocusMove`, `gotoFilteredImage`) always lands
-  // directly on a visible index itself, so this never overrides it (#442).
-  // Selection retains canonical indexes and is deliberately untouched.
+  // Exhausted auto-advance retains the image that was just tagged, even if
+  // that edit hid it. A changed filter or explicit move releases that hold.
   useEffect(() => {
-    if (!imageFilterActive || visibleIndices.length === 0 || visibleIndices.includes(focus)) return;
-    const nearest = nearestVisibleIndex(visibleIndices, focus) ?? visibleIndices[0];
+    if (!imageFilterActive || visibleIndices.includes(focus)) {
+      exhaustedFocusRef.current = null;
+      return;
+    }
+    const held = exhaustedFocusRef.current;
+    if (held?.key === current?.key && held?.filter === imageFilter) return;
+    exhaustedFocusRef.current = null;
+    if (visibleIndices.length === 0) return;
+    const nearest = nearestVisibleIndex(visibleIndices, focus);
+    if (nearest == null) return;
     setFocus(nearest);
     setAnchor(nearest);
-  }, [focus, imageFilterActive, visibleIndices]);
+  }, [current?.key, focus, imageFilter, imageFilterActive, visibleIndices]);
 
   useEffect(() => {
     if (!imageFilterActive) return;
@@ -622,10 +622,20 @@ export function Tag() {
   // stepping by raw list position (#442) — and if there's no further match,
   // stay put rather than jumping elsewhere.
   const advanceFocus = () => {
+    // Tagging can hide several selected images in the same action. Read the
+    // updated drafts before choosing a destination, rather than advancing into
+    // another image that this bulk edit has just removed from the filter.
+    const updatedDrafts = useDraftStore.getState().drafts;
     const next = imageFilterActive
-      ? nextVisibleIndex(visibleIndices, focus, 1)
+      ? nextVisibleIndex(visibleIndices.filter((index) => matchesCurrentFilter(list[index], updatedDrafts[list[index].key])), focus, 1)
       : Math.max(0, Math.min(focus + 1, list.length - 1));
-    if (next == null) return;
+    if (next == null) {
+      if (imageFilterActive && current) exhaustedFocusRef.current = { key: current.key, filter: imageFilter };
+      setAnchor(focus);
+      setSelected(new Set());
+      return;
+    }
+    exhaustedFocusRef.current = null;
     setFocus(next);
     setAnchor(next);
     setSelected(new Set());
@@ -753,15 +763,16 @@ export function Tag() {
     if (target != null) gotoImage(target);
   };
 
-  const filteredFocusPosition = imageFilterActive ? visibleIndices.indexOf(focus) : focus;
-  const canGoPrevious = filteredFocusPosition > 0;
-  const canGoNext = imageFilterActive
-    ? filteredFocusPosition >= 0 && filteredFocusPosition < visibleIndices.length - 1
-    : focus < list.length - 1;
-  const hasPreviousAfterPrevious = filteredFocusPosition > 1;
-  const hasNextAfterNext = imageFilterActive
-    ? filteredFocusPosition >= 0 && filteredFocusPosition < visibleIndices.length - 2
-    : focus < list.length - 2;
+  const previousIndex = imageFilterActive ? nextVisibleIndex(visibleIndices, focus, -1) : focus > 0 ? focus - 1 : undefined;
+  const nextIndex = imageFilterActive ? nextVisibleIndex(visibleIndices, focus, 1) : focus < list.length - 1 ? focus + 1 : undefined;
+  const canGoPrevious = previousIndex != null;
+  const canGoNext = nextIndex != null;
+  const hasPreviousAfterPrevious = previousIndex != null && (imageFilterActive
+    ? nextVisibleIndex(visibleIndices, previousIndex, -1) != null
+    : previousIndex > 0);
+  const hasNextAfterNext = nextIndex != null && (imageFilterActive
+    ? nextVisibleIndex(visibleIndices, nextIndex, 1) != null
+    : nextIndex < list.length - 1);
 
   // On-screen questionable toggle mirrors Shift+Space: act on the selection
   // (or the focused image), flipping off the focused image's current state.
@@ -1528,14 +1539,14 @@ function FocusPane({
   const focusAfterNavigationRef = useRef<'previous' | 'next' | null>(null);
 
   useLayoutEffect(() => {
+    if (!focusAfterNavigationRef.current) return;
     const target = focusAfterNavigationRef.current === 'previous'
       ? previousButtonRef.current
       : focusAfterNavigationRef.current === 'next'
         ? nextButtonRef.current
         : null;
     focusAfterNavigationRef.current = null;
-    if (!target) return;
-    target.focus();
+    (target ?? document.querySelector<HTMLButtonElement>('[aria-label="Close Focus"]'))?.focus();
   }, [current?.key, canPrev, canNext]);
 
   const navigatePrevious = () => {
@@ -2188,15 +2199,17 @@ function filteredFocusMove(s: HandlerState, direction: 1 | -1): void {
 function filteredFocusMoveFromKeyboard(s: HandlerState, direction: 1 | -1): void {
   const active = document.activeElement;
   const navigationHasFocus = active?.getAttribute('aria-describedby') === 'focus-navigation-help';
-  const position = s.imageFilterActive ? s.visibleIndices.indexOf(s.focus) : s.focus;
-  const length = s.imageFilterActive ? s.visibleIndices.length : s.list.length;
-  const reachesBoundary = navigationHasFocus &&
-    ((direction < 0 && position === 1) || (direction > 0 && position === length - 2));
+  const target = s.imageFilterActive
+    ? nextVisibleIndex(s.visibleIndices, s.focus, direction)
+    : Math.max(0, Math.min(s.focus + direction, s.list.length - 1));
+  const reachesBoundary = navigationHasFocus && target != null && (s.imageFilterActive
+    ? nextVisibleIndex(s.visibleIndices, target, direction) == null
+    : target === 0 || target === s.list.length - 1);
   filteredFocusMove(s, direction);
   if (reachesBoundary) {
     requestAnimationFrame(() => {
       const selector = direction < 0 ? '[aria-label="Next image"]' : '[aria-label="Previous image"]';
-      document.querySelector<HTMLButtonElement>(selector)?.focus();
+      (document.querySelector<HTMLButtonElement>(selector) ?? document.querySelector<HTMLButtonElement>('[aria-label="Close Focus"]'))?.focus();
     });
   }
 }

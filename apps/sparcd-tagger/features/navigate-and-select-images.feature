@@ -244,3 +244,63 @@ Feature: Move through an upload and choose which images an action applies to
     Given a burst is selected and a slider in the Adjust popup is focused
     When Escape is pressed with the slider focused
     Then the Adjust popup closes and the same images are still selected
+
+  @unmapped
+  Scenario Outline: Filtered Overview crosses a hidden gap from the second match and back
+    Given three untagged matches have hidden images between them
+    When the image filter limits the Overview to untagged images
+    And the second separated match is chosen
+    And "<next>" is pressed in the filtered Overview
+    Then the third separated match is focused
+    When "<next>" is pressed in the filtered Overview
+    Then the third separated match is focused
+    When "<previous>" is pressed in the filtered Overview
+    Then the second separated match is focused
+
+    Examples:
+      | next       | previous  |
+      | ArrowDown  | ArrowUp   |
+      | ArrowRight | ArrowLeft |
+
+  @unmapped
+  Scenario: Auto-advance keeps list order when tagging removes the current match
+    When the image filter limits the Overview to untagged images
+    And the first untagged match is focused
+    And the focused untagged image is identified
+    Then the second untagged match is focused
+    And the identified image has disappeared from the filtered Overview
+
+  @unmapped
+  Scenario Outline: Exhausted auto-advance retains its position without jumping backward
+    When the image filter limits the Overview to untagged images
+    And the image filter excludes the video
+    And the final image match is opened in "<view>"
+    And the focused untagged image is identified
+    Then exhausted focus stays on the image just identified in "<view>"
+    When another species key is pressed after exhaustion
+    Then only the original identification was applied and earlier matches remain untouched
+    When the previous filtered match is requested in "<view>"
+    Then the earlier matching image is reachable in "<view>"
+
+    Examples:
+      | view     |
+      | Overview |
+      | Focus    |
+
+  @unmapped
+  Scenario: Changing the filter releases an exhausted focus hold
+    When the image filter limits the Overview to untagged images
+    And the image filter excludes the video
+    And the final image match is opened in "Overview"
+    And the focused untagged image is identified
+    Then exhausted focus stays on the image just identified in "Overview"
+    When the filter is narrowed to the earlier matching image
+    Then the earlier matching image is reachable in "Overview"
+
+  @unmapped
+  Scenario: A bulk edit does not advance into another match it just removed
+    When the image filter limits the Overview to untagged images
+    And the image filter excludes the video
+    And both image matches are selected with the earlier match focused
+    And the focused untagged image is identified
+    Then exhausted bulk focus stays at the earlier image and all matches are removed
