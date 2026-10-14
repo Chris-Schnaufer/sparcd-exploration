@@ -91,7 +91,7 @@ test('uploads the fixed corpus through the real app', async ({ page }) => {
   const inspectedAt = performance.now();
 
   await page.getByRole('button', { name: 'Continue' }).click();
-  await expect(page.getByRole('heading', { name: 'Target collection' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Collection' })).toBeVisible();
   await expect(page.locator('button[aria-haspopup="listbox"]').first()).toBeVisible();
   const deployment = page.locator('button[aria-haspopup="listbox"]').nth(1);
   await deployment.click();
