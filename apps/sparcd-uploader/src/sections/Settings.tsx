@@ -58,7 +58,8 @@ export function Settings() {
                 Disconnect
               </button>
               <p className="font-body text-[12px] text-inkMute">
-                Clears this browser's local upload sessions so the next person connects to a clean app.
+                Clears this browser's local upload sessions and remembered connection, logging you
+                out. Do this before leaving a shared or public computer.
               </p>
             </>
           ) : (
