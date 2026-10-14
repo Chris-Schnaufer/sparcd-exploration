@@ -500,3 +500,22 @@ describe('upload comment preview date', () => {
     }
   });
 });
+
+describe('connected identity fallback', () => {
+  const config = { endpoint: 'http://localhost', accessKey: 'storage-user', secretKey: 'test-secret', region: 'us-east-1', forcePathStyle: true, secure: false };
+  it('fills empty and whitespace identities from the current account', () => {
+    for (const uploaderUser of ['', '   ']) {
+      useStore.setState({ uploaderUser, s3Config: config });
+      useStore.getState().ensureUploaderIdentity();
+      expect(useStore.getState().uploaderUser).toBe('storage-user');
+    }
+  });
+  it('preserves custom identity and leaves an offline blank unchanged', () => {
+    useStore.setState({ uploaderUser: 'Ada', s3Config: config });
+    useStore.getState().ensureUploaderIdentity();
+    expect(useStore.getState().uploaderUser).toBe('Ada');
+    useStore.setState({ uploaderUser: '', s3Config: null });
+    useStore.getState().ensureUploaderIdentity();
+    expect(useStore.getState().uploaderUser).toBe('');
+  });
+});
