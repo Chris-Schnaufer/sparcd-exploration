@@ -1,17 +1,17 @@
 # DRAFT — for review, not yet agreed. Generated 2026-08-06 from apps/sparcd-uploader (src/sections/Assign.tsx, src/components/CollectionPicker.tsx, src/sections/Upload.tsx, src/lib/s3.ts, src/lib/locations.ts, src/lib/useCollections.ts, test/locations.test.ts).
 
-Feature: Assign a batch to a collection and a camera location
+Feature: Describe a batch with its collection and a camera location
 
   """
-  As-built flow: step 3 of 4 ("Assign"). Before a batch can be uploaded the user
+  As-built flow: step 3 of 4 ("Describe"). Before a batch can be uploaded the user
   says where it belongs — which collection receives it, which camera location
   (deployment) the SD card came from, who is uploading it, and optionally a
   description. Nothing can be uploaded until all of that is settled.
   """
 
   Background:
-    Given a scanned batch has passed the Inspect step
-    And the New upload section is showing the Assign step
+    Given a scanned batch has passed the Verify step
+    And the New upload section is showing the Describe step
 
   @F2 @A2 @A2-3
   Scenario: The batch cannot be uploaded until a camera location is assigned
@@ -38,7 +38,7 @@ Feature: Assign a batch to a collection and a camera location
 
   @unmapped
   Scenario: The collections offered are the ones the connection can actually read
-    When the Assign step opens
+    When the Describe step opens
     Then the tool lists the collections readable with the connected credentials
     And the first of them is pre-selected
     And each is shown with its name and its organization or contact, and the selected one's identifier is shown beneath the list
@@ -119,7 +119,7 @@ Feature: Assign a batch to a collection and a camera location
   @unmapped
   Scenario: A registry that cannot be read is reported plainly
     Given the location registry cannot be read with the connected credentials
-    Then the Assign step explains that the registry could not be loaded
+    Then the Describe step explains that the registry could not be loaded
     And no deployment can be chosen until it can be read
 
   @unmapped
@@ -127,9 +127,9 @@ Feature: Assign a batch to a collection and a camera location
     When an uploader identity is typed
     Then the tool shows the key-safe form of it that will appear in the upload's storage path and object names
     # The identity is free text; the tool does not check it against the
-    # credentials it connected with. Assign itself only holds the raw
+    # credentials it connected with. Describe itself only holds the raw
     # identity — the key-safe preview lives in Settings, since that field is
-    # the same shared uploaderUser Assign just set.
+    # the same shared uploaderUser Describe just set.
 
   @unmapped
   Scenario: A description can be recorded with the batch
@@ -187,7 +187,7 @@ Feature: Assign a batch to a collection and a camera location
   Scenario: The original preview date is preserved when upload starts after midnight
     When the mountain range and collection date are entered with notes "Overnight batch"
     Then the required comment is previewed without changing the optional notes
-    When the next day arrives while Assign stays open
+    When the next day arrives while Describe stays open
     Then the comment preview keeps its original upload date
     When Upload is opened and another day arrives before starting
     Then the Upload preview keeps the original preview date

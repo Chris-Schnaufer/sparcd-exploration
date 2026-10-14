@@ -392,7 +392,7 @@ Then(
     const deployments = metadataPuts(app).find((p) => p.key.endsWith('deployments.csv'))!;
     expect(deployments.body).toContain(`${UUID_A}:BEAR1`);
     // Nothing on the History screen asked for any of it.
-    await expect(app.page.getByRole('heading', { name: 'Target collection' })).toHaveCount(0);
+    await expect(app.page.getByRole('heading', { name: 'Collection' })).toHaveCount(0);
   },
 );
 
@@ -519,8 +519,8 @@ When('a failed upload is retried or resumed', async ({ app }) => {
 Then(
   'the collection, deployment, uploader identity and timezone are not asked for again',
   async ({ app }) => {
-    await expect(app.page.getByRole('heading', { name: 'Target collection' })).toHaveCount(0);
-    await expect(app.page.getByRole('heading', { name: 'Deployment' })).toHaveCount(0);
+    await expect(app.page.getByRole('heading', { name: 'Collection' })).toHaveCount(0);
+    await expect(app.page.getByRole('heading', { name: 'Site ID' })).toHaveCount(0);
     const [batch] = await app.readBatchRecords();
     expect(batch.uploadTimeZone).toBe('America/Phoenix');
     const meta = JSON.parse(metadataPuts(app).find((p) => p.key.endsWith('UploadMeta.json'))!.body);

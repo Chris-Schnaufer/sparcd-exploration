@@ -26,13 +26,13 @@ const METADATA_NAMES = [
   'UploadComplete.json',
 ];
 
-Given('a scanned batch has passed the Inspect step', async ({ app }) => {
+Given('a scanned batch has passed the Verify step', async ({ app }) => {
   await app.connect();
   await app.dropFolder(standardBatch());
   await app.waitForInspected();
 });
 
-Given('the New upload section is showing the Assign step', async ({ app }) => {
+Given('the New upload section is showing the Describe step', async ({ app }) => {
   await app.continueToAssign();
   await app.waitForCollections();
 });
@@ -81,7 +81,7 @@ Then('it states that an uploader identity must be set first', async ({ app }) =>
 
 // --- the collection list ---------------------------------------------------
 
-When('the Assign step opens', async ({ app }) => {
+When('the Describe step opens', async ({ app }) => {
   await expect(app.collectionTrigger()).toBeVisible();
 });
 
@@ -303,7 +303,7 @@ Given('the location registry cannot be read with the connected credentials', asy
   await reconnectAndReturnToAssign(app);
 });
 
-Then('the Assign step explains that the registry could not be loaded', async ({ app }) => {
+Then('the Describe step explains that the registry could not be loaded', async ({ app }) => {
   await expect(app.page.getByText(/No readable settings bucket found/)).toBeVisible({ timeout: 30_000 });
 });
 
@@ -509,7 +509,7 @@ Then('Continue allows the Upload step', async ({ app }) => {
   await expect(app.continueButton()).toHaveAttribute('title', 'Continue to upload');
 });
 
-When('the next day arrives while Assign stays open', async ({ app }) => {
+When('the next day arrives while Describe stays open', async ({ app }) => {
   await app.page.clock.setSystemTime(new Date('2026-10-15T00:00:01-04:00'));
 });
 
