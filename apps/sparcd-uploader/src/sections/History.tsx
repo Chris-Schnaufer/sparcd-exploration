@@ -10,6 +10,8 @@ import { OfflineBanner, useOnline } from '@sparcd/auth-ui';
 import { formatHistoryBatchStart } from '../lib/uploadDisplay';
 import { useStore } from '../store';
 import { formatBytes } from '../lib/scanFiles';
+import { useCollections } from '../lib/useCollections';
+import type { CollectionRef } from '../lib/s3';
 import {
   listBatches,
   loadSession,
@@ -36,6 +38,28 @@ type Row = { batch: BatchRecord } & SessionTally;
 
 const stampOf = (prefix: string) => prefix.slice(prefix.lastIndexOf('/') + 1);
 
+/** The collection a batch was sent to — name and UUID, not the bucket, which
+ *  is neither memorable nor (once the new file layout lands) even
+ *  meaningful. Falls back to the bucket when the collection can't be
+ *  resolved at all (not yet connected, or since removed) — the same
+ *  fallback `Upload.tsx`'s resumed-batch summary uses for this lookup.
+ *  "name · uuid" mirrors how Assign already shows a selected collection. */
+function CollectionLabel({
+  batch,
+  collections,
+}: {
+  batch: BatchRecord;
+  collections?: CollectionRef[];
+}) {
+  const match = collections?.find((c) => c.bucket === batch.targetBucket && c.uuid === batch.collectionUuid);
+  if (!match) return <>{batch.targetBucket}</>;
+  return (
+    <>
+      {match.name ?? 'Unnamed collection'} · <span className="font-mono">{match.uuid}</span>
+    </>
+  );
+}
+
 function ownsPreparation(sessionId: string, connectionId: number, generation: number): boolean {
   const state = useStore.getState();
   return !!state.s3Config &&
@@ -60,6 +84,8 @@ function Badge({ batch }: { batch: BatchRecord }) {
 
 export function History() {
   const s3Config = useStore((s) => s.s3Config);
+  const connectionId = useStore((s) => s.connectionId);
+  const collections = useCollections(s3Config, connectionId);
   const setPendingResume = useStore((s) => s.setPendingResume);
   const setSection = useStore((s) => s.setSection);
   const setStep = useStore((s) => s.setStep);
@@ -478,7 +504,8 @@ export function History() {
                     {stampOf(batch.uploadPrefix)}
                   </p>
                   <p className="font-body text-[12px] text-inkSoft truncate">
-                    {batch.targetBucket} · {formatHistoryBatchStart(batch.startedAt)}
+                    <CollectionLabel batch={batch} collections={collections.data} /> ·{' '}
+                    {formatHistoryBatchStart(batch.startedAt)}
                   </p>
                 </div>
                 <Badge batch={batch} />

@@ -159,6 +159,11 @@ Then('History shows the batch start as {string}', async ({ app }, expected: stri
   await expect(app.page.getByText(new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))).toBeVisible();
 });
 
+Then("History shows the collection's name and ID, not the bucket", async ({ app }) => {
+  await expect(app.page.getByText(`${COLLECTION_A_NAME} · ${UUID_A}`, { exact: false })).toBeVisible();
+  await expect(app.page.getByText(BUCKET_A, { exact: false })).toHaveCount(0);
+});
+
 Then('it shows how many of its files are done and how many failed', async ({ app }) => {
   await expect(app.page.getByText(/4 files · .* · 3 done · 1 failed/)).toBeVisible();
 });

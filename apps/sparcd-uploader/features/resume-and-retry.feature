@@ -54,6 +54,11 @@ Feature: Resume an interrupted upload and retry a failed one
     When History is opened
     Then History shows the batch start as "2026-09-11 22:15:10"
 
+  @AL1
+  Scenario: History identifies the upload's destination by collection, not bucket
+    Given an open upload is listed in History
+    Then History shows the collection's name and ID, not the bucket
+
   @AL1 @F1 @F1-5
   Scenario: An interrupted upload can be continued from where it stopped
     Given an open upload is listed in History
