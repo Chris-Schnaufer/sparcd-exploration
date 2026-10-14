@@ -33,7 +33,7 @@ import { cssFilter, NEUTRAL, type Adjustments } from '../lib/adjustments';
 import { Overview, type PickMods, type ViewKind } from '../components/Overview';
 import { groupBursts, type BurstGrouping } from '../lib/bursts';
 import { offsetActive, formatOffsetDelta, earliestCorrected } from '../lib/timeshift';
-import { rangeSet, toggleIndex, burstIndexSet, visibleRangeSet } from '../lib/selection';
+import { rangeSet, toggleIndex, burstIndexSet, visibleRangeSet, nextVisibleIndex, nearestVisibleIndex } from '../lib/selection';
 import { effectiveOf } from '../lib/effective';
 import { sortIndices, type SortField, type SortDir } from '../lib/sortImages';
 import { findFilenameMatches } from '../lib/imageSearch';
@@ -426,11 +426,16 @@ export function Tag() {
   }, [showImageFilter]);
 
   // Focus navigation always has a visible current item while a filter has
-  // matches. Selection retains canonical indexes and is deliberately untouched.
+  // matches. This only catches incidental cases (the filter just changed, or
+  // an edit elsewhere dropped the focused image) — a deliberate filtered move
+  // (`advanceFocus`, `filteredFocusMove`, `gotoFilteredImage`) always lands
+  // directly on a visible index itself, so this never overrides it (#442).
+  // Selection retains canonical indexes and is deliberately untouched.
   useEffect(() => {
     if (!imageFilterActive || visibleIndices.length === 0 || visibleIndices.includes(focus)) return;
-    setFocus(visibleIndices[0]);
-    setAnchor(visibleIndices[0]);
+    const nearest = nearestVisibleIndex(visibleIndices, focus) ?? visibleIndices[0];
+    setFocus(nearest);
+    setAnchor(nearest);
   }, [focus, imageFilterActive, visibleIndices]);
 
   useEffect(() => {
@@ -613,8 +618,14 @@ export function Tag() {
   // Move focus to the next image, clearing selection — mirrors the keyboard
   // handler's `focusMove`, scoped to this component's own focus/anchor/selected
   // state (the handler's copy lives in a separate closure keyed off HandlerState).
+  // With a filter active this must skip images the filter hides rather than
+  // stepping by raw list position (#442) — and if there's no further match,
+  // stay put rather than jumping elsewhere.
   const advanceFocus = () => {
-    const next = Math.max(0, Math.min(focus + 1, list.length - 1));
+    const next = imageFilterActive
+      ? nextVisibleIndex(visibleIndices, focus, 1)
+      : Math.max(0, Math.min(focus + 1, list.length - 1));
+    if (next == null) return;
     setFocus(next);
     setAnchor(next);
     setSelected(new Set());
@@ -738,8 +749,7 @@ export function Tag() {
 
   const gotoFilteredImage = (direction: -1 | 1) => {
     if (!imageFilterActive) return gotoImage(focus + direction);
-    const position = visibleIndices.indexOf(focus);
-    const target = visibleIndices[position + direction];
+    const target = nextVisibleIndex(visibleIndices, focus, direction);
     if (target != null) gotoImage(target);
   };
 
@@ -2170,8 +2180,8 @@ function focusMove(s: HandlerState, i: number): void {
 }
 
 function filteredFocusMove(s: HandlerState, direction: 1 | -1): void {
-  if (s.view !== 'focus' || !s.imageFilterActive) return focusMove(s, s.focus + direction);
-  const target = s.visibleIndices[s.visibleIndices.indexOf(s.focus) + direction];
+  if (!s.imageFilterActive) return focusMove(s, s.focus + direction);
+  const target = nextVisibleIndex(s.visibleIndices, s.focus, direction);
   if (target != null) focusMove(s, target);
 }
 

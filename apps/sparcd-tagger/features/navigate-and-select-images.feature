@@ -87,6 +87,26 @@ Feature: Move through an upload and choose which images an action applies to
     Then IMG005.JPG is the focused filtered image
 
   @unmapped
+  Scenario: Arrow-key navigation in a filtered Overview advances by filtered position, not raw list position
+    When the image filter limits the Overview to untagged images
+    And the first untagged match is focused
+    And the next-image or previous-image key is pressed
+    Then the second untagged match is focused
+    # #442: the raw-list-order neighbors between the first and second untagged
+    # matches (IMG003, IMG004) are tagged and hidden by the filter — stepping
+    # by raw list position would land on one of them, outside the filter, and
+    # snap back to the first match instead.
+
+  @unmapped
+  Scenario: Auto-advance after tagging skips a raw-list neighbor the filter hides
+    When the image filter limits the Overview to tagged images
+    And the first matching image in the Overview is focused
+    And it is tagged with a species it doesn't already carry
+    Then the next matching image is focused, skipping the one the filter hides
+    # #442: auto-advance stepped by raw list position regardless of the
+    # filter, with the same consequence as the scenario above.
+
+  @unmapped
   Scenario: The image filter panel fits a narrow viewport
     When the image filter is opened in a narrow viewport
     Then the image filter panel stays within the viewport

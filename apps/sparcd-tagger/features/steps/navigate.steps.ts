@@ -146,6 +146,45 @@ Then('IMG005.JPG is the focused filtered image', async ({ page }) => {
   await expect(listRow(page, 'IMG001.JPG')).toHaveCount(0);
 });
 
+// --- Filtered-Overview navigation skips hidden raw-list neighbors (#442) ----
+
+When('the image filter limits the Overview to untagged images', async ({ page }) => {
+  await page.getByRole('button', { name: 'Filter', exact: true }).click();
+  await page.getByLabel('Tag state').selectOption('untagged');
+  await page.keyboard.press('Escape');
+});
+
+When('the image filter limits the Overview to tagged images', async ({ page }) => {
+  await page.getByRole('button', { name: 'Filter', exact: true }).click();
+  await page.getByLabel('Tag state').selectOption('tagged');
+  await page.keyboard.press('Escape');
+});
+
+// Untagged matches, in list order: IMG002, IMG005, VID001 — IMG003/IMG004
+// (both tagged) sit between the first and second match, hiding the raw-list
+// neighbor the old code would have stepped to.
+When('the first untagged match is focused', async ({ page }) => {
+  await gridCell(page, 'IMG002.JPG').click();
+});
+
+Then('the second untagged match is focused', async ({ page }) => {
+  await expect(focusedTile(page)).toHaveAttribute('title', 'IMG005.JPG');
+});
+
+// Tagged matches, in list order: IMG001, IMG003, IMG004 — IMG002 (untagged,
+// between IMG001 and IMG003) is the raw-list neighbor the filter hides.
+When('the first matching image in the Overview is focused', async ({ page }) => {
+  await gridCell(page, 'IMG001.JPG').click();
+});
+
+When("it is tagged with a species it doesn't already carry", async ({ page }) => {
+  await page.keyboard.press('p'); // Mountain Lion — IMG001 only carries Mule Deer
+});
+
+Then('the next matching image is focused, skipping the one the filter hides', async ({ page }) => {
+  await expect(focusedTile(page)).toHaveAttribute('title', 'IMG003.JPG');
+});
+
 When('the image filter is opened in a narrow viewport', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 860 });
   await page.getByRole('button', { name: 'Filter', exact: true }).click();
