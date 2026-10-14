@@ -361,7 +361,8 @@ Then('the uploader identity defaults to the access key', async ({ app }) => {
 Then('the header shows the access key only in its masked form', async ({ app }) => {
   const header = app.page.locator('header');
   await expect(header).toContainText(`${ACCESS_KEY.slice(0, 2)}…${ACCESS_KEY.slice(-2)}`);
-  await expect(header.locator('[title="Your access key (masked)"]')).not.toContainText(ACCESS_KEY);
+  await expect(header).not.toContainText(ACCESS_KEY);
+  expect(await header.evaluate((element) => element.outerHTML)).not.toContain(ACCESS_KEY);
 });
 
 Then('the tool offers no list of permitted buckets of its own', async ({ app }) => {
