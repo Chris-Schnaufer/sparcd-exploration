@@ -79,6 +79,15 @@ Feature: Establish the true capture time of every file
     And clearing it returns the file to its estimate
 
   @unmapped
+  Scenario: A manual override is entered in 24-hour text, not a locale-dependent picker
+    Given some examined files carry no camera capture time
+    When a time with a space separator is typed over one file's estimate
+    Then that file shows the typed time as entered by hand
+    # #456: the override field is a plain 24-hour text field, not a native
+    # `datetime-local` picker, so its format never depends on the machine's
+    # locale (which a US machine would otherwise show as 12-hour with AM/PM).
+
+  @unmapped
   Scenario: A selection can be spread from a start time
     Given some examined files carry no camera capture time
     When a start time and a spacing are applied to the selection

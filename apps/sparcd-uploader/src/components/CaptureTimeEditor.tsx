@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useStore, type FileEntry } from '../store';
-import { formatNaive, naiveToInputValue, inputValueToNaive, type NaiveDateTime } from '../lib/exifTime';
+import { formatNaive, inputValueToNaive, type NaiveDateTime } from '../lib/exifTime';
 import { naiveFromMillis, naiveMillis, naturalPathCompare } from '../lib/estimateCaptureTime';
 import { spreadCaptureTimes, type SpreadOptions } from '../lib/spreadCaptureTimes';
 import { useCaptureEstimates, effectiveTime, methodLine, sourceTag } from '../lib/useCaptureEstimates';
@@ -93,6 +93,47 @@ function Thumb({ blob }: { blob?: Blob }) {
   );
 }
 
+/**
+ * One file's manual-override text field. Owns its own typed-text buffer —
+ * unlike a native `<input type="datetime-local">`, a free-text field fires
+ * `onChange` on every keystroke, including every incomplete intermediate
+ * string, and those must not clobber the committed override while the
+ * researcher is still typing. Clearing the field explicitly still commits
+ * `null` (same as the existing "back to estimate/EXIF" button); anything
+ * else non-empty just stays local until it parses.
+ */
+function OverrideTimeInput({
+  fileName,
+  initialText,
+  onCommit,
+}: {
+  fileName: string;
+  initialText: string;
+  onCommit: (naive: NaiveDateTime | null) => void;
+}) {
+  const [text, setText] = useState(initialText);
+  return (
+    <input
+      type="text"
+      autoFocus
+      placeholder="YYYY-MM-DD HH:mm:ss"
+      aria-label={`Capture time for ${fileName}`}
+      value={text}
+      onChange={(e) => {
+        const next = e.target.value;
+        setText(next);
+        if (next.trim() === '') {
+          onCommit(null);
+          return;
+        }
+        const naive = inputValueToNaive(next);
+        if (naive) onCommit(naive);
+      }}
+      className={inputClass}
+    />
+  );
+}
+
 export function CaptureTimeEditor({ files }: { files: FileEntry[] }) {
   const setManualNaive = useStore((s) => s.setManualNaive);
   const setManualNaiveMany = useStore((s) => s.setManualNaiveMany);
@@ -144,7 +185,7 @@ export function CaptureTimeEditor({ files }: { files: FileEntry[] }) {
     const { naive } = effectiveTime(f, estimates);
     if (naive && (!earliest || naiveMillis(naive) < naiveMillis(earliest))) earliest = naive;
   }
-  const earliestValue = earliest ? naiveToInputValue(earliest) : '';
+  const earliestValue = earliest ? shortNaive(earliest) : '';
   useEffect(() => {
     if (!startTouched) setStartText(earliestValue);
   }, [earliestValue, startTouched]);
@@ -319,8 +360,8 @@ export function CaptureTimeEditor({ files }: { files: FileEntry[] }) {
                   <label className="flex-1 min-w-[148px]">
                     <span className={`${sectionLabel} block mb-1`}>First image</span>
                     <input
-                      type="datetime-local"
-                      step={1}
+                      type="text"
+                      placeholder="YYYY-MM-DD HH:mm:ss"
                       disabled={useModified}
                       value={startText}
                       onChange={(e) => {
@@ -469,18 +510,14 @@ export function CaptureTimeEditor({ files }: { files: FileEntry[] }) {
                 </button>
                 <div className="flex items-center gap-2 mt-1">
                   {editing === f.id && (
-                    <input
-                      type="datetime-local"
-                      step={1}
-                      autoFocus
-                      aria-label={`Capture time for ${f.fileName}`}
-                      value={f.manualNaive
-                        ? naiveToInputValue(f.manualNaive)
+                    <OverrideTimeInput
+                      fileName={f.fileName}
+                      initialText={f.manualNaive
+                        ? shortNaive(f.manualNaive)
                         : f.exifTimestampSource === 'exif-modify' && f.exifNaive
-                          ? naiveToInputValue(f.exifNaive)
+                          ? shortNaive(f.exifNaive)
                           : ''}
-                      onChange={(e) => setManualNaive(f.id, inputValueToNaive(e.target.value))}
-                      className={inputClass}
+                      onCommit={(naive) => setManualNaive(f.id, naive)}
                     />
                   )}
                   <span className="font-body text-[11px] leading-snug text-inkMute min-w-0">

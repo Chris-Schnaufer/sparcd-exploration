@@ -221,11 +221,19 @@ Then('the panel says so, and offers to spread the times instead', async ({ app }
 
 // --- overriding an estimate ------------------------------------------------
 
-const overrideInput = (app: App) => app.page.locator('input[type="datetime-local"]');
+// A plain text field now, not a native `datetime-local` picker (#456) — scoped
+// by its aria-label prefix so it never collides with the Spread tab's "First
+// image capture time" field, which shares the same placeholder text.
+const overrideInput = (app: App) => app.page.locator('input[aria-label^="Capture time for "]');
 
 When("a time is typed over one file's estimate", async ({ app }) => {
   await card(app, 'IMG_0002.JPG').click();
   await overrideInput(app).fill('2026-05-05T05:05:05');
+});
+
+When("a time with a space separator is typed over one file's estimate", async ({ app }) => {
+  await card(app, 'IMG_0002.JPG').click();
+  await overrideInput(app).fill('2026-05-05 05:05:05');
 });
 
 Then('that file shows the typed time as entered by hand', async ({ app }) => {
@@ -264,7 +272,7 @@ Then('each of them is marked as spread', async ({ app }) => {
 When('a date that does not exist is entered, such as 31 February', async ({ app }) => {
   await rescanFromAssign(app, gappyBatch());
   await card(app, 'IMG_0002.JPG').click();
-  await app.setControlledValue('input[type="datetime-local"]', '2026-02-31T10:00:00', 0);
+  await overrideInput(app).fill('2026-02-31 10:00:00');
 });
 
 Then('the file keeps the estimate it already had', async ({ app }) => {
