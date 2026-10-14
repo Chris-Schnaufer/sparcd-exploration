@@ -122,6 +122,8 @@ export function Upload() {
   const setStep = useStore((s) => s.setStep);
   const files = useStore((s) => s.files);
   const uploaderUser = useStore((s) => s.uploaderUser);
+  const mountainRange = useStore((s) => s.mountainRange);
+  const dateCollected = useStore((s) => s.dateCollected);
   const description = useStore((s) => s.uploadDescription);
   const uploadTimeZone = useStore((s) => s.uploadTimeZone);
   const selectedLocationId = useStore((s) => s.selectedLocationId);
@@ -272,7 +274,7 @@ export function Upload() {
       };
 
   const start = () => {
-    if (!s3Config || !location || !collection || !slug) return;
+    if (!s3Config || !location || !collection || !slug || !mountainRange.trim() || !dateCollected) return;
     setCompleteDismissed(false);
     attachedRef.current = null; // this batch's files are the store's again
     setResumeProblems([]);
@@ -292,6 +294,7 @@ export function Upload() {
           bucket: collection.bucket,
           uploaderSlug: slug,
           description,
+          requiredComments: { mountainRange, dateCollected },
           timeZone: uploadTimeZone,
           files,
         },

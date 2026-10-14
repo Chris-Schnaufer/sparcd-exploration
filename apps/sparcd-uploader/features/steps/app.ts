@@ -690,6 +690,12 @@ export class App {
   }
 
   async continueToUpload(): Promise<void> {
+    // Older stories supply the other assignment fields; complete the new
+    // required-comment inputs before their ordinary Upload-step transition.
+    const mountain = this.page.getByLabel('Mountain range (required)', { exact: true });
+    const collected = this.page.getByLabel('Date collected (required)', { exact: true });
+    if (!(await mountain.inputValue()).trim()) await mountain.fill('Santa Catalina Mountains');
+    if (!(await collected.inputValue())) await collected.fill('2026-10-01');
     await this.page.getByRole('button', { name: 'Continue' }).click();
     await expect(this.page.getByRole('heading', { name: 'Upload', exact: true })).toBeVisible();
   }
@@ -783,7 +789,7 @@ export class App {
   }
 
   async setDescription(text: string): Promise<void> {
-    await this.page.getByPlaceholder('What this batch is — site, date range, notes.').fill(text);
+    await this.page.getByPlaceholder('Additional notes about this batch.').fill(text);
   }
 
   timeZoneSelect(): Locator {

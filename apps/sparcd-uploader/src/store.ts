@@ -106,6 +106,10 @@ type UploaderState = {
   selectedLocationId: string | null; // chosen deployment location ID (Assign)
   selectedBucket: string | null; // selected collection key `${bucket}::${uuid}` (Assign)
   requireCollectionSelection: boolean; // keep a new batch visibly unassigned
+  mountainRange: string;
+  dateCollected: string;
+  setMountainRange: (value: string) => void;
+  setDateCollected: (value: string) => void;
   uploadDescription: string; // free-text description for UploadMeta
   uploadTimeZone: string; // IANA zone EXIF naive times are interpreted in; default = browser zone
   dryRun: boolean; // off by default; when on, logs PUTs and writes nothing
@@ -333,6 +337,8 @@ export const useStore = create<UploaderState>()(
       selectedLocationId: null,
       selectedBucket: null,
       requireCollectionSelection: false,
+      mountainRange: '',
+      dateCollected: '',
       uploadDescription: '',
       uploadTimeZone: localTimeZone(),
       dryRun: false,
@@ -649,6 +655,8 @@ export const useStore = create<UploaderState>()(
       setUploaderUser: (value) => set({ uploaderUser: value }),
       setSelectedLocationId: (id) => set({ selectedLocationId: id }),
       setSelectedBucket: (bucket) => set({ selectedBucket: bucket, requireCollectionSelection: false }),
+      setMountainRange: (value) => set({ mountainRange: value }),
+      setDateCollected: (value) => set({ dateCollected: value }),
       setUploadDescription: (value) => set({ uploadDescription: value }),
       setUploadTimeZone: (value) => set({ uploadTimeZone: value }),
       setDryRun: (value) => set({ dryRun: value }),
@@ -712,6 +720,8 @@ export const useStore = create<UploaderState>()(
           flipId: null,
           selectedLocationId: null,
           selectedBucket: null,
+          mountainRange: '',
+          dateCollected: '',
           uploadDescription: '',
           uploadTimeZone: '',
           requireCollectionSelection: true,
@@ -744,6 +754,8 @@ export const useStore = create<UploaderState>()(
         selectedLocationId: s.selectedLocationId,
         selectedBucket: s.selectedBucket,
         requireCollectionSelection: s.requireCollectionSelection,
+        mountainRange: s.mountainRange,
+        dateCollected: s.dateCollected,
         uploadDescription: s.uploadDescription,
         uploadTimeZone: s.uploadTimeZone,
         dryRun: s.dryRun,

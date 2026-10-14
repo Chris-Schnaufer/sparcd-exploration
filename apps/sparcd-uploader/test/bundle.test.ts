@@ -541,3 +541,24 @@ describe('timestamp issues', () => {
     expect(parseCsvRows(b.mediaCsv)[0][10]).toBe('');
   });
 });
+
+describe('required upload comment metadata', () => {
+  it('uses the same generated prefix in a new and resumed bundle', async () => {
+    const now = new Date(2026, 9, 14, 10);
+    const input: BuildInput = {
+      location: SAN15, collectionUuid: UUID, bucket: `sparcd-${UUID}`,
+      uploaderSlug: 'jdoe', description: 'Retrieved after rain',
+      requiredComments: { mountainRange: 'Santa Rita Mountains', dateCollected: '2026-10-01' },
+      timeZone: 'America/Phoenix', files: [ready('IMG001.JPG')], now,
+    };
+    const live = await buildBundle(input);
+    const uploadPath = parseUploadMeta(live.uploadMetaJson).uploadPath;
+    const resumed = await buildBundleFromRecords({
+      ...input, startedAt: now, uploadPath,
+      files: [{ fileName: 'IMG001.JPG', size: 12, sha256: 'sha-a', remoteKey: `${uploadPath}/IMG001.JPG` }],
+    });
+    const expected = 'Santa Rita Mountains - San Pedro 15 - 1 images - uploaded 2026-10-14 - collected 2026-10-01 - Retrieved after rain';
+    expect(parseUploadMeta(live.uploadMetaJson).description).toBe(expected);
+    expect(parseUploadMeta(resumed.uploadMetaJson).description).toBe(expected);
+  });
+});

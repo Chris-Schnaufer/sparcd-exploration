@@ -13,6 +13,7 @@ import { sanitizeUploaderUser } from '../lib/normalize';
 import { supportedTimeZones } from '../lib/exifTime';
 import { timeZoneForCoords } from '../lib/coords';
 import { findAllowedLocation, orderAllowedLocations } from '../lib/allowedLocations';
+import { formatUploadComments } from '../lib/uploadComments';
 
 const sectionLabel =
   'font-[600] text-[11px] tracking-[0.16em] uppercase text-inkSoft mb-2';
@@ -69,6 +70,10 @@ export function Assign() {
   const setStep = useStore((s) => s.setStep);
   const uploaderUser = useStore((s) => s.uploaderUser);
   const setUploaderUser = useStore((s) => s.setUploaderUser);
+  const mountainRange = useStore((s) => s.mountainRange);
+  const dateCollected = useStore((s) => s.dateCollected);
+  const setMountainRange = useStore((s) => s.setMountainRange);
+  const setDateCollected = useStore((s) => s.setDateCollected);
   const description = useStore((s) => s.uploadDescription);
   const setDescription = useStore((s) => s.setUploadDescription);
   const uploadTimeZone = useStore((s) => s.uploadTimeZone);
@@ -193,7 +198,7 @@ export function Assign() {
   // Background processing finishing is no longer part of this gate: Upload
   // streams blobs as files individually become ready and only publishes once
   // processing genuinely completes, so there's nothing to wait for here.
-  const baseReady = !!location && !!slug && !!collection && !!uploadTimeZone;
+  const baseReady = !!location && !!slug && !!collection && !!uploadTimeZone && !!mountainRange.trim() && !!dateCollected;
   const continueHint = !location
     ? 'Select a deployment location first'
     : !collection
@@ -202,7 +207,11 @@ export function Assign() {
         ? 'Set an uploader identity first'
         : !uploadTimeZone
           ? 'Select a timezone first'
-          : null;
+          : !mountainRange.trim()
+            ? 'Enter a mountain range before continuing'
+            : !dateCollected
+              ? 'Enter a date collected before continuing'
+              : null;
 
   function handleContinue() {
     if (!baseReady) return;
@@ -382,7 +391,29 @@ export function Assign() {
       )}
 
       <section>
-        <h2 className={sectionLabel}>Description</h2>
+        <label htmlFor="mountainRange" className={`block ${sectionLabel}`}>Mountain range (required)</label>
+        <input
+          id="mountainRange"
+          required
+          aria-describedby="mountain-range-help"
+          type="text"
+          value={mountainRange}
+          onChange={(e) => setMountainRange(e.target.value)}
+          className="w-full border border-rule bg-paper px-3 py-2 font-body text-[14px] text-ink mb-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1"
+        />
+        <p id="mountain-range-help" className="font-body text-[12px] text-inkMute mb-4">Required for the generated upload comment.</p>
+        <label htmlFor="dateCollected" className={`block ${sectionLabel}`}>Date collected (required)</label>
+        <input
+          id="dateCollected"
+          required
+          aria-describedby="date-collected-help"
+          type="date"
+          value={dateCollected}
+          onChange={(e) => setDateCollected(e.target.value)}
+          className="w-full border border-rule bg-paper px-3 py-2 font-body text-[14px] text-ink mb-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1"
+        />
+        <p id="date-collected-help" className="font-body text-[12px] text-inkMute mb-4">Required for the generated upload comment.</p>
+        <label htmlFor="uploadDescription" className={`block ${sectionLabel}`}>Comments (optional)</label>
         <textarea
           id="uploadDescription"
           name="uploadDescription"
@@ -390,15 +421,18 @@ export function Assign() {
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           rows={3}
-          placeholder="What this batch is — site, date range, notes."
+          placeholder="Additional notes about this batch."
           className="w-full border border-rule bg-paper px-3 py-2 font-body text-[14px] text-ink resize-y focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1"
         />
-        <p className="font-body text-[12px] text-inkMute mt-1.5">
-          Mountain Range - Site Name - No. of images collected - Date Uploaded - Date collected
-        </p>
-        <p className="font-body text-[12px] text-inkMute">
-          (e.g.: Santa Rita Mountains - SAN06 - 39 images - uploaded 04-10-2020 - collected 03-28-2000)
-        </p>
+        <div className="mt-3 border border-ruleSoft p-3 break-words">
+          <h3 className={sectionLabel}>Generated upload comment</h3>
+          <p aria-label="Generated upload comment" className="font-body text-[13px] text-inkSoft">
+            {location && mountainRange.trim() && dateCollected ? formatUploadComments({
+              required: { mountainRange, dateCollected }, siteName: location.name,
+              imageCount: files.length, uploadDate: new Date(), comments: description,
+            }) : 'Enter a mountain range and date collected to preview the required comment.'}
+          </p>
+        </div>
       </section>
 
       {!baseReady && continueHint && (

@@ -231,6 +231,8 @@ describe('store persistence', () => {
   it('persists wizard prefs and never the in-flight batch', () => {
     useStore.getState().setUploaderUser('Ada Lovelace');
     useStore.getState().setUploadDescription('Sky Island transect');
+    useStore.getState().setMountainRange('Santa Catalina Mountains');
+    useStore.getState().setDateCollected('2026-10-01');
     useStore.getState().setSelectedBucket('bucket::uuid');
       useStore.getState().setSelectedLocationId('loc-7');
     useStore.getState().setUploadTimeZone('America/Phoenix');
@@ -247,6 +249,8 @@ describe('store persistence', () => {
       elevationUnit: 'meters',
       uploaderUser: 'Ada Lovelace',
       uploadDescription: 'Sky Island transect',
+      mountainRange: 'Santa Catalina Mountains',
+      dateCollected: '2026-10-01',
       selectedBucket: 'bucket::uuid',
       selectedLocationId: 'loc-7',
       requireCollectionSelection: false,
