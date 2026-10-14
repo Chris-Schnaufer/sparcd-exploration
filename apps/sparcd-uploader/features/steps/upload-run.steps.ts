@@ -1240,3 +1240,37 @@ Then('every image appears exactly once in the stored media.csv', async ({ app })
   const names = writtenCsvRows(app, 'media.csv').map((r) => r[6]).filter((n) => n.endsWith('.JPG'));
   expect(names.sort()).toEqual(dropBatchNames());
 });
+
+Then('the Back explanation is keyboard discoverable', async ({ app }) => {
+  const ok = app.page.getByRole('button', { name: 'OK', exact: true });
+  if (await ok.isVisible()) await ok.click();
+  const group = app.page.getByRole('group', { name: 'Back navigation', exact: true });
+  await group.focus();
+  await group.press('Shift+Tab');
+  await app.page.keyboard.press('Tab');
+  await expect(group).toBeFocused();
+  await expect(group).toHaveAccessibleDescription(/Back is unavailable once a real upload starts, to prevent duplicate uploads/);
+  await expect(app.page.locator('#upload-back-help')).toBeVisible();
+});
+Then('Back returns to Assign after the dry run', async ({ app }) => {
+  await expect(app.page.getByRole('button', { name: 'Back', exact: true })).toBeEnabled();
+  await app.page.getByRole('button', { name: 'Back', exact: true }).click();
+  await app.expectStep('Assign');
+  expect(app.s3.puts).toHaveLength(0);
+});
+When('a fresh batch reaches Upload', async ({ app }) => {
+  await app.dropFolder(standardBatch());
+  await app.waitForInspected();
+  await app.continueToAssign();
+  await app.waitForCollections();
+  await app.chooseCollection(COLLECTION_A_NAME);
+  await app.chooseDeployment('Bear Canyon');
+  await app.setUploader('Ada Lovelace');
+  await app.setDescription('Next batch');
+  await app.continueToUpload();
+});
+Then('Back returns to Assign before another real run starts', async ({ app }) => {
+  await expect(app.page.getByRole('button', { name: 'Back', exact: true })).toBeEnabled();
+  await app.page.getByRole('button', { name: 'Back', exact: true }).click();
+  await app.expectStep('Assign');
+});

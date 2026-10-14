@@ -283,6 +283,8 @@ Feature: Upload and publish a batch
     When a fresh upload attempts that write
     Then the write is refused rather than replacing the existing object
     And the run reports the failure
+    And the Back button is disabled
+    And the Back explanation is keyboard discoverable
     # The storage wrapper offers no delete or copy operation, and its only
     # overwrite path is the reviewed edit-after-publish flow.
 
@@ -292,6 +294,8 @@ Feature: Upload and publish a batch
     Then in-flight transfers are abandoned
     And the run is reported as cancelled
     And files already stored remain stored
+    And the Back button is disabled
+    And the Back explanation is keyboard discoverable
     # Cancelling a real run leaves the session open in History, so it can be
     # resumed later.
 
@@ -304,6 +308,7 @@ Feature: Upload and publish a batch
   Scenario: Going back to Assign is blocked after a real upload completes
     Given a real upload has completed
     Then the Back button is disabled
+    And the Back explanation is keyboard discoverable
     # #477: Back must stay blocked so the same files can't be resubmitted to
     # the same destination — Next batch is the only way past a completed run.
 
@@ -337,3 +342,16 @@ Feature: Upload and publish a batch
     Then the run log has the preparing-upload entry
     And the browser wake lock was requested
     And releasing the held blob lets the upload complete
+
+  @AL2
+  Scenario: A completed dry run permits returning to Assign
+    When the operator opts into a dry run
+    And the dry run is started and completes
+    Then Back returns to Assign after the dry run
+
+  @AL2
+  Scenario: Next batch restores pre-upload Back navigation
+    Given a real upload has completed
+    When "Next batch" is chosen
+    And a fresh batch reaches Upload
+    Then Back returns to Assign before another real run starts
