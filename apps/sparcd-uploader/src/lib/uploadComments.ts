@@ -11,7 +11,7 @@ export function uploadCommentDate(date: Date): string {
 export function formatUploadComments(input: {
   required?: RequiredUploadComments;
   siteName: string;
-  imageCount: number;
+  imageCount: number; // "images" is the agreed shorthand for all valid uploaded files, including MP4s.
   uploadDate: Date;
   comments: string;
 }): string {

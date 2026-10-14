@@ -193,3 +193,10 @@ Feature: Assign a batch to a collection and a camera location
     Then the Upload preview keeps the original preview date
     When the batch is uploaded after midnight
     Then the saved comment matches the Upload preview and keeps its original preview date
+
+  @unmapped
+  Scenario: The images shorthand counts all valid uploaded files including videos
+    Given the batch contains one JPEG and two MP4 videos
+    When the mountain range and collection date are entered with notes "Mixed batch"
+    Then the required comment is previewed without changing the optional notes
+    And the generated comment and optional notes are written to upload metadata

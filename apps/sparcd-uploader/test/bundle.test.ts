@@ -562,3 +562,30 @@ describe('required upload comment metadata', () => {
     expect(parseUploadMeta(resumed.uploadMetaJson).description).toBe(expected);
   });
 });
+
+describe('images counts all valid uploaded files', () => {
+  it.each([
+    { kinds: ['image', 'video', 'video'] as const, countText: '3 images' },
+    { kinds: ['video'] as const, countText: '1 image' },
+  ])('retains shorthand for $countText in new and resumed metadata', async ({ kinds, countText }) => {
+    const files = kinds.map((mediaKind, index) => ready(`file${index}.${mediaKind === 'video' ? 'MP4' : 'JPG'}`, { mediaKind }));
+    const now = new Date(2026, 9, 14);
+    const input: BuildInput = {
+      location: SAN15, collectionUuid: UUID, bucket: `sparcd-${UUID}`, uploaderSlug: 'jdoe',
+      description: '', requiredComments: { mountainRange: 'Santa Rita Mountains', dateCollected: '2026-10-01', previewUploadDate: '2026-10-13' },
+      files, now, timeZone: 'America/Phoenix',
+    };
+    const live = await buildBundle(input);
+    const uploadPath = parseUploadMeta(live.uploadMetaJson).uploadPath;
+    const resumed = await buildBundleFromRecords({
+      ...input, uploadPath, startedAt: now,
+      files: files.map((file) => ({ fileName: file.fileName, size: file.size, sha256: file.sha256!, remoteKey: `${uploadPath}/${file.fileName}`, mimeType: file.mimeType })),
+    });
+    for (const bundle of [live, resumed]) {
+      const meta = parseUploadMeta(bundle.uploadMetaJson);
+      expect(meta.imageCount).toBe(files.length);
+      expect(meta.description).toBe(`Santa Rita Mountains - San Pedro 15 - ${countText} - uploaded 2026-10-13 - collected 2026-10-01`);
+      expect(parseMedia(bundle.mediaCsv)).toHaveLength(files.length);
+    }
+  });
+});

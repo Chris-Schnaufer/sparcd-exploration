@@ -1,7 +1,7 @@
 import { Given, When, Then, expect } from './fixtures';
 import type { App } from './app';
-import { jpegAt, standardBatch } from './batches';
-import { expectStoredAtLocation, publishedUploads, reconnectAndReturnToAssign } from './helpers';
+import { clipVideo, jpegAt, standardBatch } from './batches';
+import { expectStoredAtLocation, publishedUploads, reconnectAndReturnToAssign, rescanFromAssign } from './helpers';
 import {
   BUCKET_A,
   BUCKET_B,
@@ -547,4 +547,8 @@ Then('the saved comment matches the Upload preview and keeps its original previe
   await app.page.clock.setSystemTime(new Date('2026-10-17T12:00:00-04:00'));
   await app.page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await expect(app.page.getByLabel('Generated upload comment', { exact: true })).toHaveText(expected);
+});
+
+Given('the batch contains one JPEG and two MP4 videos', async ({ app }) => {
+  await rescanFromAssign(app, [standardBatch()[0], clipVideo('FIRST.MP4'), clipVideo('SECOND.MP4')]);
 });
