@@ -1005,19 +1005,19 @@ const focusDropZone = (page: Page) => page.getByTestId('focus-drop-zone');
 When('a species tile is dragged onto the image area in the Focus view', async ({ page }) => {
   await enterFocusView(page);
   await speciesRow(page, 'Canis latrans').dragTo(focusDropZone(page));
-  await page.getByRole('button', { name: 'Overview', exact: true }).click();
+  await page.getByRole('button', { name: 'Close Focus', exact: true }).click();
 });
 
 When('that species tile is dragged onto the image area in the Focus view', async ({ page }) => {
   await enterFocusView(page);
   await speciesRow(page, 'Odocoileus hemionus').dragTo(focusDropZone(page));
-  await page.getByRole('button', { name: 'Overview', exact: true }).click();
+  await page.getByRole('button', { name: 'Close Focus', exact: true }).click();
 });
 
 When('the Ghost tile is dragged onto the image area in the Focus view', async ({ page }) => {
   await enterFocusView(page);
   await ghostRow(page).dragTo(focusDropZone(page));
-  await page.getByRole('button', { name: 'Overview', exact: true }).click();
+  await page.getByRole('button', { name: 'Close Focus', exact: true }).click();
 });
 
 When('a species tile is dragged onto a different image tile in Overview', async ({ page }) => {

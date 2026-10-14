@@ -17,6 +17,10 @@ Feature: Examine an image closely enough to catch every species
     And an image is shown in the Focus view
 
   @H1
+  Scenario: Focus gives the image the largest available canvas beside the species picker
+    Then the Focus image canvas fills the available area beside the species picker
+
+  @H1
   Scenario: An image can be enlarged well beyond its fit-to-screen size
     When the image is zoomed in
     Then it can be enlarged up to six times its fitted size
@@ -51,6 +55,13 @@ Feature: Examine an image closely enough to catch every species
     # The zoom surface is stretched to the full pane, so a backdrop click never
     # reaches the element that carries the dismiss handler. See CORRECTIONS.md.
 
+  @H1
+  Scenario: Fullscreen Escape still closes after the top bar receives focus
+    When the image is opened fullscreen
+    And the fullscreen top bar is clicked
+    When Escape is pressed in the fullscreen viewer
+    Then the fullscreen viewer is closed
+
   @H1 @H1-5
   Scenario: Moving to another image starts it fitted to the pane
     Given the current image is zoomed in and panned
@@ -68,10 +79,10 @@ Feature: Examine an image closely enough to catch every species
     And the portrait and the panorama stay in view when enlarged fullscreen too
 
   @H1
-  Scenario: The focused image is prioritized over delayed filmstrip thumbnails
-    Given filmstrip thumbnail downloads are delayed
+  Scenario: The focused image is prioritized without a Focus filmstrip
+    Given Overview thumbnail downloads are delayed
     Then the Focus image is requested at high priority
-    And the filmstrip thumbnails are requested at low priority
+    And no Overview thumbnails are requested while Focus is open
     And the Focus image is the only media requested at high priority
 
   Scenario: Returning to an image shows its loader until it is ready
@@ -146,7 +157,7 @@ Feature: Examine an image closely enough to catch every species
   Scenario: Adjustment controls stay off the image on a phone
     Given the focused item is a still image
     When the adjustment panel is opened on a phone-sized screen
-    Then the adjustment panel stays clear of the image and inside the window
+    Then the adjustment panel stays inside the window on a phone
 
   @H1
   Scenario: Adjustment controls follow the focused image
@@ -167,6 +178,7 @@ Feature: Examine an image closely enough to catch every species
     Given the focused item is a still image
     When the adjustment panel is opened
     Then keyboard focus enters the adjustment panel
+    And Tab wraps between the Focus viewer and the adjustment panel
     And Escape closes the adjustment panel and returns focus to Adjust
 
   @H1

@@ -19,22 +19,6 @@ Feature: Choose how dates, times and distances are displayed
     And the time format defaults to 24-hour
 
   @unmapped
-  Scenario: Switching the date format changes every displayed timestamp
-    Given the date format is switched to Numeric date in Settings
-    And an image is focused
-    When the enlarged Focus view is opened
-    Then the focused image's corrected time is shown in that date order
-    When the detailed Overview list is opened
-    Then the Overview list shows capture times in that date order
-
-  @unmapped
-  Scenario: Switching the time format changes every displayed timestamp
-    Given the time format is switched to 12-hour in Settings
-    And an image is focused
-    When the enlarged Focus view is opened
-    Then the focused image's corrected time carries an AM/PM marker
-
-  @unmapped
   Scenario: Switching the time format changes the whole-upload shift preview
     Given the time format is switched to 12-hour in Settings
     When the time-shift dialog is opened

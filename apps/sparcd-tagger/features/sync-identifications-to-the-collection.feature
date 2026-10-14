@@ -122,38 +122,10 @@ Feature: Publish local identifications back to the collection
     # briefly (or, on a slow connection, not so briefly) drops out of view.
 
   @unmapped
-  Scenario: A just-synced capture-time correction stays visible while refresh is in flight
-    Given times have been corrected in the workspace
-    And Focus is showing an image with a shifted capture time
-    And the canonical refresh after a sync is held open
-    When the sync is run without waiting for it to finish
-    Then the shifted timestamp remains visible before the sync completes
-
-  @unmapped
   Scenario: A failed post-sync refresh leaves the visible edit unsynced
     Given the post-sync canonical refresh will fail
     When the sync is run and its refresh fails
     Then the synced species remains visible as an unsynced edit
-
-  @unmapped
-  Scenario: A whole-upload shift whose post-sync refresh failed is not applied twice
-    Given times have been corrected in the workspace
-    And Focus is showing an image with a shifted capture time
-    When the sync is run and only its own post-sync refresh fails
-    Then the sync dialog reports the refresh failure
-    When the refresh recovers and the upload refetches without a reload
-    Then Focus shows the stored capture time with no whole-upload shift in effect
-    # The shift is already in the stored capture times and cleared from the
-    # upload record, so the standing in-memory shift has to go even when the
-    # refresh that would have reloaded those times failed.
-
-  @H3
-  Scenario: Correcting an estimated capture time preserves manual provenance
-    When the estimated timestamp is corrected
-    And the sync is run
-    Then the corrected timestamp is stored with a manual source marker
-    And the deployment retains its timestamp issue marker
-    And the reloaded Focus view identifies it as entered by hand
 
   @unmapped
   Scenario: The dialog cannot be dismissed while a write is in flight

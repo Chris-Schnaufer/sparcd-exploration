@@ -44,10 +44,10 @@ Given('an image is open in the Focus view', async ({ page }) => {
 Then(
   'the deployment identifier recorded for that image is shown alongside its file name',
   async ({ page }) => {
-    const caption = page.locator('div.text-\\[14px\\].font-mono').filter({ hasText: 'IMG001.JPG' });
-    await expect(caption).toContainText('IMG001.JPG');
-    // The readable tail of `<collection-uuid>:<location-id>`.
-    await expect(caption).toContainText(DEPLOYMENT.split(':').pop()!);
+    const focus = page.getByRole('dialog', { name: 'Focus image viewer' });
+    await expect(focus).toContainText('IMG001.JPG');
+    await expect(focus).toContainText(DEPLOYMENT);
+    await expect(focus.getByLabel(`Deployment: ${DEPLOYMENT}`)).toBeVisible();
   },
 );
 
@@ -82,8 +82,6 @@ Then('no species is treated as sensitive', async ({ page }) => {
 Then(
   'no location is hidden, coarsened or withheld from any connected user',
   async ({ page }) => {
-    await enterFocusView(page);
-    await expect(page.locator('body')).toContainText(DEPLOYMENT.split(':').pop()!);
     await sectionTab(page, 'Browse').click();
     await expect(uploadRow(page, 'priortagger')).toContainText(LOCATION_NAME);
   },

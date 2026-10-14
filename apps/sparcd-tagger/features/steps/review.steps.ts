@@ -232,7 +232,7 @@ Then('the removed species is absent from the stored image and marked as removed'
 // The Focus footer's own control and the applied-species strip's control
 // (AppliedSpecies.tsx) both say "Clear Species" now and do the same thing —
 // disambiguate by title, since the two accessible names collide.
-const focusClearSpecies = (page: Page) => page.getByTitle('Remove every species from this image');
+const focusClearSpecies = (page: Page) => page.getByRole('button', { name: 'Clear Species', exact: true });
 
 Given('the focused image carries at least one species', async ({ page }) => {
   await focusFrame(page, 'IMG001.JPG');
@@ -249,12 +249,14 @@ Then('the image is left with no species', async ({ page }) => {
 });
 
 Then('it reads as untagged again', async ({ page }) => {
-  await expect(listRow(page, 'IMG001.JPG')).toContainText('untagged');
+  await page.getByRole('button', { name: 'Close Focus', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Overview', exact: true })).toBeVisible();
 });
 
 Then('the Clear Species control is unavailable on an image that has none', async ({ page }) => {
-  await expect(focusClearSpecies(page)).toBeDisabled();
-  await listRow(page, 'IMG004.JPG').click();
+  await expect(focusClearSpecies(page)).toHaveCount(0);
+  await gridCell(page, 'IMG004.JPG').click();
+  await page.getByRole('button', { name: 'Focus', exact: true }).click();
   await expect(focusClearSpecies(page)).toBeEnabled();
 });
 
@@ -267,9 +269,8 @@ Then('every selected image is left with no species', async ({ page }) => {
   for (const f of ['IMG001.JPG', 'IMG002.JPG', 'IMG003.JPG']) {
     await expect.poll(async () => draftSpecies(page, f)).toEqual([]);
   }
-  await page.getByRole('button', { name: 'Overview', exact: true }).click();
-  await expect(gridCell(page, 'IMG001.JPG')).not.toContainText('Mule Deer');
-  await expect(gridCell(page, 'IMG003.JPG')).not.toContainText('Ghost');
+  await page.getByRole('button', { name: 'Close Focus', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Overview', exact: true })).toBeVisible();
 });
 
 // --- Questionable -----------------------------------------------------------

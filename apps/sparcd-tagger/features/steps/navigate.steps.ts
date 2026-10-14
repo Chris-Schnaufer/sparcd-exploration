@@ -17,6 +17,7 @@ import {
   enterFocusView,
 } from './support/world';
 import { COLLECTION_NAME, STAMP_A } from './support/data';
+import { readStore } from './support/flows';
 
 const TOUCH = { width: 900, height: 860 };
 const DESKTOP = { width: 1440, height: 950 };
@@ -165,20 +166,19 @@ Then('the workspace shows the position of the focused image within the upload', 
   await expect(positionReadout(page)).toHaveText('3 / 6');
 });
 
-Then('the Focus view keeps the list alongside the enlarged image', async ({ page }) => {
+Then('the Focus view keeps the species picker beside the enlarged image', async ({ page }) => {
   await page.getByRole('button', { name: 'Focus', exact: true }).click();
   await expect(page.locator('.react-transform-component img')).toBeVisible();
-  await expect(listRow(page, 'IMG001.JPG')).toBeVisible();
-  await expect(listRow(page, 'IMG005.JPG')).toBeVisible();
+  await expect(page.locator('[data-testid="species-panel"]')).toBeVisible();
+  await expect(listRow(page, 'IMG001.JPG')).toHaveCount(0);
+  await expect(listRow(page, 'IMG005.JPG')).toHaveCount(0);
 });
 
-Given('an image has a corrected timestamp and meaningful review markers', async ({ page }) => {
+Given('an image has meaningful review markers', async ({ page }) => {
   await focusFrame(page, 'IMG002.JPG');
   await enterFocusView(page);
-  await page.getByRole('button', { name: 'Adjust time' }).click();
-  await page.getByLabel('Corrected timestamp for this image').fill('2023-12-24 18:45:10');
-  await page.getByRole('button', { name: 'Set', exact: true }).click();
   await page.keyboard.press('Shift+Space');
+  await page.getByRole('button', { name: 'Close Focus', exact: true }).click();
 });
 
 When('the detailed Overview list is opened', async ({ page }) => {
@@ -267,13 +267,9 @@ Then('a narrow Overview keeps filenames visible in its compact rows', async ({ p
 
 Then('the Focus strip keeps filename and species but omits the detail columns', async ({ page }) => {
   await page.getByRole('button', { name: 'Focus', exact: true }).click();
-  const row = listRow(page, 'IMG002.JPG');
-  await expect(row.locator('[data-column="filename"]')).toBeVisible();
-  await expect(row.locator('[data-column="species"]')).toHaveText('untagged');
-  await expect(row.locator('[data-column="media-type"]')).toHaveCount(0);
-  await expect(row.locator('[data-column="timestamp"]')).toHaveCount(0);
-  await expect(row.locator('[data-column="markers"]')).toContainText('?');
-  await expect(row.locator('[data-column="markers"] [aria-label="Questionable"]')).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Focus image viewer' })).toContainText('IMG002.JPG');
+  await expect(page.locator('[data-testid="species-panel"]')).toBeVisible();
+  await page.getByRole('button', { name: 'Close Focus', exact: true }).click();
 });
 
 // --- Keyboard navigation ----------------------------------------------------
@@ -285,6 +281,13 @@ When('the next-image or previous-image key is pressed', async ({ page }) => {
 Then('focus moves one image in that direction', async ({ page }) => {
   await expect(positionReadout(page)).toHaveText('2 / 6');
   await page.keyboard.press('ArrowUp');
+  await expect(positionReadout(page)).toHaveText('1 / 6');
+});
+
+Then('Left and Right also move one image in that direction', async ({ page }) => {
+  await page.keyboard.press('ArrowRight');
+  await expect(positionReadout(page)).toHaveText('2 / 6');
+  await page.keyboard.press('ArrowLeft');
   await expect(positionReadout(page)).toHaveText('1 / 6');
 });
 
@@ -312,39 +315,156 @@ Given('the Overview is shown', async ({ page }) => {
   );
 });
 
+Given('the workspace has a browser history entry', async ({ page }) => {
+  await page.evaluate(() => window.history.pushState({ workspace: true }, '', window.location.href));
+});
+
 When('the focused image is opened', async ({ page }) => {
   await gridCell(page, 'IMG003.JPG').click();
   await page.keyboard.press('Enter');
 });
 
+When('the bound species key is pressed in Focus', async ({ page }) => {
+  await page.keyboard.press('d');
+});
+
+Then('the Focus viewer remains open', async ({ page }) => {
+  await expect(page.getByRole('dialog', { name: 'Focus image viewer' })).toBeVisible();
+});
+
+Then('the focused image carries that species at count one', async ({ page }) => {
+  await expect
+    .poll(async () => {
+      const drafts = (await readStore(page, 'drafts')) as {
+        mediaPath: string;
+        observations: { scientificName: string; count: number }[];
+      }[];
+      return drafts
+        .find((draft) => draft.mediaPath.endsWith('IMG003.JPG'))
+        ?.observations.find((observation) => observation.scientificName === 'Odocoileus hemionus')
+        ?.count;
+    })
+    .toBe(1);
+});
+
+When('the browser Back button is pressed', async ({ page }) => {
+  await page.goBack();
+});
+
+Then('the Focus viewer is closed and the Overview is shown', async ({ page }) => {
+  await expect(page.getByRole('dialog', { name: 'Focus image viewer' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Overview', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+});
+
+Then('the image opener has focus again', async ({ page }) => {
+  await expect(gridCell(page, 'IMG003.JPG')).toBeFocused();
+});
+
+Then('Tab wraps within the Focus viewer at both boundaries', async ({ page }) => {
+  const dialog = page.getByRole('dialog', { name: 'Focus image viewer' });
+  await expect(dialog).toBeVisible();
+  const focusable = dialog.locator(
+    'button:not([disabled]):visible, [href]:visible, input:not([disabled]):visible, select:not([disabled]):visible, textarea:not([disabled]):visible, [tabindex]:not([tabindex="-1"]):visible',
+  );
+  await expect(focusable).not.toHaveCount(0);
+  const first = focusable.first();
+  const last = focusable.last();
+  await last.focus();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: 'Close Focus' })).toBeFocused();
+  await first.focus();
+  await page.keyboard.press('Shift+Tab');
+  await expect(last).toBeFocused();
+});
+
+When('Escape is pressed in Focus', async ({ page }) => {
+  await page.keyboard.press('Escape');
+});
+
+When('the Close Focus control is clicked', async ({ page }) => {
+  await page.getByRole('button', { name: 'Close Focus' }).click();
+});
+
 Then('the Focus view shows that image', async ({ page }) => {
+  await expect(page.getByRole('dialog', { name: 'Focus image viewer' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Close Focus' })).toBeFocused();
   await expect(page.locator('.react-transform-component img')).toHaveAttribute(
     'alt',
     'IMG003.JPG',
   );
 });
 
-Then('on-screen previous and next controls move between images there', async ({ page }) => {
-  // The paging buttons are the touch affordance, shown below the lg breakpoint.
-  await page.setViewportSize(TOUCH);
+Then('on-screen previous and next controls move between images there at every viewport size', async ({ page }) => {
   const previous = page.getByRole('button', { name: 'Previous image' });
   const next = page.getByRole('button', { name: 'Next image' });
-  const questionable = page.getByRole('button', { name: 'Questionable' });
-  await expect(previous).toHaveAttribute('title', 'Previous image (Arrow Up)');
-  await expect(next).toHaveAttribute('title', 'Next image (Arrow Down)');
-  await expect(questionable).toHaveAttribute('title', 'Toggle questionable (Shift+Space)');
-  for (const retired of [
-    'Previous image (k)',
-    'Next image (j)',
-    'Toggle questionable (x)',
-  ]) {
-    await expect(page.locator(`[title="${retired}"]`)).toHaveCount(0);
-  }
+  await expect(previous).toHaveAttribute('title', 'Previous image (ArrowLeft or ArrowUp)');
+  await expect(next).toHaveAttribute('title', 'Next image (ArrowRight or ArrowDown)');
+  await expect(previous).toHaveAttribute('aria-describedby', 'focus-navigation-help');
+  await expect(next).toHaveAttribute('aria-describedby', 'focus-navigation-help');
+  await expect(page.locator('#focus-navigation-help')).toHaveText(
+    'Use ArrowLeft or ArrowUp for the previous image. Use ArrowRight or ArrowDown for the next image.',
+  );
+  await expect(previous).toBeVisible();
+  await expect(next).toBeVisible();
   await next.click();
   await expect(positionReadout(page)).toHaveText('4 / 6');
   await previous.click();
   await expect(positionReadout(page)).toHaveText('3 / 6');
+  await page.keyboard.press('ArrowRight');
+  await expect(positionReadout(page)).toHaveText('4 / 6');
+  await page.keyboard.press('ArrowLeft');
+  await expect(positionReadout(page)).toHaveText('3 / 6');
+  for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowLeft');
+  await expect(positionReadout(page)).toHaveText('1 / 6');
+  await expect(previous).toHaveCount(0);
+  await expect(next).toBeVisible();
+  await next.click();
+  await expect(positionReadout(page)).toHaveText('2 / 6');
+  await previous.click();
+  await expect(positionReadout(page)).toHaveText('1 / 6');
+  await expect(next).toBeFocused();
+  for (let i = 0; i < 10; i++) await page.keyboard.press('ArrowRight');
+  await expect(positionReadout(page)).toHaveText('6 / 6');
+  await expect(next).toHaveCount(0);
+  await expect(previous).toBeVisible();
+  await previous.click();
+  await expect(positionReadout(page)).toHaveText('5 / 6');
+  await next.click();
+  await expect(positionReadout(page)).toHaveText('6 / 6');
+  await expect(previous).toBeFocused();
+  await page.keyboard.press('ArrowLeft');
+  await page.setViewportSize(TOUCH);
+  const touchPrevious = page.getByRole('button', { name: 'Previous image' });
+  const touchNext = page.getByRole('button', { name: 'Next image' });
+  await expect(touchPrevious).toBeVisible();
+  await expect(touchNext).toBeVisible();
+  const [canvas, previousBox, nextBox] = await Promise.all([
+    page.getByTestId('focus-drop-zone').boundingBox(),
+    touchPrevious.boundingBox(),
+    touchNext.boundingBox(),
+  ]);
+  expect(canvas).not.toBeNull();
+  expect(previousBox).not.toBeNull();
+  expect(nextBox).not.toBeNull();
+  if (canvas && previousBox && nextBox) {
+    expect(previousBox.x).toBeGreaterThanOrEqual(canvas.x);
+    expect(previousBox.x + previousBox.width).toBeLessThanOrEqual(canvas.x + canvas.width);
+    expect(nextBox.x).toBeGreaterThanOrEqual(canvas.x);
+    expect(nextBox.x + nextBox.width).toBeLessThanOrEqual(canvas.x + canvas.width);
+    expect(previousBox.x + previousBox.width).toBeLessThan(nextBox.x);
+    expect(previousBox.width).toBeGreaterThanOrEqual(40);
+    expect(nextBox.width).toBeGreaterThanOrEqual(40);
+  }
   await page.setViewportSize(DESKTOP);
+  await page.getByRole('button', { name: 'Close Focus' }).click();
+  await expect(page.getByRole('dialog', { name: 'Focus image viewer' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Overview', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
 });
 
 // --- Sorting ----------------------------------------------------------------
@@ -602,7 +722,7 @@ Then('the shortcut reference is shown, grouped by navigating, tagging and select
   await expect(cheatsheet(page).getByRole('heading', { name: 'Navigate' })).toBeVisible();
   await expect(cheatsheet(page).getByRole('heading', { name: 'Tag', exact: true })).toBeVisible();
   await expect(cheatsheet(page).getByRole('heading', { name: 'Select & save' })).toBeVisible();
-  for (const key of ['↓', '↑', 'PgDn', 'PgUp', '⇧Space']) {
+  for (const key of ['↓', '→', '↑', '←', 'PgDn', 'PgUp', '⇧Space']) {
     await expect(cheatsheet(page).getByText(key, { exact: true })).toBeVisible();
   }
   for (const retired of ['J', 'K', '⇧J', '⇧K', 'X']) {
@@ -690,9 +810,9 @@ Given('a video is being played or scrubbed', async ({ page }) => {
 Then('its own playback keys work and no tagging keystroke fires', async ({ page }) => {
   await page.keyboard.press('d');
   await page.keyboard.press(' ');
-  await expect(speciesFilter(page)).not.toBeFocused();
   await expect(page.getByText(/unsaved · discard/)).toHaveCount(0);
-  await expect(listRow(page, 'VID001.MP4')).toContainText('untagged');
+  await page.getByRole('button', { name: 'Close Focus', exact: true }).click();
+  await expect(gridCell(page, 'VID001.MP4')).toHaveAttribute('title', 'VID001.MP4');
 });
 
 Then(
@@ -729,7 +849,16 @@ Given('a slider in the Adjust popup is focused', async ({ page }) => {
 
 Then('a species key still applies that species to the focused image', async ({ page }) => {
   await page.keyboard.press('d');
-  await expect(listRow(page, 'IMG002.JPG')).toContainText('Mule Deer');
+  await expect(page.getByRole('dialog', { name: 'Focus image viewer' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Mule Deer Odocoileus hemionus/ })).toBeVisible();
+  await expect.poll(async () => {
+    const drafts = (await readStore(page, 'drafts')) as {
+      mediaPath: string;
+      observations: { scientificName: string }[];
+    }[];
+    return drafts.find((draft) => draft.mediaPath.endsWith('IMG002.JPG'))?.observations
+      .some((observation) => observation.scientificName === 'Odocoileus hemionus') ?? false;
+  }).toBe(true);
 });
 
 Then('Home, End, Page Up, Page Down, and arrow keys adjust the slider rather than navigating images', async ({ page }) => {
