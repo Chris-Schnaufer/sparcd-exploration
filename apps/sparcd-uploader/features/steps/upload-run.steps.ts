@@ -320,47 +320,55 @@ Then(
   },
 );
 
-Then(
-  'an object the listing contradicts is treated as a failure of that file, not as a success',
+// A fresh scenario's batch (Background's publishableBatch) already carries
+// IMG_0002.JPG — no need to go back and rescan it. #477 closed that path
+// anyway: Back is unavailable once a real run has started, so these two can
+// no longer chain a second attempt onto the first run the way they used to.
+
+When(
+  'a real upload runs against storage that quietly truncates one object after it lands',
   async ({ app }) => {
-    // Re-run against storage that accepts a write and then quietly truncates
-    // it, so the listing reports a size the metadata does not claim.
+    // The listing then reports a size the metadata does not claim.
     app.s3.afterPut = (_bucket, key, obj) => {
       if (key.endsWith('IMG_0002.JPG')) obj.body = obj.body.subarray(0, 1);
     };
-    const metadataBefore = app.s3.puts.filter((p) => METADATA_NAMES.some((n) => p.key.endsWith(n))).length;
-    await rescanFromUpload(app, standardBatch());
+    app.notes.metadataBefore = app.s3.puts.filter((p) => METADATA_NAMES.some((n) => p.key.endsWith(n))).length;
     await app.dryRunCheckbox().uncheck();
     await app.startRun();
     await expect(app.page.getByText(/final review: size mismatch/).first()).toBeVisible({ timeout: 60_000 });
-    const rows = await app.page.locator('div[data-index]').allTextContents();
-    const mismatched = rows.find((r) => r.includes('IMG_0002.JPG'))!;
-    expect(mismatched).not.toContain('done');
-    expect(
-      app.s3.puts.filter((p) => METADATA_NAMES.some((n) => p.key.endsWith(n))).length,
-    ).toBe(metadataBefore);
   },
 );
 
-Then(
-  "an object whose sha256 fingerprint is absent from storage is treated as a failure",
+When(
+  'a real upload runs against storage that drops the sha256 digest for every object',
   async ({ app }) => {
-    // Strip sha256 from every non-metadata PUT after storage — simulates a path
-    // that accepts the upload but loses or never returns the digest header.
+    // Simulates a path that accepts the upload but loses or never returns the
+    // digest header.
     app.s3.afterPut = (_bucket, key, obj) => {
       if (!METADATA_NAMES.some((n) => key.endsWith(n))) delete obj.meta['sha256'];
     };
-    const metadataBefore = app.s3.puts.filter((p) => METADATA_NAMES.some((n) => p.key.endsWith(n))).length;
-    await rescanFromUpload(app, standardBatch());
+    app.notes.metadataBefore = app.s3.puts.filter((p) => METADATA_NAMES.some((n) => p.key.endsWith(n))).length;
     await app.dryRunCheckbox().uncheck();
     await app.startRun();
     await expect(app.page.getByText(/final review: digest contract broken/).first()).toBeVisible({ timeout: 60_000 });
-    await expect(app.runPhase()).toHaveText('partial');
-    expect(
-      app.s3.puts.filter((p) => METADATA_NAMES.some((n) => p.key.endsWith(n))).length,
-    ).toBe(metadataBefore);
   },
 );
+
+Then('that object is treated as a failure of that file, not as a success', async ({ app }) => {
+  const rows = await app.page.locator('div[data-index]').allTextContents();
+  const mismatched = rows.find((r) => r.includes('IMG_0002.JPG'))!;
+  expect(mismatched).not.toContain('done');
+});
+
+Then('the run is reported as partial', async ({ app }) => {
+  await expect(app.runPhase()).toHaveText('partial');
+});
+
+Then('no metadata is published for the batch', async ({ app }) => {
+  expect(
+    app.s3.puts.filter((p) => METADATA_NAMES.some((n) => p.key.endsWith(n))).length,
+  ).toBe(app.notes.metadataBefore as number);
+});
 
 // --- streaming past Inspect ------------------------------------------------
 

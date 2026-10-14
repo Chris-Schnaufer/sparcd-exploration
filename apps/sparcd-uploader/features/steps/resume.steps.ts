@@ -163,29 +163,6 @@ Then('it shows how many of its files are done and how many failed', async ({ app
   await expect(app.page.getByText(/4 files · .* · 3 done · 1 failed/)).toBeVisible();
 });
 
-Then('only uploads whose metadata was published are marked complete', async ({ app }) => {
-  // A second, unobstructed run of the same folder does publish, and it is the
-  // one that shows as complete. Upload paths are stamped to the second, so
-  // give this run a fresh stamp: started inside the same second as the
-  // partial run, both would target one folder and the second run's
-  // immutable writes would be refused as "Object already exists".
-  app.s3.putHooks.length = 0;
-  app.s3.putDelayMs = 0;
-  await app.page.waitForTimeout(1_100);
-  await app.gotoSection('New upload');
-  await app.page.getByRole('button', { name: 'Back' }).click();
-  await app.page.getByRole('button', { name: 'Back' }).click();
-  await app.rescan(app.notes.sourceSpecs as FileSpec[]);
-  await app.page.getByRole('button', { name: 'Continue' }).click();
-  await app.continueToUpload();
-  await app.dryRunCheckbox().uncheck();
-  await app.startRun();
-  await app.waitForRunPhase('done');
-  await app.gotoSection('History');
-  await expect(app.page.getByText('complete', { exact: true })).toHaveCount(1);
-  await expect(app.page.getByText('open', { exact: true })).toHaveCount(1);
-});
-
 // --- found in the morning --------------------------------------------------
 
 Given('one upload finished while nobody was watching', async ({ app }) => {

@@ -31,7 +31,11 @@ Feature: Resume an interrupted upload and retry a failed one
     When History is opened
     Then that upload is listed as open
     And it shows how many of its files are done and how many failed
-    And only uploads whose metadata was published are marked complete
+    # The complete-vs-open contrast this used to re-prove with a second run
+    # (Back after completion) is now covered by "Uploads left running
+    # unattended are found either complete or ready to resume" below — #477
+    # closed that path, so a second run here goes through Next batch instead,
+    # which that scenario already does.
 
   @AL1 @AL1-3
   Scenario: Uploads left running unattended are found either complete or ready to resume

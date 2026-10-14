@@ -76,14 +76,24 @@ Feature: Upload and publish a batch
     When a file has been uploaded
     Then the tool lists the upload folder and confirms every object is stored at its recorded size
     And a few of the stored objects are re-read to confirm storage kept their recorded fingerprint
-    And an object the listing contradicts is treated as a failure of that file, not as a success
-    And an object whose sha256 fingerprint is absent from storage is treated as a failure
     # One listing pass per thousand objects rather than a re-read per file: at
     # long-haul latency the extra round trip per file dominated a small upload,
     # and the listing answers the question that matters — is every object there,
     # at the size the metadata claims for it. A listing can't show the recorded
     # fingerprint, so a handful of objects are re-read for it — losing it is a
     # property of the path, not of one object.
+
+  @F1 @F1-1
+  Scenario: An object the listing contradicts is treated as a failure, not a success
+    When a real upload runs against storage that quietly truncates one object after it lands
+    Then that object is treated as a failure of that file, not as a success
+    And no metadata is published for the batch
+
+  @F1 @F1-1
+  Scenario: An object whose sha256 fingerprint is absent from storage is treated as a failure
+    When a real upload runs against storage that drops the sha256 digest for every object
+    Then the run is reported as partial
+    And no metadata is published for the batch
 
   @unmapped
   Scenario: Uploading begins before the whole batch has finished being examined
@@ -289,6 +299,19 @@ Feature: Upload and publish a batch
   Scenario: Going back to Assign is blocked while a run is in progress
     Given a run is in progress
     Then the Back button is disabled
+
+  @AL2
+  Scenario: Going back to Assign is blocked after a real upload completes
+    Given a real upload has completed
+    Then the Back button is disabled
+    # #477: Back must stay blocked so the same files can't be resubmitted to
+    # the same destination — Next batch is the only way past a completed run.
+
+  @AL2
+  Scenario: Going back to Assign is blocked after a real upload ends partially
+    Given a real upload in which some files failed after their retries
+    Then the Back button is disabled
+    # Retry failed files is the only way past a partial run — not Back.
 
   @US-007
   Scenario: The next batch starts with assignment details cleared

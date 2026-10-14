@@ -196,6 +196,13 @@ export function Upload() {
   const running =
     snap?.phase === 'preparing' || snap?.phase === 'blobs' || snap?.phase === 'metadata';
   const anyRunActive = activeRunReserved;
+  // Once a real run reaches done/partial/error, Back must stay blocked too —
+  // not just while it's in flight — or the same files can be resubmitted from
+  // Assign to the same destination (#477), bypassing Next batch/Retry/Resume,
+  // the paths that actually guard against a duplicate upload (AL2). A
+  // completed dry run writes nothing, so it's exempt: going back to adjust
+  // Assign and dry-running again is safe.
+  const backBlocked = anyRunActive || (!!snap && !snap.dryRun);
   // Dismisses the "upload complete" popup — reset whenever a new run (fresh
   // start or resume) begins, so a later run's completion pops it again.
   const [completeDismissed, setCompleteDismissed] = useState(false);
@@ -575,9 +582,9 @@ export function Upload() {
       <div className="flex flex-wrap items-center justify-between gap-4 border-t border-ruleSoft pt-5">
         <button
           onClick={() => setStep('assign')}
-          disabled={anyRunActive}
+          disabled={backBlocked}
           className={`border border-ink text-ink px-3.5 py-2.5 sm:py-1.5 min-h-[44px] sm:min-h-0 text-[14px] font-body hover:bg-paperHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 ${
-            anyRunActive ? 'opacity-40 cursor-not-allowed' : ''
+            backBlocked ? 'opacity-40 cursor-not-allowed' : ''
           }`}
         >
           Back
