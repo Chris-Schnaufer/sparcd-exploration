@@ -176,7 +176,7 @@ Then('only uploads whose metadata was published are marked complete', async ({ a
   await app.page.getByRole('button', { name: 'Back' }).click();
   await app.page.getByRole('button', { name: 'Back' }).click();
   await app.rescan(app.notes.sourceSpecs as FileSpec[]);
-  await app.page.getByRole('button', { name: 'Continue' }).click();
+  await app.continueToAssign();
   await app.continueToUpload();
   await app.dryRunCheckbox().uncheck();
   await app.startRun();
