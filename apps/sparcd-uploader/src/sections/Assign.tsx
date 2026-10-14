@@ -36,7 +36,7 @@ function RefreshableLabel({
 }) {
   return (
     <div className="flex items-center justify-between mb-2">
-      <h2 className="font-[600] text-[11px] tracking-[0.16em] uppercase text-inkSoft">{label}</h2>
+      <h2 className="font-[600] text-[11px] tracking-[0.16em] uppercase text-inkSoft">{label} (required)</h2>
       <button
         type="button"
         onClick={onRefresh}
@@ -349,7 +349,7 @@ export function Assign() {
       </section>
 
       <section>
-        <h2 className={sectionLabel}>Uploader</h2>
+        <label htmlFor="uploaderUser" className={`block ${sectionLabel}`}>Uploader (required)</label>
         <input
           id="uploaderUser"
           name="uploaderUser"
@@ -360,12 +360,12 @@ export function Assign() {
           className="w-full border border-rule bg-paper px-3 py-2 font-body text-[14px] text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1"
         />
         <p className="font-body text-[12px] text-inkMute mt-1.5">
-          Required. Recorded with every upload you make.
+          Recorded with every upload you make.
         </p>
       </section>
 
       <section>
-        <h2 id="upload-timezone-label" className={sectionLabel}>Timezone</h2>
+        <h2 id="upload-timezone-label" className={sectionLabel}>Timezone (required)</h2>
         <select
           id="uploadTimeZone"
           value={uploadTimeZone}
