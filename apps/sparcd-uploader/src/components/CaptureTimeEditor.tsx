@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { useStore, type FileEntry } from '../store';
 import { formatNaive, inputValueToNaive, type NaiveDateTime } from '../lib/exifTime';
 import { naiveFromMillis, naiveMillis, naturalPathCompare } from '../lib/estimateCaptureTime';
@@ -105,32 +105,59 @@ function Thumb({ blob }: { blob?: Blob }) {
 function OverrideTimeInput({
   fileName,
   initialText,
+  committedNaive,
   onCommit,
 }: {
   fileName: string;
   initialText: string;
+  committedNaive: NaiveDateTime | undefined;
   onCommit: (naive: NaiveDateTime | null) => void;
 }) {
   const [text, setText] = useState(initialText);
+  const ownCommit = useRef<NaiveDateTime | null | undefined>(undefined);
+  const helpId = useId();
+  useEffect(() => {
+    // The store retains the object submitted by this field. Preserve its typed
+    // spelling/caret on that echo; reset for changes made by other controls,
+    // including a spread that happens to have the same timestamp.
+    if (ownCommit.current === undefined || ownCommit.current !== (committedNaive ?? null)) {
+      setText(initialText);
+    }
+    ownCommit.current = undefined;
+  }, [committedNaive, initialText]);
+  const invalid = text.trim() !== '' && !inputValueToNaive(text);
   return (
-    <input
-      type="text"
-      autoFocus
-      placeholder="YYYY-MM-DD HH:mm:ss"
-      aria-label={`Capture time for ${fileName}`}
-      value={text}
-      onChange={(e) => {
-        const next = e.target.value;
-        setText(next);
-        if (next.trim() === '') {
-          onCommit(null);
-          return;
-        }
-        const naive = inputValueToNaive(next);
-        if (naive) onCommit(naive);
-      }}
-      className={inputClass}
-    />
+    <div className="min-w-0">
+      <input
+        type="text"
+        autoFocus
+        placeholder="YYYY-MM-DD HH:mm:ss"
+        aria-label={`Capture time for ${fileName}`}
+        value={text}
+        aria-invalid={invalid || undefined}
+        aria-describedby={invalid ? helpId : undefined}
+        onChange={(e) => {
+          const next = e.target.value;
+          setText(next);
+          if (next.trim() === '') {
+            ownCommit.current = null;
+            onCommit(null);
+            return;
+          }
+          const naive = inputValueToNaive(next);
+          if (naive) {
+            ownCommit.current = naive;
+            onCommit(naive);
+          }
+        }}
+        className={`${inputClass} max-w-full`}
+      />
+      {invalid && (
+        <p id={helpId} className="font-body text-[11px] text-warn mt-1">
+          Enter a valid capture time as YYYY-MM-DD HH:mm:ss (24-hour). The saved capture time is unchanged.
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -512,6 +539,7 @@ export function CaptureTimeEditor({ files }: { files: FileEntry[] }) {
                   {editing === f.id && (
                     <OverrideTimeInput
                       fileName={f.fileName}
+                      committedNaive={f.manualNaive}
                       initialText={f.manualNaive
                         ? shortNaive(f.manualNaive)
                         : f.exifTimestampSource === 'exif-modify' && f.exifNaive
