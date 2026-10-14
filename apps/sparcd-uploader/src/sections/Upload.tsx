@@ -312,8 +312,8 @@ export function Upload() {
   // The hand-off record exists to get a batch to the tagger and its tags back;
   // once those tags are published it is dead weight holding paths, hashes,
   // thumbnails and possibly a live folder handle. Only a real publish clears it
-  // — a dry run wrote nothing, and "Start over" is not the user saying they are
-  // finished with the tags.
+  // — a dry run wrote nothing, and discarding the batch (Verify's "Back") is
+  // not the user saying they are finished with the tags.
   useEffect(() => {
     if (!flipId || snap?.phase !== 'done' || snap.dryRun) return;
     void deleteFlipRecord(flipId);

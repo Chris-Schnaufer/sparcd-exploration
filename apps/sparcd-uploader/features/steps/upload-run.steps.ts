@@ -961,8 +961,8 @@ When('"Next batch" is chosen', async ({ app }) => {
   await app.page.getByRole('button', { name: 'Next batch' }).click();
 });
 
-Then('the wizard returns to the Files step with an empty batch', async ({ app }) => {
-  await app.expectStep('Files');
+Then('the wizard returns to the Choose step with an empty batch', async ({ app }) => {
+  await app.expectStep('Choose');
   await expect(app.page.getByText('Drop a folder to upload')).toBeVisible();
   await expect(app.fileListToggle()).toHaveCount(0);
 });
