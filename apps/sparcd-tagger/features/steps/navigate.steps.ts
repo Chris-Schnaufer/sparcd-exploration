@@ -1071,3 +1071,17 @@ Then('exhausted bulk focus stays at the earlier image and all matches are remove
     { file: 'IMG005.JPG', observations: [{ scientificName: 'Odocoileus hemionus', count: 1 }] },
   ]);
 });
+
+When('the images are sorted by Species ascending', async ({ page }) => {
+  await page.getByRole('button', { name: /^Species/ }).click();
+  await expect.poll(() => tileOrder(page)).toEqual(['IMG002.JPG', 'IMG005.JPG', 'VID001.MP4', 'IMG001.JPG', 'IMG003.JPG', 'IMG004.JPG']);
+});
+
+Then('the sorted exhausted focus remains on IMG005 in {string}', async ({ page }, view: string) => {
+  if (view === 'Focus') {
+    await expect(page.getByRole('dialog', { name: 'Focus image viewer' }).locator('.react-transform-component img')).toHaveAttribute('alt', 'IMG005.JPG');
+  } else {
+    await expect(positionReadout(page)).toHaveText('5 / 6');
+    await expect(focusedTile(page)).toHaveCount(0);
+  }
+});

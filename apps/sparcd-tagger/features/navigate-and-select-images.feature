@@ -304,3 +304,19 @@ Feature: Move through an upload and choose which images an action applies to
     And both image matches are selected with the earlier match focused
     And the focused untagged image is identified
     Then exhausted bulk focus stays at the earlier image and all matches are removed
+
+  @unmapped
+  Scenario Outline: Exhausted focus survives live Species sorting
+    When the images are sorted by Species ascending
+    And the image filter limits the Overview to untagged images
+    And the image filter excludes the video
+    And the final image match is opened in "<view>"
+    And the focused untagged image is identified
+    Then the sorted exhausted focus remains on IMG005 in "<view>"
+    When another species key is pressed after exhaustion
+    Then only the original identification was applied and earlier matches remain untouched
+
+    Examples:
+      | view     |
+      | Overview |
+      | Focus    |

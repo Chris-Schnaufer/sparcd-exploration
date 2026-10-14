@@ -346,6 +346,7 @@ export function Tag() {
   );
   const list = useMemo(() => order.map((i) => base[i]), [base, order]);
   const current = list[focus];
+  const prevOrderRef = useRef<number[] | null>(null);
 
   const handleSort = (field: SortField) => {
     if (field === sortField) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
@@ -424,6 +425,9 @@ export function Tag() {
   // Exhausted auto-advance retains the image that was just tagged, even if
   // that edit hid it. A changed filter or explicit move releases that hold.
   useEffect(() => {
+    // Positions still refer to the previous list until the sort-remap effect
+    // commits. Do not interpret them against the new order in this render.
+    if (prevOrderRef.current !== order) return;
     if (!imageFilterActive || visibleIndices.includes(focus)) {
       exhaustedFocusRef.current = null;
       return;
@@ -436,12 +440,12 @@ export function Tag() {
     if (nearest == null) return;
     setFocus(nearest);
     setAnchor(nearest);
-  }, [current?.key, focus, imageFilter, imageFilterActive, visibleIndices]);
+  }, [current?.key, focus, imageFilter, imageFilterActive, order, visibleIndices]);
 
   useEffect(() => {
-    if (!imageFilterActive) return;
+    if (!imageFilterActive || prevOrderRef.current !== order) return;
     setSelected((prior) => new Set([...prior].filter((i) => visibleIndexSet.has(i))));
-  }, [imageFilterActive, visibleIndexSet]);
+  }, [imageFilterActive, order, visibleIndexSet]);
 
   const jumpToMatch = (pos: number) => {
     if (!matches.length) return;
@@ -487,8 +491,8 @@ export function Tag() {
   // Reset focus/selection when the upload changes / data arrives. Null the sort
   // permutation ref so the remap effect below treats the next `order` as a fresh
   // baseline rather than translating stale positions across a different upload.
-  const prevOrderRef = useRef<number[] | null>(null);
   useEffect(() => {
+    exhaustedFocusRef.current = null;
     setFocus(0);
     setAnchor(0);
     setSelected(new Set());
