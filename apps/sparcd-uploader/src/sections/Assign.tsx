@@ -64,6 +64,8 @@ function LocationsState({ message, tone }: { message: string; tone: 'mute' | 'wa
 }
 
 export function Assign() {
+  const previewUploadDate = useStore((s) => s.uploadCommentDate);
+  const captureUploadCommentDate = useStore((s) => s.captureUploadCommentDate);
   const s3Config = useStore((s) => s.s3Config);
   const connectionId = useStore((s) => s.connectionId);
   const connect = useStore((s) => s.connect);
@@ -159,6 +161,10 @@ export function Assign() {
   }, [data?.locations, deployments.data]);
 
   const location = findAllowedLocation(collectionLocations, selectedLocationId);
+
+  useEffect(() => {
+    if (location && mountainRange.trim() && dateCollected) captureUploadCommentDate();
+  }, [location, mountainRange, dateCollected, captureUploadCommentDate]);
 
   // A collection switch can leave the old key in the persisted store while
   // the new scoped list is loading. Clear it once the new list is available so
@@ -427,8 +433,8 @@ export function Assign() {
         <div className="mt-3 border border-ruleSoft p-3 break-words">
           <h3 className={sectionLabel}>Generated upload comment</h3>
           <p aria-label="Generated upload comment" className="font-body text-[13px] text-inkSoft">
-            {location && mountainRange.trim() && dateCollected ? formatUploadComments({
-              required: { mountainRange, dateCollected }, siteName: location.name,
+            {location && mountainRange.trim() && dateCollected && previewUploadDate ? formatUploadComments({
+              required: { mountainRange, dateCollected, previewUploadDate }, siteName: location.name,
               imageCount: files.length, uploadDate: new Date(), comments: description,
             }) : 'Enter a mountain range and date collected to preview the required comment.'}
           </p>

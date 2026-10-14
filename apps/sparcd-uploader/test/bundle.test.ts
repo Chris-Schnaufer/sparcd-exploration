@@ -548,7 +548,7 @@ describe('required upload comment metadata', () => {
     const input: BuildInput = {
       location: SAN15, collectionUuid: UUID, bucket: `sparcd-${UUID}`,
       uploaderSlug: 'jdoe', description: 'Retrieved after rain',
-      requiredComments: { mountainRange: 'Santa Rita Mountains', dateCollected: '2026-10-01' },
+      requiredComments: { mountainRange: 'Santa Rita Mountains', dateCollected: '2026-10-01', previewUploadDate: '2026-10-13' },
       timeZone: 'America/Phoenix', files: [ready('IMG001.JPG')], now,
     };
     const live = await buildBundle(input);
@@ -557,7 +557,7 @@ describe('required upload comment metadata', () => {
       ...input, startedAt: now, uploadPath,
       files: [{ fileName: 'IMG001.JPG', size: 12, sha256: 'sha-a', remoteKey: `${uploadPath}/IMG001.JPG` }],
     });
-    const expected = 'Santa Rita Mountains - San Pedro 15 - 1 images - uploaded 2026-10-14 - collected 2026-10-01 - Retrieved after rain';
+    const expected = 'Santa Rita Mountains - San Pedro 15 - 1 image - uploaded 2026-10-13 - collected 2026-10-01 - Retrieved after rain';
     expect(parseUploadMeta(live.uploadMetaJson).description).toBe(expected);
     expect(parseUploadMeta(resumed.uploadMetaJson).description).toBe(expected);
   });

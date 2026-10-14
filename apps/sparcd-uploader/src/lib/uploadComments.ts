@@ -1,7 +1,12 @@
 export type RequiredUploadComments = {
   mountainRange: string;
   dateCollected: string;
+  previewUploadDate?: string;
 };
+
+export function uploadCommentDate(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
 
 export function formatUploadComments(input: {
   required?: RequiredUploadComments;
@@ -11,8 +16,7 @@ export function formatUploadComments(input: {
   comments: string;
 }): string {
   if (!input.required) return input.comments;
-  const date = input.uploadDate;
-  const uploaded = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-  const prefix = `${input.required.mountainRange.trim()} - ${input.siteName} - ${input.imageCount} images - uploaded ${uploaded} - collected ${input.required.dateCollected}`;
+  const uploaded = input.required.previewUploadDate ?? uploadCommentDate(input.uploadDate);
+  const prefix = `${input.required.mountainRange.trim()} - ${input.siteName} - ${input.imageCount} ${input.imageCount === 1 ? 'image' : 'images'} - uploaded ${uploaded} - collected ${input.required.dateCollected}`;
   return input.comments.trim() ? `${prefix} - ${input.comments}` : prefix;
 }

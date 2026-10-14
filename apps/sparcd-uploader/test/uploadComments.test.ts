@@ -12,6 +12,17 @@ describe('required upload comments', () => {
     expect(formatUploadComments(input)).toBe(prefix);
     expect(formatUploadComments({ ...input, comments: '  ' })).toBe(prefix);
   });
+  it('uses singular image wording for a one-image batch', () => {
+    expect(formatUploadComments({ ...input, imageCount: 1 })).toBe(
+      'Santa Rita Mountains - SAN06 - 1 image - uploaded 2026-10-14 - collected 2026-03-28',
+    );
+  });
+  it('retains the preview date when the upload starts on a later day', () => {
+    expect(formatUploadComments({
+      ...input,
+      required: { ...input.required, previewUploadDate: '2026-10-13' },
+    })).toBe(prefix.replace('uploaded 2026-10-14', 'uploaded 2026-10-13'));
+  });
   it('appends optional comments without overwriting their content', () => {
     expect(formatUploadComments({ ...input, comments: 'Notes\nsecond line' })).toBe(`${prefix} - Notes\nsecond line`);
   });

@@ -6,6 +6,7 @@ import { useLocations } from '../lib/useLocations';
 import { findAllowedLocation } from '../lib/allowedLocations';
 import { useCollections } from '../lib/useCollections';
 import { sanitizeUploaderUser } from '../lib/normalize';
+import { formatUploadComments } from '../lib/uploadComments';
 import { formatBytes } from '../lib/scanFiles';
 import { loadSession, type BatchRecord } from '../lib/db';
 import type { ReconcileProblem } from '../lib/resume';
@@ -117,6 +118,7 @@ function UploadConnectivityStatus({
 }
 
 export function Upload() {
+  const previewUploadDate = useStore((s) => s.uploadCommentDate);
   const s3Config = useStore((s) => s.s3Config);
   const connectionId = useStore((s) => s.connectionId);
   const setStep = useStore((s) => s.setStep);
@@ -294,7 +296,7 @@ export function Upload() {
           bucket: collection.bucket,
           uploaderSlug: slug,
           description,
-          requiredComments: { mountainRange, dateCollected },
+          requiredComments: { mountainRange, dateCollected, previewUploadDate: previewUploadDate ?? undefined },
           timeZone: uploadTimeZone,
           files,
         },
@@ -433,6 +435,17 @@ export function Upload() {
         offlineOverride={offlineOverride}
         onAllowOfflineUpload={() => setOfflineOverride(true)}
       />
+      {!isResumed && location && mountainRange.trim() && dateCollected && (
+        <div className="border border-ruleSoft p-3 break-words">
+          <h3 className={sectionLabel}>Generated upload comment</h3>
+          <p aria-label="Generated upload comment" className="font-body text-[13px] text-inkSoft">
+            {formatUploadComments({
+              required: { mountainRange, dateCollected, previewUploadDate: previewUploadDate ?? undefined }, siteName: location.name,
+              imageCount: files.length, uploadDate: new Date(), comments: description,
+            })}
+          </p>
+        </div>
+      )}
       {/* Run configuration. A resume handed off from History replays a persisted
           bundle with no Assign state behind it, so the options collapse away. */}
       <section className="space-y-3">

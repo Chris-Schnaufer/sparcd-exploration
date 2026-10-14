@@ -508,3 +508,43 @@ Then('Continue allows the Upload step', async ({ app }) => {
   await expect(app.continueButton()).toBeEnabled();
   await expect(app.continueButton()).toHaveAttribute('title', 'Continue to upload');
 });
+
+When('the next day arrives while Assign stays open', async ({ app }) => {
+  await app.page.clock.setSystemTime(new Date('2026-10-15T00:00:01-04:00'));
+});
+
+Then("the comment preview keeps its original upload date", async ({ app }) => {
+  await expect(app.page.getByLabel('Generated upload comment', { exact: true })).toHaveText(
+    'Santa Catalina Mountains - Bear Canyon - 3 images - uploaded 2026-10-14 - collected 2026-10-01 - Overnight batch',
+  );
+});
+
+When('Upload is opened and another day arrives before starting', async ({ app }) => {
+  await app.continueToUpload();
+  await app.page.clock.setSystemTime(new Date('2026-10-16T00:00:01-04:00'));
+  await app.page.evaluate(() => window.dispatchEvent(new Event('focus')));
+});
+
+Then('the Upload preview keeps the original preview date', async ({ app }) => {
+  const expected = 'Santa Catalina Mountains - Bear Canyon - 3 images - uploaded 2026-10-14 - collected 2026-10-01 - Overnight batch';
+  app.notes.expectedComment = expected;
+  await expect(app.page.getByLabel('Generated upload comment', { exact: true })).toHaveText(expected);
+});
+
+When('the batch is uploaded after midnight', async ({ app }) => {
+  await app.dryRunCheckbox().uncheck();
+  await app.startRun();
+  await app.waitForRunPhase('done');
+});
+
+Then('the saved comment matches the Upload preview and keeps its original preview date', async ({ app }) => {
+  const expected = app.notes.expectedComment as string;
+  const meta = app.s3.puts.find((put) => put.key.endsWith('UploadMeta.json'));
+  expect(JSON.parse(meta!.body).description).toBe(expected);
+  const batch = (await app.readBatchRecords())[0];
+  expect(String(batch.startedAt).slice(0, 10)).toBe('2026-10-16');
+  expect(batch.requiredComments).toMatchObject({ previewUploadDate: '2026-10-14' });
+  await app.page.clock.setSystemTime(new Date('2026-10-17T12:00:00-04:00'));
+  await app.page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect(app.page.getByLabel('Generated upload comment', { exact: true })).toHaveText(expected);
+});

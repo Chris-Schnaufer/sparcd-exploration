@@ -1,3 +1,4 @@
+import { uploadCommentDate } from './lib/uploadComments';
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { S3Config } from '@sparcd/types';
@@ -106,6 +107,8 @@ type UploaderState = {
   selectedLocationId: string | null; // chosen deployment location ID (Assign)
   selectedBucket: string | null; // selected collection key `${bucket}::${uuid}` (Assign)
   requireCollectionSelection: boolean; // keep a new batch visibly unassigned
+  uploadCommentDate: string | null;
+  captureUploadCommentDate: () => void;
   mountainRange: string;
   dateCollected: string;
   setMountainRange: (value: string) => void;
@@ -337,6 +340,7 @@ export const useStore = create<UploaderState>()(
       selectedLocationId: null,
       selectedBucket: null,
       requireCollectionSelection: false,
+      uploadCommentDate: null,
       mountainRange: '',
       dateCollected: '',
       uploadDescription: '',
@@ -502,6 +506,7 @@ export const useStore = create<UploaderState>()(
         invalidateFileIndex();
         set((s) => ({
           files: entries,
+          uploadCommentDate: null,
           validations: validateBatch(entries),
           step: entries.length > 0 ? 'inspect' : 'drop',
           batchToken: s.batchToken + 1,
@@ -635,6 +640,7 @@ export const useStore = create<UploaderState>()(
           files: [],
           validations: {},
           step: 'drop',
+          uploadCommentDate: null,
           batchToken: s.batchToken + 1,
           dirHandle: null,
           fileAccessMode: 'reselect-required',
@@ -655,6 +661,9 @@ export const useStore = create<UploaderState>()(
       setUploaderUser: (value) => set({ uploaderUser: value }),
       setSelectedLocationId: (id) => set({ selectedLocationId: id }),
       setSelectedBucket: (bucket) => set({ selectedBucket: bucket, requireCollectionSelection: false }),
+      captureUploadCommentDate: () => {
+        if (!get().uploadCommentDate) set({ uploadCommentDate: uploadCommentDate(new Date()) });
+      },
       setMountainRange: (value) => set({ mountainRange: value }),
       setDateCollected: (value) => set({ dateCollected: value }),
       setUploadDescription: (value) => set({ uploadDescription: value }),
@@ -714,6 +723,7 @@ export const useStore = create<UploaderState>()(
           files: [],
           validations: {},
           step: 'drop',
+          uploadCommentDate: null,
           batchToken: s.batchToken + 1,
           dirHandle: null,
           fileAccessMode: 'reselect-required',
@@ -754,6 +764,7 @@ export const useStore = create<UploaderState>()(
         selectedLocationId: s.selectedLocationId,
         selectedBucket: s.selectedBucket,
         requireCollectionSelection: s.requireCollectionSelection,
+        uploadCommentDate: s.uploadCommentDate,
         mountainRange: s.mountainRange,
         dateCollected: s.dateCollected,
         uploadDescription: s.uploadDescription,
