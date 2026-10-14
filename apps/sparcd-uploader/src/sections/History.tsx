@@ -38,12 +38,8 @@ type Row = { batch: BatchRecord } & SessionTally;
 
 const stampOf = (prefix: string) => prefix.slice(prefix.lastIndexOf('/') + 1);
 
-/** The collection a batch was sent to — name and UUID, not the bucket, which
- *  is neither memorable nor (once the new file layout lands) even
- *  meaningful. Falls back to the bucket when the collection can't be
- *  resolved at all (not yet connected, or since removed) — the same
- *  fallback `Upload.tsx`'s resumed-batch summary uses for this lookup.
- *  "name · uuid" mirrors how Assign already shows a selected collection. */
+/** Resolve names using both bucket and collection ID. The saved ID remains
+ * visible even when discovery is unavailable or a collection was removed. */
 function CollectionLabel({
   batch,
   collections,
@@ -52,10 +48,11 @@ function CollectionLabel({
   collections?: CollectionRef[];
 }) {
   const match = collections?.find((c) => c.bucket === batch.targetBucket && c.uuid === batch.collectionUuid);
-  if (!match) return <>{batch.targetBucket}</>;
   return (
     <>
-      {match.name ?? 'Unnamed collection'} · <span className="font-mono">{match.uuid}</span>
+      {match ? match.name ?? 'Unnamed collection' : 'Collection name unavailable'} ·{' '}
+      <span className="font-mono">{batch.collectionUuid}</span>
+      {!match && <span className="block font-mono text-[11px] text-inkMute">Storage bucket: {batch.targetBucket}</span>}
     </>
   );
 }
@@ -73,7 +70,7 @@ function Badge({ batch }: { batch: BatchRecord }) {
   const done = !!batch.completedAt;
   return (
     <span
-      className={`font-mono text-[10px] uppercase tracking-[0.12em] px-1.5 py-0.5 border ${
+      className={`shrink-0 font-mono text-[10px] uppercase tracking-[0.12em] px-1.5 py-0.5 border ${
         done ? 'border-ok/50 text-ok' : 'border-warn/50 text-warn'
       }`}
     >
@@ -499,12 +496,14 @@ export function History() {
           return (
             <li key={batch.id} className="border border-ruleSoft bg-panel px-4 py-3 space-y-2">
               <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="font-mono text-[13px] text-ink truncate" title={batch.uploadPrefix}>
                     {stampOf(batch.uploadPrefix)}
                   </p>
-                  <p className="font-body text-[12px] text-inkSoft truncate">
-                    <CollectionLabel batch={batch} collections={collections.data} /> ·{' '}
+                  <p className="font-body text-[12px] text-inkSoft [overflow-wrap:anywhere]">
+                    <CollectionLabel batch={batch} collections={collections.data} />
+                  </p>
+                  <p className="font-body text-[12px] text-inkSoft">
                     {formatHistoryBatchStart(batch.startedAt)}
                   </p>
                 </div>
