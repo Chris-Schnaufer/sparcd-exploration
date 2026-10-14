@@ -50,6 +50,8 @@ Feature: Resume an interrupted upload and retry a failed one
     Given an interrupted upload has a matching UploadMeta publication already stored
     When it is resumed
     Then the resumed publication completes without replacing that metadata
+    And the Back button is disabled
+    And the Back explanation is keyboard discoverable
     And its completion record is written
 
   @AL1
@@ -205,7 +207,7 @@ Feature: Resume an interrupted upload and retry a failed one
     Given the local record for a partial run cannot be read
     When "Retry failed files" is chosen
     Then the tool reports that the saved record could not be loaded
-    And it suggests retrying, or going back and starting the upload over
+    And it explains missing-record recovery without suggesting a duplicate upload
     And repeated clicks never start two runs at once
 
   @AL1
@@ -231,3 +233,8 @@ Feature: Resume an interrupted upload and retry a failed one
     Given an open upload is listed in History
     When History has a long collection name on a phone-sized viewport
     Then the full collection name and ID wrap within the History row
+  @AL2
+  Scenario: A temporary saved-record read failure offers History recovery without unlocking Back
+    Given a partial upload record has a temporary read failure
+    When "Retry failed files" is chosen
+    Then History recovery is offered for the saved upload without unlocking Back
