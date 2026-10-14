@@ -192,7 +192,6 @@ Then('only uploads whose metadata was published are marked complete', async ({ a
   await expect(app.page.getByText('complete', { exact: true })).toHaveCount(1);
   await expect(app.page.getByText('open', { exact: true })).toHaveCount(1);
 });
-
 // --- found in the morning --------------------------------------------------
 
 Given('one upload finished while nobody was watching', async ({ app }) => {
