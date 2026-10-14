@@ -197,6 +197,7 @@ Then('the login default returns on blur', async ({ app }) => {
   const input = app.page.getByPlaceholder(identityField);
   await input.press('Tab');
   await expect(input).toHaveValue(ACCESS_KEY);
+  expect(await app.page.locator('header').evaluate((element) => element.outerHTML)).not.toContain(ACCESS_KEY);
   // Return to New upload so the existing settings helper expands a fresh panel.
   await app.gotoSection('New upload');
 });
@@ -223,6 +224,7 @@ Then('both sessions default identity from the connected access key', async ({ ap
     await page.locator('nav[aria-label="Sections"]').getByRole('button', { name: 'Settings', exact: true }).click();
     await page.getByText('Defaults', { exact: true }).click();
     await expect(page.getByPlaceholder(identityField)).toHaveValue(ACCESS_KEY);
+    expect(await page.locator('header').evaluate((element) => element.outerHTML)).not.toContain(ACCESS_KEY);
   }
   await second.close();
 });
