@@ -527,8 +527,16 @@ When('Upload is opened and another day arrives before starting', async ({ app })
 
 Then('the Upload preview keeps the original preview date', async ({ app }) => {
   const expected = 'Santa Catalina Mountains - Bear Canyon - 3 images - uploaded 2026-10-14 - collected 2026-10-01 - Overnight batch';
+  const preview = expected.replace(' - Overnight batch', '');
   app.notes.expectedComment = expected;
-  await expect(app.page.getByLabel('Generated upload comment', { exact: true })).toHaveText(expected);
+  app.notes.expectedPreview = preview;
+  await expect(app.page.getByLabel('Generated upload comment', { exact: true })).toHaveText(preview);
+  const comments = app.page.getByRole('button', { name: 'Comments', exact: true });
+  await expect(comments).toHaveAttribute('aria-expanded', 'false');
+  await expect(app.page.getByText('Overnight batch', { exact: true })).toHaveCount(0);
+  await comments.click();
+  await expect(comments.locator('..')).toContainText('Overnight batch');
+  await comments.click();
 });
 
 When('the batch is uploaded after midnight', async ({ app }) => {
@@ -537,7 +545,7 @@ When('the batch is uploaded after midnight', async ({ app }) => {
   await app.waitForRunPhase('done');
 });
 
-Then('the saved comment matches the Upload preview and keeps its original preview date', async ({ app }) => {
+Then('the saved comment includes optional notes and keeps its original preview date', async ({ app }) => {
   const expected = app.notes.expectedComment as string;
   const meta = app.s3.puts.find((put) => put.key.endsWith('UploadMeta.json'));
   expect(JSON.parse(meta!.body).description).toBe(expected);
@@ -546,7 +554,7 @@ Then('the saved comment matches the Upload preview and keeps its original previe
   expect(batch.requiredComments).toMatchObject({ previewUploadDate: '2026-10-14' });
   await app.page.clock.setSystemTime(new Date('2026-10-17T12:00:00-04:00'));
   await app.page.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await expect(app.page.getByLabel('Generated upload comment', { exact: true })).toHaveText(expected);
+  await expect(app.page.getByLabel('Generated upload comment', { exact: true })).toHaveText(app.notes.expectedPreview as string);
 });
 
 Given('the batch contains one JPEG and two MP4 videos', async ({ app }) => {
