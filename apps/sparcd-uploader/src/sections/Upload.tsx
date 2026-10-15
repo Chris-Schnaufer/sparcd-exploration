@@ -203,6 +203,12 @@ export function Upload() {
   // gap; falling back to Assign here can briefly name a different batch.
   const savedBatch = resumedBatch ?? pendingResume?.session.batch ?? null;
   const isResumed = Boolean(attachedFiles || pendingResume || resumedSessionId);
+  // Resume never borrows metadata from the current wizard, including while
+  // its saved record is loading or when legacy fields are unavailable.
+  const summaryTimeZone = isResumed ? savedBatch?.uploadTimeZone : uploadTimeZone;
+  const summaryMountainRange = isResumed ? savedBatch?.requiredComments?.mountainRange : mountainRange;
+  const summaryDateCollected = isResumed ? savedBatch?.requiredComments?.dateCollected : dateCollected;
+  const summaryComments = isResumed ? savedBatch?.description : description;
   const dest = savedBatch
     ? {
         collectionName:
@@ -388,7 +394,7 @@ export function Upload() {
           <p aria-label="Generated upload comment" className="font-body text-[13px] text-inkSoft">
             {formatUploadComments({
               required: { mountainRange, dateCollected, previewUploadDate: previewUploadDate ?? undefined }, siteName: location.name,
-              imageCount: files.length, uploadDate: new Date(), comments: description,
+              imageCount: files.length, uploadDate: new Date(), comments: '',
             })}
           </p>
         </div>
@@ -431,27 +437,27 @@ export function Upload() {
                   <dd className="font-mono text-ink min-w-0 break-all">{dest.folder}</dd>
                 </div>
               )}
-              {uploadTimeZone && (
+              {summaryTimeZone && (
                 <div className="flex items-baseline gap-3">
                   <dt className="text-inkSoft w-28 shrink-0">Timezone</dt>
-                  <dd className="text-ink min-w-0">{uploadTimeZone}</dd>
+                  <dd className="text-ink min-w-0">{summaryTimeZone}</dd>
                 </div>
               )}
-              {mountainRange.trim() && (
+              {summaryMountainRange?.trim() && (
                 <div className="flex items-baseline gap-3">
                   <dt className="text-inkSoft w-28 shrink-0">Mountain range</dt>
-                  <dd className="text-ink min-w-0 break-words">{mountainRange}</dd>
+                  <dd className="text-ink min-w-0 break-words">{summaryMountainRange}</dd>
                 </div>
               )}
-              {dateCollected && (
+              {summaryDateCollected && (
                 <div className="flex items-baseline gap-3">
                   <dt className="text-inkSoft w-28 shrink-0">Date collected</dt>
-                  <dd className="text-ink min-w-0">{dateCollected}</dd>
+                  <dd className="text-ink min-w-0">{summaryDateCollected}</dd>
                 </div>
               )}
             </dl>
 
-            {description.trim() && (
+            {summaryComments?.trim() && (
               <div>
                 <button
                   type="button"
@@ -463,7 +469,7 @@ export function Upload() {
                   Comments
                 </button>
                 {showComments && (
-                  <p className="font-body text-[13px] text-inkSoft mt-1.5 whitespace-pre-wrap">{description}</p>
+                  <p className="font-body text-[13px] text-inkSoft mt-1.5 whitespace-pre-wrap break-words">{summaryComments}</p>
                 )}
               </div>
             )}

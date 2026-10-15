@@ -413,6 +413,10 @@ Given('another batch is set up for a different collection and location', async (
   await app.openCollectionList();
   await app.page.locator('ul[role="listbox"] li[role="option"]').filter({ hasText: COLLECTION_B_NAME }).click();
   await app.chooseDeployment('Coyote Wash');
+  await app.page.locator('#mountainRange').fill('UNRELATED mountain range');
+  await app.page.locator('#dateCollected').fill('2025-02-03');
+  await app.page.locator('#uploadTimeZone').selectOption('Europe/Paris');
+  await app.setDescription('UNRELATED notes');
   await app.continueToUpload();
   await expect(app.page.locator('dl').filter({ hasText: 'Collection' })).toContainText(COLLECTION_B_NAME);
   // The Resume folder dialog hands back the interrupted upload's source folder.
@@ -782,4 +786,54 @@ When('the folder picker is opened and dismissed without selecting a folder', asy
 
 Then('the Resume button becomes available again', async ({ app }) => {
   await expect(app.page.getByRole('button', { name: 'Resume' }).first()).toBeEnabled();
+});
+
+Given('the saved summary has {word} fields', async ({ app }, metadata: string) => {
+  app.notes.summaryMetadata = metadata;
+  const [batch] = await app.readBatchRecords();
+  app.notes.savedSummary = batch;
+  if (metadata !== 'legacy') return;
+  await app.page.evaluate(async id => {
+    const request = indexedDB.open('sparcd-uploader');
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+    });
+    const transaction = db.transaction('batches', 'readwrite');
+    const store = transaction.objectStore('batches');
+    const read = store.get(id);
+    read.onsuccess = () => {
+      const batch = read.result;
+      delete batch.requiredComments;
+      batch.description = '';
+      store.put(batch);
+    };
+    await new Promise<void>((resolve, reject) => {
+      transaction.oncomplete = () => resolve(); transaction.onerror = () => reject(transaction.error);
+    });
+    db.close();
+  }, batch.id);
+});
+
+Then('the resumed summary uses saved metadata without current wizard values', async ({ app }) => {
+  const summary = app.page.locator('dl').filter({ hasText: 'Collection' });
+  await expect(summary).toContainText('America/Phoenix');
+  await expect(summary).not.toContainText('UNRELATED');
+  await expect(summary).not.toContainText('Europe/Paris');
+  await expect(summary).not.toContainText('2025-02-03');
+  const comments = app.page.getByRole('button', { name: 'Comments', exact: true });
+  if (app.notes.summaryMetadata === 'legacy') {
+    await expect(summary).not.toContainText('Mountain range');
+    await expect(summary).not.toContainText('Date collected');
+    await expect(comments).toHaveCount(0);
+  } else {
+    await expect(summary).toContainText('Santa Catalina Mountains');
+    await expect(summary).toContainText('2026-10-01');
+    await expect(comments).toHaveAttribute('aria-expanded', 'false');
+    await comments.focus();
+    await app.page.keyboard.press('Enter');
+    await expect(comments.locator('..')).toContainText('July retrieval');
+    await expect(comments.locator('..')).not.toContainText('UNRELATED notes');
+    await app.page.keyboard.press('Space');
+    await expect(comments).toHaveAttribute('aria-expanded', 'false');
+  }
 });
