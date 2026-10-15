@@ -506,9 +506,31 @@ Then('the original local video plays offline and stops on close', async ({ app, 
   await expect.poll(() => video.evaluate((v: HTMLVideoElement) => v.currentTime)).toBeGreaterThan(0);
   await app.page.keyboard.press('Space');
   await expect(video).toHaveJSProperty('paused', true);
+  // Native media controls live in a browser-owned shadow tree. A host-only
+  // focus assertion would miss a trap that skips those controls entirely.
+  const session = await context.newCDPSession(app.page);
+  async function traverseNativeControls(key: 'Tab' | 'Shift+Tab') {
+    let reachedClose = false;
+    let nativeControls = 0;
+    for (let index = 0; index < 20; index++) {
+      await app.page.keyboard.press(key);
+      if (await close.evaluate(button => button === document.activeElement)) {
+        reachedClose = true;
+        break;
+      }
+      expect(await dialog.evaluate(modal => modal.contains(document.activeElement))).toBe(true);
+      const tree = await session.send('Accessibility.getFullAXTree');
+      nativeControls += tree.nodes.filter(node => node.properties?.some(property => property.name === 'focused' && property.value.value)
+        && node.role?.value !== 'RootWebArea' && node.role?.value !== 'Video').length;
+    }
+    expect(reachedClose).toBe(true);
+    expect(nativeControls).toBeGreaterThan(0);
+    await expect(close).toBeFocused();
+  }
+  await traverseNativeControls('Tab');
+  await traverseNativeControls('Shift+Tab');
+  await session.detach();
   await app.page.keyboard.press('Tab');
-  await expect(close).toBeFocused();
-  await app.page.keyboard.press('Shift+Tab');
   await expect(video).toBeFocused();
   await video.evaluate((v: HTMLVideoElement) => {
     (window as unknown as { previewPlayer: HTMLVideoElement }).previewPlayer = v;
