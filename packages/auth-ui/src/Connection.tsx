@@ -165,6 +165,9 @@ export function Connection({
             />
             Remember endpoint &amp; access key on this device
           </label>
+          <p className="font-body text-[13px] text-inkMute italic">
+            (Don't set remember endpoint &amp; access key if on a public computer)
+          </p>
         </div>
 
         <button

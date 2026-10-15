@@ -594,6 +594,8 @@ def _(DEFAULT_ACCESS, DEFAULT_ENDPOINT, DEFAULT_SECRET, DEFAULT_SECURE, mo, reme
         {secure}
 
         {remember}
+
+        *(Don't set remember endpoint & access key if on a public computer)*
         """)
         .batch(
             endpoint=_endpoint_in,
