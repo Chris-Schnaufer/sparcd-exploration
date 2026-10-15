@@ -43,6 +43,15 @@ Feature: Connect the uploader to storage and manage the session
     Then it shows the connection screen instead of a collection picker
     And going back from it returns to Inspect with the batch intact
 
+  # Installed-PWA guarantee: the service worker precaches the shell on its
+  # first (online) visit, so a later cold open with no network at all still
+  # boots — not just a page that was already warm before going offline.
+  @offline
+  Scenario: A fresh offline visit still loads the installed app shell
+    Given the service worker has activated for this page
+    When the browser goes offline and the page is reloaded
+    Then the connection screen is the only thing shown
+
   @unmapped
   Scenario: Connecting after deferring login preserves an inspection in progress
     Given no connection has been made in this browser session

@@ -43,6 +43,19 @@ Given('the browser is offline before deferring login', async ({ app }) => {
   await expect(app.page.getByRole('button', { name: 'Connect', exact: true })).toBeDisabled();
 });
 
+// A navigation is intercepted by whatever service worker is active for its
+// scope regardless of whether the *previous* document was claimed as a
+// client, so activation alone — not `clientsClaim` on this already-open page
+// — is what the next (reloaded) navigation needs.
+Given('the service worker has activated for this page', async ({ app }) => {
+  await app.page.evaluate(() => navigator.serviceWorker.ready);
+});
+
+When('the browser goes offline and the page is reloaded', async ({ app }) => {
+  await app.page.context().setOffline(true);
+  await app.page.reload({ waitUntil: 'load' });
+});
+
 When('"Login later" is chosen instead of connecting', async ({ app }) => {
   const skip = app.page.getByRole('button', { name: 'Login later' });
   await expect(skip).toBeEnabled();

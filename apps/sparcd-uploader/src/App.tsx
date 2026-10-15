@@ -10,6 +10,7 @@ import { uploadStateOf } from './lib/uploadState';
 import { cancelProcessing } from './lib/processing';
 import { planAutoRetry, type AutoRetryState } from './lib/autoRetry';
 import { updateBatch } from './lib/db';
+import { UpdatePrompt } from './components/UpdatePrompt';
 
 // Dev-only, non-secret prefill (endpoint only). Secrets are never prefilled.
 const devEndpoint = import.meta.env.VITE_SPARCD_S3_ENDPOINT as string | undefined;
@@ -144,20 +145,26 @@ export function App() {
 
   if (!s3Config && !loginDeferred) {
     return (
-      <Connection
-        toolName="Uploader"
-        initialConfig={connectPrefill}
-        onConnect={connect}
-        onSkip={() => setLoginDeferred(true)}
-      />
+      <>
+        <Connection
+          toolName="Uploader"
+          initialConfig={connectPrefill}
+          onConnect={connect}
+          onSkip={() => setLoginDeferred(true)}
+        />
+        <UpdatePrompt />
+      </>
     );
   }
 
   return (
-    <Chrome uploadState={uploadStateOf(activeSnap)}>
-      {section === 'new' && <NewUpload />}
-      {section === 'history' && <History />}
-      {section === 'settings' && <Settings />}
-    </Chrome>
+    <>
+      <Chrome uploadState={uploadStateOf(activeSnap)}>
+        {section === 'new' && <NewUpload />}
+        {section === 'history' && <History />}
+        {section === 'settings' && <Settings />}
+      </Chrome>
+      <UpdatePrompt />
+    </>
   );
 }
