@@ -326,7 +326,10 @@ function UploadRow({
 function SyncPill({ state }: { state: UploadDraftState | 'local-only' }) {
   if (state === 'local-only') {
     return (
-      <span className="inline-flex items-center gap-1.5 border border-rule px-3 h-7 text-[12px] font-body font-[600] text-inkSoft lowercase">
+      <span
+        className="inline-flex items-center gap-1.5 border border-rule px-3 h-7 text-[12px] font-body font-[600] text-inkSoft lowercase"
+        title="Not yet synced — edits stay in this browser until you sync"
+      >
         <span className="font-mono" aria-hidden>
           ○
         </span>
@@ -336,12 +339,25 @@ function SyncPill({ state }: { state: UploadDraftState | 'local-only' }) {
   }
   const spec =
     state === 'unsynced'
-      ? { bg: 'bg-accent', glyph: '●', label: 'unsynced edits', clip: 'polygon(0 0, calc(100% - 9px) 0, 100% 50%, calc(100% - 9px) 100%, 0 100%)' }
-      : { bg: 'bg-ok', glyph: '✓', label: 'synced', clip: 'polygon(9px 0, 100% 0, 100% 100%, 9px 100%, 0 50%)' };
+      ? {
+          bg: 'bg-accent',
+          glyph: '●',
+          label: 'unsynced edits',
+          clip: 'polygon(0 0, calc(100% - 9px) 0, 100% 50%, calc(100% - 9px) 100%, 0 100%)',
+          explain: "This upload has edits that haven't been synced to the collection yet",
+        }
+      : {
+          bg: 'bg-ok',
+          glyph: '✓',
+          label: 'synced',
+          clip: 'polygon(9px 0, 100% 0, 100% 100%, 9px 100%, 0 50%)',
+          explain: 'All edits are synced to the collection',
+        };
   return (
     <span
       className={`inline-flex items-center gap-1.5 px-3.5 h-7 text-[12px] font-body font-[600] text-paper lowercase ${spec.bg}`}
       style={{ clipPath: spec.clip }}
+      title={spec.explain}
     >
       <span className="font-mono" aria-hidden>
         {spec.glyph}
