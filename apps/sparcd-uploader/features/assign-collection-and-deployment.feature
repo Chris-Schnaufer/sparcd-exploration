@@ -200,3 +200,11 @@ Feature: Describe a batch with its collection and a camera location
     When the mountain range and collection date are entered with notes "Mixed batch"
     Then the required comment is previewed without changing the optional notes
     And the generated comment and optional notes are written to upload metadata
+
+  @unmapped
+  Scenario: Describe help stays inside narrow viewports with keyboard access
+    Then Describe help is keyboard accessible and clamped at phone widths
+
+  @unmapped
+  Scenario: Describe help supports touch dismissal and viewport changes
+    Then Describe help can be opened and dismissed on a touch screen

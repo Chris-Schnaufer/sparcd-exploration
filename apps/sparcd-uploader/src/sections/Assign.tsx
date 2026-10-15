@@ -1,4 +1,5 @@
-import { useEffect, useId, useMemo, useRef } from 'react';
+import { InfoTooltip } from '../components/InfoTooltip';
+import { useEffect, useMemo, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Connection, OfflineBanner, loadPersistedConnection, useOnline } from '@sparcd/auth-ui';
 import { useStore } from '../store';
@@ -22,33 +23,6 @@ const sectionLabel =
 // deferred login reaching this step still gets its endpoint/access key back.
 const connectPrefill = { ...loadPersistedConnection() };
 
-/** A small "ⓘ" affordance next to a control's title — reveals `text` on
- *  hover or keyboard focus. Same CSS-only group-hover/group-focus-within
- *  tooltip `StatePill` already uses, so it's proven and consistent with the
- *  rest of the app rather than a new mechanism. */
-function InfoTooltip({ text }: { text: string }) {
-  const tooltipId = useId();
-  return (
-    <span className="group relative inline-flex">
-      <span
-        tabIndex={0}
-        aria-label="More information"
-        aria-describedby={tooltipId}
-        className="inline-flex items-center justify-center w-4 h-4 border border-rule rounded-full font-mono text-[10px] leading-none text-inkSoft cursor-help hover:text-ink hover:border-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-      >
-        <span aria-hidden>ⓘ</span>
-      </span>
-      <span
-        id={tooltipId}
-        role="tooltip"
-        className="pointer-events-none invisible absolute left-0 top-full z-50 mt-2 w-[min(18rem,calc(100vw-2.5rem))] border border-rule bg-ink px-3 py-2 font-body text-[12px] leading-snug text-paper opacity-0 shadow-lg transition-opacity group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
-      >
-        {text}
-      </span>
-    </span>
-  );
-}
-
 /** Section heading with a refresh control that re-pulls the backing S3 data,
  *  bypassing the query cache — for when the registry or a collection's
  *  deployments changed server-side mid-session. */
@@ -67,7 +41,7 @@ function RefreshableLabel({
     <div className="flex items-center justify-between mb-2">
       <span className="inline-flex items-center gap-1.5">
         <h2 className="font-[600] text-[11px] tracking-[0.16em] uppercase text-inkSoft">{label} (required)</h2>
-        <InfoTooltip text={info} />
+        <InfoTooltip label={label} text={info} />
       </span>
       <button
         type="button"
@@ -387,7 +361,7 @@ export function Assign() {
           <label htmlFor="uploaderUser" className="font-[600] text-[11px] tracking-[0.16em] uppercase text-inkSoft">
             Uploader (required)
           </label>
-          <InfoTooltip text="Who's uploading this batch. Recorded with every upload and used to build the storage path." />
+          <InfoTooltip label="Uploader" text="Who's uploading this batch. Recorded with every upload and used to build the storage path." />
         </div>
         <input
           id="uploaderUser"
@@ -408,7 +382,7 @@ export function Assign() {
           <h2 id="upload-timezone-label" className="font-[600] text-[11px] tracking-[0.16em] uppercase text-inkSoft">
             Timezone of images (required)
           </h2>
-          <InfoTooltip text="Defaults to the selected deployment location's zone — change it here if the camera's clock was actually set to a different one." />
+          <InfoTooltip label="Timezone of images" text="Defaults to the selected deployment location's zone — change it here if the camera's clock was actually set to a different one." />
         </div>
         <select
           id="uploadTimeZone"
@@ -437,7 +411,7 @@ export function Assign() {
         <section>
           <div className="flex items-center gap-1.5 mb-2">
             <h2 className="font-[600] text-[11px] tracking-[0.16em] uppercase text-inkSoft">Capture times</h2>
-            <InfoTooltip text="Review or correct capture times the camera didn't record or got wrong." />
+            <InfoTooltip label="Capture times" text="Review or correct capture times the camera didn't record or got wrong." />
           </div>
           <CaptureTimeEditor files={files} />
         </section>
@@ -448,7 +422,7 @@ export function Assign() {
           <label htmlFor="mountainRange" className="font-[600] text-[11px] tracking-[0.16em] uppercase text-inkSoft">
             Mountain range (required)
           </label>
-          <InfoTooltip text="The mountain range this site belongs to — used to build the required upload comment." />
+          <InfoTooltip label="Mountain range" text="The mountain range this site belongs to — used to build the required upload comment." />
         </div>
         <input
           id="mountainRange"
@@ -464,7 +438,7 @@ export function Assign() {
           <label htmlFor="dateCollected" className="font-[600] text-[11px] tracking-[0.16em] uppercase text-inkSoft">
             Date collected (required)
           </label>
-          <InfoTooltip text="The date these images were collected in the field — used to build the required upload comment." />
+          <InfoTooltip label="Date collected" text="The date these images were collected in the field — used to build the required upload comment." />
         </div>
         <input
           id="dateCollected"
@@ -480,7 +454,7 @@ export function Assign() {
           <label htmlFor="uploadDescription" className="font-[600] text-[11px] tracking-[0.16em] uppercase text-inkSoft">
             Comments (optional)
           </label>
-          <InfoTooltip text="Optional notes appended after the generated comment — anything else worth recording about this batch." />
+          <InfoTooltip label="Comments" text="Optional notes appended after the generated comment — anything else worth recording about this batch." />
         </div>
         <textarea
           id="uploadDescription"
