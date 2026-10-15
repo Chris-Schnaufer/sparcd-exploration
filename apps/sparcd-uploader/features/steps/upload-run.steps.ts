@@ -63,14 +63,14 @@ Then('no storage path is shown', async ({ app }) => {
 
 const commentsControl = (app: App) => app.page.getByRole('button', { name: 'Comments', exact: true });
 const advancedControl = (app: App) => app.page.getByRole('button', { name: 'Advanced', exact: true });
-// The raw comments text also appears unconditionally inside the "Generated
-// upload comment" preview — scope to the disclosure's own wrapper so that
-// doesn't read as the Comments section itself being expanded.
+// Optional notes appear only inside the Comments disclosure on Upload.
 const commentsPanel = (app: App) => commentsControl(app).locator('..');
 
 Then('the Comments control is collapsed', async ({ app }) => {
   await expect(commentsControl(app)).toHaveAttribute('aria-expanded', 'false');
   await expect(commentsPanel(app)).not.toContainText('July retrieval');
+  await expect(app.page.getByLabel('Generated upload comment', { exact: true })).not.toContainText('July retrieval');
+  await expect(app.page.getByText('July retrieval', { exact: true })).toHaveCount(0);
 });
 
 When('"Comments" is chosen', async ({ app }) => {
