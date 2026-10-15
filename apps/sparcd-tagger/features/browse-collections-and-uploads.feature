@@ -48,6 +48,11 @@ Feature: Find the upload that needs tagging
     Then collection rows remain directly selectable around narrow-screen tooltips
 
   @unmapped
+  Scenario: Desktop collection tooltips do not act as collection buttons
+    When Browse is opened
+    Then desktop collection tooltips preserve selection until a collection button is activated
+
+  @unmapped
   Scenario: Collections with matching names still expose their own IDs
     Given the collections have matching display names
     Then hovering each matching collection shows its own collection ID

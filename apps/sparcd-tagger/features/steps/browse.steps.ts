@@ -175,7 +175,7 @@ Then('only the hovered collection tooltip appears while another collection has f
 });
 
 Then('collection rows remain directly selectable around narrow-screen tooltips', async ({ page }) => {
-  for (const width of [320, 375, 1280]) {
+  for (const width of [320, 375]) {
     await page.setViewportSize({ width, height: 950 });
     await page.mouse.move(0, 0);
     const first = collectionButton(page, COLLECTION_B_NAME);
@@ -184,22 +184,64 @@ Then('collection rows remain directly selectable around narrow-screen tooltips',
       { button: second, neighbor: first, id: UUID },
       { button: first, neighbor: second, id: UUID_B },
     ]) {
+      await page.mouse.move(0, 0);
+      await neighbor.focus();
+      await page.keyboard.press('Enter');
+      await expect(neighbor).toHaveAttribute('aria-current', 'true');
+      await expect(button).not.toHaveAttribute('aria-current', 'true');
       await button.hover();
       const tooltip = page.getByRole('tooltip');
       await expect(tooltip).toHaveCount(1);
       await expect(tooltip).toHaveText(`Collection ID: ${id}`);
       const help = (await tooltip.boundingBox())!;
       const row = (await button.boundingBox())!;
+      expect(help.x).toBeGreaterThanOrEqual(row.x);
+      expect(help.x + help.width).toBeLessThanOrEqual(row.x + row.width);
       expect(help.y).toBeGreaterThanOrEqual(row.y);
       expect(help.y + help.height).toBeLessThanOrEqual(row.y + row.height);
-      // Move the real pointer over the help. Click-through must preserve hover
-      // and select its own collection, rather than intercepting the click.
       await page.mouse.move(help.x + help.width / 2, help.y + help.height / 2);
       await expect(tooltip).toBeVisible();
+      // A swallowed click must fail: this target is explicitly unselected.
+      await expect(button).not.toHaveAttribute('aria-current', 'true');
       await page.mouse.click(help.x + help.width / 2, help.y + help.height / 2);
       await expect(button).toHaveAttribute('aria-current', 'true');
+      await expect(neighbor).not.toHaveAttribute('aria-current', 'true');
       await neighbor.click();
       await expect(neighbor).toHaveAttribute('aria-current', 'true');
+      await expect(button).not.toHaveAttribute('aria-current', 'true');
+    }
+  }
+});
+
+Then('desktop collection tooltips preserve selection until a collection button is activated', async ({ page }) => {
+  for (const width of [1280, 1440]) {
+    await page.setViewportSize({ width, height: 950 });
+    await page.mouse.move(0, 0);
+    const first = collectionButton(page, COLLECTION_B_NAME);
+    const second = collectionButton(page, COLLECTION_NAME);
+    for (const { button, neighbor, id } of [
+      { button: second, neighbor: first, id: UUID },
+      { button: first, neighbor: second, id: UUID_B },
+    ]) {
+      await page.mouse.move(0, 0);
+      await neighbor.focus();
+      await page.keyboard.press('Enter');
+      await expect(neighbor).toHaveAttribute('aria-current', 'true');
+      await expect(button).not.toHaveAttribute('aria-current', 'true');
+      await button.hover();
+      const tooltip = page.getByRole('tooltip');
+      await expect(tooltip).toHaveCount(1);
+      await expect(tooltip).toHaveText(`Collection ID: ${id}`);
+      const help = (await tooltip.boundingBox())!;
+      const row = (await button.boundingBox())!;
+      expect(help.x).toBeGreaterThanOrEqual(row.x + row.width - 1);
+      expect(help.x + help.width / 2).toBeGreaterThan(row.x + row.width);
+      await tooltip.click();
+      await expect(neighbor).toHaveAttribute('aria-current', 'true');
+      await expect(button).not.toHaveAttribute('aria-current', 'true');
+      await button.click();
+      await expect(button).toHaveAttribute('aria-current', 'true');
+      await expect(neighbor).not.toHaveAttribute('aria-current', 'true');
     }
   }
 });
