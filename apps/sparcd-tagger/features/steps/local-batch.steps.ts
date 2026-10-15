@@ -178,6 +178,16 @@ Then('it offers "Done · back to Uploader"', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Done · back to Uploader' })).toBeVisible();
 });
 
+When('the local batch identity is cleared', async ({ page }) => {
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.locator('#user').fill('');
+  await page.getByRole('button', { name: 'Tag', exact: true }).click();
+});
+
+Then('"Done · back to Uploader" is enabled', async ({ page }) => {
+  await expect(page.getByRole('button', { name: 'Done · back to Uploader' })).toBeEnabled();
+});
+
 Then('there is no Browse, History, Sync or Snapshots', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Browse', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'History', exact: true })).toHaveCount(0);

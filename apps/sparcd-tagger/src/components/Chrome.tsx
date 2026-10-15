@@ -59,8 +59,8 @@ function LocalChrome({ fileCount, children }: { fileCount: number; children: Rea
         <div className="ml-auto flex items-center gap-2 sm:gap-3">
           <button
             onClick={() => void done()}
-            disabled={leaving || !taggerUser.trim()}
-            title={taggerUser.trim() ? 'Save the tags and go back to the Uploader' : 'Set the local batch identity in Settings first'}
+            disabled={leaving}
+            title="Save the tags and go back to the Uploader"
             className="min-h-11 md:min-h-0 bg-ink text-paper border border-ink px-3.5 py-2.5 md:py-1.5 text-[14px] font-body font-[600] hover:opacity-90 disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
           >
             {leaving ? 'Saving…' : 'Done · back to Uploader'}

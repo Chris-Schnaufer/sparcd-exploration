@@ -26,6 +26,13 @@ Feature: Tag a batch that has not been uploaded yet
     Then the header says it is a local batch from the Uploader, with the file count
     And it offers "Done · back to Uploader"
 
+  @A1
+  Scenario: Done is available even before a local batch identity is entered
+    When the local batch identity is cleared
+    Then "Done · back to Uploader" is enabled
+    # Regression for #499: Done used to stay disabled until the handoff
+    # identity was set, with no way back to the Uploader until it was found.
+
   @unmapped
   Scenario: Collection-only tools are absent, not disabled
     Then there is no Browse, History, Sync or Snapshots
