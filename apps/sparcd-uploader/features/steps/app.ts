@@ -806,8 +806,16 @@ export class App {
 
   // --- Upload --------------------------------------------------------------
 
-  dryRunCheckbox(): Locator {
-    return this.page.getByLabel('Test the upload, nothing is written');
+  /** The dry-run checkbox lives under the collapsed "Advanced" disclosure —
+   *  expand it first if it isn't already, so every existing caller keeps
+   *  working without having to know that. */
+  async dryRunCheckbox(): Promise<Locator> {
+    const checkbox = this.page.getByLabel('Test the upload, nothing is written');
+    if (!(await checkbox.isVisible().catch(() => false))) {
+      const advanced = this.page.getByRole('button', { name: 'Advanced', exact: true });
+      if (await advanced.isVisible().catch(() => false)) await advanced.click();
+    }
+    return checkbox;
   }
 
   concurrencyModeRadio(mode: 'Adaptive (default)' | 'Manual'): Locator {

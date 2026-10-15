@@ -66,7 +66,7 @@ When('a real upload starts', async ({ app }) => {
   app.s3.putDelayMs = 150;
   await app.dropFolder(publishableBatch());
   await app.walkToUploadStep({ uploader: 'Ada Lovelace', description: 'July retrieval' });
-  await app.dryRunCheckbox().uncheck();
+  await (await app.dryRunCheckbox()).uncheck();
   await app.startRun();
   await app.waitForRunPhase('done');
 });
@@ -100,7 +100,7 @@ Then("each file's state is updated as it lands", async ({ app }) => {
 When('a dry run is started', async ({ app }) => {
   await app.dropFolder(publishableBatch());
   await app.walkToUploadStep({ uploader: 'Ada Lovelace' });
-  await app.dryRunCheckbox().check();
+  await (await app.dryRunCheckbox()).check();
   await app.startRun();
   await app.waitForRunPhase('done');
 });
@@ -178,7 +178,7 @@ Then('only uploads whose metadata was published are marked complete', async ({ a
   await app.rescan(app.notes.sourceSpecs as FileSpec[]);
   await app.continueToAssign();
   await app.continueToUpload();
-  await app.dryRunCheckbox().uncheck();
+  await (await app.dryRunCheckbox()).uncheck();
   await app.startRun();
   await app.waitForRunPhase('done');
   await app.gotoSection('History');
@@ -208,7 +208,7 @@ Given('a second upload was cut off part-way while nobody was watching', async ({
   let media = 0;
   app.s3.holdPut = (_bucket, key) =>
     !METADATA_NAMES.some((n) => key.endsWith(n)) && ++media > 2;
-  await app.dryRunCheckbox().uncheck();
+  await (await app.dryRunCheckbox()).uncheck();
   await app.startRun();
   await expect
     .poll(async () => (await app.readFileRecords())
@@ -594,7 +594,7 @@ Given('an upload was interrupted before every file had been examined', async ({ 
   await app.dropFolder(app.notes.sourceSpecs as FileSpec[]);
   await app.walkToUploadStep({ uploader: 'Ada Lovelace', description: 'July retrieval' });
   holdFirstMediaPut(app);
-  await app.dryRunCheckbox().uncheck();
+  await (await app.dryRunCheckbox()).uncheck();
   await app.startRun();
   await expect.poll(() => app.s3.puts.length, { timeout: 30_000 }).toBeGreaterThan(0);
   await app.page.getByRole('button', { name: 'Cancel' }).click();
@@ -708,7 +708,7 @@ Given('a fresh upload is running in the background', async ({ app }) => {
   await app.dropFolder(publishableBatch());
   await app.walkToUploadStep({ uploader: 'Ada Lovelace', description: 'July retrieval' });
   holdFirstMediaPut(app);
-  await app.dryRunCheckbox().uncheck();
+  await (await app.dryRunCheckbox()).uncheck();
   await app.startRun();
   await expect.poll(() => app.s3.puts.length, { timeout: 30_000 }).toBeGreaterThan(0);
 });

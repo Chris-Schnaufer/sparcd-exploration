@@ -336,7 +336,7 @@ When('a description is entered', async ({ app }) => {
 
 Then("it is stored as the upload's description in the upload's metadata file", async ({ app }) => {
   await app.continueToUpload();
-  await app.dryRunCheckbox().uncheck();
+  await (await app.dryRunCheckbox()).uncheck();
   await app.startRun();
   await app.waitForRunPhase('done');
   const uploadMeta = app.s3.puts.find((put) => put.key.endsWith('UploadMeta.json'));
@@ -391,7 +391,7 @@ async function uploadAt(app: App, location: string): Promise<void> {
   await app.chooseDeployment(location);
   await app.setUploader('Ada Lovelace');
   await app.continueToUpload();
-  await app.dryRunCheckbox().uncheck();
+  await (await app.dryRunCheckbox()).uncheck();
   await app.startRun();
   await app.waitForRunPhase('done');
   const uploads = (app.notes.uploads ??= []) as PublishedBatch[];
@@ -460,7 +460,7 @@ Then('the required comment is previewed without changing the optional notes', as
 Then('the generated comment and optional notes are written to upload metadata', async ({ app }) => {
   const expected = app.notes.expectedComment as string;
   await app.continueToUpload();
-  await app.dryRunCheckbox().uncheck();
+  await (await app.dryRunCheckbox()).uncheck();
   await app.startRun();
   await app.waitForRunPhase('done');
   const meta = app.s3.puts.find((put) => put.key.endsWith('UploadMeta.json'));
@@ -532,7 +532,7 @@ Then('the Upload preview keeps the original preview date', async ({ app }) => {
 });
 
 When('the batch is uploaded after midnight', async ({ app }) => {
-  await app.dryRunCheckbox().uncheck();
+  await (await app.dryRunCheckbox()).uncheck();
   await app.startRun();
   await app.waitForRunPhase('done');
 });
