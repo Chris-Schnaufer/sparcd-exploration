@@ -23,7 +23,7 @@ import {
 } from '../lib/flip';
 
 
-type OpenSession = { stamp: string; done: number; total: number; others: number };
+type OpenSession = { stamp: string; done: number; failed: number; total: number; others: number };
 
 // A reload lands on the empty Drop step, which gives no sign that an
 // interrupted wet upload is still resumable in IndexedDB. Point at History,
@@ -40,6 +40,7 @@ function ResumeNotice() {
       setOpen({
         stamp: latest.uploadPrefix.slice(latest.uploadPrefix.lastIndexOf('/') + 1),
         done: counts.done,
+        failed: counts.failed,
         total: latest.totalFiles,
         others: others.length,
       });
@@ -48,14 +49,26 @@ function ResumeNotice() {
 
   if (!open) return null;
 
+  const hasFailures = open.failed > 0;
+
   return (
-    <div className="mb-4 flex flex-col gap-2 border border-ruleSoft bg-paper px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
-      <p className="font-body text-[13px] text-inkSoft">
-        An interrupted upload is waiting:{' '}
+    <div
+      className={`mb-4 flex flex-col gap-2 border px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between ${
+        hasFailures ? 'border-warn bg-paper' : 'border-warn/40 bg-paper'
+      }`}
+    >
+      <p className="font-body text-[13px] text-warn">
+        {hasFailures ? 'An interrupted upload failed:' : 'An interrupted upload is waiting:'}{' '}
         <span className="font-mono text-ink">{open.stamp}</span> —{' '}
         <span className="font-mono text-ink">{open.done}</span> of{' '}
-        <span className="font-mono text-ink">{open.total}</span> files uploaded.
-        {open.others > 0 && ` (+${open.others} more in History)`}
+        <span className="font-mono text-ink">{open.total}</span> files uploaded
+        {hasFailures && (
+          <>
+            , <span className="font-mono font-[600] text-warn">✕ {open.failed} failed</span>
+          </>
+        )}
+        .{open.others > 0 && ` (+${open.others} more in History)`}
+        {hasFailures && ' Open History to fix.'}
       </p>
       <button
         type="button"
