@@ -25,6 +25,8 @@ import {
   PREFIX_B,
   LOCATION_NAME,
   PREFIX_F,
+  uploadMetaJson,
+  MEDIA_A,
 } from './support/data';
 import { makeLocalEdit, runLiveSync, waitForDirtyDrafts } from './support/flows';
 
@@ -148,54 +150,93 @@ Then(
   },
 );
 
+Then('the upload row shows the location name followed by its site ID', async ({ page }) => {
+  await expect(uploadRow(page, 'priortagger')).toContainText(`${LOCATION_NAME} (SAN15)`);
+});
+
+Given("an upload's description records a collection date", async ({ page, s3 }) => {
+  s3.put(
+    BUCKET,
+    `${PREFIX_A}UploadMeta.json`,
+    uploadMetaJson({
+      bucket: BUCKET,
+      prefix: PREFIX_A,
+      user: 'priortagger',
+      imageCount: MEDIA_A.length,
+      imagesWithSpecies: 3,
+      description: 'Santa Rita Mountains - San Pedro 15 - 6 images - uploaded 2024-01-15 - collected 2024-01-10',
+    }),
+    'application/json',
+  );
+  await openAppConnected(page);
+  await selectCollection(page);
+});
+
+Then('the upload row shows that date in the Collected column', async ({ page }) => {
+  await expect(uploadRow(page, 'priortagger').locator('[data-column="collected"]')).toHaveText('2024-01-10');
+});
+
+Then("the upload row's Collected column shows a dash", async ({ page }) => {
+  await expect(uploadRow(page, 'priortagger').locator('[data-column="collected"]')).toHaveText('—');
+});
+
+Then('hovering it explains the date is missing or not in a recognized format', async ({ page }) => {
+  await expect(uploadRow(page, 'priortagger').locator('[data-column="collected"]')).toHaveAttribute(
+    'title',
+    'Date collected is missing or not in a recognized format',
+  );
+});
+
 // The table sits beside a 320px rail from 1280px up, so the same viewport
-// width means two different table widths either side of that: 1440px leaves
-// the table 1078px, while 1280px leaves it only 918px.
-Then('at 1440px Browse shows every column', async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
+// width means two different table widths either side of that: 1600px leaves
+// the table 1238px, 1350px leaves it 988px, and 900px (below the rail's `xl`
+// breakpoint) leaves it 858px. Tagged/Total and Collected are promoted ahead
+// of Sync (see tailwind.config.ts), so they reappear before Sync does.
+Then('a wide Browse shows every column', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
   const row = uploadRow(page, 'priortagger');
   const upload = row.locator('[data-column="upload"]');
 
   await expect(upload).toBeVisible();
   await expect(upload).toContainText('priortagger');
-  await expect(row.locator('[data-column="images"]')).toBeVisible();
-  await expect(row.locator('[data-column="tagged"]')).toBeVisible();
+  await expect(row.locator('[data-column="tagged-total"]')).toBeVisible();
+  await expect(row.locator('[data-column="collected"]')).toBeVisible();
   await expect(row.locator('[data-column="sync"]')).toBeVisible();
   await expect.poll(async () => (await upload.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(256);
 });
 
 Then(
-  'at 1280px Browse yields image counts and tagging progress to the collection rail',
+  'a medium Browse yields sync status to the collection rail but keeps tagging progress and the collected date',
   async ({ page }) => {
-    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.setViewportSize({ width: 1350, height: 900 });
     const row = uploadRow(page, 'priortagger');
     const upload = row.locator('[data-column="upload"]');
 
     await expect(upload).toBeVisible();
     await expect(upload).toContainText('priortagger');
-    await expect(row.locator('[data-column="images"]')).toBeHidden();
-    await expect(row.locator('[data-column="tagged"]')).toBeHidden();
-    await expect(row.locator('[data-column="sync"]')).toBeVisible();
+    await expect(row.locator('[data-column="tagged-total"]')).toBeVisible();
+    await expect(row.locator('[data-column="collected"]')).toBeVisible();
+    await expect(row.locator('[data-column="sync"]')).toBeHidden();
     await expect.poll(async () => (await upload.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(256);
   },
 );
 
-Then('at 1100px Browse shows tagging progress but not image counts', async ({ page }) => {
-  await page.setViewportSize({ width: 1100, height: 900 });
+Then('a narrower desktop Browse hides tagging progress, collected date and sync together', async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 900 });
   const row = uploadRow(page, 'priortagger');
   const upload = row.locator('[data-column="upload"]');
 
   await expect(upload).toBeVisible();
   await expect(upload).toContainText('priortagger');
-  await expect(row.locator('[data-column="images"]')).toBeHidden();
-  await expect(row.locator('[data-column="tagged"]')).toBeVisible();
-  await expect(row.locator('[data-column="sync"]')).toBeVisible();
+  await expect(row.locator('[data-column="tagged-total"]')).toBeHidden();
+  await expect(row.locator('[data-column="collected"]')).toBeHidden();
+  await expect(row.locator('[data-column="sync"]')).toBeHidden();
   await expect.poll(async () => (await upload.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(256);
 });
 
 Then('wide Browse gives tagging progress usable space', async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
-  const tagged = uploadRow(page, 'priortagger').locator('[data-column="tagged"]');
+  await page.setViewportSize({ width: 1600, height: 900 });
+  const tagged = uploadRow(page, 'priortagger').locator('[data-column="tagged-total"]');
 
   await expect(tagged).toBeVisible();
   await expect(tagged).toContainText('3 / 6');
@@ -207,7 +248,7 @@ Then('wide Browse gives tagging progress usable space', async ({ page }) => {
 
 Then('mobile Browse keeps tagging progress aligned', async ({ page }) => {
   await page.setViewportSize({ width: 767, height: 900 });
-  const tagged = uploadRow(page, 'priortagger').locator('[data-column="tagged"]');
+  const tagged = uploadRow(page, 'priortagger').locator('[data-column="tagged-total"]');
   await expect(tagged).toBeVisible();
   await expect(tagged).toHaveCSS('display', 'flex');
 });

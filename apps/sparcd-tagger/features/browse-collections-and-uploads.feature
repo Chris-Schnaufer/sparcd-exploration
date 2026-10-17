@@ -42,11 +42,27 @@ Feature: Find the upload that needs tagging
     And it shows the image count and how many of those images already carry a species
 
   @unmapped
+  Scenario: The Location column pairs the location name with its plain site ID
+    Given a collection is selected
+    Then the upload row shows the location name followed by its site ID
+
+  @unmapped
+  Scenario: The Collected column reads the generated upload comment's collected date
+    Given an upload's description records a collection date
+    Then the upload row shows that date in the Collected column
+
+  @unmapped
+  Scenario: A missing or non-standard collected date explains itself on hover
+    Given a collection is selected
+    Then the upload row's Collected column shows a dash
+    And hovering it explains the date is missing or not in a recognized format
+
+  @unmapped
   Scenario: Narrow Browse windows retain the upload column
     Given a collection is selected
-    Then at 1440px Browse shows every column
-    And at 1280px Browse yields image counts and tagging progress to the collection rail
-    And at 1100px Browse shows tagging progress but not image counts
+    Then a wide Browse shows every column
+    And a medium Browse yields sync status to the collection rail but keeps tagging progress and the collected date
+    And a narrower desktop Browse hides tagging progress, collected date and sync together
     And wide Browse gives tagging progress usable space
     And mobile Browse keeps tagging progress aligned
 
