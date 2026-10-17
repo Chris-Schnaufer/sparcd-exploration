@@ -25,6 +25,8 @@ export type FileSpec = {
 };
 
 export type OpenOptions = {
+  /** Production recovery tests can reopen the exact local-batch entry URL. */
+  path?: string;
   /** Simulate a browser with no folder picker at all (phone-shaped). */
   noFolderPicker?: boolean;
 };
@@ -108,7 +110,7 @@ export class App {
             : real(q);
       });
     }
-    await this.page.goto(APP_PATH);
+    await this.page.goto(opts.path ?? APP_PATH);
   }
 
   /** Re-open the app in the same context (same storage), e.g. after a reload. */

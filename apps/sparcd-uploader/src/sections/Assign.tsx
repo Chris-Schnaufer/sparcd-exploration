@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Connection, OfflineBanner, loadPersistedConnection, useOnline } from '@sparcd/auth-ui';
+import { PreparedAssignmentGate } from '../components/PreparedAssignmentGate';
 import { useStore } from '../store';
 import { Spinner } from '../components/Spinner';
 import { useLocations } from '../lib/useLocations';
@@ -80,6 +81,11 @@ export function Assign() {
   const requireCollectionSelection = useStore((s) => s.requireCollectionSelection);
   const elevationUnit = useStore((s) => s.elevationUnit);
   const files = useStore((s) => s.files);
+  const flipId = useStore((s) => s.flipId);
+  const speciesScope = `${connectionId}/${selectedBucket}/${flipId}`;
+  const [speciesReadyScope, setSpeciesReadyScope] = useState<string | null>(null);
+  const speciesAssignmentReady = speciesReadyScope === speciesScope;
+  const setSpeciesAssignmentReady = useCallback((ready: boolean) => setSpeciesReadyScope(ready ? speciesScope : null), [speciesScope]);
 
   const {
     data,
@@ -193,7 +199,7 @@ export function Assign() {
   // Background processing finishing is no longer part of this gate: Upload
   // streams blobs as files individually become ready and only publishes once
   // processing genuinely completes, so there's nothing to wait for here.
-  const baseReady = !!location && !!slug && !!collection && !!uploadTimeZone;
+  const baseReady = !!location && !!slug && !!collection && !!uploadTimeZone && (!flipId || speciesAssignmentReady);
   const continueHint = !location
     ? 'Select a deployment location first'
     : !collection
@@ -202,7 +208,7 @@ export function Assign() {
         ? 'Set an uploader identity first'
         : !uploadTimeZone
           ? 'Select a timezone first'
-          : null;
+          : flipId && !speciesAssignmentReady ? 'Review prepared species before continuing' : null;
 
   function handleContinue() {
     if (!baseReady) return;
@@ -400,6 +406,8 @@ export function Assign() {
           (e.g.: Santa Rita Mountains - SAN06 - 39 images - uploaded 04-10-2020 - collected 03-28-2000)
         </p>
       </section>
+
+      <PreparedAssignmentGate collection={collection} onReady={setSpeciesAssignmentReady} />
 
       {!baseReady && continueHint && (
         <p id="upload-continue-help" role="status" className="font-body text-[12px] text-warn">

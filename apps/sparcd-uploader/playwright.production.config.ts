@@ -2,7 +2,7 @@ import { defineConfig } from '@playwright/test';
 import { defineBddConfig } from 'playwright-bdd';
 
 const flows = defineBddConfig({
-  features: ['features/connect-and-session.feature', 'features/tag-before-upload.feature'],
+  features: ['features/connect-and-session.feature', 'features/tag-before-upload.feature', 'features/prepared-species.feature'],
   steps: 'features/steps/**/*.ts',
   outputDir: 'features/.features-gen-production',
   tags: '@offline or @cross-tool',

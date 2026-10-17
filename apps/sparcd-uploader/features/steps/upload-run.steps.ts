@@ -66,7 +66,7 @@ Given('the upload has not been started', async ({ app }) => {
 Then(
   'the ready status explains itself on hover and keyboard focus',
   async ({ app }) => {
-    const pill = app.page.getByRole('status');
+    const pill = app.page.getByRole('status', { name: /^Upload status:/ });
     const tooltip = app.page.locator('[role="tooltip"]');
     await expect(pill).toContainText('ready');
     await expect(pill).toHaveAttribute('aria-describedby', await tooltip.getAttribute('id'));
@@ -84,7 +84,7 @@ Then(
 Then(
   'the complete status explains itself on hover and keyboard focus',
   async ({ app }) => {
-    const pill = app.page.getByRole('status');
+    const pill = app.page.getByRole('status', { name: /^Upload status:/ });
     const tooltip = app.page.locator('[role="tooltip"]');
     await expect(pill).toContainText('complete');
     await pill.hover();
@@ -108,7 +108,7 @@ Then('dismissing it closes the dialog', async ({ app }) => {
 });
 
 async function expectDryRunPill(app: App): Promise<void> {
-  const pill = app.page.getByRole('status');
+  const pill = app.page.getByRole('status', { name: /^Upload status:/ });
   const tooltip = app.page.locator('[role="tooltip"]');
   await expect(pill).toContainText('dry-run');
   await pill.hover();

@@ -13,7 +13,7 @@ const mime = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.json': 'application/json',
   '.wasm': 'application/wasm', '.png': 'image/png', '.svg': 'image/svg+xml',
-  '.ico': 'image/x-icon', '.gif': 'image/gif', '.woff2': 'font/woff2',
+  '.ico': 'image/x-icon', '.gif': 'image/gif', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.webmanifest': 'application/manifest+json',
 };
 
 export function productionServer(builds = roots) {
@@ -28,6 +28,11 @@ export function productionServer(builds = roots) {
         res.setHeader('Content-Type', mime['.html']);
         res.end(req.method === 'HEAD' ? undefined : '<!doctype html><title>Network probe</title>');
         return;
+      }
+      if (path === '/sparcd-exploration/offline-worker.js') {
+        const bytes = await readFile(resolve(builds.get('/sparcd-exploration/uploader/'), 'offline-worker.js'));
+        res.setHeader('Content-Type', mime['.js']);
+        res.end(req.method === 'HEAD' ? undefined : bytes); return;
       }
       const entry = [...builds].find(([prefix]) => path.startsWith(prefix));
       if (!entry || path.includes('\0')) { res.writeHead(404).end(); return; }

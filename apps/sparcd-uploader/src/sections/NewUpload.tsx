@@ -1,6 +1,10 @@
+import { OfflineApps } from '@sparcd/auth-ui';
+import { PreparationRecovery, PreparationSaveStatus } from '../components/PreparationRecovery';
+import { flushPreparation } from '../lib/preparation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../store';
 import type { Severity } from '../lib/validation';
+import { PreparedSpeciesPanel } from '../components/PreparedSpeciesPanel';
 import { StepIndicator } from '../components/StepIndicator';
 import { DropZone } from '../components/DropZone';
 import { FileList } from '../components/FileList';
@@ -74,6 +78,9 @@ export function NewUpload() {
   const validations = useStore((s) => s.validations);
   const batchToken = useStore((s) => s.batchToken);
   const flipId = useStore((s) => s.flipId);
+  const [speciesReady, setSpeciesReady] = useState(false);
+  const [tagError, setTagError] = useState('');
+  const [tagging, setTagging] = useState(false);
   const resetBatch = useStore((s) => s.resetBatch);
   const setStep = useStore((s) => s.setStep);
 
@@ -128,11 +135,17 @@ export function NewUpload() {
         <StepIndicator current={step} />
       </div>
 
+      {(step === 'drop' || step === 'inspect') && <PreparedSpeciesPanel onReady={setSpeciesReady} />}
+      {(step === 'drop' || step === 'inspect') && <OfflineApps speciesReady={speciesReady} beforePrepare={flushPreparation} />}
+      <PreparationSaveStatus />
+      {tagError && <p role="alert" className="text-warn">{tagError}</p>}
+
       {step === 'drop' &&
         (flip ? (
           <FlipReturnPanel state={flip} />
         ) : (
           <>
+            <PreparationRecovery />
             <ResumeNotice />
             <DropZone />
           </>
@@ -208,17 +221,23 @@ export function NewUpload() {
                 Start over
               </button>
               <button
-                disabled={!summary.ready}
-                onClick={() => (flipId ? reopenTagger(flipId) : void handOffToTagger())}
+                disabled={!summary.ready || !speciesReady || tagging}
+                aria-describedby={!speciesReady ? 'species-preparation-help' : undefined}
+                onClick={() => {
+                  setTagging(true); setTagError('');
+                  void (flipId ? reopenTagger(flipId) : handOffToTagger()).catch((error) => { setTagError((error as Error).message); setTagging(false); });
+                }}
                 title={
-                  flipId
+                  !speciesReady
+                    ? 'Prepare species online before local tagging'
+                    : flipId
                     ? 'Go back to the tagger and pick up where you left off'
                     : summary.ready
                       ? 'Identify species in the Tagger before uploading'
                       : 'Resolve files that need attention first'
                 }
                 className={`flex-1 sm:flex-none min-h-[44px] sm:min-h-0 bg-mark text-ink border border-ink px-3.5 py-2.5 sm:py-1.5 text-[14px] font-body focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 ${
-                  summary.ready ? 'hover:bg-paperHover' : 'opacity-40 cursor-not-allowed'
+                  summary.ready && speciesReady && !tagging ? 'hover:bg-paperHover' : 'opacity-40 cursor-not-allowed'
                 }`}
               >
                 {flipId ? 'Edit tags' : 'Tag species first'}
@@ -280,7 +299,10 @@ function useFlipReturn(): FlipPending | null {
   useEffect(() => {
     const id = returningFlipId();
     if (!id) return;
-    void resumeFromFlip(id).then((r) => setState(r.kind === 'restored' ? null : r));
+    void resumeFromFlip(id).then((r) => setState(r.kind === 'restored' ? null : r)).catch(async () => {
+      const { readFlipRecord } = await import('@sparcd/flip');
+      try { const record = await readFlipRecord(id); setState(record ? { kind: 'needs-reselect', record } : { kind: 'not-found' }); } catch { setState({ kind: 'not-found' }); }
+    });
   }, []);
 
   return state;
@@ -294,7 +316,7 @@ function FlipReturnPanel({ state }: { state: FlipPending }) {
     return (
       <Panel title="That batch isn't here">
         <p>
-          The tagger pointed back at a batch this browser has no record of. It may have been
+          {state.message ?? 'The tagger pointed back at a batch this browser has no compatible record of.'} It may have been
           cleared, or the two tools may be running on different origins — in development they are.
           Choose the folder again to start over.
         </p>
@@ -313,22 +335,24 @@ function FlipReturnPanel({ state }: { state: FlipPending }) {
  * on a device that cannot present a folder picker at all.
  */
 function ReselectPanel({ record }: { record: FlipRecord }) {
+  const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const folderPick = canPickFolder();
 
   async function adopt(list?: FileList) {
-    setBusy(true);
+    setBusy(true); setError('');
     try {
       const picked = await reselectFolder(list);
-      if (picked) adoptReselected(record, picked.scanned);
-    } finally {
+      if (picked) await adoptReselected(record, picked.scanned);
+    } catch (e) { setError((e as Error).message); } finally {
       setBusy(false);
     }
   }
 
   return (
     <Panel title="Choose the folder again">
+      {error && <p role="alert">{error}</p>}
       <p>
         Your tags are safe. This browser doesn't keep a durable handle on the folder, so it needs
         you to point at <span className="font-mono text-ink">{record.files.length}</span> files
@@ -374,9 +398,14 @@ function ReselectPanel({ record }: { record: FlipRecord }) {
 }
 
 function ReopenPanel({ record }: { record: FlipRecord }) {
+  const [error, setError] = useState('');
+  const [reselect, setReselect] = useState(false);
   const [busy, setBusy] = useState(false);
+  if (reselect) return <ReselectPanel record={record} />;
   return (
     <Panel title="Reopen the batch">
+      {error && <p role="alert">{error}</p>}
+      <button type="button" className="underline" onClick={() => setReselect(true)}>Reselect folder instead</button>
       <p>
         Your tags are safe. The browser wants a click before it hands the folder's{' '}
         <span className="font-mono text-ink">{record.files.length}</span> files back — reading them
@@ -389,8 +418,11 @@ function ReopenPanel({ record }: { record: FlipRecord }) {
           setBusy(true);
           // Straight into adoptRecord: the permission request has to be the
           // first thing this click awaits, or Safari and Firefox drop it.
-          await adoptRecord(record);
-          setBusy(false);
+          try {
+            const result = await adoptRecord(record);
+            if (result.kind !== 'restored') setError('Folder permission is unavailable. Reselect the folder instead.');
+          } catch (e) { setError((e as Error).message); }
+          finally { setBusy(false); }
         }}
       />
     </Panel>

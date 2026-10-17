@@ -6,6 +6,8 @@ on:
       - "apps/sparcd-uploader/**"
       - "apps/sparcd-tagger/**"
       - "packages/**"
+      - "scripts/build-offline.mjs"
+      - "scripts/offline/**"
       - "pnpm-lock.yaml"
       - ".github/workflows/production-offline-harness.yml"
   push:
@@ -14,6 +16,8 @@ on:
       - "apps/sparcd-uploader/**"
       - "apps/sparcd-tagger/**"
       - "packages/**"
+      - "scripts/build-offline.mjs"
+      - "scripts/offline/**"
       - "pnpm-lock.yaml"
       - ".github/workflows/production-offline-harness.yml"
   workflow_dispatch:

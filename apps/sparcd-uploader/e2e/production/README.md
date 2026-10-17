@@ -1,6 +1,4 @@
-# Production offline test infrastructure (#498)
-
-Run from the repository root:
+# Production offline checks (#498)
 
 ```sh
 pnpm --filter sparcd-uploader exec playwright install chrome
@@ -8,55 +6,59 @@ pnpm --filter sparcd-uploader test:production:server
 pnpm --filter sparcd-uploader test:production:offline
 ```
 
-`PRODUCTION_TEST_PORT` selects the isolated server port (default 5335). The server
-refuses reuse of an existing listener and serves both unmodified `dist` builds at
-`/sparcd-exploration/uploader/` and `/sparcd-exploration/tagger/`. Query strings do
-not change asset lookup. Missing assets and unrelated app routes return 404,
-never another app's HTML. No Vite development server, module endpoints, synthetic
-service worker, or application-asset route fulfillment is used. Test-only probe
-responses and static assets use `no-store` to avoid HTTP cache masking missing
-offline support. Later service-worker caching remains independent of this header.
+The last command builds both apps and generates their coordinated offline release
+with `scripts/build-offline.mjs`. `PRODUCTION_TEST_PORT` selects an isolated port
+(default 5335); an existing listener is never reused. Both unmodified production
+builds are served at their deployed `/sparcd-exploration/uploader/` and `tagger/`
+paths. The family-root worker is the generated production worker, not a test
+substitute. Unknown assets and Admin/Explorer routes return 404. MIME types,
+query parsing, HEAD and path traversal are checked independently.
 
-The suite reuses the existing @offline Inspect scenario and two @cross-tool
-handoff scenarios, now against production builds. S3 remains the existing test
-mock; folder input remains the existing synthetic OS-picker fixture. Application
-assets and worker requests go through the real server. The offline Inspect case
-uses Chrome's real network blocking, not a mocked `navigator.onLine` value.
+Tests use actual Google Chrome, fresh independent profiles, real offline network
+blocking and persistent-profile browser-process restarts. HTTP responses use
+`no-store`, so browser HTTP cache cannot substitute for the service worker.
+Application HTML/scripts/fonts and worker requests are never fulfilled by test
+routes. S3 uses the existing storage fixture, and folder selection uses the
+existing synthetic OS-picker fixture with actual JPEG/MP4 bytes. App records are
+created through the UI, not seeded for tests claiming offline readiness.
 
-A separate infrastructure test launches real Google Chrome with a fresh temporary
-persistent profile. It commits a harness-owned IndexedDB record/Blob, blocks the
-network, closes the entire test browser, then launches another process against
-the same profile with offline mode enabled before navigation. It verifies a real
-uncached request fails offline, reconnects, verifies that page memory is gone and
-IndexedDB survived, then deletes the profile. No user windows or profiles are
-reused. The record is deliberately **not** an application batch or vocabulary.
+## Verified workflows
 
-## What a green run means
+- Existing F1-2 warm-page first offline Inspect and production cross-tool flows.
+- Explicit species preparation, collection/settings precedence, denied/malformed/
+  empty failures, snapshot isolation from a changing shared account, legacy and
+  unsupported snapshots, and current-vocabulary review at online Assign.
+- A real inspected batch survives complete Chrome closure before any handoff.
+  Chrome restarts with networking already blocked; Uploader loads offline,
+  rejects a same-size changed original, recovers the unchanged folder and its
+  Inspect state, tags locally, reloads local Tagger, and returns with tags intact.
+- Actual Chrome PWA installation and `PWA.launch` after a process restart offline.
+  The test chooses Chrome's real standalone-window user preference using CDP
+  (CDP installation otherwise defaults to a browser window); it does not emulate
+  the display-mode media query. The app window is asserted standalone, inspects
+  its first offline batch, opens local Tagger in that window, tags/reloads and
+  returns offline. The test app is uninstalled and the temporary profile removed.
+- An update missing a required new asset cannot displace a previously usable
+  release or pending Inspect work. A complete update waits for the active client
+  to close; reopening activates it without deleting preparation data.
+- Worker unit checks cover failed/corrupt installs, eviction/readiness, explicit
+  repair, route isolation and bypassing authenticated/signed/S3 requests.
+- Production fault injection verifies journal-quota failure/retry, blocked handoff,
+  final Tagger-write failure with a retryable Done action, and evicted-asset repair.
+- Journal/unit checks cover quota failure, keeping the previous committed value,
+  retry, missing/changed originals, unsupported records, schema migration and
+  source/provenance retention. Prepared v2 handoffs are not expired implicitly.
 
-- Built app routes and script MIME types work at one deployed origin.
-- Existing warm-page offline Inspect behavior and online local handoff/return
-  remain functional on production builds.
-- Chrome restart, profile preservation, IndexedDB Blob retention, network blocking
-  and reconnection are available as infrastructure for subsequent #498 tests.
+Lifecycle tests own separate traces for each browser lifetime, finalize them
+before closure, and attach all traces if any later lifetime fails. CI retains
+failure artifacts. Temporary profiles and installed test apps are cleaned up.
 
-It does **not** establish cold offline app reopening, durable application-batch
-recovery, prepared species readiness, offline local handoff, installed-PWA support,
-or a real operating-system shutdown/restart. Those #497/#498 acceptance cases
-remain unverified until their implementation and assertions land. This suite
-neither enables service-worker support nor changes product behavior.
+## Verification boundary
 
-## Adding the remaining matrix
-
-Build on this server and profile lifecycle for prepared assets/vocabulary,
-restart with an actual inspected/tagged batch, file reselection, update failures,
-and reconnect. Block requests before the offline app navigation. Do not seed app
-records or fulfill app HTML/chunks in a test claiming production offline readiness.
-Keep ordinary-browser automation, installed-PWA launch evidence, and manual OS
-restart results separate. Keep Assign and standalone Tagger online-only.
-
-CI runs both builds, the server routing checks, and this Chrome suite. The
-persistent-context test explicitly records separate before/after-restart traces,
-finalizes each before closing its browser process, and attaches all completed
-traces on failure (including the first lifetime if the second fails). Successful
-runs delete these traces. Failure traces are retained as workflow artifacts.
-Full application BDD suites are separate.
+These are #498 implementation regressions, not completion of #497's independent
+acceptance matrix. No real computer shutdown/restart is automated. Installed-app
+results are platform-specific; Chrome CDP supports these tests on the tested
+host, while other browsers/mobile operating systems need their own #497 results.
+No uncached first-ever offline visit is promised. Assign, real upload, and
+standalone collection Tagger still require a connection. Full BDD suites remain
+separate from this production suite.
