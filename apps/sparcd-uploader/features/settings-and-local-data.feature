@@ -20,6 +20,7 @@ Feature: Settings and the data the uploader keeps on this machine
     And each new batch starts with that identity already filled in on the Assign step
 
   @unmapped
+  @preparation-cleanup
   Scenario: Disconnecting from Settings clears this machine's upload records
     Given there are no unfinished uploads on this machine
     When "Disconnect" is chosen
@@ -28,6 +29,7 @@ Feature: Settings and the data the uploader keeps on this machine
     And the tool returns to the connection screen ready for the next person
 
   @unmapped
+  @preparation-cleanup
   Scenario: Disconnecting is guarded when unfinished uploads exist
     Given there are unfinished uploads recorded on this machine
     When "Disconnect" is chosen
@@ -36,6 +38,7 @@ Feature: Settings and the data the uploader keeps on this machine
     And nothing is cleared unless discarding is explicitly chosen
 
   @unmapped
+  @preparation-cleanup
   Scenario: Disconnecting from the header ends the session without clearing records
     When the Disconnect button in the header is used
     Then the connection is ended and the in-progress batch is cleared

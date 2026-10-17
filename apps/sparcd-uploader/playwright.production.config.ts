@@ -2,10 +2,10 @@ import { defineConfig } from '@playwright/test';
 import { defineBddConfig } from 'playwright-bdd';
 
 const flows = defineBddConfig({
-  features: ['features/connect-and-session.feature', 'features/tag-before-upload.feature', 'features/prepared-species.feature'],
+  features: ['features/connect-and-session.feature', 'features/tag-before-upload.feature', 'features/prepared-species.feature', 'features/settings-and-local-data.feature'],
   steps: 'features/steps/**/*.ts',
   outputDir: 'features/.features-gen-production',
-  tags: '@offline or @cross-tool',
+  tags: '@offline or @cross-tool or @preparation-cleanup',
   missingSteps: 'fail-on-gen',
 });
 const port = Number(process.env.PRODUCTION_TEST_PORT ?? 5335);

@@ -97,6 +97,11 @@ test('a damaged sibling journal does not hide a healthy saved batch', async ({ p
   await page.waitForURL(/\/tagger\/\?batch=/);
   const record = (await app.readFlipRecords())[0];
   await page.goto(record.returnUrl);
+  // The recovered journal now correctly retains its handle. This fixture's
+  // synthetic handle cannot retain prototype methods through IndexedDB cloning;
+  // explicitly take the offered permission/reselection fallback. Real handles
+  // and original-media playback are covered in greptile-recovery.spec.ts.
+  await page.getByRole('button', { name: 'Reselect folder instead', exact: true }).click();
   await app.seedPickedFolder([jpegAt('HEALTHY.JPG', '2026:07:01 12:00:00')]);
   await page.getByRole('button', { name: 'Choose folder', exact: true }).click();
   await app.waitForInspected();

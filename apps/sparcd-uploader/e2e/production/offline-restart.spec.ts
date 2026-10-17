@@ -86,6 +86,9 @@ test('prepared production apps and inspected batch survive a real offline Chrome
     await page.waitForURL(/\/uploader\/\?flip=/);
     const later = page.getByRole('button', { name: 'Login later', exact: true });
     if (await later.isVisible()) await later.click();
+    // Native handles survive recovery now; the synthetic picker handle loses
+    // its permission methods on serialization, so explicitly reselect it.
+    await page.getByRole('button', { name: 'Reselect folder instead', exact: true }).click();
     await app.seedPickedFolder(specs);
     await page.getByRole('button', { name: 'Choose folder', exact: true }).click();
     await app.waitForInspected();

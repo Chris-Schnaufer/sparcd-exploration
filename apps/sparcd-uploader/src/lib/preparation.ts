@@ -5,6 +5,7 @@ import { flipDb, loadPreparedSpecies, readFlipRecord, validPreparedSpecies, type
 import { useStore, type FileEntry } from '../store';
 import { reconcileReselect, restoreFromHandle, type RestoreOk } from './resume';
 import type { ScannedFile } from './scanFiles';
+import { PreparationQueue } from './preparationQueue';
 export type LocalPreparation = {
   v: 1;
   id: string;
@@ -15,8 +16,6 @@ export type LocalPreparation = {
   species: PreparedSpecies | null;
   inputs: Pick<ReturnType<typeof useStore.getState>, 'selectedBucket' | 'selectedLocationId' | 'uploadDescription' | 'uploadTimeZone'>;
 };
-let pending = Promise.resolve();
-let failure: Error | null = null;
 let installed = false;
 let batchSpecies: PreparedSpecies | null = null;
 let lastToken = -1;
@@ -45,7 +44,10 @@ export function acceptPreparationSpecies(species: PreparedSpecies): void {
 }
 const listeners = new Set<() => void>();
 let status = '';
-let revision = 0;
+let hasPreparation = false;
+const writes = new PreparationQueue(failed => report(failed
+  ? 'Local preparation could not be saved. Keep this tab open, free browser storage, and retry before leaving.'
+  : hasPreparation ? 'Local preparation saved. Original files remain in your folder.' : ''));
 export const preparationStatus = () => status;
 export const subscribePreparation = (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; };
 function report(message: string) { status = message; for (const listener of listeners) listener(); }
@@ -101,26 +103,28 @@ export function startPreparationJournal(): void {
     if (!changed && !published) return;
     // Do not erase a recoverable batch merely because the startup store is empty.
     if (!s.files.length && !previous.files.length && !published) return;
-    const files = s.files.map(({ file, ...entry }) => ({ ...entry, lastModified: file.lastModified }));
+    // Retain immutable references; serialize only the snapshot that actually writes.
+    const files = s.files;
     const inputs = { selectedBucket: s.selectedBucket, selectedLocationId: s.selectedLocationId, uploadDescription: s.uploadDescription, uploadTimeZone: s.uploadTimeZone };
     // Capture ownership before queuing writes. Other windows have independent IDs.
-    if (s.files.length && lastToken !== s.batchToken) {
+    if (s.files.length && !published && lastToken !== s.batchToken) {
       batchSpecies = null;
       speciesRead = nextConnection === s.s3Config && validPreparedSpecies(nextSpecies) ? Promise.resolve(nextSpecies) : loadPreparedSpecies(s.s3Config ?? undefined);
       preparationId = crypto.randomUUID();
       lastToken = s.batchToken;
     }
-    if (s.files.length && !preparationId) preparationId = crypto.randomUUID();
+    if (s.files.length && !published && !preparationId) preparationId = crypto.randomUUID();
     const id = preparationId;
     const speciesPromise = validPreparedSpecies(batchSpecies) ? Promise.resolve(batchSpecies) : speciesRead;
     if (!files.length || published) preparationId = '';
-    const writing = ++revision;
+    if (!id) return;
+    hasPreparation = files.length > 0 && !published;
     report('Saving local preparation…');
-    pending = pending.catch(() => {}).then(async () => {
+    writes.enqueue(id, async () => {
       if (!files.length || published) { if (id) await flipDb.preparations.delete(id); }
       else {
         const species = await speciesPromise;
-        const value: LocalPreparation = { v: 1, id, dirHandle: s.dirHandle ?? undefined, savedAt: new Date().toISOString(), files, flipId: s.flipId, species, inputs };
+        const value: LocalPreparation = { v: 1, id, dirHandle: s.dirHandle ?? undefined, savedAt: new Date().toISOString(), files: files.map(({ file, ...entry }) => ({ ...entry, lastModified: file.lastModified })), flipId: s.flipId, species, inputs };
         await flipDb.transaction('rw', flipDb.preparations, async () => {
           await flipDb.preparations.put({ id, value });
           // Retire only this batch's legacy singleton after its replacement is durable.
@@ -128,33 +132,45 @@ export function startPreparationJournal(): void {
           if (legacy?.value && (legacy.value as LocalPreparation).id === id) await flipDb.preparations.delete('active');
         });
       }
-      failure = null; if (writing === revision) report(files.length && !published ? 'Local preparation saved. Original files remain in your folder.' : '');
-    }).catch(error => { failure = error; report('Local preparation could not be saved. Keep this tab open, free browser storage, and retry before leaving.'); });
+    });
   });
 }
 export async function flushPreparation(): Promise<void> {
-  let observed: Promise<void>;
-  do { observed = pending; await observed; } while (observed !== pending);
-  if (failure) throw new Error('Local preparation could not be saved. Keep this tab open and retry after checking browser storage.');
+  await writes.flush();
 }
+/** Include raw/unsupported journals and failed/pending writes in destructive
+ * cleanup warnings. Do not filter out work just because it cannot be read. */
+export async function countPreparationsForDiscard(): Promise<number> {
+  const rows = await flipDb.preparations.toArray();
+  const ids = new Set(rows.map(row => {
+    if (row.id !== 'active') return row.id;
+    try { return validatePreparation(row.value)?.id ?? row.id; }
+    catch { return row.id; }
+  }));
+  for (const id of writes.ids()) ids.add(id);
+  if (useStore.getState().files.length && preparationId) ids.add(preparationId);
+  return ids.size;
+}
+
 export function retryPreparation(): void {
+  writes.retry();
   const s = useStore.getState();
   useStore.setState({ files: [...s.files] });
 }
-export async function recoverPreparation(saved: LocalPreparation, scanned: ScannedFile[]): Promise<void> {
+export async function recoverPreparation(saved: LocalPreparation, scanned: ScannedFile[], dirHandle: FileSystemDirectoryHandle | null = null): Promise<void> {
   const guard = recoveryGuard();
   const result = await reconcileReselect(saved.files.map(f => ({ localPath: f.relPath, fileName: f.fileName, size: f.size, sha256: f.sha256 })), scanned);
   guard();
-  await applyRecoveredPreparation(saved, result, guard);
+  await applyRecoveredPreparation(saved, result, guard, dirHandle);
 }
 export async function recoverPreparationFromHandle(saved: LocalPreparation): Promise<void> {
   const guard = recoveryGuard();
   const result = await restoreFromHandle({ dirHandle: saved.dirHandle }, Promise.resolve(saved.files.map(f => ({ localPath: f.relPath, fileName: f.fileName, size: f.size, sha256: f.sha256 }))));
   if (!result.ok) throw new Error(result.reason);
   guard();
-  await applyRecoveredPreparation(saved, result, guard);
+  await applyRecoveredPreparation(saved, result, guard, saved.dirHandle ?? null);
 }
-async function applyRecoveredPreparation(saved: LocalPreparation, result: Pick<RestoreOk, 'attached' | 'problems' | 'resolved'>, guard: () => void): Promise<void> {
+async function applyRecoveredPreparation(saved: LocalPreparation, result: Pick<RestoreOk, 'attached' | 'problems' | 'resolved'>, guard: () => void, dirHandle: FileSystemDirectoryHandle | null): Promise<void> {
   if (result.problems.length) throw new Error(result.problems.map(p => `${p.fileName}: ${p.reason}`).join('; ') + '. Your saved preparation is unchanged. Reselect the original folder.');
   const flip = saved.flipId ? await readFlipRecord(saved.flipId) : null;
   guard();
@@ -168,6 +184,6 @@ async function applyRecoveredPreparation(saved: LocalPreparation, result: Pick<R
   speciesRead = Promise.resolve(flip?.preparedSpecies ?? saved.species);
   batchSpecies = flip?.preparedSpecies ?? saved.species;
   lastToken = useStore.getState().batchToken + 1;
-  useStore.getState().adoptTaggedBatch({ flipId: saved.flipId, files, dirHandle: null });
+  useStore.getState().adoptTaggedBatch({ flipId: saved.flipId, files, dirHandle });
   useStore.setState(saved.inputs);
 }

@@ -71,6 +71,18 @@ created through the UI, not seeded for tests claiming offline readiness.
   retry, missing/changed originals, unsupported records, schema migration and
   source/provenance retention. Prepared v2 handoffs are not expired implicitly.
 
+The S3 fixture exposes its digest metadata headers for cross-origin production
+requests, matching the CORS contract required by final upload verification.
+
+The production suite also includes the existing Settings/header Disconnect BDD
+scenarios and preparation-specific confirmation checks. Individual-file recovery
+is exercised with and without the folder API. Durable-handle tests use real
+Chrome OPFS directory handles (only the picker result is substituted), persist
+and recover them across reloads, then verify original JPEG bytes and playable
+H.264 video in local Tagger. The generated clip is documented in
+`test/fixtures/README.md`. Synthetic-handle cases explicitly choose the offered
+reselection fallback after serialization removes their JavaScript prototypes.
+
 Lifecycle tests own separate traces for each browser lifetime, finalize them
 before closure, and attach all traces if any later lifetime fails. CI retains
 failure artifacts. Temporary profiles and installed test apps are cleaned up.

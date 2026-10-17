@@ -1,9 +1,9 @@
 import { beforeAll, expect, it, vi } from 'vitest';
 const storage = () => { const values = new Map<string, string>(); return { getItem: (k: string) => values.get(k) ?? null, setItem: (k: string, v: string) => values.set(k, v), removeItem: (k: string) => values.delete(k) }; };
 Object.assign(globalThis, { window: Object.assign(globalThis, { addEventListener() {}, removeEventListener() {}, localStorage: storage(), sessionStorage: storage() }) });
-const memory = vi.hoisted(() => ({ rows: new Map<string, any>(), fail: false }));
+const memory = vi.hoisted(() => ({ rows: new Map<string, any>(), fail: false, hold: null as Promise<void> | null, entered: () => {}, puts: 0 }));
 vi.mock('@sparcd/flip', async original => ({ ...(await original<typeof import('@sparcd/flip')>()),
-  flipDb: { transaction: async (_mode: string, _table: unknown, work: () => Promise<void>) => work(), preparations: { toArray: async () => structuredClone([...memory.rows.values()]), get: async (id: string) => structuredClone(memory.rows.get(id)), put: async (row: any) => { if (memory.fail) throw new Error('QuotaExceededError'); memory.rows.set(row.id, structuredClone(row)); }, delete: async (id: string) => { memory.rows.delete(id); } } },
+  flipDb: { transaction: async (_mode: string, _table: unknown, work: () => Promise<void>) => work(), preparations: { toArray: async () => structuredClone([...memory.rows.values()]), get: async (id: string) => structuredClone(memory.rows.get(id)), put: async (row: any) => { memory.puts++; memory.entered(); await memory.hold; if (memory.fail) throw new Error('QuotaExceededError'); memory.rows.set(row.id, structuredClone(row)); }, delete: async (id: string) => { memory.rows.delete(id); } } },
   loadPreparedSpecies: async () => null,
 }));
 vi.mock('../src/lib/processPool', () => ({ processBatch: (items: any[], _started: any, result: any) => {
@@ -86,4 +86,52 @@ it('keeps a damaged matching Flip journal an error rather than adopting incorrec
   memory.rows.set('broken-match', { id: 'broken-match', value: { v: 99, flipId: 'broken-flip' } });
   await expect(journal.readPreparationForFlip('broken-flip')).rejects.toThrow('unsupported version');
   expect(memory.rows.has('broken-match')).toBe(true);
+});
+
+it('coalesces slow journal writes while retaining final inputs and owned deletion', async () => {
+  store.getState().resetBatch(); await journal.flushPreparation(); memory.rows.clear();
+  const file = new File(['original bytes'], 'slow.jpg');
+  store.getState().setFiles([{ id: file.name, relPath: file.name, fileName: file.name, size: file.size, mediaKind: 'image', file }]);
+  await journal.flushPreparation();
+  const id = (await journal.readPreparation())!.id;
+  const baseline = memory.puts;
+  let release!: () => void, entered!: () => void;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  memory.hold = new Promise<void>(resolve => { release = resolve; }); memory.entered = entered;
+  store.getState().setUploadDescription('first'); await started;
+  for (let i = 0; i < 1000; i++) store.getState().setUploadDescription(`latest ${i}`);
+  expect(memory.puts - baseline).toBe(1);
+  release(); memory.hold = null; memory.entered = () => {};
+  await journal.flushPreparation();
+  expect(memory.puts - baseline).toBe(2);
+  expect((await journal.readPreparation())?.inputs.uploadDescription).toBe('latest 999');
+  store.getState().resetBatch(); await journal.flushPreparation();
+  expect(memory.rows.has(id)).toBe(false);
+});
+it('counts unsupported journals and current unsaved preparation before destructive Disconnect', async () => {
+  memory.rows.clear();
+  memory.rows.set('unsupported', { id: 'unsupported', value: { v: 99 } });
+  const file = new File(['original bytes'], 'pending.jpg');
+  memory.fail = true;
+  store.getState().setFiles([{ id: file.name, relPath: file.name, fileName: file.name, size: file.size, mediaKind: 'image', file }]);
+  await expect(journal.flushPreparation()).rejects.toThrow();
+  expect(await journal.countPreparationsForDiscard()).toBe(2);
+  memory.fail = false; journal.retryPreparation(); await journal.flushPreparation();
+  expect(await journal.countPreparationsForDiscard()).toBe(2);
+  store.getState().resetBatch(); await journal.flushPreparation(); memory.rows.clear();
+});
+it('retains only a verified newly selected handle, and clears an unverified old handle for file reselection', async () => {
+  const file = new File(['original bytes'], 'handle.jpg');
+  const saved = { v: 1 as const, id: 'handles', savedAt: new Date().toISOString(), files: [{ id: file.name, relPath: file.name, fileName: file.name, size: file.size, mediaKind: 'image' as const, processState: 'ready' as const, sha256: 'original', lastModified: file.lastModified }], flipId: null, species: null, inputs: { selectedBucket: null, selectedLocationId: null, uploadDescription: 'handle notes', uploadTimeZone: 'America/Phoenix' } };
+  const handle = { kind: 'directory', name: 'verified-folder' } as FileSystemDirectoryHandle;
+  const scanned = [{ id: file.name, relPath: file.name, fileName: file.name, size: file.size, mediaKind: 'image' as const, file }];
+  await journal.recoverPreparation(saved, scanned, handle); await journal.flushPreparation();
+  expect(store.getState().dirHandle).toBe(handle);
+  const stored = (await journal.readPreparation())!;
+  expect(stored.dirHandle).toEqual(handle);
+  await expect(journal.recoverPreparation(stored, [], { name: 'unverified' } as FileSystemDirectoryHandle)).rejects.toThrow();
+  expect(store.getState().dirHandle).toBe(handle);
+  await journal.recoverPreparation(stored, scanned); await journal.flushPreparation();
+  expect(store.getState().dirHandle).toBeNull();
+  expect((await journal.readPreparation())?.dirHandle).toBeUndefined();
 });

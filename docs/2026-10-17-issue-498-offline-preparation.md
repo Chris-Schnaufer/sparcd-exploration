@@ -45,7 +45,7 @@ Delayed recovery (including an open OS folder picker) cannot reattach files or i
 switch, Start over, or replacement of the current batch. Unsupported records are kept and explained rather than guessed at.
 
 Original media files and credentials are not copied into the journal. Recovery
-reopens a retained directory handle when permission permits, or asks for folder
+reopens a retained directory handle when permission permits, or asks for individual-file or folder
 reselection, then verifies path, size and content hash. Missing/changed originals
 block adoption with filenames and reasons; saved metadata and tags are retained.
 A file's original modified time is preserved for timestamp estimation. Recovery
@@ -180,3 +180,41 @@ Verification: all 363 Uploader unit tests, the Uploader TypeScript check and
 production build, and the complete 34-case production Chrome suite passed on
 isolated port 5337. This remains #498 regression coverage; #497's separate
 acceptance matrix and manual computer-restart testing are unchanged.
+
+## PR #562 recovery and journal review fixes (2026-10-17)
+
+Saved preparations now offer individual-file reselection as well as folder
+reselection where supported. Relative paths are preserved rather than guessed
+from basenames; path, size and hash verification still precede adoption. A
+successfully verified saved or newly selected directory handle is retained in
+the recovered batch and journal for subsequent local Tagger access. File-input
+recovery clears any old, unverified handle.
+
+Settings Disconnect counts saved, unsupported and pending/failed preparation
+journals as well as resumable uploads. Its confirmation supports Cancel, Escape,
+review and explicit discard; cancellation retains work and restores focus to
+Disconnect. Explicit discard still drains journal writes before clearing storage.
+
+The journal keeps one active write and only the latest pending snapshot per
+batch. Serialization occurs when a write starts, avoiding a growing backlog of
+whole-batch thumbnail copies. Flush waits for the latest accepted state; failures
+remain visible across other batches' successes, retries preserve batch ownership,
+and deletion supersedes obsolete writes without resurrection.
+
+Permanent regressions cover phone-shaped and desktop individual-file recovery,
+same-size content changes, saved/unsupported/unsaved Disconnect warnings,
+Cancel/Escape/review/discard, and verified handles across another reload followed
+by original image loading and actual video playback. Queue tests hold a write
+while 1,000 updates arrive and exercise independent batches, retries and deletion.
+The video fixture is a generated one-second green H.264 clip, not user media;
+only the folder-picker result is replaced, using real Chrome OPFS handles and
+production IndexedDB serialization. This does not replace #497's manual platform
+and OS-restart acceptance.
+
+Verification: 370 Uploader unit tests, 31 Flip unit tests, four production
+server/worker checks, Uploader TypeScript and production build, and all 43
+production Google Chrome cases passed on isolated port 5337. The expanded suite
+includes three existing Settings/header Disconnect scenarios. Their production
+S3 fixture now exposes digest metadata headers for cross-origin verification;
+this fixes the fixture without weakening real-upload verification. Browser tests
+owned independent Chrome profiles; the user's Tagger/Admin servers were untouched.
