@@ -2,10 +2,11 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { correctedTimestamp } from '@sparcd/camtrap';
 import { Thumb } from './Thumb';
+import { ImageStatusBadges } from './ImageStatusBadges';
 import { useDraftStore } from '../lib/drafts';
 import { useStore } from '../store';
 import { formatDateTime, formatTime, type TimeFormat } from '../lib/formatting';
-import { effectiveOf, isEditedFromBase, isGhostObs, reviewSummary } from '../lib/effective';
+import { effectiveOf, hasSpecies, isEditedFromBase, isGhostObs, reviewSummary } from '../lib/effective';
 import { isRangeFullySelected } from '../lib/selection';
 import type { Burst, BurstGrouping } from '../lib/bursts';
 import { isVideoImage, type TagImage } from '../lib/workspace';
@@ -332,6 +333,7 @@ function ListCell({
       >
         {img.fileName}
       </span>
+      <ImageStatusBadges hasSpecies={hasSpecies(eff)} questionable={eff.questionable} size="sm" />
       {!narrow && (
         <span
           data-column="media-type"
@@ -377,18 +379,13 @@ function ListCell({
           {reviewLabel}
         </span>
       )}
-      <span data-column="markers" className="shrink-0 flex flex-col items-center gap-0.5 w-4">
+      <span data-column="markers" className="shrink-0 flex items-center gap-1">
         {edited && (
           <span
             className="w-1.5 h-1.5 rounded-full bg-accent"
             title="unsaved edit"
             aria-label="Unsaved edit"
           />
-        )}
-        {eff.questionable && (
-          <span className="text-[11px] text-warn" title="questionable" aria-label="Questionable">
-            ?
-          </span>
         )}
       </span>
       {onDrill && (
@@ -469,15 +466,13 @@ function GridCell({
             ›
           </span>
         )}
+        <span className="absolute bottom-1 left-1">
+          <ImageStatusBadges hasSpecies={hasSpecies(eff)} questionable={eff.questionable} />
+        </span>
       </span>
       <span className="mt-1 flex items-center gap-1">
         {isEditedFromBase(eff) && (
           <span className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" title="unsaved edit" />
-        )}
-        {eff.questionable && (
-          <span className="text-[11px] text-warn shrink-0" title="questionable">
-            ?
-          </span>
         )}
         <span className="block text-[11px] truncate">
           {eff.observations.length ? (

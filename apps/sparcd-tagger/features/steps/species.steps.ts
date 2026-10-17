@@ -229,6 +229,14 @@ Then('applying a real species afterwards removes the Ghost label', async ({ page
   await expect(gridCell(page, 'IMG001.JPG')).not.toContainText('Ghost');
 });
 
+Then('{string} shows no Has species badge', async ({ page }, fileName: string) => {
+  await expect(gridCell(page, fileName).getByLabel('Has species', { exact: false })).toHaveCount(0);
+});
+
+Then('the Ghost-classified image shows a Has species badge', async ({ page }) => {
+  await expect(gridCell(page, 'IMG001.JPG').getByLabel('Has species', { exact: false })).toBeVisible();
+});
+
 // --- Filtering --------------------------------------------------------------
 
 When('text is typed into the species filter', async ({ page }) => {

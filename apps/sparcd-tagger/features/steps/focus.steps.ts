@@ -370,6 +370,20 @@ Then('the fullscreen viewer is closed', async ({ page }) => {
   await expect(lightbox(page)).toHaveCount(0);
 });
 
+Then(
+  'the Focus view shows Has species and Questionable badges for the focused image',
+  async ({ page }) => {
+    const pane = page.getByTestId('focus-drop-zone');
+    await expect(pane.getByLabel('Has species', { exact: false })).toBeVisible();
+    await expect(pane.getByLabel('Questionable', { exact: true })).toBeVisible();
+  },
+);
+
+Then('no status badges are shown in the fullscreen viewer', async ({ page }) => {
+  await expect(lightbox(page).getByLabel('Has species', { exact: false })).toHaveCount(0);
+  await expect(lightbox(page).getByLabel('Questionable', { exact: true })).toHaveCount(0);
+});
+
 Then('it fills the window over a dimmed background', async ({ page }) => {
   const box = (await lightbox(page).boundingBox())!;
   const viewport = page.viewportSize()!;

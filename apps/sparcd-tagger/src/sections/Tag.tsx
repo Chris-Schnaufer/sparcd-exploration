@@ -31,10 +31,11 @@ import { ImageAdjustments } from '../components/ImageAdjustments';
 import { PawTrail } from '../components/Paw';
 import { cssFilter, NEUTRAL, type Adjustments } from '../lib/adjustments';
 import { Overview, type PickMods, type ViewKind } from '../components/Overview';
+import { ImageStatusBadges } from '../components/ImageStatusBadges';
 import { groupBursts, type BurstGrouping } from '../lib/bursts';
 import { offsetActive, formatOffsetDelta, earliestCorrected } from '../lib/timeshift';
 import { rangeSet, toggleIndex, burstIndexSet, visibleRangeSet } from '../lib/selection';
-import { effectiveOf } from '../lib/effective';
+import { effectiveOf, hasSpecies } from '../lib/effective';
 import { sortIndices, type SortField, type SortDir } from '../lib/sortImages';
 import { findFilenameMatches } from '../lib/imageSearch';
 import { EMPTY_IMAGE_FILTER, matchesImageFilter, type ImageFilter } from '../lib/imageFilter';
@@ -393,6 +394,7 @@ export function Tag() {
             fileName: image.fileName,
             timestamp: correctedTimestamp(image.baseTimestamp, timeOffset, draft?.timeOverride ?? null, captureTimeZone),
             observations: effectiveOf(image, draft).observations,
+            questionable: effectiveOf(image, draft).questionable,
           },
           imageFilter,
         )
@@ -1137,6 +1139,8 @@ export function Tag() {
                   <option value="all">All images</option>
                   <option value="tagged">Tagged only</option>
                   <option value="untagged">Untagged only</option>
+                  <option value="questionable">Questionable only</option>
+                  <option value="not-questionable">Not questionable only</option>
                 </select>
               </label>
               <fieldset>
@@ -1320,6 +1324,8 @@ export function Tag() {
           <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] overflow-y-auto lg:overflow-visible">
             <FocusPane
               current={current}
+              questionable={!!eff?.questionable}
+              hasSpecies={!!eff && hasSpecies(eff)}
               onPrev={() => gotoFilteredImage(-1)}
               onNext={() => gotoFilteredImage(1)}
               canPrev={canGoPrevious}
@@ -1470,6 +1476,8 @@ export function Tag() {
 // --- Focus view (single-image detail) ---------------------------------------
 function FocusPane({
   current,
+  questionable,
+  hasSpecies,
   onPrev,
   onNext,
   canPrev,
@@ -1479,6 +1487,8 @@ function FocusPane({
   onDropSpecies,
 }: {
   current: TagImage | undefined;
+  questionable: boolean;
+  hasSpecies: boolean;
   onPrev: () => void;
   onNext: () => void;
   canPrev: boolean;
@@ -1570,6 +1580,13 @@ function FocusPane({
             isVideo={isVideo}
             filter={filter}
           />
+        )}
+        {current && (questionable || hasSpecies) && (
+          // Outside FocusImage/ZoomableImage's tree, so it never reaches the
+          // Lightbox portal — regular Focus only, per the issue's scope.
+          <div className="absolute top-4 right-4 z-10">
+            <ImageStatusBadges hasSpecies={hasSpecies} questionable={questionable} />
+          </div>
         )}
         {current && canPrev && (
           <button
