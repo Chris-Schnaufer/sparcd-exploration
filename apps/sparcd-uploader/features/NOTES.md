@@ -113,3 +113,14 @@ along the way — is written up in `features/CORRECTIONS.md`. Since PR #26 fixed
 publishing after Inspect completes, publish scenarios use small media by
 default; only scenarios about background examination keep the deliberately slow
 MP4, and in-flight upload checks are held by the S3 mock.
+
+
+## Production offline harness (#498 / #497)
+
+`pnpm --filter sparcd-uploader test:production:offline` reuses the existing F1-2
+warm-page offline Inspect and cross-tool handoff scenarios against both built
+apps on one origin. Infrastructure coverage additionally proves real Google
+Chrome process restart, preserved profile/IndexedDB, and actual network blocking.
+See `../e2e/production/README.md` for the verification boundary and remaining
+cold-reopening/PWA matrix. These infrastructure checks do not satisfy #497's
+unimplemented offline application-readiness acceptance criteria.
