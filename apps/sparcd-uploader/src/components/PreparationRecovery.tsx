@@ -13,20 +13,22 @@ export function PreparationRecovery() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const ref = useRef<HTMLInputElement>(null);
+  const inputAttempt = useRef<{ saved: LocalPreparation; guard: () => void } | null>(null);
   useEffect(() => {
     const skipped: string[] = [];
     void listPreparations(id => skipped.push(id)).then(items => {
       setChoices(items); setSaved(items[0] ?? null); setUnavailable(skipped);
     }).catch(e => setError(e.message));
   }, []);
-  async function choose(list?: FileList) {
-    if (!saved) return;
+  async function choose(list?: FileList, attempt = { saved, guard: recoveryGuard() }) {
+    if (!attempt.saved) return;
     setBusy(true); setError('');
     try {
-      const guard = recoveryGuard();
+      const { guard } = attempt;
+      guard();
       const picked = await reselectFolder(list);
       guard();
-      if (picked) await recoverPreparation(saved, picked.scanned);
+      if (picked) await recoverPreparation(attempt.saved, picked.scanned);
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   }
@@ -37,8 +39,19 @@ export function PreparationRecovery() {
         setBusy(true); setError('');
         void recoverPreparationFromHandle(saved).catch(e => setError(e.message)).finally(() => setBusy(false));
       }}>Reopen saved folder</button>}
-      <button type="button" disabled={busy} onClick={() => supportsDirectoryHandle ? void choose() : ref.current?.click()} className="min-h-11 border border-ink px-3">{busy ? 'Verifying files…' : 'Reselect saved batch folder'}</button>
-      <input ref={ref} type="file" multiple hidden {...{ webkitdirectory: '', directory: '' }} onChange={e => { if (e.target.files?.length) void choose(e.target.files); e.target.value = ''; }} />
+      <button type="button" disabled={busy} onClick={() => {
+        if (supportsDirectoryHandle) void choose();
+        else if (saved) {
+          inputAttempt.current = { saved, guard: recoveryGuard() };
+          ref.current?.click();
+        }
+      }} className="min-h-11 border border-ink px-3">{busy ? 'Verifying files…' : 'Reselect saved batch folder'}</button>
+      <input ref={ref} type="file" multiple hidden {...{ webkitdirectory: '', directory: '' }} onChange={e => {
+        const attempt = inputAttempt.current;
+        inputAttempt.current = null;
+        if (e.target.files?.length && attempt) void choose(e.target.files, attempt);
+        e.target.value = '';
+      }} />
       {saved.flipId && <a className="underline block" href={`../tagger/?batch=${encodeURIComponent(saved.flipId)}`}>Reopen saved tags using thumbnails</a>}
     </>}
     {unavailable.length > 0 && <p role="alert">{unavailable.length} saved {unavailable.length === 1 ? 'batch is' : 'batches are'} damaged or from an unsupported version. {unavailable.length === 1 ? 'Its' : 'Their'} stored data has been kept. Reopen a compatible app to recover {unavailable.length === 1 ? 'it' : 'them'}; other saved batches remain available.</p>}

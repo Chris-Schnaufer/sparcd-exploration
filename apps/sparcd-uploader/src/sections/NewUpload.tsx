@@ -1,6 +1,6 @@
 import { OfflineApps } from '@sparcd/auth-ui';
 import { PreparationRecovery, PreparationSaveStatus } from '../components/PreparationRecovery';
-import { flushPreparation } from '../lib/preparation';
+import { flushPreparation, recoveryGuard } from '../lib/preparation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../store';
 import type { Severity } from '../lib/validation';
@@ -337,11 +337,13 @@ function ReselectPanel({ record }: { record: FlipRecord }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const inputGuard = useRef<(() => void) | null>(null);
   const folderPick = canPickFolder();
 
-  async function adopt(list?: FileList) {
+  async function adopt(list?: FileList, guard = recoveryGuard()) {
     setBusy(true); setError('');
     try {
+      guard();
       await reselectFlip(record, list);
     } catch (e) { setError((e as Error).message); } finally {
       setBusy(false);
@@ -361,7 +363,11 @@ function ReselectPanel({ record }: { record: FlipRecord }) {
         label={folderPick ? 'Choose folder' : 'Choose photos or videos'}
         onClick={() => {
           if (supportsDirectoryHandle) void adopt();
-          else inputRef.current?.click();
+          else {
+            // A cancelled picker does no work; reopening captures a fresh scope.
+            inputGuard.current = recoveryGuard();
+            inputRef.current?.click();
+          }
         }}
       />
       {folderPick ? (
@@ -390,7 +396,9 @@ function ReselectPanel({ record }: { record: FlipRecord }) {
 
   function onPick(e: React.ChangeEvent<HTMLInputElement>) {
     const list = e.target.files;
-    if (list?.length) void adopt(list);
+    const guard = inputGuard.current;
+    inputGuard.current = null;
+    if (list?.length && guard) void adopt(list, guard);
     e.target.value = '';
   }
 }

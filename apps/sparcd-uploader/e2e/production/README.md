@@ -56,7 +56,11 @@ created through the UI, not seeded for tests claiming offline readiness.
 - Delayed verification cannot resurrect files or inputs after Disconnect, account
   switching, replacement files, or Start over, for both journal and Flip recovery.
   This includes Disconnect while the OS folder picker is still open, before
-  verification starts.
+  verification starts. Six fallback-input cases cover Flip individual files,
+  Flip directories and preparation directories: cancellation/reselection, rejection
+  after account replacement while the picker is open, and a fresh explicit retry.
+  Directory cancellation uses Chrome’s DOM protocol for an empty picker result
+  because Playwright rejects an empty directory selection before invoking Chrome.
   Tagger return restores that batch’s inputs; legacy singleton migration retains
   the old record if replacement persistence fails. Recovery refreshes the visible
   vocabulary from the recovered batch; a cached list cannot enable tagging for

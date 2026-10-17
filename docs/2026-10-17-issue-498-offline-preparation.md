@@ -137,8 +137,8 @@ acceptance matrix.
 
 ## Final-review regression fixes (2026-10-17)
 
-Flip reselection now captures the batch/connection guard before opening the OS
-picker, so a sibling-tab Disconnect while the picker remains open cannot restore
+Flip reselection captures the batch/connection guard before opening native or
+fallback input pickers, so a sibling-tab Disconnect while the picker remains open cannot restore
 the discarded batch. The species panel refreshes on batch-token changes and
 reads the bound snapshot rather than substituting the shared selected cache.
 A recovered unprepared batch keeps tagging disabled with its explanation and
@@ -158,3 +158,25 @@ journal. The deferred-recovery unit matrix also includes the picker boundary
 and cancellation. The initial browser run passed 27 cases and exposed an
 incorrect “Drop” test label; after asserting the actual “Files” label, the full
 28-case run passed. Issue #497 remains separate.
+
+## Fallback input-picker scope (2026-10-17)
+
+Both Flip return and saved-preparation recovery capture the batch/connection
+guard synchronously before clicking the fallback file input. The input change
+callback consumes that opening-time guard before scanning or adopting files.
+Preparation recovery also retains the specific saved record selected when the
+picker opened. Cancelling does not start recovery; reopening captures a fresh
+guard, including after an account change rejected the previous selection.
+
+Six permanent production Chrome cases cover individual-file Flip return,
+directory-input Flip return and directory-input preparation recovery. Each path
+covers cancellation followed by normal recovery, stale selection after account
+replacement, and a fresh explicit retry. The test harness can disable File
+System Access independently of its phone-shaped/no-directory-picker fixture.
+Directory cancellation sends an empty input result through Chrome's DOM protocol
+because Playwright's directory-input wrapper rejects an empty list.
+
+Verification: all 363 Uploader unit tests, the Uploader TypeScript check and
+production build, and the complete 34-case production Chrome suite passed on
+isolated port 5337. This remains #498 regression coverage; #497's separate
+acceptance matrix and manual computer-restart testing are unchanged.
