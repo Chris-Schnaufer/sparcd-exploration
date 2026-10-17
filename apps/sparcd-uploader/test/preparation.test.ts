@@ -1,9 +1,9 @@
 import { beforeAll, expect, it, vi } from 'vitest';
 const storage = () => { const values = new Map<string, string>(); return { getItem: (k: string) => values.get(k) ?? null, setItem: (k: string, v: string) => values.set(k, v), removeItem: (k: string) => values.delete(k) }; };
 Object.assign(globalThis, { window: Object.assign(globalThis, { addEventListener() {}, removeEventListener() {}, localStorage: storage(), sessionStorage: storage() }) });
-const memory = vi.hoisted(() => ({ row: undefined as any, fail: false }));
+const memory = vi.hoisted(() => ({ rows: new Map<string, any>(), fail: false }));
 vi.mock('@sparcd/flip', async original => ({ ...(await original<typeof import('@sparcd/flip')>()),
-  flipDb: { preparations: { get: async () => structuredClone(memory.row), put: async (row: any) => { if (memory.fail) throw new Error('QuotaExceededError'); memory.row = structuredClone(row); }, delete: async () => { memory.row = undefined; } } },
+  flipDb: { transaction: async (_mode: string, _table: unknown, work: () => Promise<void>) => work(), preparations: { toArray: async () => structuredClone([...memory.rows.values()]), get: async (id: string) => structuredClone(memory.rows.get(id)), put: async (row: any) => { if (memory.fail) throw new Error('QuotaExceededError'); memory.rows.set(row.id, structuredClone(row)); }, delete: async (id: string) => { memory.rows.delete(id); } } },
   loadPreparedSpecies: async () => null,
 }));
 vi.mock('../src/lib/processPool', () => ({ processBatch: (items: any[], _started: any, result: any) => {
@@ -38,8 +38,37 @@ it('persists only non-secret batch data, survives failed writes, retries, and va
   store.getState().resetBatch(); await journal.flushPreparation();
   expect(await journal.readPreparation()).toBeNull();
 });
+it('writes batch-owned keys and never overwrites or clears a sibling journal', async () => {
+  const sibling = { id: 'sibling', value: { keep: 'other window' } };
+  memory.rows.set('sibling', sibling);
+  const file = new File(['bytes'], 'new.jpg');
+  store.getState().setFiles([{ id: 'new.jpg', relPath: 'new.jpg', fileName: 'new.jpg', size: file.size, mediaKind: 'image', file }]);
+  await journal.flushPreparation();
+  const owned = (await journal.readPreparation())!;
+  expect(owned.id).not.toBe('active');
+  expect(memory.rows.has(owned.id)).toBe(true);
+  store.getState().resetBatch(); await journal.flushPreparation();
+  expect(memory.rows.has(owned.id)).toBe(false);
+  expect(memory.rows.get('sibling')).toEqual(sibling);
+  memory.rows.delete('sibling');
+});
+it('recovers a legacy singleton without losing it until the batch-owned replacement is saved', async () => {
+  const file = new File(['original bytes'], 'original.jpg');
+  const saved = { v: 1 as const, id: 'legacy-batch', savedAt: new Date().toISOString(), files: [{ id: 'original.jpg', relPath: 'original.jpg', fileName: 'original.jpg', size: file.size, mediaKind: 'image' as const, processState: 'ready' as const, sha256: 'original', lastModified: file.lastModified }], flipId: null, species: null, inputs: { selectedBucket: null, selectedLocationId: null, uploadDescription: 'legacy notes', uploadTimeZone: 'America/Phoenix' } };
+  memory.rows.set('active', { id: 'active', value: saved });
+  expect((await journal.listPreparations())[0].id).toBe(saved.id);
+  memory.fail = true;
+  await journal.recoverPreparation(saved, [{ id: file.name, relPath: file.name, fileName: file.name, size: file.size, mediaKind: 'image', file }]);
+  await expect(journal.flushPreparation()).rejects.toThrow('could not be saved');
+  expect(memory.rows.has('active')).toBe(true);
+  memory.fail = false; journal.retryPreparation(); await journal.flushPreparation();
+  expect(memory.rows.has('active')).toBe(false);
+  expect((await journal.listPreparations()).map(item => item.id)).toEqual([saved.id]);
+  expect((await journal.readPreparation())?.inputs.uploadDescription).toBe('legacy notes');
+  store.getState().resetBatch(); await journal.flushPreparation();
+});
 it('rejects unsupported journal versions without deleting them', async () => {
-  memory.row = { id: 'active', value: { v: 99, files: [] } };
-  await expect(journal.readPreparation()).rejects.toThrow('unsupported version');
-  expect(memory.row.value.v).toBe(99);
+  memory.rows.set('active', { id: 'active', value: { v: 99, files: [] } });
+  await expect(journal.listPreparations()).rejects.toThrow('unsupported version');
+  expect(memory.rows.get('active').value.v).toBe(99);
 });

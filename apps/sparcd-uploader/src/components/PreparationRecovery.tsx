@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { readPreparation, recoverPreparation, recoverPreparationFromHandle, preparationStatus, subscribePreparation, retryPreparation, type LocalPreparation } from '../lib/preparation';
+import { recoveryGuard, listPreparations, recoverPreparation, recoverPreparationFromHandle, preparationStatus, subscribePreparation, retryPreparation, type LocalPreparation } from '../lib/preparation';
 import { reselectFolder } from '../lib/resume';
 import { supportsDirectoryHandle } from '../lib/scanFiles';
 export function PreparationSaveStatus() {
@@ -8,20 +8,24 @@ export function PreparationSaveStatus() {
 }
 export function PreparationRecovery() {
   const [saved, setSaved] = useState<LocalPreparation | null>(null);
+  const [choices, setChoices] = useState<LocalPreparation[]>([]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const ref = useRef<HTMLInputElement>(null);
-  useEffect(() => { void readPreparation().then(setSaved).catch(e => setError(e.message)); }, []);
+  useEffect(() => { void listPreparations().then(items => { setChoices(items); setSaved(items[0] ?? null); }).catch(e => setError(e.message)); }, []);
   async function choose(list?: FileList) {
     if (!saved) return;
     setBusy(true); setError('');
     try {
+      const guard = recoveryGuard();
       const picked = await reselectFolder(list);
+      guard();
       if (picked) await recoverPreparation(saved, picked.scanned);
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   }
   return saved || error ? <section aria-label="Saved local preparation" className="mb-4 border border-rule p-4 space-y-2 text-sm">
+    {choices.length > 1 && <label>Saved batch<select className="block max-w-full border p-2" value={saved?.id ?? ''} disabled={busy} onChange={event => setSaved(choices.find(item => item.id === event.target.value) ?? null)}>{choices.map(item => <option key={item.id} value={item.id}>{item.files[0].fileName} — {item.files.length} files — {item.savedAt}</option>)}</select></label>}
     {saved && <><h2>Resume local preparation</h2><p>{saved.files.length} {saved.files.length === 1 ? 'inspected file is' : 'inspected files are'} saved, including timestamps and any returned tags. Reselect the unchanged original folder to verify file contents before continuing.</p><p>No original image or video files are stored here.</p>
       {saved.dirHandle && <button type="button" disabled={busy} className="min-h-11 border border-ink px-3" onClick={() => {
         setBusy(true); setError('');

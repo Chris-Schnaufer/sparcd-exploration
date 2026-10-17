@@ -20,7 +20,9 @@ Local Tagger reads only that batch's snapshot, including when another app is
 connected. Online Assign independently fetches the actual destination's current
 list. Changes require explicit acceptance; identifications no longer allowed by
 that list block continuation without deleting tags. Existing requested-species
-behavior is retained. Preparation does not assign a collection or location.
+behavior is retained. If files arrive while a different collection is merely
+selected in the preparation picker, the batch retains the last accepted species
+list and cancels the unfinished choice; tagging remains available. Preparation does not assign a collection or location.
 
 ## Persistence and originals
 
@@ -31,7 +33,12 @@ journal stores stable identity, Inspect metadata, thumbnails, timestamps,
 relevant wizard inputs and handoff state. Accepted changes are serialized into
 IndexedDB; handoff waits for outstanding writes and records its ID before
 navigation. Failed writes retain the previous committed snapshot and expose a
-retry. Unsupported records are kept and explained rather than guessed at.
+retry. Each batch has its own journal key; simultaneous windows neither replace
+nor clear another batch’s record. Recovery lists all saved batches, and a normal
+Tagger return restores the matching batch’s saved inputs. Legacy singleton
+journals remain recoverable and migrate transactionally after successful recovery.
+Delayed recovery cannot reattach files or inputs after Disconnect, an account
+switch, Start over, or replacement of the current batch. Unsupported records are kept and explained rather than guessed at.
 
 Original media files and credentials are not copied into the journal. Recovery
 reopens a retained directory handle when permission permits, or asks for folder
@@ -66,7 +73,8 @@ remove their incomplete cache and leave the old release intact. Reopening
 rechecks completeness. Explicit online preparation repairs evicted current
 assets only if their bytes match the pinned release. New workers never force
 activation or reload: an accessible notification asks users to finish work,
-close all Uploader/Tagger windows and reopen. Activation occurs after the old
+close all SPARC’d tabs, windows and installed-app windows (including Home,
+Explorer, Admin, Uploader and Tagger), then reopen Uploader. Activation occurs after the old
 clients close; the immediately preceding cache is also retained. Collection of
 older unused application caches never deletes IndexedDB work.
 
@@ -107,3 +115,18 @@ This is tested separately in an ordinary browser and a real standalone PWA.
 No #497 issue closure, full cross-platform acceptance, or real OS shutdown test
 is implied by these results. Browser tests owned their Chrome profiles/windows;
 the user's running Tagger and Admin instances were not reused or stopped.
+
+## Follow-up isolation and recovery verification (2026-10-17)
+
+The batch-isolation, stale-recovery, preparation-control and update-guidance fixes
+passed 357 Uploader unit tests, 294 Tagger unit tests, four production
+server/worker checks, and all 24 production Google Chrome checks on isolated
+port 5337. Both apps passed TypeScript checks and production builds. The Chrome
+suite includes ordinary-browser and installed-PWA restarts, simultaneous-window
+vocabulary isolation before/after file selection, multiple saved-batch recovery
+choices, and update waiting while an unrelated family-scope document remains open.
+Sixteen delayed-recovery cases cover Disconnect, account switching, replacement
+batches and Start over across journal and Flip handle/reselection paths. Focused
+unit coverage also verifies batch-specific return inputs and failure-safe legacy
+journal migration. These results do not close or implement #497's separate
+acceptance matrix.

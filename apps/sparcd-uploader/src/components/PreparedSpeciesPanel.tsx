@@ -34,12 +34,19 @@ export function PreparedSpeciesPanel({ onReady }: { onReady: (ready: boolean) =>
     void (async () => {
       const saved = flipId ? (await readFlipRecord(flipId))?.preparedSpecies : (useStore.getState().files.length ? (await readPreparation())?.species : null) ?? await loadPreparedSpecies(cfg ?? undefined);
       if (generation.current !== attempt) return;
-      if (validPreparedSpecies(saved)) { setSnapshot(saved); onReady(true); }
+      if (validPreparedSpecies(saved)) { setSnapshot(saved); acceptPreparationSpecies(saved); onReady(true); }
     })().catch(() => {
       if (generation.current === attempt) setError('Could not read prepared species. Prepare again online; your inspected files are unchanged.');
     });
     return () => { generation.current++; };
-  }, [cfg, flipId, onReady]);
+  }, [cfg, connectionId, flipId, onReady]);
+
+  useEffect(() => {
+    if (hasFiles && snapshot) {
+      generation.current++; setSelected(null); setResult(null); setBusy(false); onReady(true);
+    }
+    // A new batch binds the accepted list, not an unfinished picker choice.
+  }, [hasFiles]);
 
   async function prepare() {
     if (!cfg || !collection || !online) return;
@@ -55,9 +62,13 @@ export function PreparedSpeciesPanel({ onReady }: { onReady: (ready: boolean) =>
       const prepared = await snapshotPreparation(cfg, collection, loaded);
       if (attempt !== generation.current || useStore.getState().s3Config !== cfg) return;
       if (flipId) await bindPreparedSpecies(flipId, prepared);
-      else { await savePreparedSpecies(prepared); if (hasFiles) acceptPreparationSpecies(prepared); }
+      else {
+        await savePreparedSpecies(prepared);
+        if (attempt !== generation.current || useStore.getState().s3Config !== cfg) return;
+        acceptPreparationSpecies(prepared);
+      }
       if (attempt !== generation.current || useStore.getState().s3Config !== cfg) return;
-      setSnapshot(prepared); onReady(true); setResult(null);
+      setSnapshot(prepared); setSelected(null); onReady(true); setResult(null);
     } catch (failure) {
       if (attempt === generation.current) setError((failure as Error).message);
     } finally { if (attempt === generation.current) setBusy(false); }
@@ -68,8 +79,8 @@ export function PreparedSpeciesPanel({ onReady }: { onReady: (ready: boolean) =>
       <h2 className="font-display text-[18px]">Species for local tagging</h2>
       <p className="text-[13px] text-inkSoft">Choose a collection and prepare its species online before tagging. This does not assign your batch or prepare the apps for offline reopening.</p>
       {snapshot && <p role="status" className="text-[13px] break-words">Species prepared for {snapshot.collectionName}: {snapshot.species.length} {snapshot.species.length === 1 ? 'entry' : 'entries'}. Source: {snapshot.sourceBucket}/{snapshot.sourceKey}. {(flipId || hasFiles) ? 'This batch keeps this list.' : 'This list will be copied into your next tagging handoff.'}</p>}
-      {!snapshot && <p id="species-preparation-help" className="text-[13px] text-inkSoft">Tagging requires prior online species preparation. You can still select files and complete Inspect.</p>}
-      {!((flipId || hasFiles) && snapshot) && <>
+      {(!snapshot || selected) && <p id="species-preparation-help" className="text-[13px] text-inkSoft">Tagging requires prior online species preparation. You can still select files and complete Inspect.</p>}
+      {!((flipId || hasFiles) && snapshot && !selected) && <>
         {cfg && online ? <>
           <p className="block text-[13px]">Collection for species preparation</p>
           {collections.isLoading && <p role="status">Loading collections…</p>}

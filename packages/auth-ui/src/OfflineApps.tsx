@@ -58,6 +58,6 @@ export function OfflineApps({ speciesReady, beforePrepare }: { speciesReady: boo
     {ready && !speciesReady && <p>Prepare a collection’s species before local tagging is available offline.</p>}
     <p>Original files stay in your folder. Keep them unchanged; after restarting, reselect the same folder to verify them. Browser storage can be cleared or evicted. Assign and upload require a connection.</p>
     <button type="button" disabled={busy} onClick={() => void prepare()} className="min-h-11 border border-ink px-3 disabled:opacity-50">{busy ? 'Preparing app files…' : 'Prepare apps for offline use'}</button>
-    {waiting && <p role="status">An app update is ready. Finish your current work, then close all Uploader and Tagger windows and reopen Uploader to apply it. Your saved local batch is retained.</p>}
+    {waiting && <p role="status">An app update is ready. Finish your current work, then close all SPARC’d tabs, windows, and installed app windows (including Home, Explorer, Admin, Uploader, and Tagger), then reopen Uploader to apply it. Your saved local batch is retained.</p>}
   </section>;
 }

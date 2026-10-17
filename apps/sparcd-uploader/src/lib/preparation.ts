@@ -21,12 +21,27 @@ let installed = false;
 let batchSpecies: PreparedSpecies | null = null;
 let lastToken = -1;
 let preparationId = '';
-export function bindCurrentPreparationSpecies(species: PreparedSpecies | null | undefined): void {
+let nextSpecies: PreparedSpecies | null = null;
+let nextConnection: unknown;
+let speciesRead: Promise<PreparedSpecies | null> = Promise.resolve(null);
+/** Reject asynchronous restoration after a new batch or connection takes ownership. */
+export function recoveryGuard(): () => void {
+  const { batchToken, connectionId } = useStore.getState();
+  return () => {
+    const current = useStore.getState();
+    if (current.batchToken !== batchToken || current.connectionId !== connectionId) throw new Error('The batch or connection changed. Your saved preparation is unchanged.');
+  };
+}
+export function bindCurrentPreparationSpecies(species: PreparedSpecies | null | undefined, id?: string): void {
+  preparationId = id ?? crypto.randomUUID();
   batchSpecies = validPreparedSpecies(species) ? species : null;
+  speciesRead = Promise.resolve(batchSpecies);
   lastToken = useStore.getState().batchToken + 1;
 }
 export function acceptPreparationSpecies(species: PreparedSpecies): void {
-  if (!validPreparedSpecies(batchSpecies)) { batchSpecies = species; lastToken = useStore.getState().batchToken; retryPreparation(); }
+  const state = useStore.getState();
+  if (!state.files.length) { nextSpecies = species; nextConnection = state.s3Config; return; }
+  if (!validPreparedSpecies(batchSpecies)) { batchSpecies = species; speciesRead = Promise.resolve(species); lastToken = state.batchToken; retryPreparation(); }
 }
 const listeners = new Set<() => void>();
 let status = '';
@@ -34,8 +49,24 @@ let revision = 0;
 export const preparationStatus = () => status;
 export const subscribePreparation = (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; };
 function report(message: string) { status = message; for (const listener of listeners) listener(); }
+export async function listPreparations(): Promise<LocalPreparation[]> {
+  const rows = await flipDb.preparations.toArray();
+  const unique = new Map<string, LocalPreparation>();
+  for (const row of rows) {
+    const value = validatePreparation(row.value);
+    if (value && (!unique.has(value.id) || unique.get(value.id)!.savedAt < value.savedAt)) unique.set(value.id, value);
+  }
+  return [...unique.values()].sort((a, b) => b.savedAt.localeCompare(a.savedAt));
+}
+export async function readPreparationForFlip(flipId: string): Promise<LocalPreparation | null> {
+  return (await listPreparations()).find(value => value.flipId === flipId) ?? null;
+}
 export async function readPreparation(): Promise<LocalPreparation | null> {
-  const value = (await flipDb.preparations.get('active'))?.value as LocalPreparation | undefined;
+  if (!preparationId) return null;
+  return validatePreparation((await flipDb.preparations.get(preparationId))?.value);
+}
+function validatePreparation(raw: unknown): LocalPreparation | null {
+  const value = raw as LocalPreparation | undefined;
   if (!value) return null;
   const valid = value.v === 1 && typeof value.id === 'string' && !!value.id && Number.isFinite(Date.parse(value.savedAt)) &&
     Array.isArray(value.files) && value.files.length > 0 && new Set(value.files.map(f => f?.relPath)).size === value.files.length &&
@@ -59,18 +90,30 @@ export function startPreparationJournal(): void {
     if (!s.files.length && !previous.files.length && !published) return;
     const files = s.files.map(({ file, ...entry }) => ({ ...entry, lastModified: file.lastModified }));
     const inputs = { selectedBucket: s.selectedBucket, selectedLocationId: s.selectedLocationId, uploadDescription: s.uploadDescription, uploadTimeZone: s.uploadTimeZone };
-    const token = s.batchToken;
+    // Capture ownership before queuing writes. Other windows have independent IDs.
+    if (s.files.length && lastToken !== s.batchToken) {
+      batchSpecies = null;
+      speciesRead = nextConnection === s.s3Config && validPreparedSpecies(nextSpecies) ? Promise.resolve(nextSpecies) : loadPreparedSpecies(s.s3Config ?? undefined);
+      preparationId = crypto.randomUUID();
+      lastToken = s.batchToken;
+    }
+    if (s.files.length && !preparationId) preparationId = crypto.randomUUID();
+    const id = preparationId;
+    const speciesPromise = validPreparedSpecies(batchSpecies) ? Promise.resolve(batchSpecies) : speciesRead;
+    if (!files.length || published) preparationId = '';
     const writing = ++revision;
     report('Saving local preparation…');
     pending = pending.catch(() => {}).then(async () => {
-      if (!files.length || published) await flipDb.preparations.delete('active');
+      if (!files.length || published) { if (id) await flipDb.preparations.delete(id); }
       else {
-        if (lastToken !== token) { batchSpecies = await loadPreparedSpecies(s.s3Config ?? undefined); preparationId = crypto.randomUUID(); lastToken = token; }
-        if (!preparationId) preparationId = crypto.randomUUID();
-        if (!validPreparedSpecies(batchSpecies)) batchSpecies = await loadPreparedSpecies(s.s3Config ?? undefined);
-        const species = batchSpecies;
-        const value: LocalPreparation = { v: 1, id: preparationId, dirHandle: s.dirHandle ?? undefined, savedAt: new Date().toISOString(), files, flipId: s.flipId, species, inputs };
-        await flipDb.preparations.put({ id: 'active', value });
+        const species = await speciesPromise;
+        const value: LocalPreparation = { v: 1, id, dirHandle: s.dirHandle ?? undefined, savedAt: new Date().toISOString(), files, flipId: s.flipId, species, inputs };
+        await flipDb.transaction('rw', flipDb.preparations, async () => {
+          await flipDb.preparations.put({ id, value });
+          // Retire only this batch's legacy singleton after its replacement is durable.
+          const legacy = await flipDb.preparations.get('active');
+          if (legacy?.value && (legacy.value as LocalPreparation).id === id) await flipDb.preparations.delete('active');
+        });
       }
       failure = null; if (writing === revision) report(files.length && !published ? 'Local preparation saved. Original files remain in your folder.' : '');
     }).catch(error => { failure = error; report('Local preparation could not be saved. Keep this tab open, free browser storage, and retry before leaving.'); });
@@ -86,23 +129,30 @@ export function retryPreparation(): void {
   useStore.setState({ files: [...s.files] });
 }
 export async function recoverPreparation(saved: LocalPreparation, scanned: ScannedFile[]): Promise<void> {
+  const guard = recoveryGuard();
   const result = await reconcileReselect(saved.files.map(f => ({ localPath: f.relPath, fileName: f.fileName, size: f.size, sha256: f.sha256 })), scanned);
-  await applyRecoveredPreparation(saved, result);
+  guard();
+  await applyRecoveredPreparation(saved, result, guard);
 }
 export async function recoverPreparationFromHandle(saved: LocalPreparation): Promise<void> {
+  const guard = recoveryGuard();
   const result = await restoreFromHandle({ dirHandle: saved.dirHandle }, Promise.resolve(saved.files.map(f => ({ localPath: f.relPath, fileName: f.fileName, size: f.size, sha256: f.sha256 }))));
   if (!result.ok) throw new Error(result.reason);
-  await applyRecoveredPreparation(saved, result);
+  guard();
+  await applyRecoveredPreparation(saved, result, guard);
 }
-async function applyRecoveredPreparation(saved: LocalPreparation, result: Pick<RestoreOk, 'attached' | 'problems' | 'resolved'>): Promise<void> {
+async function applyRecoveredPreparation(saved: LocalPreparation, result: Pick<RestoreOk, 'attached' | 'problems' | 'resolved'>, guard: () => void): Promise<void> {
   if (result.problems.length) throw new Error(result.problems.map(p => `${p.fileName}: ${p.reason}`).join('; ') + '. Your saved preparation is unchanged. Reselect the original folder.');
   const flip = saved.flipId ? await readFlipRecord(saved.flipId) : null;
+  guard();
   const files: FileEntry[] = saved.files.map(({ lastModified, ...entry }) => {
     const fresh = result.resolved.get(entry.relPath);
     const original = result.attached.get(entry.relPath)!;
     return { ...entry, ...(entry.sha256 ? {} : fresh), id: entry.id, ...(flip ? { preTags: flip.tags[entry.relPath] ?? [], preTaggerUser: flip.taggerUser } : {}), file: new File([original], original.name, { type: original.type, lastModified }), processState: 'ready' };
   });
+  // Legacy singleton journals remain recoverable, but new writes have batch keys.
   preparationId = saved.id;
+  speciesRead = Promise.resolve(flip?.preparedSpecies ?? saved.species);
   batchSpecies = flip?.preparedSpecies ?? saved.species;
   lastToken = useStore.getState().batchToken + 1;
   useStore.getState().adoptTaggedBatch({ flipId: saved.flipId, files, dirHandle: null });

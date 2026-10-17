@@ -22,6 +22,9 @@ test('production server parses URLs, preserves MIME types, and refuses shell fal
       assert.equal((await fetch(origin + path)).status, 404);
     }
     assert.equal((await fetch(origin + '/sparcd-exploration/uploader/%ZZ')).status, 400);
+    const probe = await fetch(origin + '/sparcd-exploration/__offline-harness/probe.html');
+    assert.equal(probe.status, 200);
+    assert.match(await probe.text(), /Network probe/);
     const head = await fetch(origin + '/sparcd-exploration/uploader/worker.js', { method: 'HEAD' });
     assert.equal(head.status, 200);
     assert.equal(await head.text(), '');

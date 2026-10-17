@@ -38,7 +38,14 @@ test('an interrupted coordinated update preserves the active offline release and
     await page.getByRole('button', { name: 'Prepare apps for offline use' }).click();
     await expect(page.getByRole('region', { name: 'Offline preparation' })).toContainText('An app update is ready.');
     await expect(page.getByRole('region', { name: 'Saved local preparation' })).toContainText('1 inspected file');
+    // Any family-scope document holds the old worker, even outside the two apps.
+    const other = await context.newPage();
+    await other.goto('/sparcd-exploration/__offline-harness/probe.html');
+    expect(await other.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true);
+    await expect(page.getByRole('region', { name: 'Offline preparation' })).toContainText('close all SPARC’d tabs, windows, and installed app windows');
     await page.close();
+    expect(await other.evaluate(async () => !!(await navigator.serviceWorker.getRegistration('/sparcd-exploration/'))?.waiting)).toBe(true);
+    await other.close();
     const reopened = await context.newPage();
     await reopened.goto('/sparcd-exploration/uploader/');
     await reopened.getByRole('button', { name: 'Login later', exact: true }).click();

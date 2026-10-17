@@ -24,7 +24,7 @@ import { assertPreparedSpecies } from './preparedSpecies';
 import { useStore, type FileEntry } from '../store';
 import { restoreFromHandle, reconcileReselect } from './resume';
 import type { ScannedFile } from './scanFiles';
-import { flushPreparation, readPreparation, bindCurrentPreparationSpecies } from './preparation';
+import { flushPreparation, readPreparation, bindCurrentPreparationSpecies, recoveryGuard, readPreparationForFlip } from './preparation';
 import { formatNaive } from './exifTime';
 import { estimateCaptureTimes, type CaptureEstimate } from './estimateCaptureTime';
 import { taggerBatchUrl, uploaderReturnUrl } from './siblings';
@@ -76,8 +76,11 @@ const toFlipFile = (f: FileEntry, estimate: CaptureEstimate | undefined): FlipFi
  */
 export async function handOffToTagger(): Promise<void> {
   const s = useStore.getState();
+  const guard = recoveryGuard();
   await flushPreparation();
-  const preparedSpecies = (await readPreparation())?.species ?? await loadPreparedSpecies(s.s3Config ?? undefined);
+  const preparation = await readPreparation();
+  const preparedSpecies = preparation ? preparation.species : await loadPreparedSpecies(s.s3Config ?? undefined);
+  guard();
   assertPreparedSpecies(preparedSpecies);
   if (useStore.getState().batchToken !== s.batchToken || useStore.getState().s3Config !== s.s3Config) throw new Error('The batch or connection changed. Try tagging again.');
   await flushPreparation();
@@ -94,14 +97,18 @@ export async function handOffToTagger(): Promise<void> {
     preparedSpecies: structuredClone(preparedSpecies),
   });
   if (useStore.getState().batchToken !== s.batchToken || useStore.getState().s3Config !== s.s3Config) throw new Error('The batch or connection changed. Try tagging again.');
+  guard();
   useStore.setState({ flipId: id });
   await flushPreparation();
+  guard();
   window.location.href = taggerBatchUrl(id);
 }
 
 /** Re-enter the same tagging session — drafts live tagger-side, so it resumes. */
 export async function reopenTagger(flipId: string): Promise<void> {
+  const guard = recoveryGuard();
   await flushPreparation();
+  guard();
   window.location.href = taggerBatchUrl(flipId);
 }
 
@@ -170,23 +177,27 @@ export type FlipReturn =
  * `restoreFromHandle`).
  */
 export async function resumeFromFlip(flipId: string): Promise<FlipReturn> {
+  const guard = recoveryGuard();
   const record = await readFlipRecord(flipId);
+  guard();
   if (!record) return { kind: 'not-found', message: await flipRecordUnavailableReason(flipId) };
   return adoptRecord(record);
 }
 
 /** The retry a "Reopen batch" click drives, with the record already in hand. */
 export async function adoptRecord(record: FlipRecord): Promise<FlipReturn> {
+  const guard = recoveryGuard();
   if (!record.dirHandle) return { kind: 'needs-reselect', record };
 
   const restore = await restoreFromHandle(
     { dirHandle: record.dirHandle },
     Promise.resolve(record.files.map((f) => ({ localPath: f.relPath, fileName: f.fileName, size: f.size, sha256: f.sha256 }))),
   );
+  guard();
   if (!restore.ok) return { kind: 'needs-gesture', record };
 
   if (restore.problems.length) throw new Error(restore.problems.map(p => `${p.fileName}: ${p.reason}`).join('; ') + '. Nothing was removed. Reselect the original unchanged folder.');
-  attach(record, restore.attached);
+  await attach(record, restore.attached, guard);
   return { kind: 'restored' };
 }
 
@@ -195,24 +206,29 @@ export async function adoptReselected(
   record: FlipRecord,
   scanned: { relPath: string; size: number; file: File }[],
 ): Promise<void> {
+  const guard = recoveryGuard();
   const result = await reconcileReselect(
     record.files.map(f => ({ localPath: f.relPath, fileName: f.fileName, size: f.size, sha256: f.sha256 })),
     scanned.map(f => ({ ...f, id: f.relPath, fileName: f.file.name, mediaKind: record.files.find(r => r.relPath === f.relPath)?.mediaKind ?? 'image' })) as ScannedFile[],
   );
+  guard();
   if (result.problems.length) throw new Error(result.problems.map(p => `${p.fileName}: ${p.reason}`).join('; ') + '. Nothing was removed. Reselect the original unchanged folder.');
-  attach(record, result.attached);
+  await attach(record, result.attached, guard);
 }
 
-function attach(record: FlipRecord, attached: Map<string, File>): void {
+async function attach(record: FlipRecord, attached: Map<string, File>, guard: () => void): Promise<void> {
+  const preparation = await readPreparationForFlip(record.id);
+  guard();
   const files: FileEntry[] = [];
   for (const f of record.files) {
     const file = attached.get(f.relPath);
     if (file) files.push(toFileEntry(f, file, record));
   }
-  bindCurrentPreparationSpecies(record.preparedSpecies);
+  bindCurrentPreparationSpecies(record.preparedSpecies, preparation?.id);
   useStore.getState().adoptTaggedBatch({
     flipId: record.id,
     files,
     dirHandle: record.dirHandle ?? null,
   });
+  if (preparation) useStore.setState(preparation.inputs);
 }

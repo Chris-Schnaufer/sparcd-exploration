@@ -24,7 +24,7 @@ export function productionServer(builds = roots) {
     try {
       const path = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
       // A deliberately uncached network probe, not an app shell or mock asset.
-      if (path === '/__offline-harness/probe.html') {
+      if (path === '/__offline-harness/probe.html' || path === '/sparcd-exploration/__offline-harness/probe.html') {
         res.setHeader('Content-Type', mime['.html']);
         res.end(req.method === 'HEAD' ? undefined : '<!doctype html><title>Network probe</title>');
         return;
