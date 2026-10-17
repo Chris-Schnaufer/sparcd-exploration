@@ -7,14 +7,13 @@ import plugin from 'tailwindcss/plugin';
 // container sizes, each the sum of the tracks that step turns on, so a column
 // appears exactly when it fits — Upload holding its 16rem floor and the Tagged
 // progress cell its 130px one, over 16px grid gaps and the row's own 34px of
-// horizontal padding and accent border.
-//   sm  34 + 120 + 256 + 160 + 140 + 70 + 4 gaps =  844px → adds Sync
-//   md  …                + 130 tagged   + 1 gap  =  990px → adds Tagged
-//   lg  …                +  70 images   + 1 gap  = 1076px → adds Images
+// horizontal padding and accent border. Tagged/Total and Collected are what
+// this list exists to answer, so they get the earlier step; Sync waits.
+//   sm  34 + 120 + 256 + 160 + 130 tagged + 90 collected + 5 gaps =  940px → adds Tagged/Total + Collected
+//   md  …                                 + 140 sync      + 1 gap = 1096px → adds Sync
 const browseTableSizes = {
-  'browse-sm': '52.75rem',
-  'browse-md': '61.875rem',
-  'browse-lg': '67.25rem',
+  'browse-sm': '58.75rem',
+  'browse-md': '68.5rem',
 };
 
 // Field Notebook v2 tokens are driven by CSS variables (see index.css) so the

@@ -27,6 +27,18 @@ function parseStamp(stamp: string): { date: string; time: string; user: string |
   return { date: `${y}-${mo}-${d}`, time: `${hh}:${mm}`, user: m[7] ?? null };
 }
 
+// The Uploader's generated comment (#500) embeds a free-text "collected
+// YYYY-MM-DD" segment in UploadMeta.json's description, e.g. "Santa Rita
+// Mountains - SAN06 - 39 images - uploaded 2020-04-10 - collected 2000-03-28".
+// There is no structured field for it, and older or hand-edited descriptions
+// may omit it entirely or use a different format — a null return means "not
+// reliably known", not "none collected".
+function extractCollectedDate(description: string): string | null {
+  const m = description.match(/\bcollected\s+(\d{4}-\d{2}-\d{2})\b/i);
+  if (!m) return null;
+  return Number.isNaN(Date.parse(m[1])) ? null : m[1];
+}
+
 type Tab = 'all' | 'in-progress' | 'done';
 
 // Which filter tab an upload belongs to, from its canonical tally. Untouched and
@@ -209,9 +221,9 @@ export function Browse() {
                 <div className={`hidden md:grid ${uploadGrid} gap-4 px-4 py-2.5 border-b border-rule text-[11px] font-[600] tracking-[0.14em] uppercase text-inkSoft`}>
                   <span data-column="date">Date</span>
                   <span data-column="upload">Upload</span>
-                  <span data-column="deployment">Deployment</span>
-                  <span data-column="images" className={`${imagesCell} text-right`}>Images</span>
-                  <span data-column="tagged" className="md:hidden browse-md:block">Tagged</span>
+                  <span data-column="location">Location</span>
+                  <span data-column="tagged-total" className={taggedCell}>Tagged/Total</span>
+                  <span data-column="collected" className={taggedCell}>Collected</span>
                   <span data-column="sync" className={syncCell}>Sync</span>
                   <span />
                 </div>
@@ -241,19 +253,20 @@ export function Browse() {
 }
 
 // Column tracks for the upload table, shared by the header and every row so the
-// two cannot drift. `browse-sm/md/lg` are the table's own container size steps
-// (defined in tailwind.config.ts): each adds the column whose track it just
+// two cannot drift. `browse-sm/md` are the table's own container size steps
+// (defined in tailwind.config.ts): each adds the columns whose tracks it just
 // made room for. Below `md` the row stacks into a single column and every cell
 // shows, which is why each supporting cell hides at `md` before its step
-// restores it.
+// restores it. Tagged/Total and Collected are promoted ahead of Sync — they're
+// the ones this list exists to answer ("which upload needs tagging"), so they
+// reappear at the earlier step and Sync waits for the later one.
 const uploadGrid =
   'grid-cols-[1fr] md:grid-cols-[120px_minmax(16rem,1fr)_160px_70px] ' +
-  'browse-sm:grid-cols-[120px_minmax(16rem,1fr)_160px_140px_70px] ' +
-  'browse-md:grid-cols-[120px_minmax(16rem,1fr)_160px_minmax(0,1.2fr)_140px_70px] ' +
-  'browse-lg:grid-cols-[120px_minmax(16rem,1fr)_160px_70px_minmax(0,1.2fr)_140px_70px]';
+  'browse-sm:grid-cols-[120px_minmax(16rem,1fr)_160px_minmax(0,1.2fr)_90px_70px] ' +
+  'browse-md:grid-cols-[120px_minmax(16rem,1fr)_160px_minmax(0,1.2fr)_90px_140px_70px]';
 
-const syncCell = 'md:hidden browse-sm:block';
-const imagesCell = 'md:hidden browse-lg:block';
+const syncCell = 'md:hidden browse-md:block';
+const taggedCell = 'md:hidden browse-sm:block';
 
 function UploadRow({
   stamp,
@@ -271,6 +284,7 @@ function UploadRow({
   const s = query?.data;
   const loading = query?.isLoading ?? true;
   const pct = s && s.imageCount > 0 ? Math.round((s.imagesWithSpecies / s.imageCount) * 100) : 0;
+  const collected = s ? extractCollectedDate(s.description) : null;
 
   return (
     <>
@@ -287,15 +301,15 @@ function UploadRow({
         {time && <span className="block font-mono text-[11px] text-inkMute">{time}</span>}
       </span>
 
-      <span data-column="deployment" className="font-mono text-[13px] text-inkSoft truncate">
-        {loading ? <Skeleton w="w-24" /> : s?.deployments.length ? s.deployments.join(', ') : '—'}
+      <span data-column="location" className="font-mono text-[13px] text-inkSoft truncate">
+        {loading
+          ? <Skeleton w="w-24" />
+          : s?.deployments.length
+            ? s.deployments.map((d) => `${d.name} (${d.locationId})`).join(', ')
+            : '—'}
       </span>
 
-      <span data-column="images" className={`${imagesCell} font-mono text-[13px] text-ink text-right`}>
-        {loading ? <Skeleton w="w-12" /> : query?.isError ? '—' : s!.imageCount.toLocaleString()}
-      </span>
-
-      <span data-column="tagged" className="flex md:hidden browse-md:flex items-center gap-2.5">
+      <span data-column="tagged-total" className="flex md:hidden browse-sm:flex items-center gap-2.5">
         {loading || query?.isError || !s ? (
           <Skeleton w="w-full" />
         ) : (
@@ -308,6 +322,14 @@ function UploadRow({
             </span>
           </>
         )}
+      </span>
+
+      <span
+        data-column="collected"
+        className={`${taggedCell} font-mono text-[12.5px] text-inkSoft`}
+        title={!loading && !query?.isError && s && !collected ? 'Date collected is missing or not in a recognized format' : undefined}
+      >
+        {loading ? <Skeleton w="w-20" /> : query?.isError || !s ? '—' : collected ?? '—'}
       </span>
 
       <span data-column="sync" className={syncCell}>
