@@ -1,4 +1,4 @@
-import { readPreparation, acceptPreparationSpecies } from '../lib/preparation';
+import { readBoundPreparationSpecies, acceptPreparationSpecies } from '../lib/preparation';
 import { useEffect, useRef, useState } from 'react';
 import { useOnline, useKeyBindings, activeKeyProfile } from '@sparcd/auth-ui';
 import { bindPreparedSpecies, loadPreparedSpecies, readFlipRecord, savePreparedSpecies, validPreparedSpecies, type PreparedSpecies } from '@sparcd/flip';
@@ -12,6 +12,7 @@ import { CollectionPicker } from './CollectionPicker';
 export function PreparedSpeciesPanel({ onReady }: { onReady: (ready: boolean) => void }) {
   const cfg = useStore((s) => s.s3Config);
   const connectionId = useStore((s) => s.connectionId);
+  const batchToken = useStore(s => s.batchToken);
   const hasFiles = useStore(s => s.files.length > 0);
   const flipId = useStore((s) => s.flipId);
   const online = useOnline();
@@ -32,21 +33,14 @@ export function PreparedSpeciesPanel({ onReady }: { onReady: (ready: boolean) =>
     setSelected(null); setResult(null); setSnapshot(null); setError(''); setBusy(false);
     onReady(false);
     void (async () => {
-      const saved = flipId ? (await readFlipRecord(flipId))?.preparedSpecies : (useStore.getState().files.length ? (await readPreparation())?.species : null) ?? await loadPreparedSpecies(cfg ?? undefined);
+      const saved = flipId ? (await readFlipRecord(flipId))?.preparedSpecies : useStore.getState().files.length ? await readBoundPreparationSpecies() : await loadPreparedSpecies(cfg ?? undefined);
       if (generation.current !== attempt) return;
       if (validPreparedSpecies(saved)) { setSnapshot(saved); acceptPreparationSpecies(saved); onReady(true); }
     })().catch(() => {
       if (generation.current === attempt) setError('Could not read prepared species. Prepare again online; your inspected files are unchanged.');
     });
     return () => { generation.current++; };
-  }, [cfg, connectionId, flipId, onReady]);
-
-  useEffect(() => {
-    if (hasFiles && snapshot) {
-      generation.current++; setSelected(null); setResult(null); setBusy(false); onReady(true);
-    }
-    // A new batch binds the accepted list, not an unfinished picker choice.
-  }, [hasFiles]);
+  }, [cfg, connectionId, flipId, batchToken, onReady]);
 
   async function prepare() {
     if (!cfg || !collection || !online) return;

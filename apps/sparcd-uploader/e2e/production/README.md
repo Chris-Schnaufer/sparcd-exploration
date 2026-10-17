@@ -55,8 +55,14 @@ created through the UI, not seeded for tests claiming offline readiness.
   choice cannot strand Tagging when files arrive; the accepted list remains bound.
 - Delayed verification cannot resurrect files or inputs after Disconnect, account
   switching, replacement files, or Start over, for both journal and Flip recovery.
+  This includes Disconnect while the OS folder picker is still open, before
+  verification starts.
   Tagger return restores that batch’s inputs; legacy singleton migration retains
-  the old record if replacement persistence fails.
+  the old record if replacement persistence fails. Recovery refreshes the visible
+  vocabulary from the recovered batch; a cached list cannot enable tagging for
+  an unprepared batch. Damaged/unsupported journals are reported and retained
+  separately, without hiding healthy recovery choices or blocking an unrelated
+  Flip return. A damaged matching journal remains an explicit error.
 - Journal/unit checks cover quota failure, keeping the previous committed value,
   retry, missing/changed originals, unsupported records, schema migration and
   source/provenance retention. Prepared v2 handoffs are not expired implicitly.

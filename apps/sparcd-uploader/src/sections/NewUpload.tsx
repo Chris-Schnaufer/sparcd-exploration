@@ -14,11 +14,10 @@ import { canPickFolder, formatBytes, supportsDirectoryHandle } from '../lib/scan
 import { summarize } from '../lib/validation';
 import { ensureProcessing } from '../lib/processing';
 import { listResumable, fileStateCounts } from '../lib/db';
-import { reselectFolder } from '../lib/resume';
 import type { FlipRecord } from '@sparcd/flip';
 import {
   adoptRecord,
-  adoptReselected,
+  reselectFlip,
   handOffToTagger,
   reopenTagger,
   resumeFromFlip,
@@ -343,8 +342,7 @@ function ReselectPanel({ record }: { record: FlipRecord }) {
   async function adopt(list?: FileList) {
     setBusy(true); setError('');
     try {
-      const picked = await reselectFolder(list);
-      if (picked) await adoptReselected(record, picked.scanned);
+      await reselectFlip(record, list);
     } catch (e) { setError((e as Error).message); } finally {
       setBusy(false);
     }

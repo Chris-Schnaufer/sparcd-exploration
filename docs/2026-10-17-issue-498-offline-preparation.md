@@ -37,7 +37,11 @@ retry. Each batch has its own journal key; simultaneous windows neither replace
 nor clear another batch’s record. Recovery lists all saved batches, and a normal
 Tagger return restores the matching batch’s saved inputs. Legacy singleton
 journals remain recoverable and migrate transactionally after successful recovery.
-Delayed recovery cannot reattach files or inputs after Disconnect, an account
+The species panel refreshes from the recovered batch’s vocabulary, including
+showing preparation as required when the recovered batch has no snapshot.
+Damaged or unsupported journals remain stored and are reported separately from
+healthy recovery choices; they cannot block an unrelated healthy Flip return.
+Delayed recovery (including an open OS folder picker) cannot reattach files or inputs after Disconnect, an account
 switch, Start over, or replacement of the current batch. Unsupported records are kept and explained rather than guessed at.
 
 Original media files and credentials are not copied into the journal. Recovery
@@ -130,3 +134,27 @@ batches and Start over across journal and Flip handle/reselection paths. Focused
 unit coverage also verifies batch-specific return inputs and failure-safe legacy
 journal migration. These results do not close or implement #497's separate
 acceptance matrix.
+
+## Final-review regression fixes (2026-10-17)
+
+Flip reselection now captures the batch/connection guard before opening the OS
+picker, so a sibling-tab Disconnect while the picker remains open cannot restore
+the discarded batch. The species panel refreshes on batch-token changes and
+reads the bound snapshot rather than substituting the shared selected cache.
+A recovered unprepared batch keeps tagging disabled with its explanation and
+online preparation controls available.
+
+Journal discovery reports damaged/unsupported records separately and preserves
+them while listing healthy batches. Flip return validates only matching journals;
+an unrelated damaged journal cannot block it, while a damaged matching journal
+remains an explicit recovery error.
+
+Verification: 363 Uploader unit tests, 294 Tagger unit tests, both TypeScript
+checks, the Uploader production build, four server/worker tests, and all 28
+production Google Chrome cases passed on isolated port 5337. Four permanent
+browser regressions cover recovered prepared/unprepared status, Disconnect
+during the OS picker, and healthy recovery/Flip return alongside an unsupported
+journal. The deferred-recovery unit matrix also includes the picker boundary
+and cancellation. The initial browser run passed 27 cases and exposed an
+incorrect “Drop” test label; after asserting the actual “Files” label, the full
+28-case run passed. Issue #497 remains separate.

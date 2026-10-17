@@ -8,11 +8,17 @@ export function PreparationSaveStatus() {
 }
 export function PreparationRecovery() {
   const [saved, setSaved] = useState<LocalPreparation | null>(null);
+  const [unavailable, setUnavailable] = useState<string[]>([]);
   const [choices, setChoices] = useState<LocalPreparation[]>([]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const ref = useRef<HTMLInputElement>(null);
-  useEffect(() => { void listPreparations().then(items => { setChoices(items); setSaved(items[0] ?? null); }).catch(e => setError(e.message)); }, []);
+  useEffect(() => {
+    const skipped: string[] = [];
+    void listPreparations(id => skipped.push(id)).then(items => {
+      setChoices(items); setSaved(items[0] ?? null); setUnavailable(skipped);
+    }).catch(e => setError(e.message));
+  }, []);
   async function choose(list?: FileList) {
     if (!saved) return;
     setBusy(true); setError('');
@@ -24,7 +30,7 @@ export function PreparationRecovery() {
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   }
-  return saved || error ? <section aria-label="Saved local preparation" className="mb-4 border border-rule p-4 space-y-2 text-sm">
+  return saved || error || unavailable.length > 0 ? <section aria-label="Saved local preparation" className="mb-4 border border-rule p-4 space-y-2 text-sm">
     {choices.length > 1 && <label>Saved batch<select className="block max-w-full border p-2" value={saved?.id ?? ''} disabled={busy} onChange={event => setSaved(choices.find(item => item.id === event.target.value) ?? null)}>{choices.map(item => <option key={item.id} value={item.id}>{item.files[0].fileName} — {item.files.length} files — {item.savedAt}</option>)}</select></label>}
     {saved && <><h2>Resume local preparation</h2><p>{saved.files.length} {saved.files.length === 1 ? 'inspected file is' : 'inspected files are'} saved, including timestamps and any returned tags. Reselect the unchanged original folder to verify file contents before continuing.</p><p>No original image or video files are stored here.</p>
       {saved.dirHandle && <button type="button" disabled={busy} className="min-h-11 border border-ink px-3" onClick={() => {
@@ -35,6 +41,7 @@ export function PreparationRecovery() {
       <input ref={ref} type="file" multiple hidden {...{ webkitdirectory: '', directory: '' }} onChange={e => { if (e.target.files?.length) void choose(e.target.files); e.target.value = ''; }} />
       {saved.flipId && <a className="underline block" href={`../tagger/?batch=${encodeURIComponent(saved.flipId)}`}>Reopen saved tags using thumbnails</a>}
     </>}
+    {unavailable.length > 0 && <p role="alert">{unavailable.length} saved {unavailable.length === 1 ? 'batch is' : 'batches are'} damaged or from an unsupported version. {unavailable.length === 1 ? 'Its' : 'Their'} stored data has been kept. Reopen a compatible app to recover {unavailable.length === 1 ? 'it' : 'them'}; other saved batches remain available.</p>}
     {error && <p role="alert">{error}</p>}
   </section> : null;
 }

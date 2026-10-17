@@ -49,17 +49,30 @@ let revision = 0;
 export const preparationStatus = () => status;
 export const subscribePreparation = (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; };
 function report(message: string) { status = message; for (const listener of listeners) listener(); }
-export async function listPreparations(): Promise<LocalPreparation[]> {
+export async function listPreparations(onUnavailable?: (id: string) => void): Promise<LocalPreparation[]> {
   const rows = await flipDb.preparations.toArray();
   const unique = new Map<string, LocalPreparation>();
   for (const row of rows) {
-    const value = validatePreparation(row.value);
-    if (value && (!unique.has(value.id) || unique.get(value.id)!.savedAt < value.savedAt)) unique.set(value.id, value);
+    try {
+      const value = validatePreparation(row.value);
+      if (!value) throw new Error('Empty preparation');
+      if (!unique.has(value.id) || unique.get(value.id)!.savedAt < value.savedAt) unique.set(value.id, value);
+    } catch { onUnavailable?.(row.id); }
   }
   return [...unique.values()].sort((a, b) => b.savedAt.localeCompare(a.savedAt));
 }
 export async function readPreparationForFlip(flipId: string): Promise<LocalPreparation | null> {
-  return (await listPreparations()).find(value => value.flipId === flipId) ?? null;
+  // Validate matching journals only: unrelated damaged/future records cannot
+  // strand a healthy Flip return. A damaged matching record remains an error.
+  const rows = await flipDb.preparations.toArray();
+  const matching = rows.filter(row => row.value && typeof row.value === 'object' && 'flipId' in row.value && row.value.flipId === flipId);
+  return matching.map(row => validatePreparation(row.value)!).sort((a, b) => b.savedAt.localeCompare(a.savedAt))[0] ?? null;
+}
+/** The in-memory binding also exists when durable writes fail. Never substitute
+ * another window's selected cache for a batch with no prepared vocabulary. */
+export async function readBoundPreparationSpecies(): Promise<PreparedSpecies | null> {
+  const species = validPreparedSpecies(batchSpecies) ? batchSpecies : await speciesRead;
+  return validPreparedSpecies(species) ? species : null;
 }
 export async function readPreparation(): Promise<LocalPreparation | null> {
   if (!preparationId) return null;

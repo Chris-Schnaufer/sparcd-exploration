@@ -22,7 +22,7 @@ import {
 } from '@sparcd/flip';
 import { assertPreparedSpecies } from './preparedSpecies';
 import { useStore, type FileEntry } from '../store';
-import { restoreFromHandle, reconcileReselect } from './resume';
+import { restoreFromHandle, reconcileReselect, reselectFolder } from './resume';
 import type { ScannedFile } from './scanFiles';
 import { flushPreparation, readPreparation, bindCurrentPreparationSpecies, recoveryGuard, readPreparationForFlip } from './preparation';
 import { formatNaive } from './exifTime';
@@ -199,6 +199,15 @@ export async function adoptRecord(record: FlipRecord): Promise<FlipReturn> {
   if (restore.problems.length) throw new Error(restore.problems.map(p => `${p.fileName}: ${p.reason}`).join('; ') + '. Nothing was removed. Reselect the original unchanged folder.');
   await attach(record, restore.attached, guard);
   return { kind: 'restored' };
+}
+
+/** Scope the OS picker and its folder scan to the same batch/connection as
+ * verification. The picker can stay open while another tab disconnects. */
+export async function reselectFlip(record: FlipRecord, list?: FileList): Promise<void> {
+  const guard = recoveryGuard();
+  const picked = await reselectFolder(list);
+  guard();
+  if (picked) await adoptReselected(record, picked.scanned);
 }
 
 /** Verify the original bytes before attaching; keep all saved work on failure. */

@@ -67,8 +67,23 @@ it('recovers a legacy singleton without losing it until the batch-owned replacem
   expect((await journal.readPreparation())?.inputs.uploadDescription).toBe('legacy notes');
   store.getState().resetBatch(); await journal.flushPreparation();
 });
-it('rejects unsupported journal versions without deleting them', async () => {
+it('reports unsupported journals without deleting them or blocking healthy batch lookup', async () => {
   memory.rows.set('active', { id: 'active', value: { v: 99, files: [] } });
-  await expect(journal.listPreparations()).rejects.toThrow('unsupported version');
+  const file = new File(['original bytes'], 'healthy.jpg');
+  store.getState().setFiles([{ id: file.name, relPath: file.name, fileName: file.name, size: file.size, mediaKind: 'image', file }]);
+  store.setState({ flipId: 'healthy-flip' });
+  await journal.flushPreparation();
+  const healthy = (await journal.readPreparation())!;
+  const unavailable: string[] = [];
+  expect(await journal.listPreparations(id => unavailable.push(id))).toEqual([healthy]);
+  expect(unavailable).toEqual(['active']);
+  expect(await journal.readPreparationForFlip('healthy-flip')).toEqual(healthy);
+  expect(await journal.readPreparationForFlip('not-present')).toBeNull();
   expect(memory.rows.get('active').value.v).toBe(99);
+});
+
+it('keeps a damaged matching Flip journal an error rather than adopting incorrect inputs', async () => {
+  memory.rows.set('broken-match', { id: 'broken-match', value: { v: 99, flipId: 'broken-flip' } });
+  await expect(journal.readPreparationForFlip('broken-flip')).rejects.toThrow('unsupported version');
+  expect(memory.rows.has('broken-match')).toBe(true);
 });
