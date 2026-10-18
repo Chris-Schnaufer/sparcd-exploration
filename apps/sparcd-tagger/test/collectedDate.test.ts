@@ -15,6 +15,12 @@ describe('collection date from upload comments', () => {
   ])('treats $label descriptions as unavailable without coercion', ({ value }) => {
     expect(extractCollectedDate(value)).toBeNull();
   });
+  it.each([['03-28-2000', '2000-03-28'], ['02-29-2024', '2024-02-29'], ['12-31-1999', '1999-12-31']])('normalizes documented date %s', (input, expected) => {
+    expect(extractCollectedDate(`${comment(input)} - optional notes`)).toBe(expected);
+  });
+  it.each(['02-30-2024', '02-29-2023', '02-29-1900', '13-01-2024', '00-10-2024', '03-00-2024', '3-28-2000', '03-28-2000junk'])('rejects invalid documented date %s', input => {
+    expect(extractCollectedDate(comment(input))).toBeNull();
+  });
   it.each(['2024-02-29', '2023-02-28', '2000-02-29', '1999-12-31'])('preserves valid calendar date %s', value => {
     expect(extractCollectedDate(comment(value))).toBe(value);
     expect(extractCollectedDate(`${comment(value)} - optional notes`)).toBe(value);

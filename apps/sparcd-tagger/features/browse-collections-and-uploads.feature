@@ -123,6 +123,14 @@ Feature: Find the upload that needs tagging
       | 2024-02-30 |
       | 2023-02-29 |
       | 2024-04-31 |
+      | 02-30-2024 |
+      | 02-29-2023 |
+      | 13-01-2024 |
+
+  @unmapped
+  Scenario: The documented Uploader collected date is normalized
+    Given the upload description contains collected date "03-28-2000"
+    Then the Collected value is "2000-03-28"
 
   @unmapped
   Scenario: A real leap date survives appended comments
