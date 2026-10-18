@@ -168,3 +168,9 @@ accessible online-only scope explanations. See
 `docs/2026-10-18-issue-497-offline-acceptance.md` for the requirement mapping and
 remaining manual OS-restart/device checks. No new story identifier is invented;
 F1-2 remains scoped to offline Inspect. #497 is not closed by automation alone.
+
+PR #565 also fixes the inherited preparation-cleanup ownership defect without
+changing PR #562. `history-preparation-owner.spec.ts` covers owned and legacy
+History completions while a different batch is saved. Both publication lifecycle
+tests positively verify removal of the preparation actually published; unit
+coverage includes later work under a lingering done snapshot and queued saves.

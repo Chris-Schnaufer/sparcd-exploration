@@ -54,6 +54,17 @@ export async function verifyRecoveredUpload(
   const batches = await app.readBatchRecords();
   expect(batches).toHaveLength(1);
   expect(batches[0].completedAt).toEqual(expect.any(String));
+  expect(batches[0].preparationId).toEqual(expect.any(String));
+  await expect.poll(() => page.evaluate(id => new Promise<boolean>((resolve, reject) => {
+    const open = indexedDB.open('sparcd-flip');
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const db = open.result, tx = db.transaction('preparations', 'readonly');
+      const read = tx.objectStore('preparations').get(id);
+      tx.oncomplete = () => { db.close(); resolve(read.result === undefined); };
+      tx.onabort = () => { db.close(); reject(tx.error); };
+    };
+  }), batches[0].preparationId as string)).toBe(true);
   await context.setOffline(true);
   await page.goto('/sparcd-exploration/tagger/');
   await expect(page.getByRole('heading', { name: 'Connect to use standalone Tagger' })).toBeVisible();
