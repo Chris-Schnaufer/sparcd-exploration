@@ -1830,9 +1830,12 @@ function useFittedZoom(src: string) {
   }, []);
   const fit = pane && natural ? Math.min(pane.w / natural.w, pane.h / natural.h) : null;
   const fitted = fit && natural ? { width: natural.w * fit, height: natural.h * fit } : undefined;
+  // Always re-fit on a pane or image-size change, even while zoomed in: a
+  // resolution change invalidates whatever framing the user had, so there is
+  // nothing worth preserving by skipping this when the view isn't at 1x.
   useLayoutEffect(() => {
     const zoom = zoomRef.current;
-    if (fitted && zoom && zoom.state.scale <= 1.01) zoom.centerView(1, 0);
+    if (fitted && zoom) zoom.centerView(1, 0);
   }, [fitted?.width, fitted?.height]);
   const onImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
     const img = e.currentTarget;
@@ -1857,8 +1860,11 @@ function ZoomableImage({
   const [expanded, setExpanded] = useState(false);
   const [zoomed, setZoomed] = useState(false);
   const { paneRef, zoomRef, fitted, onImageLoad } = useFittedZoom(src);
+  // min-w-0/min-h-0 override the grid item's default content-based floor —
+  // without them, the pane can never measure smaller than the zoom content's
+  // last fitted pixel size, so a shrinking window gets stuck.
   return (
-    <div ref={paneRef} className="w-full h-full">
+    <div ref={paneRef} className="w-full h-full min-w-0 min-h-0">
       {/* key forces a fresh fit-to-view (reset zoom/pan) on every image change */}
       <TransformWrapper
         key={resetKey}
@@ -1974,7 +1980,7 @@ function Lightbox({
       </div>
       <div
         ref={paneRef}
-        className="relative min-h-0"
+        className="relative min-h-0 min-w-0"
         onClick={(e) => e.target === e.currentTarget && onClose()}
       >
         <TransformWrapper

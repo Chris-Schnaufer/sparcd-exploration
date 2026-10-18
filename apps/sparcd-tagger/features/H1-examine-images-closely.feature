@@ -46,6 +46,17 @@ Feature: Examine an image closely enough to catch every species
     And the control is not shown while the image is already fitted
 
   @H1
+  Scenario: The fitted image keeps fitting when the window shrinks
+    When the workspace window is resized smaller
+    Then the image still fits the pane
+
+  @H1
+  Scenario: A zoomed-in image is refitted when the window shrinks
+    Given the image is zoomed in
+    When the workspace window is resized smaller
+    Then the image still fits the pane
+
+  @H1
   Scenario: Fullscreen gives a larger canvas and a deeper zoom
     When the image is opened fullscreen
     Then it fills the window over a dimmed background

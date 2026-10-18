@@ -272,6 +272,22 @@ Then('it can be enlarged up to six times its fitted size', async ({ page }) => {
   expect(scale).toBeCloseTo(6, 1);
 });
 
+// --- Fitting on resize (issue #533) ------------------------------------------
+
+When('the workspace window is resized smaller', async ({ page }) => {
+  await settle(page.locator('body'));
+  const before = page.viewportSize()!;
+  await page.setViewportSize({
+    width: Math.round(before.width * 0.6),
+    height: Math.round(before.height * 0.6),
+  });
+  await settle(page.locator('body'));
+});
+
+Then('the image still fits the pane', async ({ page }) => {
+  await expect(async () => expectFitted(await imageInPane(page.locator('body')))).toPass();
+});
+
 Then('detail beyond the fitted view becomes legible', async ({ page }) => {
   const pane = transformWrapper(page.locator('body')).first();
   const img = page.locator('.react-transform-component img').first();
