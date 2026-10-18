@@ -90,10 +90,38 @@ Feature: Find the upload that needs tagging
     Then the upload row shows that date in the Collected column
 
   @unmapped
-  Scenario: A missing or non-standard collected date explains itself on hover
+  Scenario: A missing or non-standard collected date explains itself on hover and keyboard focus
     Given a collection is selected
     Then the upload row's Collected column shows a dash
     And hovering it explains the date is missing or not in a recognized format
+    And the missing collected date is explained on keyboard focus
+
+  @unmapped
+  Scenario Outline: Impossible calendar dates are unavailable rather than normalized
+    Given the upload description contains collected date "<date>"
+    Then the upload row's Collected column shows a dash
+    And the missing collected date is explained on keyboard focus
+
+    Examples:
+      | date       |
+      | 2024-02-30 |
+      | 2023-02-29 |
+      | 2024-04-31 |
+
+  @unmapped
+  Scenario: A real leap date survives appended comments
+    Given the upload description contains collected date "2024-02-29"
+    Then the Collected value is "2024-02-29"
+
+  @unmapped
+  Scenario: Long location names do not hide IDs or other locations
+    Given the upload has long names for multiple locations
+    Then the full location names and both IDs remain readable at desktop and mobile widths
+
+  @unmapped
+  Scenario: Mobile rows label their metadata and explain missing collection dates
+    Given a collection is selected
+    Then mobile upload rows label their fields and explain unavailable collection dates
 
   @unmapped
   Scenario: Narrow Browse windows retain the upload column

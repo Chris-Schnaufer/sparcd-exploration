@@ -27,6 +27,7 @@ import {
   PREFIX_F,
   uploadMetaJson,
   MEDIA_A,
+  deploymentsCsv,
 } from './support/data';
 import { makeLocalEdit, runLiveSync, waitForDirtyDrafts } from './support/flows';
 
@@ -366,18 +367,83 @@ Given("an upload's description records a collection date", async ({ page, s3 }) 
 });
 
 Then('the upload row shows that date in the Collected column', async ({ page }) => {
-  await expect(uploadRow(page, 'priortagger').locator('[data-column="collected"]')).toHaveText('2024-01-10');
+  await expect(uploadRow(page, 'priortagger').locator('[data-column="collected"] [data-collected-value]')).toHaveText('2024-01-10');
 });
 
 Then("the upload row's Collected column shows a dash", async ({ page }) => {
-  await expect(uploadRow(page, 'priortagger').locator('[data-column="collected"]')).toHaveText('—');
+  await expect(uploadRow(page, 'priortagger').locator('[data-column="collected"] [data-collected-value]').getByText('—', { exact: true })).toBeVisible();
 });
 
 Then('hovering it explains the date is missing or not in a recognized format', async ({ page }) => {
+  await uploadRow(page, 'priortagger').locator('[data-column="collected"]').hover();
   await expect(uploadRow(page, 'priortagger').locator('[data-column="collected"]')).toHaveAttribute(
     'title',
     'Date collected is missing or not in a recognized format',
   );
+});
+
+Given('the upload description contains collected date {string}', async ({ page, s3 }, date: string) => {
+  s3.put(BUCKET, `${PREFIX_A}UploadMeta.json`, uploadMetaJson({
+    bucket: BUCKET, prefix: PREFIX_A, user: 'priortagger', imageCount: MEDIA_A.length,
+    imagesWithSpecies: 3,
+    description: `Santa Rita Mountains - San Pedro 15 - 6 images - uploaded 2024-01-15 - collected ${date} - optional notes`,
+  }), 'application/json');
+  await openAppConnected(page);
+  await selectCollection(page);
+});
+
+Then('the Collected value is {string}', async ({ page }, date: string) => {
+  await expect(uploadRow(page, 'priortagger').locator('[data-collected-value]')).toHaveText(date);
+});
+
+Then('the missing collected date is explained on keyboard focus', async ({ page }) => {
+  const row = uploadRow(page, 'priortagger');
+  // Reach the upload through the real keyboard order after the filter buttons.
+  await page.getByRole('button', { name: /^Done\s+\d/ }).focus();
+  for (let i = 0; i < 20 && !await row.evaluate(el => el === document.activeElement); i++) {
+    await page.keyboard.press('Tab');
+  }
+  await expect(row).toBeFocused();
+  await expect(row).toHaveAccessibleDescription('Date collected is missing or not in a recognized format');
+  await expect(row.locator('[data-collected-help]')).toBeVisible();
+});
+
+Given('the upload has long names for multiple locations', async ({ page, s3 }) => {
+  const first = deploymentsCsv().replace(LOCATION_NAME, 'Santa Rita Mountains - San Pedro 15');
+  const second = deploymentsCsv().replaceAll('SAN15', 'SAN99').replace(LOCATION_NAME, 'Northern mountain range camera with a long location name');
+  s3.put(BUCKET, `${PREFIX_A}deployments.csv`, `${first}\n${second}\n${first}`, 'text/csv');
+  await openAppConnected(page);
+  await selectCollection(page);
+});
+
+Then('the full location names and both IDs remain readable at desktop and mobile widths', async ({ page }) => {
+  const row = uploadRow(page, 'priortagger');
+  for (const width of [1600, 1350, 900, 390, 320]) {
+    await page.setViewportSize({ width, height: 950 });
+    const cell = row.locator('[data-column="location"]');
+    await expect(cell).toContainText('Santa Rita Mountains - San Pedro 15');
+    await expect(cell).toContainText('Northern mountain range camera with a long location name');
+    await expect(cell.locator('[data-location-id]')).toHaveText(['(SAN15)', '(SAN99)']);
+    for (const node of [cell, ...await cell.locator('[data-location-id]').all()]) {
+      await expect(node).toBeVisible();
+      expect(await node.evaluate(el => el.scrollWidth <= el.clientWidth && el.scrollHeight <= el.clientHeight)).toBe(true);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+});
+
+Then('mobile upload rows label their fields and explain unavailable collection dates', async ({ page }) => {
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 950 });
+    const row = uploadRow(page, 'priortagger');
+    for (const label of ['Uploaded:', 'Upload:', 'Location:', 'Tagged/Total:', 'Collected:', 'Sync:']) {
+      await expect(row.getByText(label, { exact: true })).toBeVisible();
+    }
+    await expect(row.getByText('Not recorded or unrecognized', { exact: true })).toBeVisible();
+    await expect(row).toHaveAccessibleName(/Uploaded:.*Upload:.*Location:.*Tagged\/Total:.*3 \/ 6.*Collected:.*Not recorded or unrecognized.*Sync:/);
+    await expect(row).toHaveAccessibleDescription('Date collected is missing or not in a recognized format');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
 });
 
 // The table sits beside a 320px rail from 1280px up, so the same viewport

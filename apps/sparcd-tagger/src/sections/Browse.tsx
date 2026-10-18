@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
+import { extractCollectedDate } from '../lib/collectedDate';
 import type { UseQueryResult } from '@tanstack/react-query';
 import { useStore } from '../store';
 import {
@@ -25,18 +26,6 @@ function parseStamp(stamp: string): { date: string; time: string; user: string |
   if (!m) return { date: stamp, time: '', user: null };
   const [, y, mo, d, hh, mm] = m;
   return { date: `${y}-${mo}-${d}`, time: `${hh}:${mm}`, user: m[7] ?? null };
-}
-
-// The Uploader's generated comment (#500) embeds a free-text "collected
-// YYYY-MM-DD" segment in UploadMeta.json's description, e.g. "Santa Rita
-// Mountains - SAN06 - 39 images - uploaded 2020-04-10 - collected 2000-03-28".
-// There is no structured field for it, and older or hand-edited descriptions
-// may omit it entirely or use a different format — a null return means "not
-// reliably known", not "none collected".
-function extractCollectedDate(description: string): string | null {
-  const m = description.match(/\bcollected\s+(\d{4}-\d{2}-\d{2})\b/i);
-  if (!m) return null;
-  return Number.isNaN(Date.parse(m[1])) ? null : m[1];
 }
 
 type Tab = 'all' | 'in-progress' | 'done';
@@ -154,30 +143,30 @@ export function Browse() {
         )}
         {collectionKey && (
           <>
-              <nav className="flex items-center gap-1.5 text-[13px] mb-3">
-                <span className="text-inkSoft">Browse</span>
-                <span className="text-inkMute">/</span>
-                <span className="text-ink">{collection?.name ?? collection?.bucket ?? '…'}</span>
-              </nav>
+            <nav className="flex items-center gap-1.5 text-[13px] mb-3">
+              <span className="text-inkSoft">Browse</span>
+              <span className="text-inkMute">/</span>
+              <span className="text-ink">{collection?.name ?? collection?.bucket ?? '…'}</span>
+            </nav>
 
-              <div className="flex items-baseline justify-between gap-4 flex-wrap mb-4">
-                <div>
-                  <h1 className="font-display text-[28px] leading-tight text-ink">
-                    Uploads in {collection?.name ?? collection?.bucket ?? 'this collection'}
-                  </h1>
-                  <p className="text-[13px] text-inkSoft mt-1">
-                    {uploads.isLoading ? (
-                      'Loading uploads…'
-                    ) : (
-                      <>
-                        {uploadCount} upload{uploadCount === 1 ? '' : 's'}
-                        <Dot />
-                        {images.toLocaleString()} image{images === 1 ? '' : 's'}
-                        <Dot />
-                        {tagged.toLocaleString()} tagged
-                        <Dot />
-                        {Math.max(0, images - tagged).toLocaleString()} to go
-                        {anyPending && <span className="text-inkMute"> · tallying…</span>}
+            <div className="flex items-baseline justify-between gap-4 flex-wrap mb-4">
+              <div>
+                <h1 className="font-display text-[28px] leading-tight text-ink">
+                  Uploads in {collection?.name ?? collection?.bucket ?? 'this collection'}
+                </h1>
+                <p className="text-[13px] text-inkSoft mt-1">
+                  {uploads.isLoading ? (
+                    'Loading uploads…'
+                  ) : (
+                    <>
+                      {uploadCount} upload{uploadCount === 1 ? '' : 's'}
+                      <Dot />
+                      {images.toLocaleString()} image{images === 1 ? '' : 's'}
+                      <Dot />
+                      {tagged.toLocaleString()} tagged
+                      <Dot />
+                      {Math.max(0, images - tagged).toLocaleString()} to go
+                      {anyPending && <span className="text-inkMute"> · tallying…</span>}
                     </>
                   )}
                 </p>
@@ -218,7 +207,7 @@ export function Browse() {
             {!uploads.isError && uploadCount > 0 && (
               <div className="browse-upload-table bg-panel border border-rule">
                 {/* Column header */}
-                <div className={`hidden md:grid ${uploadGrid} gap-4 px-4 py-2.5 border-b border-rule text-[11px] font-[600] tracking-[0.14em] uppercase text-inkSoft`}>
+                <div className={`hidden md:grid ${uploadGrid} gap-4 browse-compact:gap-1.5 px-4 py-2.5 border-b border-rule text-[11px] font-[600] tracking-[0.14em] uppercase text-inkSoft`}>
                   <span data-column="date">Date</span>
                   <span data-column="upload">Upload</span>
                   <span data-column="location">Location</span>
@@ -262,11 +251,12 @@ export function Browse() {
 // reappear at the earlier step and Sync waits for the later one.
 const uploadGrid =
   'grid-cols-[1fr] md:grid-cols-[120px_minmax(16rem,1fr)_160px_70px] ' +
+  'browse-compact:grid-cols-[78px_minmax(10rem,1.15fr)_minmax(6rem,0.8fr)_84px_80px_124px_56px] ' +
   'browse-sm:grid-cols-[120px_minmax(16rem,1fr)_160px_minmax(0,1.2fr)_90px_70px] ' +
   'browse-md:grid-cols-[120px_minmax(16rem,1fr)_160px_minmax(0,1.2fr)_90px_140px_70px]';
 
-const syncCell = 'md:hidden browse-md:block';
-const taggedCell = 'md:hidden browse-sm:block';
+const syncCell = 'md:hidden browse-compact:block browse-md:block';
+const taggedCell = 'md:hidden browse-compact:flex browse-sm:block';
 
 function UploadRow({
   stamp,
@@ -285,62 +275,77 @@ function UploadRow({
   const loading = query?.isLoading ?? true;
   const pct = s && s.imageCount > 0 ? Math.round((s.imagesWithSpecies / s.imageCount) * 100) : 0;
   const collected = s ? extractCollectedDate(s.description) : null;
+  const missingCollected = !loading && !query?.isError && !!s && !collected;
+  const collectedHelpId = useId();
+  const collectedHelp = 'Date collected is missing or not in a recognized format';
 
   return (
     <>
-    <button
-      onClick={onOpen}
-      aria-describedby={help.id}
-      {...help.triggerProps}
-      className={`w-full text-left grid ${uploadGrid} gap-2 md:gap-4 items-center px-4 py-3 border-b border-ruleSoft border-l-2 border-l-transparent hover:bg-panelHover hover:border-l-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent group`}
-    >
-      <span data-column="date" className="font-mono text-[12.5px] text-inkSoft">{date}</span>
-
-      <span data-column="upload" className="min-w-0">
-        <span className="block font-mono text-[13px] text-ink truncate">{user ?? stamp}</span>
-        {time && <span className="block font-mono text-[11px] text-inkMute">{time}</span>}
-      </span>
-
-      <span data-column="location" className="font-mono text-[13px] text-inkSoft truncate">
-        {loading
-          ? <Skeleton w="w-24" />
-          : s?.deployments.length
-            ? s.deployments.map((d) => `${d.name} (${d.locationId})`).join(', ')
-            : '—'}
-      </span>
-
-      <span data-column="tagged-total" className="flex md:hidden browse-sm:flex items-center gap-2.5">
-        {loading || query?.isError || !s ? (
-          <Skeleton w="w-full" />
-        ) : (
-          <>
-            <span className="flex-1 h-1.5 bg-ruleSoft relative">
-              <span className="absolute inset-y-0 left-0 bg-accent" style={{ width: `${pct}%` }} />
-            </span>
-            <span className="font-mono text-[12px] text-inkSoft min-w-[72px] text-right">
-              <span className="text-ink">{s.imagesWithSpecies.toLocaleString()}</span> / {s.imageCount.toLocaleString()}
-            </span>
-          </>
-        )}
-      </span>
-
-      <span
-        data-column="collected"
-        className={`${taggedCell} font-mono text-[12.5px] text-inkSoft`}
-        title={!loading && !query?.isError && s && !collected ? 'Date collected is missing or not in a recognized format' : undefined}
+      <button
+        onClick={onOpen}
+        aria-describedby={[help.id, missingCollected ? collectedHelpId : ''].filter(Boolean).join(' ')}
+        {...help.triggerProps}
+        className={`w-full text-left grid ${uploadGrid} gap-2 md:gap-4 browse-compact:gap-1.5 items-center px-4 py-3 border-b border-ruleSoft border-l-2 border-l-transparent hover:bg-panelHover hover:border-l-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent group`}
       >
-        {loading ? <Skeleton w="w-20" /> : query?.isError || !s ? '—' : collected ?? '—'}
-      </span>
+        <span data-column="date" className="font-mono text-[12.5px] text-inkSoft"><span className="md:sr-only">Uploaded: </span>{date}</span>
 
-      <span data-column="sync" className={syncCell}>
-        <SyncPill state={draftState ?? 'local-only'} />
-      </span>
+        <span data-column="upload" className="min-w-0">
+          <span className="md:sr-only">Upload: </span>
+          <span className="block font-mono text-[13px] text-ink truncate">{user ?? stamp}</span>
+          {time && <span className="block font-mono text-[11px] text-inkMute">{time}</span>}
+        </span>
 
-      <span className="text-right text-accent font-[600] text-[13px] opacity-70 group-hover:opacity-100">
-        Open →
-      </span>
-    </button>
-    {help.explanation}
+        <span data-column="location" className="min-w-0 font-mono text-[13px] text-inkSoft whitespace-normal break-words">
+          <span className="md:sr-only">Location: </span>
+          {loading
+            ? <Skeleton w="w-24" />
+            : s?.deployments.length
+              ? s.deployments.map((d) => (
+                  <span key={`${d.name}\0${d.locationId}`} className="block">
+                    <span>{d.name}</span>{' '}
+                    <span data-location-id className="block break-all font-[600]">{d.locationId ? `(${d.locationId})` : '(ID unavailable)'}</span>
+                  </span>
+                ))
+              : '—'}
+        </span>
+
+        <span data-column="tagged-total" className="flex md:hidden browse-compact:flex browse-sm:flex items-center gap-2.5">
+          <span className="md:sr-only">Tagged/Total: </span>
+          {loading || query?.isError || !s ? (
+            <Skeleton w="w-full" />
+          ) : (
+            <>
+              <span aria-hidden="true" className="flex-1 h-1.5 bg-ruleSoft relative">
+                <span className="absolute inset-y-0 left-0 bg-accent" style={{ width: `${pct}%` }} />
+              </span>
+              <span className="font-mono text-[12px] text-inkSoft min-w-[72px] text-right">
+                <span className="text-ink">{s.imagesWithSpecies.toLocaleString()}</span> / {s.imageCount.toLocaleString()}
+              </span>
+            </>
+          )}
+        </span>
+
+        <span
+          data-column="collected"
+          className={`${taggedCell} font-mono text-[12.5px] text-inkSoft`}
+          title={missingCollected ? collectedHelp : undefined}
+        >
+          <span className="md:sr-only">Collected: </span>
+          <span data-collected-value>{loading ? <Skeleton w="w-20" /> : query?.isError || !s ? '—' : collected ?? <><span className="hidden md:inline" aria-hidden="true">—</span><span className="md:hidden">Not recorded or unrecognized</span></>}</span>
+        </span>
+
+        <span data-column="sync" className={syncCell}>
+          <span className="md:sr-only">Sync: </span>
+          <SyncPill state={draftState ?? 'local-only'} />
+        </span>
+
+        <span className="text-right text-accent font-[600] text-[13px] opacity-70 group-hover:opacity-100">
+          Open →
+        </span>
+        {missingCollected && <span data-collected-help aria-hidden="true" className="hidden md:group-focus-visible:block col-span-full text-[12px] text-inkSoft">{collectedHelp}</span>}
+      </button>
+      {help.explanation}
+      {missingCollected && <span id={collectedHelpId} className="sr-only">{collectedHelp}</span>}
     </>
   );
 }
@@ -351,10 +356,7 @@ function UploadRow({
 function SyncPill({ state }: { state: UploadDraftState | 'local-only' }) {
   if (state === 'local-only') {
     return (
-      <span
-        className="inline-flex items-center gap-1.5 border border-rule px-3 h-7 text-[12px] font-body font-[600] text-inkSoft lowercase"
-        title={SYNC_EXPLANATIONS['local-only']}
-      >
+      <span className="inline-flex items-center gap-1.5 border border-rule px-3 h-7 text-[12px] font-body font-[600] text-inkSoft lowercase">
         <span className="font-mono" aria-hidden>
           ○
         </span>
@@ -364,25 +366,12 @@ function SyncPill({ state }: { state: UploadDraftState | 'local-only' }) {
   }
   const spec =
     state === 'unsynced'
-      ? {
-          bg: 'bg-accent',
-          glyph: '●',
-          label: 'unsynced edits',
-          clip: 'polygon(0 0, calc(100% - 9px) 0, 100% 50%, calc(100% - 9px) 100%, 0 100%)',
-          explain: SYNC_EXPLANATIONS.unsynced,
-        }
-      : {
-          bg: 'bg-ok',
-          glyph: '✓',
-          label: 'synced',
-          clip: 'polygon(9px 0, 100% 0, 100% 100%, 9px 100%, 0 50%)',
-          explain: SYNC_EXPLANATIONS.synced,
-        };
+      ? { bg: 'bg-accent', glyph: '●', label: 'unsynced edits', clip: 'polygon(0 0, calc(100% - 9px) 0, 100% 50%, calc(100% - 9px) 100%, 0 100%)' }
+      : { bg: 'bg-ok', glyph: '✓', label: 'synced', clip: 'polygon(9px 0, 100% 0, 100% 100%, 9px 100%, 0 50%)' };
   return (
     <span
       className={`inline-flex items-center gap-1.5 px-3.5 h-7 text-[12px] font-body font-[600] text-paper lowercase ${spec.bg}`}
       style={{ clipPath: spec.clip }}
-      title={spec.explain}
     >
       <span className="font-mono" aria-hidden>
         {spec.glyph}
@@ -522,21 +511,22 @@ function CollectionPrompt({
         </div>
 
         <p className={`fn-rise ${kicker} block`} style={{ animationDelay: '0.15s' }}>
-          Tagger
+          Field Notebook · Tagger
         </p>
 
         <h1
           className="fn-rise font-display text-[27px] leading-tight text-ink mt-2 text-balance"
           style={{ animationDelay: '0.25s' }}
         >
-          Pick a collection to begin
+          Pick up a collection to begin
         </h1>
 
         <p
           className="fn-rise font-body text-[14px] leading-relaxed text-inkSoft mt-3 mx-auto max-w-[34ch] text-pretty"
           style={{ animationDelay: '0.35s' }}
         >
-          Pick a collection on the left to show the uploads that can be tagged
+          Choose one from the rail on the left to see its uploads — then open an
+          upload to start tagging what the cameras caught.
         </p>
 
         <div
