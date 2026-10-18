@@ -144,6 +144,107 @@ Then('the Focus image canvas fills the available area beside the species picker'
   expect(canvas.height).toBeGreaterThan(viewport.height * 0.45);
 });
 
+// --- Resizable Focus split (issue #536) -------------------------------------
+
+async function dragDivider(page: Page, deltaX: number, deltaY: number): Promise<void> {
+  const box = (await page.getByRole('separator').boundingBox())!;
+  const startX = box.x + box.width / 2;
+  const startY = box.y + box.height / 2;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + deltaX, startY + deltaY, { steps: 5 });
+  await page.mouse.up();
+}
+
+When("the species panel's divider is dragged narrower", async ({ page, scratch }) => {
+  scratch.speciesSizeBefore = (await page.getByTestId('species-panel').boundingBox())!.width;
+  scratch.canvasSizeBefore = (await page.getByTestId('focus-drop-zone').boundingBox())!.width;
+  await dragDivider(page, 80, 0);
+});
+
+Then('the species panel is narrower and the image canvas is wider', async ({ page, scratch }) => {
+  const species = (await page.getByTestId('species-panel').boundingBox())!;
+  const canvas = (await page.getByTestId('focus-drop-zone').boundingBox())!;
+  expect(species.width).toBeLessThan(scratch.speciesSizeBefore as number);
+  expect(canvas.width).toBeGreaterThan(scratch.canvasSizeBefore as number);
+});
+
+When("the species panel's divider is dragged wider", async ({ page }) => {
+  await dragDivider(page, -200, 0);
+});
+
+Then('the species panel is wider than its default width', async ({ page }) => {
+  const species = (await page.getByTestId('species-panel').boundingBox())!;
+  expect(species.width).toBeGreaterThan(340);
+});
+
+When("the species panel's divider is dragged as far narrow as it will go", async ({ page }) => {
+  await dragDivider(page, 2000, 0);
+});
+
+Then('the species panel stays at least 100px wide', async ({ page }) => {
+  const species = (await page.getByTestId('species-panel').boundingBox())!;
+  expect(species.width).toBeGreaterThanOrEqual(100);
+  expect(species.width).toBeLessThan(150);
+});
+
+When("the species panel's divider is dragged as far wide as it will go", async ({ page }) => {
+  await dragDivider(page, -2000, 0);
+});
+
+Then('the image canvas does not shrink away to nothing', async ({ page }) => {
+  const canvas = (await page.getByTestId('focus-drop-zone').boundingBox())!;
+  expect(canvas.width).toBeGreaterThanOrEqual(200);
+});
+
+Given("the species panel's divider has been dragged to a new width", async ({ page, scratch }) => {
+  await dragDivider(page, 80, 0);
+  scratch.speciesWidthChosen = (await page.getByTestId('species-panel').boundingBox())!.width;
+});
+
+When('Focus is closed and reopened', async ({ page }) => {
+  await page.getByRole('button', { name: 'Close Focus' }).click();
+  await expect(page.getByRole('button', { name: 'Overview', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await focusFrame(page, 'IMG001.JPG');
+  await enterFocusView(page);
+});
+
+Then('the species panel keeps the width that was chosen', async ({ page, scratch }) => {
+  const species = (await page.getByTestId('species-panel').boundingBox())!;
+  expect(species.width).toBeCloseTo(scratch.speciesWidthChosen as number, 0);
+});
+
+Given('the viewport is narrowed to a phone size', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+});
+
+When("the species panel's divider is dragged shorter", async ({ page, scratch }) => {
+  scratch.speciesSizeBefore = (await page.getByTestId('species-panel').boundingBox())!.height;
+  scratch.canvasSizeBefore = (await page.getByTestId('focus-drop-zone').boundingBox())!.height;
+  await dragDivider(page, 0, 80);
+});
+
+Then('the species panel is shorter and the image canvas is taller', async ({ page, scratch }) => {
+  const species = (await page.getByTestId('species-panel').boundingBox())!;
+  const canvas = (await page.getByTestId('focus-drop-zone').boundingBox())!;
+  expect(species.height).toBeLessThan(scratch.speciesSizeBefore as number);
+  expect(canvas.height).toBeGreaterThan(scratch.canvasSizeBefore as number);
+});
+
+When("the species panel's divider is focused", async ({ page, scratch }) => {
+  scratch.speciesSizeBefore = (await page.getByTestId('species-panel').boundingBox())!.width;
+  await page.getByRole('separator').focus();
+});
+
+When('the narrowing arrow key is pressed', async ({ page }) => {
+  await page.keyboard.press('ArrowRight');
+});
+
+Then('the species panel becomes narrower', async ({ page, scratch }) => {
+  const species = (await page.getByTestId('species-panel').boundingBox())!;
+  expect(species.width).toBeLessThan(scratch.speciesSizeBefore as number);
+});
+
 Given('Overview thumbnail downloads are delayed', async ({ page, s3 }) => {
   for (const image of MEDIA_A.slice(1)) s3.delay(mediaKey(PREFIX_A, image.file), 2_000);
   await page.reload();

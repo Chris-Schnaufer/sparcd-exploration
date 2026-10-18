@@ -16,6 +16,7 @@ import { parseCollectionKey } from '../lib/s3';
 import { correctedTimestamp, shiftTimestamp } from '@sparcd/camtrap';
 import tzlookup from 'tz-lookup';
 import { SpeciesPanel } from '../components/SpeciesPanel';
+import { ResizableSplit } from '../components/ResizableSplit';
 import { AppliedSpecies } from '../components/AppliedSpecies';
 import { Cheatsheet } from '../components/Cheatsheet';
 import { SyncDialog } from '../components/SyncDialog';
@@ -1317,18 +1318,24 @@ export function Tag() {
               ×
             </button>
           </div>
-          <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] overflow-y-auto lg:overflow-visible">
-            <FocusPane
-              current={current}
-              onPrev={() => gotoFilteredImage(-1)}
-              onNext={() => gotoFilteredImage(1)}
-              canPrev={canGoPrevious}
-              canNext={canGoNext}
-              hasPrevAfterPrev={hasPreviousAfterPrevious}
-              hasNextAfterNext={hasNextAfterNext}
-              onDropSpecies={(tag) => applyIncrementAt(focus, tag)}
+          <div className="flex-1 min-h-0">
+            <ResizableSplit
+              storageKey="sparcd-tagger:focus-split"
+              defaultSize={340}
+              first={
+                <FocusPane
+                  current={current}
+                  onPrev={() => gotoFilteredImage(-1)}
+                  onNext={() => gotoFilteredImage(1)}
+                  canPrev={canGoPrevious}
+                  canNext={canGoNext}
+                  hasPrevAfterPrev={hasPreviousAfterPrevious}
+                  hasNextAfterNext={hasNextAfterNext}
+                  onDropSpecies={(tag) => applyIncrementAt(focus, tag)}
+                />
+              }
+              second={<SpeciesPanel {...speciesPanelProps()} />}
             />
-            <SpeciesPanel {...speciesPanelProps()} />
           </div>
         </div>,
         document.body,
@@ -1542,7 +1549,7 @@ function FocusPane({
   };
 
   return (
-    <div className="flex flex-col min-h-[55svh] lg:min-h-0 bg-paper">
+    <div className="flex flex-col h-full min-h-0 bg-paper">
       <div
         ref={dropRef}
         className={`relative flex-1 min-h-0 grid place-items-center p-4 overflow-hidden${isDragOver ? ' ring-2 ring-inset ring-accent' : ''}`}
