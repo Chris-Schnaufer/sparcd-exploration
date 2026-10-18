@@ -650,8 +650,10 @@ Then(
 
 // --- Display adjustments ----------------------------------------------------
 
+// ≥lg and phone each render their own instance of the trigger (one hidden by
+// CSS depending on viewport width), so narrow to the one actually on screen.
 const adjustToggle = (page: Page): Locator =>
-  page.locator('button[title="View-only image adjustments (does not change the file)"]');
+  page.locator('button[title="View-only image adjustments (does not change the file)"]:visible');
 
 Given('the focused item is a still image', async ({ page }) => {
   if (await page.getByRole('button', { name: 'Close Focus' }).count()) {
@@ -817,6 +819,34 @@ Then('the adjustment panel stays inside the window on a phone', async ({ page })
     }
     return problems;
   }).toEqual([]);
+});
+
+Then('the Adjust control sits under the zoom button column, with a gap', async ({ page }) => {
+  const [adjust, fullscreen] = await Promise.all([
+    adjustToggle(page).boundingBox(),
+    page.getByRole('button', { name: 'Open fullscreen' }).boundingBox(),
+  ]);
+  expect(adjust).not.toBeNull();
+  expect(fullscreen).not.toBeNull();
+  // Right-anchored in the same column as the zoom buttons, below them, with
+  // more room than the gap used between the zoom buttons and Reset.
+  expect(Math.abs(adjust!.x + adjust!.width - (fullscreen!.x + fullscreen!.width))).toBeLessThanOrEqual(2);
+  expect(adjust!.y).toBeGreaterThan(fullscreen!.y + fullscreen!.height + 8);
+});
+
+When('the viewport is narrowed to a phone size', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+});
+
+Then('the Adjust control sits at the top-left, clear of the zoom column', async ({ page }) => {
+  const [adjust, fullscreen] = await Promise.all([
+    adjustToggle(page).boundingBox(),
+    page.getByRole('button', { name: 'Open fullscreen' }).boundingBox(),
+  ]);
+  expect(adjust).not.toBeNull();
+  expect(fullscreen).not.toBeNull();
+  expect(adjust!.x).toBeLessThan(fullscreen!.x);
+  expect(adjust!.y).toBeLessThan(fullscreen!.y);
 });
 
 Then('keyboard focus enters the adjustment panel', async ({ page }) => {

@@ -1541,6 +1541,27 @@ function FocusPane({
     onNext();
   };
 
+  const adjustPanel = showAdjust && (
+    <ImageAdjustments
+      value={adjustments}
+      onChange={setAdjustments}
+      onReset={() => setAdjustments(NEUTRAL)}
+      getMediaRect={getVisibleMediaRect}
+      getBlockedRects={() => {
+        const focus = dropRef.current?.getBoundingClientRect();
+        if (!focus) return [];
+        const rails: DOMRect[] = [];
+        if (focus.left > 0) rails.push(new DOMRect(0, focus.top, focus.left, focus.height));
+        const species = document
+          .querySelector('[data-testid="species-panel"]')
+          ?.getBoundingClientRect();
+        if (species && species.left >= focus.right) rails.push(species);
+        return rails;
+      }}
+      mediaKey={current!.key}
+    />
+  );
+
   return (
     <div className="flex flex-col min-h-[55svh] lg:min-h-0 bg-paper">
       <div
@@ -1569,7 +1590,14 @@ function FocusPane({
             alt={current.fileName}
             isVideo={isVideo}
             filter={filter}
+            adjust={adjustPanel}
           />
+        )}
+        {showAdjust && (
+          // ≥lg, this same panel renders under the zoom button column instead
+          // (threaded through FocusImage into ZoomControls); phones keep it
+          // here, top-left, off the squeezed image.
+          <div className="absolute top-4 left-4 lg:hidden z-10">{adjustPanel}</div>
         )}
         {current && canPrev && (
           <button
@@ -1600,30 +1628,6 @@ function FocusPane({
         <span id="focus-navigation-help" className="sr-only">
           Use ArrowLeft or ArrowUp for the previous image. Use ArrowRight or ArrowDown for the next image.
         </span>
-        {showAdjust && (
-          // On phones the zoom controls own bottom-right, so park adjustments at
-          // top-left to keep both off the squeezed image; restore bottom-left ≥lg.
-          <div className="absolute top-4 left-4 lg:top-auto lg:bottom-4 z-10">
-            <ImageAdjustments
-              value={adjustments}
-              onChange={setAdjustments}
-              onReset={() => setAdjustments(NEUTRAL)}
-              getMediaRect={getVisibleMediaRect}
-              getBlockedRects={() => {
-                const focus = dropRef.current?.getBoundingClientRect();
-                if (!focus) return [];
-                const rails: DOMRect[] = [];
-                if (focus.left > 0) rails.push(new DOMRect(0, focus.top, focus.left, focus.height));
-                const species = document
-                  .querySelector('[data-testid="species-panel"]')
-                  ?.getBoundingClientRect();
-                if (species && species.left >= focus.right) rails.push(species);
-                return rails;
-              }}
-              mediaKey={current.key}
-            />
-          </div>
-        )}
       </div>
     </div>
   );
@@ -1702,11 +1706,13 @@ function FocusImage({
   alt,
   isVideo,
   filter,
+  adjust,
 }: {
   objectKey: string;
   alt: string;
   isVideo: boolean;
   filter?: string;
+  adjust?: React.ReactNode;
 }) {
   const { url, isError, markLoaded } = useMediaUrl(objectKey, 'high');
   const [loadedToken, setLoadedToken] = useState<string>();
@@ -1751,6 +1757,7 @@ function FocusImage({
             resetKey={objectKey}
             filter={filter}
             onLoaded={onLoaded}
+            adjust={adjust}
           />
         ))}
       {(!url || loadedToken !== mediaToken) && (
@@ -1847,12 +1854,14 @@ function ZoomableImage({
   resetKey,
   filter,
   onLoaded,
+  adjust,
 }: {
   src: string;
   alt: string;
   resetKey: string;
   filter?: string;
   onLoaded: () => void;
+  adjust?: React.ReactNode;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [zoomed, setZoomed] = useState(false);
@@ -1892,6 +1901,7 @@ function ZoomableImage({
               onOut={() => zoomOut()}
               onExpand={() => setExpanded(true)}
               onReset={zoomed ? () => resetTransform() : undefined}
+              extra={adjust}
             />
           </>
         )}
@@ -2020,12 +2030,14 @@ function ZoomControls({
   onExpand,
   onReset,
   dark,
+  extra,
 }: {
   onIn: () => void;
   onOut: () => void;
   onExpand?: () => void;
   onReset?: () => void;
   dark?: boolean;
+  extra?: React.ReactNode;
 }) {
   const tone = dark
     ? 'text-paper/80 hover:text-paper hover:bg-paper/10'
@@ -2065,6 +2077,10 @@ function ZoomControls({
           </button>
         )}
       </div>
+      {/* ≥lg only — phones render this same panel elsewhere (FocusPane), off
+          the squeezed image. The extra mt-2 on top of the flex gap sets it
+          apart from the zoom controls above it. */}
+      {extra && <div className="hidden lg:block mt-2">{extra}</div>}
     </div>
   );
 }
