@@ -28,6 +28,24 @@ function parseStamp(stamp: string): { date: string; time: string; user: string |
   return { date: `${y}-${mo}-${d}`, time: `${hh}:${mm}`, user: m[7] ?? null };
 }
 
+// Free-text match over uploader, date, time, location name and location ID.
+// A row whose summary hasn't resolved yet is never excluded on that account —
+// it would otherwise flash out of a filtered view the instant the filter is
+// typed and only reappear once its data happens to load, which looks like a
+// bug. It filters normally as soon as its data is in.
+function matchesUploadFilter(
+  stamp: string,
+  summary: UploadSummary | undefined,
+  loading: boolean,
+  query: string,
+): boolean {
+  if (!query) return true;
+  if (loading) return true;
+  const { date, time, user } = parseStamp(stamp);
+  const locations = summary?.deployments.map((d) => `${d.name} ${d.locationId}`).join(' ') ?? '';
+  return `${user ?? ''} ${date} ${time} ${locations}`.toLowerCase().includes(query);
+}
+
 type Tab = 'all' | 'in-progress' | 'done';
 
 // Which filter tab an upload belongs to, from its canonical tally. Untouched and
@@ -56,6 +74,7 @@ export function Browse() {
   const [filter, setFilter] = useState('');
   const [tooltipCollectionKey, setTooltipCollectionKey] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('all');
+  const [uploadFilter, setUploadFilter] = useState('');
 
   const collection = collections.data?.find((c) => c.key === collectionKey);
 
@@ -86,6 +105,20 @@ export function Browse() {
   }, [summaries]);
 
   const uploadCount = uploads.data?.length ?? 0;
+
+  // Tab and free-text filter compose (AND): both must pass for a row to show.
+  const uploadFilterQuery = uploadFilter.trim().toLowerCase();
+  const visibleUploads = useMemo(
+    () =>
+      (uploads.data ?? []).flatMap((u, i) => {
+        const summaryQuery = summaries[i];
+        const t = tabOf(summaryQuery?.data);
+        if (tab !== 'all' && t !== tab) return [];
+        if (!matchesUploadFilter(u.stamp, summaryQuery?.data, summaryQuery?.isLoading ?? true, uploadFilterQuery)) return [];
+        return [{ upload: u, query: summaryQuery }];
+      }),
+    [uploads.data, summaries, tab, uploadFilterQuery],
+  );
 
   return (
     <div className="h-full grid grid-cols-1 xl:grid-cols-[320px_1fr] min-h-0">
@@ -205,34 +238,46 @@ export function Browse() {
             <Status q={uploads} empty="No uploads in this collection." />
 
             {!uploads.isError && uploadCount > 0 && (
-              <div className="browse-upload-table bg-panel border border-rule">
-                {/* Column header */}
-                <div className={`hidden md:grid ${uploadGrid} gap-4 browse-compact:gap-1.5 px-4 py-2.5 border-b border-rule text-[11px] font-[600] tracking-[0.14em] uppercase text-inkSoft`}>
-                  <span data-column="date">Date</span>
-                  <span data-column="upload">Upload</span>
-                  <span data-column="location">Location</span>
-                  <span data-column="tagged-total" className={taggedCell}>Tagged/Total</span>
-                  <span data-column="collected" className={taggedCell}>Collected</span>
-                  <span data-column="sync" className={syncCell}>Sync</span>
-                  <span />
-                </div>
+              <>
+                <input
+                  value={uploadFilter}
+                  onChange={(e) => setUploadFilter(e.target.value)}
+                  placeholder="Filter by uploader, date, time, or location…"
+                  aria-label="Filter uploads"
+                  className="mb-3 w-full max-w-sm bg-paper border border-rule px-3 py-2 text-[14px] text-ink placeholder:text-inkMute focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                />
 
-                {uploads.isLoading && <RowsSkeleton />}
+                {!uploads.isLoading && uploadFilter && visibleUploads.length === 0 ? (
+                  <p className="text-[13px] text-inkMute px-4 py-3" role="status">
+                    No uploads match “{uploadFilter}”.
+                  </p>
+                ) : (
+                  <div className="browse-upload-table bg-panel border border-rule">
+                    {/* Column header */}
+                    <div className={`hidden md:grid ${uploadGrid} gap-4 px-4 py-2.5 border-b border-rule text-[11px] font-[600] tracking-[0.14em] uppercase text-inkSoft`}>
+                      <span data-column="date">Date</span>
+                      <span data-column="upload">Upload</span>
+                      <span data-column="location">Location</span>
+                      <span data-column="tagged-total" className={taggedCell}>Tagged/Total</span>
+                      <span data-column="collected" className={taggedCell}>Collected</span>
+                      <span data-column="sync" className={syncCell}>Sync</span>
+                      <span />
+                    </div>
 
-                {uploads.data?.map((u, i) => {
-                  const t = tabOf(summaries[i]?.data);
-                  if (tab !== 'all' && t !== tab) return null;
-                  return (
-                    <UploadRow
-                      key={u.prefix}
-                      stamp={u.stamp}
-                      query={summaries[i]}
-                      draftState={draftStates.data?.get(u.prefix)}
-                      onOpen={() => selectUpload(u.prefix)}
-                    />
-                  );
-                })}
-              </div>
+                    {uploads.isLoading && <RowsSkeleton />}
+
+                    {visibleUploads.map(({ upload: u, query }) => (
+                      <UploadRow
+                        key={u.prefix}
+                        stamp={u.stamp}
+                        query={query}
+                        draftState={draftStates.data?.get(u.prefix)}
+                        onOpen={() => selectUpload(u.prefix)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </>
         )}

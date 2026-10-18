@@ -150,6 +150,31 @@ Feature: Find the upload that needs tagging
     And mobile Browse keeps tagging progress aligned
 
   @unmapped
+  Scenario: The upload list can be narrowed by a free-text filter
+    Given a collection is selected
+    When the upload filter searches for an uploader's name
+    Then only uploads from that uploader remain
+    When the upload filter searches for an upload date
+    Then only the upload made on that date remains
+    When the upload filter searches for a location name or site ID
+    Then uploads recorded at that location remain and uploads without a location are excluded
+    When the upload filter searches for text nothing matches
+    Then a message names the filter text when no uploads match
+
+  @unmapped
+  Scenario: The free-text filter and the tagging-progress tabs compose together
+    Given a collection is selected
+    When the upload filter searches for text shared by two uploaders
+    And the "Done" tab is chosen
+    Then only the finished upload among them remains
+
+  @unmapped
+  Scenario: A location filter does not hide a row before its summary has loaded
+    Given an upload's summary takes time to load
+    When the upload filter searches for a location that upload does not have
+    Then that upload stays visible until its summary resolves, then is hidden because it does not match
+
+  @unmapped
   Scenario: An upload whose location file cannot be read still lists
     Given an upload has no readable deployment file
     When its row is shown

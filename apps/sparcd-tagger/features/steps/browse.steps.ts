@@ -784,3 +784,77 @@ Then(
     await expect(gridCell(page, 'IMG004.JPG')).toContainText('Mountain Lion +1');
   },
 );
+
+// --- Free-text upload filter -------------------------------------------------
+
+When("the upload filter searches for an uploader's name", async ({ page }) => {
+  await page.getByLabel('Filter uploads').fill('priortagger');
+});
+
+Then('only uploads from that uploader remain', async ({ page }) => {
+  await expect(uploadRow(page, 'priortagger')).toBeVisible();
+  await expect(uploadRow(page, 'fielduser')).toHaveCount(0);
+  await expect(uploadRow(page, 'newuploader')).toHaveCount(0);
+  await expect(uploadRow(page, 'videoproducer')).toHaveCount(0);
+  await expect(uploadRow(page, 'camerauser')).toHaveCount(0);
+});
+
+When('the upload filter searches for an upload date', async ({ page }) => {
+  await page.getByLabel('Filter uploads').fill('2024-01-15');
+});
+
+Then('only the upload made on that date remains', async ({ page }) => {
+  await expect(uploadRow(page, 'priortagger')).toBeVisible();
+  await expect(uploadRow(page, 'fielduser')).toHaveCount(0);
+});
+
+When('the upload filter searches for a location name or site ID', async ({ page }) => {
+  await page.getByLabel('Filter uploads').fill('SAN15');
+});
+
+Then(
+  'uploads recorded at that location remain and uploads without a location are excluded',
+  async ({ page }) => {
+    await expect(uploadRow(page, 'priortagger')).toBeVisible();
+    await expect(uploadRow(page, 'fielduser')).toHaveCount(0);
+  },
+);
+
+When('the upload filter searches for text nothing matches', async ({ page }) => {
+  await page.getByLabel('Filter uploads').fill('zzz-no-such-upload-zzz');
+});
+
+Then('a message names the filter text when no uploads match', async ({ page }) => {
+  await expect(page.getByText('No uploads match')).toContainText('zzz-no-such-upload-zzz');
+});
+
+When('the upload filter searches for text shared by two uploaders', async ({ page }) => {
+  // Matches "fielduser" (done) and "camerauser" (not done); no one else.
+  await page.getByLabel('Filter uploads').fill('user');
+});
+
+Then('only the finished upload among them remains', async ({ page }) => {
+  await expect(uploadRow(page, 'fielduser')).toBeVisible();
+  await expect(uploadRow(page, 'camerauser')).toHaveCount(0);
+});
+
+Given("an upload's summary takes time to load", async ({ page, s3 }) => {
+  s3.delay(`${PREFIX_B}UploadMeta.json`, 4000);
+  await openAppConnected(page);
+  await selectCollection(page);
+});
+
+When('the upload filter searches for a location that upload does not have', async ({ page }) => {
+  // fielduser has no deployments.csv, so it never matches a location query.
+  await page.getByLabel('Filter uploads').fill('SAN15');
+});
+
+Then(
+  "that upload stays visible until its summary resolves, then is hidden because it does not match",
+  async ({ page, s3 }) => {
+    await expect(uploadRow(page, 'fielduser')).toBeVisible();
+    await expect(uploadRow(page, 'fielduser')).toHaveCount(0, { timeout: 15000 });
+    s3.delays.clear();
+  },
+);
+
