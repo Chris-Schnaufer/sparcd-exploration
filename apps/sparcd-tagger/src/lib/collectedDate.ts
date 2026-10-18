@@ -1,6 +1,8 @@
 // PR #500 writes a delimited "collected YYYY-MM-DD" comment segment.
 // Legacy/unrecognized prose is not a reliable source for a collection date.
-export function extractCollectedDate(description: string): string | null {
+export function extractCollectedDate(description: unknown): string | null {
+  // UploadMeta.json from older/foreign writers is not runtime-schema validated.
+  if (typeof description !== 'string') return null;
   const match = description.match(/(?:^|\s+-\s+)collected\s+(\d{4}-\d{2}-\d{2})(?=\s+-\s+|\s*$)/i);
   if (!match) return null;
   const value = match[1];

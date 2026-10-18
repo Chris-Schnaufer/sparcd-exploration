@@ -33,3 +33,20 @@ visual decoration; the tagged and total counts remain readable text.
 The Chrome override and visual-review fixtures were temporary local files and
 were removed after verification. The user's existing browser windows and app
 servers were not reused.
+
+## Legacy description regression follow-up
+
+The collected-date parser accepts unknown metadata values and treats omitted or
+non-string descriptions as unavailable without coercion. This preserves the
+existing valid-string date parsing while preventing malformed UploadMeta.json
+from crashing Browse.
+
+Nine additional unit cases cover missing, null, numeric, boolean, array, object,
+and boxed-string values. Six Browse BDD cases serve actual UploadMeta.json
+fixtures with omitted, null, number, boolean, array, and object descriptions.
+They verify unavailable-date guidance on keyboard focus, preserved location and
+counts, another visible upload, and opening the affected upload for tagging.
+
+Validation: all 324 Tagger unit tests, TypeScript, and the production build passed.
+All 263 Tagger BDD scenarios passed in independent Google Chrome on port 5339
+(6.0 minutes), including all six new regressions.

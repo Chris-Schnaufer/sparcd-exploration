@@ -2,6 +2,19 @@ import { describe, expect, it } from 'vitest';
 import { extractCollectedDate } from '../src/lib/collectedDate';
 const comment = (date: string) => `Santa Rita Mountains - San Pedro 15 - 6 images - uploaded 2024-01-15 - collected ${date}`;
 describe('collection date from upload comments', () => {
+  it.each([
+    { label: 'omitted', value: undefined },
+    { label: 'null', value: null },
+    { label: 'zero', value: 0 },
+    { label: 'number', value: 42 },
+    { label: 'boolean', value: true },
+    { label: 'empty array', value: [] },
+    { label: 'date-like array', value: ['collected 2024-02-29'] },
+    { label: 'object', value: { description: 'collected 2024-02-29' } },
+    { label: 'boxed string', value: new String('collected 2024-02-29') },
+  ])('treats $label descriptions as unavailable without coercion', ({ value }) => {
+    expect(extractCollectedDate(value)).toBeNull();
+  });
   it.each(['2024-02-29', '2023-02-28', '2000-02-29', '1999-12-31'])('preserves valid calendar date %s', value => {
     expect(extractCollectedDate(comment(value))).toBe(value);
     expect(extractCollectedDate(`${comment(value)} - optional notes`)).toBe(value);

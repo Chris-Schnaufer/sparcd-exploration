@@ -382,6 +382,35 @@ Then('hovering it explains the date is missing or not in a recognized format', a
   );
 });
 
+Given('the upload metadata description is {string}', async ({ page, s3 }, kind: string) => {
+  const meta: Record<string, unknown> = JSON.parse(uploadMetaJson({
+    bucket: BUCKET, prefix: PREFIX_A, user: 'priortagger', imageCount: MEDIA_A.length,
+    imagesWithSpecies: 3, description: '',
+  }));
+  const values: Record<string, unknown> = {
+    null: null, number: 42, boolean: true,
+    array: ['collected 2024-02-29'], object: { date: 'collected 2024-02-29' },
+  };
+  if (kind === 'omitted') delete meta.description;
+  else {
+    expect(Object.hasOwn(values, kind)).toBe(true);
+    meta.description = values[kind];
+  }
+  s3.put(BUCKET, `${PREFIX_A}UploadMeta.json`, JSON.stringify(meta), 'application/json');
+  await openAppConnected(page);
+  await selectCollection(page);
+});
+
+Then('the upload retains its metadata and still opens for tagging', async ({ page }) => {
+  const row = uploadRow(page, 'priortagger');
+  await expect(row.locator('[data-column="location"]')).toContainText(`${LOCATION_NAME} (SAN15)`);
+  await expect(row.locator('[data-column="tagged-total"]')).toContainText('3 / 6');
+  // Another upload remains usable too: a bad description cannot crash the collection.
+  await expect(uploadRow(page, 'videoproducer')).toBeVisible();
+  await openUpload(page);
+  await expect(gridCell(page, 'IMG001.JPG')).toBeVisible();
+});
+
 Given('the upload description contains collected date {string}', async ({ page, s3 }, date: string) => {
   s3.put(BUCKET, `${PREFIX_A}UploadMeta.json`, uploadMetaJson({
     bucket: BUCKET, prefix: PREFIX_A, user: 'priortagger', imageCount: MEDIA_A.length,

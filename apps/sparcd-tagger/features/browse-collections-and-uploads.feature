@@ -97,6 +97,22 @@ Feature: Find the upload that needs tagging
     And the missing collected date is explained on keyboard focus
 
   @unmapped
+  Scenario Outline: Legacy or non-string descriptions do not break Browse
+    Given the upload metadata description is "<kind>"
+    Then the upload row's Collected column shows a dash
+    And the missing collected date is explained on keyboard focus
+    And the upload retains its metadata and still opens for tagging
+
+    Examples:
+      | kind    |
+      | omitted |
+      | null    |
+      | number  |
+      | boolean |
+      | array   |
+      | object  |
+
+  @unmapped
   Scenario Outline: Impossible calendar dates are unavailable rather than normalized
     Given the upload description contains collected date "<date>"
     Then the upload row's Collected column shows a dash
