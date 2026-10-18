@@ -25,9 +25,14 @@ Feature: What the tagger reveals about where images were taken
     And no location is withheld on the grounds of the species in the images
 
   @F4
-  Scenario: The focused image shows the deployment it belongs to
+  Scenario: The focused image shows the location name and ID of its deployment
     Given an image is open in the Focus view
-    Then the deployment identifier recorded for that image is shown alongside its file name
+    Then the location name and ID recorded for that image's deployment are shown alongside its file name
+
+  @unmapped
+  Scenario: A missing deployment file leaves the location area blank in Focus
+    Given an image is open in the Focus view for an upload with no readable deployment file
+    Then no location is shown alongside its file name
 
   @F4
   Scenario: The tagger applies no species-based or location-based restriction

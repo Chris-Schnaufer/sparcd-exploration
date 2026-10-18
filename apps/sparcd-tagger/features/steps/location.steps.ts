@@ -11,7 +11,7 @@ import {
   sectionTab,
   enterFocusView,
 } from './support/world';
-import { LOCATION_NAME, DEPLOYMENT } from './support/data';
+import { LOCATION_NAME, DEPLOYMENT, BUCKET, PREFIX_B } from './support/data';
 
 const SENSITIVITY_WORDS =
   /sensitiv|protected species|redact|coarsen|withheld|obfuscat|restricted location/i;
@@ -42,14 +42,28 @@ Given('an image is open in the Focus view', async ({ page }) => {
 });
 
 Then(
-  'the deployment identifier recorded for that image is shown alongside its file name',
+  "the location name and ID recorded for that image's deployment are shown alongside its file name",
   async ({ page }) => {
     const focus = page.getByRole('dialog', { name: 'Focus image viewer' });
     await expect(focus).toContainText('IMG001.JPG');
-    await expect(focus).toContainText(DEPLOYMENT);
-    await expect(focus.getByLabel(`Deployment: ${DEPLOYMENT}`)).toBeVisible();
+    await expect(focus).not.toContainText(DEPLOYMENT);
+    await expect(focus.getByLabel(`Location: ${LOCATION_NAME} (SAN15)`)).toBeVisible();
   },
 );
+
+Given('an image is open in the Focus view for an upload with no readable deployment file', async ({ page, s3 }) => {
+  expect(s3.has(BUCKET, `${PREFIX_B}deployments.csv`)).toBe(false);
+  await openAppConnected(page);
+  await selectCollection(page);
+  await openUpload(page, 'fielduser');
+  await enterFocusView(page);
+});
+
+Then('no location is shown alongside its file name', async ({ page }) => {
+  const focus = page.getByRole('dialog', { name: 'Focus image viewer' });
+  await expect(focus).toContainText(/\.(JPG|MP4)/);
+  await expect(focus.getByLabel(/^Location:/)).toHaveCount(0);
+});
 
 When('any view, dialog or synced file is produced', async ({ page }) => {
   await selectCollection(page);

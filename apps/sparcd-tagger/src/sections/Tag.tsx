@@ -1289,13 +1289,13 @@ export function Tag() {
             <div className="min-w-0 text-[13px] font-mono text-ink truncate">
               Focus{current ? ` · ${current.fileName}` : ''}
             </div>
-            {current?.deploymentId && (
+            {currentDeployment.data && (
               <span
                 className="shrink-0 max-w-[42vw] truncate font-mono text-[10px] text-inkSoft"
-                aria-label={`Deployment: ${current.deploymentId}`}
-                title={`Deployment: ${current.deploymentId}`}
+                aria-label={`Location: ${currentDeployment.data.locationName} (${currentDeployment.data.locationId})`}
+                title={`Location: ${currentDeployment.data.locationName} (${currentDeployment.data.locationId})`}
               >
-                {current.deploymentId}
+                {currentDeployment.data.locationName} ({currentDeployment.data.locationId})
               </span>
             )}
             {current?.timestampSource === 'exif-modify' && (
