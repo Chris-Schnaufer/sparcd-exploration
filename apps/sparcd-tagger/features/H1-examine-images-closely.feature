@@ -55,6 +55,18 @@ Feature: Examine an image closely enough to catch every species
     And the narrowing arrow key is pressed
     Then the species panel becomes narrower
 
+  @unmapped
+  Scenario: Split bounds and preferences survive window changes and reload
+    Then split preferences survive resizing and reload without hiding controls
+
+  @unmapped
+  Scenario: The phone divider supports actual touch input
+    Then a touch drag resizes the phone split
+
+  @unmapped
+  Scenario: Cancellation and Focus closing stop divider drags
+    Then canceled and unmounted drags stop resizing
+
   @H1
   Scenario: An image can be enlarged well beyond its fit-to-screen size
     When the image is zoomed in
