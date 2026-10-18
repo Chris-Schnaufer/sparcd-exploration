@@ -18,7 +18,6 @@ import {
   BUCKET_B,
   UUID,
   UUID_B,
-  SETTINGS_BUCKET,
   COLLECTION_NAME,
   COLLECTION_B_NAME,
   PREFIX_A,
@@ -74,30 +73,6 @@ Then('a message names the filter text when nothing matches', async ({ page }) =>
   await page.getByLabel('Filter collections').fill('nothing-like-this');
   await expect(page.getByText('No collections match')).toContainText('nothing-like-this');
   await expect(collectionRail(page).locator('ul > li')).toHaveCount(0);
-});
-
-// --- Species vocabulary status ----------------------------------------------
-
-Then(
-  'the rail reports how many species were loaded and which settings bucket they came from',
-  async ({ page }) => {
-    await expect(collectionRail(page).getByText(/species loaded from/)).toContainText(
-      `5 species loaded from ${SETTINGS_BUCKET}`,
-    );
-  },
-);
-
-Then('it reports how many entries were skipped as malformed', async ({ page }) => {
-  await expect(collectionRail(page).getByText(/species loaded from/)).toContainText('(1 skipped)');
-});
-
-Then('it reports the reason when the vocabulary cannot be read at all', async ({ page, s3 }) => {
-  s3.delete(SETTINGS_BUCKET, 'Settings/species.json');
-  await page.reload();
-  await connect(page);
-  await expect(collectionRail(page).getByText(/Species vocabulary unavailable/)).toContainText(
-    'No readable settings bucket found',
-  );
 });
 
 // --- Upload list ------------------------------------------------------------

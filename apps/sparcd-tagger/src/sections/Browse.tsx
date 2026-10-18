@@ -124,14 +124,6 @@ export function Browse() {
             ))}
           </ul>
         </div>
-
-        <p className="text-[12px] text-inkMute font-body border-t border-rule p-4">
-          {species.isLoading && 'Loading species vocabulary…'}
-          {species.isError && `Species vocabulary unavailable: ${(species.error as Error).message}`}
-          {species.data &&
-            `${species.data.species.length} species loaded from ${species.data.sourceBucket}/${species.data.sourceKey}` +
-              (species.data.skipped.length ? ` (${species.data.skipped.length} skipped)` : '')}
-        </p>
       </aside>
 
       {/* Uploads for the chosen collection */}

@@ -27,13 +27,6 @@ Feature: Find the upload that needs tagging
     And a message names the filter text when nothing matches
 
   @unmapped
-  Scenario: The species vocabulary's load state is visible before tagging starts
-    When Browse is opened
-    Then the rail reports how many species were loaded and which settings bucket they came from
-    And it reports how many entries were skipped as malformed
-    And it reports the reason when the vocabulary cannot be read at all
-
-  @unmapped
   Scenario: Each upload shows its date, uploader, location, size and tagging progress
     Given a collection is selected
     Then each upload row shows the upload date and time
