@@ -12,9 +12,13 @@ import {
   selectCollection,
   openUpload,
   gridCell,
+  speciesRow,
+  speciesApply,
+  focusFrame,
 } from './support/world';
 import {
   BUCKET,
+  SETTINGS_BUCKET,
   BUCKET_B,
   UUID,
   UUID_B,
@@ -367,3 +371,83 @@ Then(
     await expect(gridCell(page, 'IMG004.JPG')).toContainText('Mountain Lion +1');
   },
 );
+
+// Request-state coverage intentionally avoids exposing storage diagnostics.
+Given('Browse loads species with {string} outcome', async ({ page, s3, scratch }, state: string) => {
+  scratch.speciesOutcome = state;
+  if (state === 'failure') s3.failGetsWith('Settings/species.json', 0, 403, 'AccessDenied');
+  if (state === 'loading') scratch.releaseSpecies = s3.holdGet('Settings/species.json');
+  const before = s3.readCount('Settings/species.json');
+  await page.reload(); await connect(page); await selectCollection(page);
+  await expect.poll(() => s3.readCount('Settings/species.json')).toBeGreaterThan(before);
+});
+Then('the collection rail contains no species diagnostic footer', async ({ page }) => {
+  await expect(collectionRail(page)).not.toContainText(/species loaded from|Loading species vocabulary|Species vocabulary unavailable|skipped/i);
+  await expect(collectionRail(page).locator(':scope > p')).toHaveCount(0);
+});
+Then('collection uploads remain available', async ({ page, scratch }) => {
+  await expect(collectionButton(page, COLLECTION_NAME)).toBeVisible();
+  await expect(uploadRow(page, 'priortagger')).toBeVisible();
+  if (scratch.speciesOutcome === 'loading') {
+    try {
+      await openUpload(page);
+      await expect(page.getByTestId('species-panel').getByRole('status')).toHaveText('Loading species…');
+      await expect(page.getByTestId('species-panel')).not.toContainText('No species in the vocabulary.');
+    } finally { (scratch.releaseSpecies as () => void)(); }
+    await expect(speciesRow(page, 'Canis latrans')).toBeVisible();
+  }
+  if (scratch.speciesOutcome === 'success') {
+    await openUpload(page);
+    await expect(speciesRow(page, 'Canis latrans')).toBeVisible();
+  }
+});
+When('the affected upload is opened for tagging in {string}', async ({ page }, view: string) => {
+  await openUpload(page);
+  if (view === 'Focus') {
+    await focusFrame(page, 'IMG002.JPG');
+    await page.getByRole('button', { name: 'Focus', exact: true }).click();
+  }
+});
+Then('the species panel explains a load failure rather than an empty list', async ({ page }) => {
+  const panel = page.getByTestId('species-panel');
+  await expect(panel.getByRole('alert')).toContainText("Couldn't load the species list.");
+  await expect(panel.getByRole('alert')).toContainText('Check your connection and access permissions, then retry.');
+  await expect(panel).not.toContainText('No species in the vocabulary.');
+  await expect(panel).not.toContainText('Settings/species.json');
+  await expect(panel.getByRole('button', { name: 'Retry loading species' })).toBeVisible();
+});
+When('the species retry still fails', async ({ page, s3, scratch }) => {
+  scratch.speciesReads = s3.readCount('Settings/species.json');
+  const retry = page.getByRole('button', { name: 'Retry loading species' });
+  await page.getByLabel('Filter species').focus();
+  for (let i = 0; i < 12 && !(await retry.evaluate(node => node === document.activeElement)); i++) await page.keyboard.press('Tab');
+  await expect(retry).toBeFocused();
+  await page.keyboard.press('Enter');
+});
+Then('the species panel retains its error and keyboard retry focus', async ({ page, s3, scratch }) => {
+  await expect.poll(() => s3.readCount('Settings/species.json')).toBeGreaterThan(scratch.speciesReads as number);
+  await expect(page.getByTestId('species-panel').getByRole('alert')).toContainText("Couldn't load");
+  await expect(page.getByRole('button', { name: 'Retry loading species' })).toBeFocused();
+});
+When('the species source recovers and retry is activated from the keyboard', async ({ page, s3 }) => {
+  s3.getFailures.delete('Settings/species.json'); s3.getFailureResponses.delete('Settings/species.json');
+  const release = s3.holdGet('Settings/species.json');
+  await page.keyboard.press('Space');
+  try {
+    await expect(page.getByTestId('species-panel').getByRole('status')).toHaveText('Retrying the species list…');
+    await expect(page.getByRole('button', { name: 'Retry loading species' })).toHaveAttribute('aria-disabled', 'true');
+  } finally { release(); }
+});
+Then('the species list returns and keyboard focus moves to its filter', async ({ page }) => {
+  await expect(speciesRow(page, 'Canis latrans')).toBeVisible();
+  await expect(page.getByTestId('species-panel').getByRole('alert')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Retry loading species' })).toHaveCount(0);
+  await expect(page.getByLabel('Filter species')).toBeFocused();
+});
+Then('loaded species can still be applied', async ({ page }) => {
+  const close = page.getByRole('button', { name: 'Close Focus', exact: true });
+  if (await close.isVisible()) await close.click();
+  await focusFrame(page, 'IMG002.JPG');
+  await speciesApply(page, 'Canis latrans').click();
+  await expect(gridCell(page, 'IMG002.JPG')).toContainText('Coyote');
+});

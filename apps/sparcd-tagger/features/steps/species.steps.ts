@@ -1122,3 +1122,11 @@ Then('the stored observations record no species for the image left behind', asyn
   const meta = JSON.parse(s3.text(BUCKET, `${PREFIX_C}UploadMeta.json`)) as { imagesWithSpecies: number };
   expect(meta.imagesWithSpecies).toBe(1);
 });
+
+Then('the species panel explains the failed refresh without hiding cached species', async ({ page }) => {
+  const panel = page.getByTestId('species-panel');
+  await expect(panel.getByRole('alert')).toContainText("Couldn't refresh the species list. Your previously loaded species remain available.", { timeout: 20_000 });
+  await expect(panel.getByRole('button', { name: 'Retry loading species' })).toBeVisible();
+  await expect(speciesRow(page, 'Odocoileus hemionus')).toBeVisible();
+  await expect(panel).not.toContainText('No species in the vocabulary.');
+});
