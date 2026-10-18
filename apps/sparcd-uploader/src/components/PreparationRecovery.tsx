@@ -58,8 +58,8 @@ export function PreparationRecovery() {
         inputAttempt.current = { saved, guard: recoveryGuard(), kind: 'files' };
         filesRef.current?.click();
       }} className="min-h-11 border border-ink px-3">Reselect saved files</button>
-      <input ref={ref} type="file" multiple hidden {...{ webkitdirectory: '', directory: '' }} onChange={e => consumeSelection(e, 'folder')} />
-      <input ref={filesRef} type="file" multiple accept="image/jpeg,video/mp4" hidden onChange={e => consumeSelection(e, 'files')} />
+      <input aria-label="Saved preparation folder" ref={ref} type="file" multiple hidden {...{ webkitdirectory: '', directory: '' }} onChange={e => consumeSelection(e, 'folder')} />
+      <input aria-label="Saved preparation files" ref={filesRef} type="file" multiple accept="image/jpeg,video/mp4" hidden onChange={e => consumeSelection(e, 'files')} />
       {saved.flipId && <a className="underline block" href={`../tagger/?batch=${encodeURIComponent(saved.flipId)}`}>Reopen saved tags using thumbnails</a>}
     </>}
     {unavailable.length > 0 && <p role="alert">{unavailable.length} saved {unavailable.length === 1 ? 'batch is' : 'batches are'} damaged or from an unsupported version. {unavailable.length === 1 ? 'Its' : 'Their'} stored data has been kept. Reopen a compatible app to recover {unavailable.length === 1 ? 'it' : 'them'}; other saved batches remain available.</p>}

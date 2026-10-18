@@ -233,3 +233,20 @@ Verification: all three Disconnect scenarios passed three consecutive runs
 (nine cases); the complete production Google Chrome suite passed all 47 cases
 on isolated port 5337, including full context teardown and browser/PWA restarts.
 This follow-up changes the test harness and documentation only.
+
+## PR #562 picker coexistence follow-up (2026-10-17)
+
+New-upload folder/file inputs and saved-preparation recovery inputs have distinct
+purpose-specific labels. The shared new-upload helpers select their exact inputs
+instead of the first file input on the page. Recovery guards remain unchanged.
+Two production regressions select a fresh batch alongside an existing recovery
+panel, assert the original journal is untouched, and then explicitly recover the
+original batch. Both directory and individual-file selection are covered.
+
+Verification: the previously failing drag-versus-dialog scenario passed three
+consecutive runs; all 170 Uploader BDD scenarios and all 49 production Google
+Chrome cases passed. Uploader TypeScript and production build passed, and the
+coordinated offline release was regenerated. The full BDD run used a temporary
+local configuration selecting actual Google Chrome on port 5338; production ran
+on port 5337. Test outputs were separate, and the temporary configuration was
+removed after the runs. No user's existing browser window or app server was used.

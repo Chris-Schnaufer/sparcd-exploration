@@ -79,6 +79,12 @@ aborted transactions release IndexedDB connections by deleting the isolated test
 database immediately afterward. Settings Disconnect steps await the actual
 post-cleanup reload before asserting records or allowing browser teardown.
 
+Picker coexistence cases keep a saved preparation visible while selecting a
+separate new batch, for both directory and individual-file inputs. They verify
+that the old journal remains unchanged, then explicitly recover that old batch.
+New-upload helpers target the purpose-specific input labels instead of relying
+on page-wide input order; recovery inputs retain their opening-time guards.
+
 The production suite also includes the existing Settings/header Disconnect BDD
 scenarios and preparation-specific confirmation checks. Individual-file recovery
 is exercised with and without the folder API. Durable-handle tests use real

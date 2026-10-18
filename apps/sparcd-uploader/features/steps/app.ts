@@ -469,7 +469,7 @@ export class App {
 
   async pickFolder(specs: FileSpec[], dir: string): Promise<void> {
     await this.writeFolderToDisk(specs, dir);
-    await this.page.locator('input[type="file"]').first().setInputFiles(dir);
+    await this.page.getByLabel('New upload folder', { exact: true }).setInputFiles(dir);
   }
 
   async readBundleRecords(): Promise<Record<string, unknown>[]> {
@@ -478,7 +478,7 @@ export class App {
 
   /** Choose individual files through the plain (non-directory) file input. */
   async pickFiles(specs: FileSpec[]): Promise<void> {
-    await this.page.locator('input[type="file"]').first().setInputFiles(
+    await this.page.getByLabel('New upload files', { exact: true }).setInputFiles(
       specs.map((s) => ({
         name: s.path.split('/').pop()!,
         mimeType: s.mime ?? (s.path.toLowerCase().endsWith('.mp4') ? 'video/mp4' : 'image/jpeg'),
