@@ -650,10 +650,8 @@ Then(
 
 // --- Display adjustments ----------------------------------------------------
 
-// ≥lg and phone each render their own instance of the trigger (one hidden by
-// CSS depending on viewport width), so narrow to the one actually on screen.
 const adjustToggle = (page: Page): Locator =>
-  page.locator('button[title="View-only image adjustments (does not change the file)"]:visible');
+  page.locator('button[title="View-only image adjustments (does not change the file)"]');
 
 Given('the focused item is a still image', async ({ page }) => {
   if (await page.getByRole('button', { name: 'Close Focus' }).count()) {
@@ -832,6 +830,11 @@ Then('the Adjust control sits under the zoom button column, with a gap', async (
   // more room than the gap used between the zoom buttons and Reset.
   expect(Math.abs(adjust!.x + adjust!.width - (fullscreen!.x + fullscreen!.width))).toBeLessThanOrEqual(2);
   expect(adjust!.y).toBeGreaterThan(fullscreen!.y + fullscreen!.height + 8);
+  const canvas = (await page.getByTestId('focus-drop-zone').boundingBox())!;
+  expect(adjust!.x).toBeGreaterThanOrEqual(canvas.x);
+  expect(adjust!.x + adjust!.width).toBeLessThanOrEqual(canvas.x + canvas.width);
+  expect(adjust!.y + adjust!.height).toBeLessThanOrEqual(canvas.y + canvas.height);
+  await expect(adjustToggle(page)).toHaveCount(1);
 });
 
 When('the viewport is narrowed to a phone size', async ({ page }) => {
@@ -847,6 +850,12 @@ Then('the Adjust control sits at the top-left, clear of the zoom column', async 
   expect(fullscreen).not.toBeNull();
   expect(adjust!.x).toBeLessThan(fullscreen!.x);
   expect(adjust!.y).toBeLessThan(fullscreen!.y);
+  const canvas = (await page.getByTestId('focus-drop-zone').boundingBox())!;
+  expect(Math.abs(adjust!.x - canvas.x - 16)).toBeLessThanOrEqual(2);
+  expect(Math.abs(adjust!.y - canvas.y - 16)).toBeLessThanOrEqual(2);
+  expect(adjust!.x + adjust!.width).toBeLessThanOrEqual(Math.min(canvas.x + canvas.width, 390));
+  expect(adjust!.y + adjust!.height).toBeLessThanOrEqual(844);
+  await expect(adjustToggle(page)).toHaveCount(1);
 });
 
 Then('keyboard focus enters the adjustment panel', async ({ page }) => {
@@ -955,4 +964,31 @@ Then('leaving the Focus view returns the adjustments to neutral', async ({ page 
   await expect(adjustToggle(page).locator('span.bg-accent')).toHaveCount(0);
   const style = await page.locator('.react-transform-component img').first().getAttribute('style');
   expect(style ?? '').toContain('brightness(100%) contrast(100%) hue-rotate(0deg) saturate(100%)');
+});
+
+When('the open Adjust panel crosses the desktop breakpoint in both directions', async ({ page }) => {
+  await adjustToggle(page).click();
+  const brightness = page.getByLabel('Brightness');
+  await expect(brightness).toBeFocused();
+  await brightness.fill('73');
+  for (const width of [1023, 1024, 390, 1440]) {
+    await page.setViewportSize({ width, height: 950 });
+    await expect(adjustToggle(page)).toHaveCount(1);
+    await expect(adjustmentPanel(page)).toHaveCount(1);
+    await expect(brightness).toHaveValue('73');
+    await expect(brightness).toBeFocused();
+    await expect(async () => {
+      const bounds = (await adjustmentPanel(page).boundingBox())!;
+      expect(bounds.x).toBeGreaterThanOrEqual(0);
+      expect(bounds.y).toBeGreaterThanOrEqual(0);
+      expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
+      expect(bounds.y + bounds.height).toBeLessThanOrEqual(950);
+    }).toPass({ timeout: 5000 });
+    await page.keyboard.press('Escape');
+    await expect(adjustmentPanel(page)).toHaveCount(0);
+    await expect(adjustToggle(page)).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(brightness).toBeFocused();
+    await expect(brightness).toHaveValue('73');
+  }
 });

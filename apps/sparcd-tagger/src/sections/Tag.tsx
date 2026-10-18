@@ -1593,12 +1593,6 @@ function FocusPane({
             adjust={adjustPanel}
           />
         )}
-        {showAdjust && (
-          // ≥lg, this same panel renders under the zoom button column instead
-          // (threaded through FocusImage into ZoomControls); phones keep it
-          // here, top-left, off the squeezed image.
-          <div className="absolute top-4 left-4 lg:hidden z-10">{adjustPanel}</div>
-        )}
         {current && canPrev && (
           <button
             ref={previousButtonRef}
@@ -2047,7 +2041,8 @@ function ZoomControls({
     : 'bg-panel/90 border-rule divide-rule';
   const btn = `w-11 h-11 md:w-8 md:h-8 grid place-items-center text-[15px] leading-none ${tone} focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent`;
   return (
-    <div className="absolute bottom-4 right-4 flex flex-col items-end gap-2">
+    <div className={extra ? 'contents lg:absolute lg:bottom-4 lg:right-4 lg:flex lg:flex-col lg:items-end lg:gap-2' : 'absolute bottom-4 right-4 flex flex-col items-end gap-2'}>
+      <div className={extra ? 'absolute bottom-4 right-4 flex flex-col items-end gap-2 lg:static' : 'contents'}>
       {onReset && (
         <button
           type="button"
@@ -2077,10 +2072,10 @@ function ZoomControls({
           </button>
         )}
       </div>
-      {/* ≥lg only — phones render this same panel elsewhere (FocusPane), off
-          the squeezed image. The extra mt-2 on top of the flex gap sets it
-          apart from the zoom controls above it. */}
-      {extra && <div className="hidden lg:block mt-2">{extra}</div>}
+      </div>
+      {/* One mounted Adjust instance: CSS repositions its trigger without
+          discarding the portalled dialog or moving keyboard focus. */}
+      {extra && <div className="absolute top-4 left-4 z-10 lg:static lg:mt-2">{extra}</div>}
     </div>
   );
 }
