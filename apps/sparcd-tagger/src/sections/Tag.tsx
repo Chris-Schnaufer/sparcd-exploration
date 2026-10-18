@@ -1836,7 +1836,7 @@ function useFittedZoom(src: string) {
   useLayoutEffect(() => {
     const zoom = zoomRef.current;
     if (fitted && zoom) zoom.centerView(1, 0);
-  }, [fitted?.width, fitted?.height]);
+  }, [pane?.w, pane?.h, fitted?.width, fitted?.height]);
   const onImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
     const img = e.currentTarget;
     setLoaded({ src, w: img.naturalWidth, h: img.naturalHeight });

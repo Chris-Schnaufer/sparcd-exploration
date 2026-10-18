@@ -83,6 +83,8 @@ function expectFitted(view: { image: Rect; pane: Rect }): void {
   expectImageInBounds(view);
   const gaps = axes(view).map(([lo, hi, paneLo, paneHi]) => {
     expect(Math.abs(lo - paneLo - (paneHi - hi))).toBeLessThanOrEqual(FUDGE);
+    expect(lo).toBeGreaterThanOrEqual(paneLo - FUDGE);
+    expect(hi).toBeLessThanOrEqual(paneHi + FUDGE);
     return paneHi - paneLo - (hi - lo);
   });
   expect(Math.min(...gaps)).toBeLessThanOrEqual(FUDGE);
@@ -274,18 +276,63 @@ Then('it can be enlarged up to six times its fitted size', async ({ page }) => {
 
 // --- Fitting on resize (issue #533) ------------------------------------------
 
-When('the workspace window is resized smaller', async ({ page }) => {
-  await settle(page.locator('body'));
+const resizeViewer = (page: Page) => page.getByRole('dialog', { name: 'Fullscreen image', exact: true });
+async function activeResizeRoot(page: Page): Promise<Locator> {
+  return await resizeViewer(page).count() ? resizeViewer(page) : page.getByRole('dialog', { name: 'Focus image viewer', exact: true });
+}
+
+When('the workspace window is resized smaller', async ({ page, scratch }) => {
+  scratch.resizeOriginalViewport = page.viewportSize()!;
   const before = page.viewportSize()!;
-  await page.setViewportSize({
-    width: Math.round(before.width * 0.6),
-    height: Math.round(before.height * 0.6),
-  });
-  await settle(page.locator('body'));
+  await page.setViewportSize({ width: Math.round(before.width * 0.6), height: Math.round(before.height * 0.6) });
+});
+
+When('the workspace window is restored to its original size', async ({ page, scratch }) => {
+  await page.setViewportSize(scratch.resizeOriginalViewport as { width: number; height: number });
 });
 
 Then('the image still fits the pane', async ({ page }) => {
-  await expect(async () => expectFitted(await imageInPane(page.locator('body')))).toPass();
+  const root = await activeResizeRoot(page);
+  // The zoom wrapper can itself overflow: compare with the independently sized canvas.
+  const canvas = await resizeViewer(page).count()
+    ? transformWrapper(root).locator('..')
+    : page.getByTestId('focus-drop-zone');
+  await expect(async () => {
+    const view = await imageInPane(root);
+    const bounds = await canvas.boundingBox();
+    expect(bounds).not.toBeNull();
+    const pane = { left: bounds!.x, top: bounds!.y, right: bounds!.x + bounds!.width, bottom: bounds!.y + bounds!.height };
+    for (const [lo, hi, paneLo, paneHi] of axes({ image: view.pane, pane })) {
+      expect(lo).toBeGreaterThanOrEqual(paneLo - FUDGE);
+      expect(hi).toBeLessThanOrEqual(paneHi + FUDGE);
+    }
+    // Focus has intentional canvas padding; fitting touches the inner pane,
+    // while containment against the outer canvas detects an oversized pane.
+    expectFitted(view);
+    expect((await readTransform(root)).scale).toBeCloseTo(1, 3);
+    await expect(root.locator('button[title="Reset to fit"]')).toHaveCount(0);
+  }).toPass({ timeout: 10_000 });
+});
+
+Given('a height-constrained portrait is shown in Focus', async ({ page, s3 }) => {
+  s3.put(BUCKET, mediaKey(PREFIX_A, MEDIA_A[0].file), makePng(400, 1600, 123), 'image/png');
+  await page.reload();
+  await openWorkspace(page);
+  await enterFocusView(page);
+  await expect.poll(() => page.locator('.react-transform-component img').evaluate((el: HTMLImageElement) => el.naturalHeight)).toBe(1600);
+});
+
+When('the window narrows without changing the portrait fitted size', async ({ page, scratch }) => {
+  const root = await activeResizeRoot(page);
+  const dimensions = await transformContent(root).evaluate(el => ({ width: (el as HTMLElement).offsetWidth, height: (el as HTMLElement).offsetHeight }));
+  const before = page.viewportSize()!;
+  scratch.resizeOriginalViewport = before;
+  await page.setViewportSize({ width: before.width - 120, height: before.height });
+  await expect.poll(() => transformContent(root).evaluate(el => ({ width: (el as HTMLElement).offsetWidth, height: (el as HTMLElement).offsetHeight }))).toEqual(dimensions);
+});
+
+When('the fullscreen image is zoomed in', async ({ page }) => {
+  expect(await zoomIn(resizeViewer(page), 1)).toBeGreaterThan(1);
 });
 
 Then('detail beyond the fitted view becomes legible', async ({ page }) => {

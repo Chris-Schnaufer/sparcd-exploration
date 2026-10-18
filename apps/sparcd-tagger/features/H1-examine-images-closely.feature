@@ -49,11 +49,41 @@ Feature: Examine an image closely enough to catch every species
   Scenario: The fitted image keeps fitting when the window shrinks
     When the workspace window is resized smaller
     Then the image still fits the pane
+    When the workspace window is restored to its original size
+    Then the image still fits the pane
 
   @H1
   Scenario: A zoomed-in image is refitted when the window shrinks
     Given the image is zoomed in
     When the workspace window is resized smaller
+    Then the image still fits the pane
+    When the workspace window is restored to its original size
+    Then the image still fits the pane
+
+  @H1
+  Scenario: Narrowing a portrait pane refits even when the fitted dimensions are unchanged
+    Given a height-constrained portrait is shown in Focus
+    And the image is zoomed in
+    When the window narrows without changing the portrait fitted size
+    Then the image still fits the pane
+    When the workspace window is restored to its original size
+    Then the image still fits the pane
+
+  @H1
+  Scenario: The fullscreen fitted image follows smaller and restored windows
+    When the image is opened fullscreen
+    And the workspace window is resized smaller
+    Then the image still fits the pane
+    When the workspace window is restored to its original size
+    Then the image still fits the pane
+
+  @H1
+  Scenario: A zoomed fullscreen image refits on smaller and restored windows
+    When the image is opened fullscreen
+    And the fullscreen image is zoomed in
+    And the workspace window is resized smaller
+    Then the image still fits the pane
+    When the workspace window is restored to its original size
     Then the image still fits the pane
 
   @H1
