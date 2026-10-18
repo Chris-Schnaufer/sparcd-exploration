@@ -1493,8 +1493,12 @@ function FocusPane({
   // behavior for a run of similarly-dark frames (the night-frame burst case).
   const [adjustments, setAdjustments] = useState<Adjustments>(NEUTRAL);
   const [keepValues, setKeepValues] = useState(false);
-  useEffect(() => {
-    if (!keepValues) setAdjustments(NEUTRAL);
+  const adjustedImageKey = useRef(current?.key);
+  useLayoutEffect(() => {
+    if (adjustedImageKey.current !== current?.key) {
+      adjustedImageKey.current = current?.key;
+      if (!keepValues) setAdjustments(NEUTRAL);
+    }
   }, [current?.key, keepValues]);
   const filter = useMemo(() => cssFilter(adjustments), [adjustments]);
   const isVideo = !!current && isVideoImage(current);

@@ -229,3 +229,27 @@ Feature: Examine an image closely enough to catch every species
   Scenario: "Keep values" is unchecked by default
     When the adjustment panel is opened
     Then the Keep values checkbox is unchecked
+
+  @H1
+  Scenario: Previous-image navigation resets adjustments by default
+    Given a later image is open for testing previous-image adjustments
+    And the display adjustments have been changed in the Focus view
+    When the previous image is opened in the Focus view
+    Then the adjustments have reset to neutral
+
+  @H1
+  Scenario: Keep values also preserves adjustments on previous-image navigation
+    Given a later image is open for testing previous-image adjustments
+    And "Keep values" is checked
+    And the display adjustments have been changed in the Focus view
+    When the previous image is opened in the Focus view
+    Then the same adjustments still apply
+
+  @H1
+  Scenario: Turning Keep values off preserves current values until navigation
+    Given "Keep values" is checked
+    And the display adjustments have been changed in the Focus view
+    When Keep values is turned off without navigating
+    Then the current adjustment values are preserved with Keep values off
+    When another image is opened in the Focus view
+    Then the adjustments have reset to neutral

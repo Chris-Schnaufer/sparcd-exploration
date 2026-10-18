@@ -1,5 +1,5 @@
 import { createPortal } from 'react-dom';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useId, useRef, useState } from 'react';
 import { isNeutral, type Adjustments } from '../lib/adjustments';
 import { adjustmentPopupPosition } from '../lib/adjustmentPopupPosition';
 
@@ -39,6 +39,7 @@ export function ImageAdjustments({
   const panelRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const neutral = isNeutral(value);
+  const keepValuesHelp = useId();
 
   useEffect(() => {
     setOpen(false);
@@ -146,6 +147,7 @@ export function ImageAdjustments({
             >
               <input
                 type="checkbox"
+                aria-describedby={keepValuesHelp}
                 checked={keepValues}
                 onChange={(e) => onKeepValuesChange(e.target.checked)}
                 className="accent-accent"
@@ -161,6 +163,9 @@ export function ImageAdjustments({
               Reset
             </button>
           </div>
+          <p id={keepValuesHelp} className="text-[11px] text-inkMute">
+            Keep adjustments when moving to the next or previous image. Turning this off leaves the current image unchanged.
+          </p>
         </div>, document.body
       )}
       <button
