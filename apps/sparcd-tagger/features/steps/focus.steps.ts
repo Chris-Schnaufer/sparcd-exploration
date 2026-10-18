@@ -865,10 +865,12 @@ Then('keyboard focus enters the adjustment panel', async ({ page }) => {
 Then('Tab wraps between the Focus viewer and the adjustment panel', async ({ page }) => {
   const focusDialog = page.getByRole('dialog', { name: 'Focus image viewer' });
   const brightness = page.getByLabel('Brightness');
-  const saturation = page.getByLabel('Saturation');
+  // Reset stays disabled (and so out of the tab order) while the values are
+  // still neutral, so "Keep values" is the last enabled control at this point.
+  const keepValues = page.getByLabel('Keep values');
   await brightness.focus();
   await page.keyboard.press('Shift+Tab');
-  await expect(saturation).toBeFocused();
+  await expect(keepValues).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(page.getByRole('button', { name: 'Close Focus' })).toBeFocused();
   await adjustToggle(page).click();
@@ -938,6 +940,18 @@ Given('the display adjustments have been changed in the Focus view', async ({ pa
   await expect(adjustToggle(page).locator('span.bg-accent')).toBeVisible();
 });
 
+Given('"Keep values" is checked', async ({ page }) => {
+  await adjustToggle(page).click();
+  await page.getByLabel('Keep values').check();
+  await expect(page.getByLabel('Keep values')).toBeChecked();
+  await page.keyboard.press('Escape');
+  await expect(adjustmentPanel(page)).toHaveCount(0);
+});
+
+Then('the Keep values checkbox is unchecked', async ({ page }) => {
+  await expect(page.getByLabel('Keep values')).not.toBeChecked();
+});
+
 When('another image is opened in the Focus view', async ({ page, scratch }) => {
   scratch.filterBefore = await page
     .locator('.react-transform-component img')
@@ -953,6 +967,12 @@ Then('the same adjustments still apply', async ({ page, scratch }) => {
   const now = await page.locator('.react-transform-component img').first().getAttribute('style');
   expect(now).toBe(scratch.filterBefore);
   await expect(adjustToggle(page).locator('span.bg-accent')).toBeVisible();
+});
+
+Then('the adjustments have reset to neutral', async ({ page }) => {
+  await expect(adjustToggle(page).locator('span.bg-accent')).toHaveCount(0);
+  const style = await page.locator('.react-transform-component img').first().getAttribute('style');
+  expect(style ?? '').toContain('brightness(100%) contrast(100%) hue-rotate(0deg) saturate(100%)');
 });
 
 Then('leaving the Focus view returns the adjustments to neutral', async ({ page }) => {

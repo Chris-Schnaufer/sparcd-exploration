@@ -22,6 +22,8 @@ export function ImageAdjustments({
   getMediaRect,
   getBlockedRects,
   mediaKey,
+  keepValues,
+  onKeepValuesChange,
 }: {
   value: Adjustments;
   onChange: (next: Adjustments) => void;
@@ -29,6 +31,8 @@ export function ImageAdjustments({
   getMediaRect: () => DOMRect | null;
   getBlockedRects: () => DOMRect[];
   mediaKey: string;
+  keepValues: boolean;
+  onKeepValuesChange: (next: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
@@ -135,14 +139,28 @@ export function ImageAdjustments({
               />
             </label>
           ))}
-          <button
-            type="button"
-            onClick={onReset}
-            disabled={neutral}
-            className="self-end text-[12px] font-mono border border-rule px-3 py-2.5 min-h-[44px] sm:px-2 sm:py-0.5 sm:min-h-0 text-inkSoft hover:text-ink hover:border-ink disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-          >
-            Reset
-          </button>
+          <div className="flex items-center justify-between gap-2">
+            <label
+              className="flex items-center gap-1.5 text-[12px] text-inkSoft"
+              title="Carry these values over when moving to the next or previous image, instead of resetting to neutral"
+            >
+              <input
+                type="checkbox"
+                checked={keepValues}
+                onChange={(e) => onKeepValuesChange(e.target.checked)}
+                className="accent-accent"
+              />
+              Keep values
+            </label>
+            <button
+              type="button"
+              onClick={onReset}
+              disabled={neutral}
+              className="text-[12px] font-mono border border-rule px-3 py-2.5 min-h-[44px] sm:px-2 sm:py-0.5 sm:min-h-0 text-inkSoft hover:text-ink hover:border-ink disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            >
+              Reset
+            </button>
+          </div>
         </div>, document.body
       )}
       <button

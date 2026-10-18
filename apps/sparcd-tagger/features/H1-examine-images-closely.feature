@@ -212,8 +212,20 @@ Feature: Examine an image closely enough to catch every species
     And the adjustments can be reset to neutral in one action
 
   @H1
-  Scenario: Display adjustments persist across images within a viewing session
+  Scenario: Display adjustments reset by default on the next image
     Given the display adjustments have been changed in the Focus view
+    When another image is opened in the Focus view
+    Then the adjustments have reset to neutral
+
+  @H1
+  Scenario: "Keep values" carries adjustments across images until Focus closes
+    Given "Keep values" is checked
+    And the display adjustments have been changed in the Focus view
     When another image is opened in the Focus view
     Then the same adjustments still apply
     And leaving the Focus view returns the adjustments to neutral
+
+  @unmapped
+  Scenario: "Keep values" is unchecked by default
+    When the adjustment panel is opened
+    Then the Keep values checkbox is unchecked

@@ -1488,9 +1488,14 @@ function FocusPane({
   onDropSpecies: (tag: AppliedTag) => void;
 }) {
   // View-only display adjustments live here so they reset to neutral when the
-  // user leaves Focus (this component unmounts) and stay sticky while paging
-  // through images within a Focus session — the night-frame burst workflow.
+  // user leaves Focus (this component unmounts). By default they also reset
+  // on every image change; "Keep values" opts back into the old sticky
+  // behavior for a run of similarly-dark frames (the night-frame burst case).
   const [adjustments, setAdjustments] = useState<Adjustments>(NEUTRAL);
+  const [keepValues, setKeepValues] = useState(false);
+  useEffect(() => {
+    if (!keepValues) setAdjustments(NEUTRAL);
+  }, [current?.key, keepValues]);
   const filter = useMemo(() => cssFilter(adjustments), [adjustments]);
   const isVideo = !!current && isVideoImage(current);
   const showAdjust = !!current && !isVideo;
@@ -1559,6 +1564,8 @@ function FocusPane({
         return rails;
       }}
       mediaKey={current!.key}
+      keepValues={keepValues}
+      onKeepValuesChange={setKeepValues}
     />
   );
 
