@@ -34,6 +34,7 @@ Given('there are no unfinished uploads on this machine', async ({ app }) => {
   const batches = await app.readBatchRecords();
   expect(batches).toHaveLength(1);
   expect(batches[0].completedAt).toBeTruthy();
+  app.notes.settingsDisconnectReloads = true;
 });
 
 Given('there are unfinished uploads recorded on this machine', async ({ app }) => {
@@ -45,7 +46,11 @@ Given('there are unfinished uploads recorded on this machine', async ({ app }) =
 
 When('"Disconnect" is chosen', async ({ app }) => {
   await app.gotoSection('Settings');
-  await app.page.getByRole('button', { name: 'Disconnect', exact: true }).click();
+  const click = () => app.page.getByRole('button', { name: 'Disconnect', exact: true }).click();
+  // The connection gate appears before asynchronous storage cleanup and reload.
+  // Register the load listener before the action that initiates the reload.
+  if (app.notes.settingsDisconnectReloads) await Promise.all([app.page.waitForEvent('load'), click()]);
+  else await click();
 });
 
 Then('the connection is ended', async ({ app }) => {
@@ -86,7 +91,10 @@ Then('nothing is cleared unless discarding is explicitly chosen', async ({ app }
   await expect(app.page.getByRole('button', { name: 'Logout', exact: true })).toBeVisible();
 
   await app.page.getByRole('button', { name: 'Disconnect' }).click();
-  await app.page.getByRole('button', { name: 'Discard & disconnect' }).click();
+  await Promise.all([
+    app.page.waitForEvent('load'),
+    app.page.getByRole('button', { name: 'Discard & disconnect' }).click(),
+  ]);
   await expect(app.connectForm()).toBeVisible({ timeout: 30_000 });
   expect(await app.readBatchRecords()).toHaveLength(0);
 });

@@ -218,3 +218,18 @@ includes three existing Settings/header Disconnect scenarios. Their production
 S3 fixture now exposes digest metadata headers for cross-origin verification;
 this fixes the fixture without weakening real-upload verification. Browser tests
 owned independent Chrome profiles; the user's Tagger/Admin servers were untouched.
+
+## PR #562 Disconnect test lifecycle follow-up (2026-10-17)
+
+The CI failure completed the guarded-Disconnect assertions but hung during
+Chrome context teardown. Settings steps now register a load wait before the
+immediate Disconnect or confirmed discard, and finish the post-cleanup reload
+before reading storage or ending the scenario. Ledger readers await transaction
+completion and close their IndexedDB connection in `finally`, including missing
+stores and failed reads. Four isolated Chrome regressions verify that database
+deletion is not blocked after success, missing stores, read failure or abort.
+
+Verification: all three Disconnect scenarios passed three consecutive runs
+(nine cases); the complete production Google Chrome suite passed all 47 cases
+on isolated port 5337, including full context teardown and browser/PWA restarts.
+This follow-up changes the test harness and documentation only.

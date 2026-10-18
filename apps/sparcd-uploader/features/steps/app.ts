@@ -659,13 +659,19 @@ export class App {
         open.onsuccess = () => resolve(open.result);
         open.onerror = () => reject(open.error);
       });
-      if (!db.objectStoreNames.contains(storeName)) return [];
-      const tx = db.transaction(storeName, 'readonly');
-      const req = tx.objectStore(storeName).getAll();
-      return new Promise((resolve, reject) => {
-        req.onsuccess = () => resolve(req.result as Record<string, unknown>[]);
-        req.onerror = () => reject(req.error);
-      });
+      try {
+        if (!db.objectStoreNames.contains(storeName)) return [];
+        return await new Promise<Record<string, unknown>[]>((resolve, reject) => {
+          const tx = db.transaction(storeName, 'readonly');
+          const req = tx.objectStore(storeName).getAll();
+          tx.oncomplete = () => resolve(req.result as Record<string, unknown>[]);
+          tx.onabort = () => reject(tx.error ?? new Error('IndexedDB read aborted'));
+          tx.onerror = () => reject(tx.error ?? req.error);
+          req.onerror = () => reject(req.error);
+        });
+      } finally {
+        db.close();
+      }
     }, store);
 
     try {

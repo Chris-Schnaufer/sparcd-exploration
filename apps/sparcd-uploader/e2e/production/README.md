@@ -74,6 +74,11 @@ created through the UI, not seeded for tests claiming offline readiness.
 The S3 fixture exposes its digest metadata headers for cross-origin production
 requests, matching the CORS contract required by final upload verification.
 
+Ledger-reader regressions verify that success, missing stores, read errors and
+aborted transactions release IndexedDB connections by deleting the isolated test
+database immediately afterward. Settings Disconnect steps await the actual
+post-cleanup reload before asserting records or allowing browser teardown.
+
 The production suite also includes the existing Settings/header Disconnect BDD
 scenarios and preparation-specific confirmation checks. Individual-file recovery
 is exercised with and without the folder API. Durable-handle tests use real
