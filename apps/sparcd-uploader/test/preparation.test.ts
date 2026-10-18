@@ -139,3 +139,60 @@ it('retains only a verified newly selected handle, and clears an unverified old 
   expect(store.getState().dirHandle).toBeNull();
   expect((await journal.readPreparation())?.dirHandle).toBeUndefined();
 });
+
+async function savedBatch(name = 'B.jpg') {
+  store.setState({ activeSnap: null });
+  store.getState().resetBatch(); await journal.flushPreparation(); memory.rows.clear();
+  const file = new File(['original bytes'], name);
+  store.getState().setFiles([{ id: name, relPath: name, fileName: name, size: file.size, mediaKind: 'image', file }]);
+  store.getState().setUploadDescription('B notes');
+  await journal.flushPreparation();
+  return (await journal.readPreparation())!;
+}
+function snapshot(preparationId: string | undefined, phase: 'done' | 'error' | 'partial' | 'idle' = 'done', dryRun = false) {
+  return { sessionId: 'upload-A', preparationId, phase, dryRun } as import('../src/lib/upload').UploadSnapshot;
+}
+it.each([undefined, 'preparation-A'])('retains current B when History completes A with owner %s', async owner => {
+  const b = await savedBatch();
+  const a = { ...b, id: 'preparation-A', inputs: { ...b.inputs, uploadDescription: 'A notes' } };
+  memory.rows.set(a.id, { id: a.id, value: a });
+  store.setState({ activeSnap: snapshot(owner) }); await journal.flushPreparation();
+  expect(await journal.readPreparation()).toEqual(b);
+  expect(memory.rows.has(b.id)).toBe(true);
+  expect(memory.rows.has(a.id)).toBe(owner === undefined);
+});
+it.each([['dry run', 'done', true], ['failure', 'error', false], ['cancelled partial', 'partial', false]] as const)('retains owned preparation after %s', async (_label, phase, dryRun) => {
+  const b = await savedBatch();
+  store.setState({ activeSnap: snapshot(b.id, phase, dryRun) }); await journal.flushPreparation();
+  expect(await journal.readPreparation()).toEqual(b);
+});
+it('deletes only the published owner once and preserves later inputs and batches under a lingering done snapshot', async () => {
+  const b = await savedBatch();
+  expect(journal.preparationIdForUpload()).toBe(b.id);
+  memory.rows.set('sibling', { id: 'sibling', value: { keep: true } });
+  store.setState({ activeSnap: snapshot(b.id) }); await journal.flushPreparation();
+  expect(memory.rows.has(b.id)).toBe(false);
+  expect(memory.rows.has('sibling')).toBe(true);
+  expect(await journal.readPreparation()).toBeNull();
+  store.getState().setUploadDescription('Later notes'); await journal.flushPreparation();
+  const later = (await journal.readPreparation())!;
+  expect(later.id).not.toBe(b.id);
+  store.setState({ activeSnap: { ...snapshot(b.id), version: 99 } }); await journal.flushPreparation();
+  expect(await journal.readPreparation()).toEqual(later);
+  const file = new File(['original bytes'], 'C.jpg');
+  store.getState().setFiles([{ id: file.name, relPath: file.name, fileName: file.name, size: file.size, mediaKind: 'image', file }]);
+  await journal.flushPreparation();
+  expect((await journal.readPreparation())?.files[0].fileName).toBe('C.jpg');
+});
+it('queues owned completion after an in-flight save and does not resurrect it on retry', async () => {
+  const b = await savedBatch();
+  let release!: () => void, entered!: () => void;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  memory.hold = new Promise<void>(resolve => { release = resolve; }); memory.entered = entered;
+  store.getState().setUploadDescription('In-flight notes'); await started;
+  store.getState().setUploadDescription('Pending notes');
+  store.setState({ activeSnap: snapshot(b.id) });
+  release(); memory.hold = null; memory.entered = () => {};
+  await journal.flushPreparation(); journal.retryPreparation(); await journal.flushPreparation();
+  expect(memory.rows.has(b.id)).toBe(false);
+});

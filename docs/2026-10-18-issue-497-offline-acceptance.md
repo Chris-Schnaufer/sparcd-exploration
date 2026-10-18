@@ -1,7 +1,8 @@
 # Offline acceptance evidence (#497)
 
-This branch extends #498's production harness without changing application
-behavior. It depends on PR #562 and keeps #497 separate from #498.
+This branch extends #498's production harness and fixes the preparation-cleanup
+ownership bug inherited from PR #562. The fix is made only in PR #565; PR #562
+remains unchanged. #497 stays separate from #498.
 
 ## Automated requirement mapping
 
@@ -17,7 +18,7 @@ behavior. It depends on PR #562 and keeps #497 separate from #498.
 | Safe reselection | Existing changed-original rejection, individual-file/folder fallback and real OPFS handle recovery tests |
 | Reconnect through Assign and publication | Both lifecycle tests use `acceptance-helpers.ts`; verify one completed upload, one media/observation row, correct linkage/timestamp/species/count/person, completed ledger and removed Flip handoff |
 | Online-only boundaries | Both lifecycle tests assert disconnected Assign connection gate with announced explanation; standalone Tagger shows an alert and Uploader recovery link |
-| Production network/process integrity | Real built Uploader/Tagger and coordinated worker; no app-asset response mocking; real blocked-network probes; independent persistent Chrome profiles destroyed/relaunched between lifetimes |
+| Production network/process integrity | Real built Uploader/Tagger and coordinated worker; no app-asset response mocking; real blocked-network probes; independent Chrome processes destroyed/relaunched with profiles retained between lifetimes |
 | Reachable network but unreachable storage | Remains #458's status contract. Existing upload failure handling is retained; #497 does not redefine reachability |
 
 The production S3 fixture exercises the real upload pipeline without writing to
@@ -39,7 +40,7 @@ PRODUCTION_TEST_PORT=5337 ./node_modules/.bin/playwright test --config playwrigh
 node --test e2e/production/server.test.mjs ../../scripts/offline/worker.test.mjs
 ```
 
-Validation on 2026-10-18:
+Initial acceptance validation on 2026-10-18 (before the ownership follow-up):
 
 - Full production Chrome suite: **51 passed (2.8 minutes)**, no retries,
   including all four new/strengthened acceptance journeys.
@@ -50,7 +51,8 @@ Validation on 2026-10-18:
 
 During test development, an unsupported UTC selector fixture was replaced with
 America/Phoenix, and thumbnail comparisons were synchronized across remounts.
-The final full run above includes both corrections. No production code changed.
+The initial full run above includes both test corrections. That initial commit
+changed no production code; the ownership follow-up below does.
 
 ## Remaining manual verification — not completed by automation
 
@@ -90,3 +92,37 @@ results for tested platforms only; they do not add a promise for every browser.
 Link the automated run evidence and completed manual records to #497. Until the
 real computer-restart and supported-platform results are recorded, #497 remains
 open. This document is not an assertion that those manual checks passed.
+
+## Preparation cleanup ownership follow-up (PR #565 only)
+
+Greptile identified a data-loss bug inherited from PR #562: saving batch B,
+resuming older upload A from History and finishing A could delete B's recovery
+journal. PR #562's branch/head remains unchanged; this correction belongs to
+PR #565.
+
+Fresh uploads capture the current preparation ID into their upload session and
+snapshots. Resumes use only the saved session's owner. Legacy sessions without an
+owner do not guess one from the current files. Cleanup runs once on the real
+publication-completion transition and queues deletion behind that owner's saves.
+It does not delete unrelated preparations or repeatedly act on a lingering done
+snapshot. The optional local-ledger field needs no IndexedDB schema migration
+and does not change S3 object or CSV formats.
+
+Unit coverage checks unrelated/legacy History completion, matching completion,
+dry run, failure/cancellation, repeated done notifications, later edits/batches,
+in-flight saves and resume-owner persistence. The two History ownership unit
+regressions fail against the original journal (B becomes null) and pass with the
+fix. Production Chrome tests create a failed A through the UI, save B with notes
+and prepared species, finish A through History, reload and recover B unchanged.
+Both owned and legacy A sessions are covered. Browser and PWA lifecycle checks
+also assert that publishing the owned batch removes its own preparation.
+
+Ownership follow-up validation:
+
+- 380 Uploader unit tests passed, including 10 new ownership cases.
+- All 53 production Google Chrome checks passed (4.4 minutes), no retries.
+- The four focused History/browser/PWA checks also passed independently.
+- Four production server/worker checks passed.
+- Both applications' TypeScript checks and production builds passed.
+- Full standard Uploader BDD: 170 passed (10.4 minutes), independent Google
+  Chrome on port 5338, no retries.
