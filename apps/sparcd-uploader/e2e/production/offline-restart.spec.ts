@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { App, S3_ORIGIN } from '../../features/steps/app';
 import { S3Mock } from '../../features/steps/s3mock';
 import { seedDefaultStorage, COLLECTION_A_NAME } from '../../features/steps/fixtures-data';
+import { verifyRecoveredUpload } from './acceptance-helpers';
 import { jpegAt } from '../../features/steps/batches';
 
 test.use({ trace: 'off' });
@@ -74,6 +75,8 @@ test('prepared production apps and inspected batch survive a real offline Chrome
     await page.locator('div.group').filter({ hasText: 'Canis latrans' }).first().locator('button[title^="Apply"]').click();
     await expect(image).toContainText('Coyote');
     await expect.poll(async () => (await app.readFlipRecords())[0]?.tags?.['SDCARD/OFFLINE.JPG']?.[0]?.scientificName).toBe('Canis latrans');
+    await page.getByRole('spinbutton', { name: 'Count for Coyote', exact: true }).fill('3');
+    await expect.poll(async () => (await app.readFlipRecords())[0]?.tags?.['SDCARD/OFFLINE.JPG']?.[0]?.count).toBe(3);
     const taggingUrl = page.url();
     await close();
     page = await launch(true, 'offline-tagger-restart');
@@ -81,6 +84,8 @@ test('prepared production apps and inspected batch survive a real offline Chrome
     app = new App(page, s3);
     await app.open({ path: taggingUrl });
     await expect(page.locator('button[title="OFFLINE.JPG"]')).toContainText('Coyote');
+    await page.locator('button[title="OFFLINE.JPG"]').click();
+    await expect(page.getByRole('spinbutton', { name: 'Count for Coyote', exact: true })).toHaveValue('3');
     // Return stays available after restart; tags retain their original attribution.
     await expect(page.getByRole('button', { name: 'Done · back to Uploader' })).toBeEnabled();
     await page.getByRole('button', { name: 'Settings', exact: true }).click();
@@ -101,19 +106,10 @@ test('prepared production apps and inspected batch survive a real offline Chrome
     expect(record.tags['SDCARD/OFFLINE.JPG'][0].scientificName).toBe('Canis latrans');
     expect(record.preparedSpecies.species.length).toBeGreaterThan(0);
     expect(s3Requests).toEqual([]);
-    await app.continueButton().click();
-    await expect(app.connectForm()).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Connect', exact: true })).toBeDisabled();
-    await context!.setOffline(false);
-    await app.connect();
-    await app.waitForCollections();
-    await expect(page.locator('#mountainRange')).toHaveValue('Saved mountain range');
-    await expect(page.locator('#dateCollected')).toHaveValue('2026-07-01');
-    expect((await app.readFlipRecords())[0]?.tags?.['SDCARD/OFFLINE.JPG']?.[0]?.scientificName).toBe('Canis latrans');
-    await context!.setOffline(true);
-    await page.goto('/sparcd-exploration/tagger/');
-    await expect(page.getByRole('heading', { name: 'Connect to use standalone Tagger' })).toBeVisible();
-    await expect(page.goto('/sparcd-exploration/admin/')).rejects.toThrow();
+    await verifyRecoveredUpload(app, context!, 'OFFLINE.JPG', 'offline-person', {
+      mountainRange: 'Saved mountain range',
+      dateCollected: '2026-07-01',
+    });
     passed = true;
   } finally {
     await close();
