@@ -12,3 +12,9 @@ The checkbox has visible explanatory text associated with aria-describedby. BDD 
 - All 294 Tagger unit tests passed.
 - TypeScript and production build passed (existing bundle-size warning).
 - The full Tagger BDD suite was not rerun for this follow-up.
+
+## Navigation assertion follow-up
+
+Both next and previous adjustment-navigation helpers now require the image URL and filename (alt text) to change, then wait for a successfully loaded image. The forward setup for previous-image cases uses the same assertions. This prevents unchanged images from passing the preserved-adjustment checks.
+
+All six focused adjustment navigation/default scenarios passed in independent Google Chrome on port 5339; TypeScript and diff checks passed. Production code is unchanged in this follow-up.

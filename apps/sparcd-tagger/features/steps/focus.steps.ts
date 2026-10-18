@@ -953,6 +953,19 @@ Then('the Keep values checkbox is unchecked', async ({ page }) => {
   await expect(page.getByLabel('Keep values')).toHaveAccessibleDescription('Keep adjustments when moving to the next or previous image. Turning this off leaves the current image unchanged.');
 });
 
+async function navigateAdjustmentImage(page: Page, direction: 'Next' | 'Previous') {
+  const image = page.locator('.react-transform-component img');
+  const beforeSrc = await image.getAttribute('src');
+  const beforeName = await image.getAttribute('alt');
+  expect(beforeSrc).toBeTruthy();
+  expect(beforeName).toBeTruthy();
+  await page.getByRole('button', { name: `${direction} image`, exact: true }).click();
+  await expect(image).toBeVisible();
+  await expect(image).not.toHaveAttribute('src', beforeSrc!);
+  await expect(image).not.toHaveAttribute('alt', beforeName!);
+  await expect.poll(() => image.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth > 0)).toBe(true);
+}
+
 When('another image is opened in the Focus view', async ({ page, scratch }) => {
   scratch.filterBefore = await page
     .locator('.react-transform-component img')
@@ -960,8 +973,7 @@ When('another image is opened in the Focus view', async ({ page, scratch }) => {
     .getAttribute('style');
   await page.keyboard.press('Escape');
   await expect(adjustmentPanel(page)).toHaveCount(0);
-  await page.getByRole('button', { name: 'Next image' }).click();
-  await expect(page.locator('.react-transform-component img')).toBeVisible();
+  await navigateAdjustmentImage(page, 'Next');
 });
 
 Then('the same adjustments still apply', async ({ page, scratch }) => {
@@ -1028,16 +1040,14 @@ When('the open Adjust panel crosses the desktop breakpoint in both directions', 
 });
 
 Given('a later image is open for testing previous-image adjustments', async ({ page }) => {
-  await page.getByRole('button', { name: 'Next image' }).click();
-  await expect(page.locator('.react-transform-component img')).toBeVisible();
+  await navigateAdjustmentImage(page, 'Next');
 });
 
 When('the previous image is opened in the Focus view', async ({ page, scratch }) => {
   scratch.filterBefore = await page.locator('.react-transform-component img').first().getAttribute('style');
   await page.keyboard.press('Escape');
   await expect(adjustmentPanel(page)).toHaveCount(0);
-  await page.getByRole('button', { name: 'Previous image' }).click();
-  await expect(page.locator('.react-transform-component img')).toBeVisible();
+  await navigateAdjustmentImage(page, 'Previous');
 });
 
 When('Keep values is turned off without navigating', async ({ page, scratch }) => {
