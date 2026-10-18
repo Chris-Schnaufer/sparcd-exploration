@@ -15,6 +15,7 @@ import { useMediaUrl } from '../lib/useMediaUrl';
 import { parseCollectionKey } from '../lib/s3';
 import { correctedTimestamp, shiftTimestamp } from '@sparcd/camtrap';
 import tzlookup from 'tz-lookup';
+import { DisabledActionHint } from '../components/DisabledActionHint';
 import { SpeciesPanel } from '../components/SpeciesPanel';
 import { AppliedSpecies } from '../components/AppliedSpecies';
 import { Cheatsheet } from '../components/Cheatsheet';
@@ -940,6 +941,7 @@ export function Tag() {
         {/* Upload time-shift entry + persistent active-offset indicator (§08).
             Disabled when no image in the upload has a capture time to shift —
             unless a shift is already in effect, so it stays reachable to clear. */}
+        <DisabledActionHint label="Time shift" reason={!sampleTimestamp && !hasUploadShift ? 'No image in this upload has a capture time to shift' : undefined}>
         <button
           onClick={() => setShowTimeShift(true)}
           disabled={!sampleTimestamp && !hasUploadShift}
@@ -959,12 +961,13 @@ export function Tag() {
           <span aria-hidden>◷</span>
           {hasUploadShift ? `clock ${formatOffsetDelta(timeOffset)}` : 'Time shift'}
         </button>
+        </DisabledActionHint>
 
         {/* Shift only explicitly selected frames — e.g. one mis-set camera in a
             mixed upload. Stored as per-image corrections, so it stacks on the
             upload offset. */}
         {!!current && (
-          <>
+          <DisabledActionHint label="Time shift selection" reason={selected.size === 0 || scopedTimeApplicableCount === 0 ? scopedTimeUnavailableReason : undefined}>
             <button
               onClick={openBulkTime}
               disabled={selected.size === 0 || scopedTimeApplicableCount === 0}
@@ -980,7 +983,7 @@ export function Tag() {
               <span aria-hidden>◷</span>
               Time shift selection
             </button>
-          </>
+          </DisabledActionHint>
         )}
 
         {/* Find image by filename — jumps focus to a match (the virtualizer then

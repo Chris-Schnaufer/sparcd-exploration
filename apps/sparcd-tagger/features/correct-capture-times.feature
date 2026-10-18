@@ -95,3 +95,19 @@ Feature: Correct capture times on an upload whose camera clock was wrong
     When a whole-upload shift is applied
     Then the same images remain grouped together
     And only the times shown on the burst bands change
+
+  @unmapped
+  Scenario: Disabled shift reasons are available on touch without overflowing the viewport
+    Given a single image is focused with no selection
+    Then disabled time-shift hints are touch-readable and stay within a narrow viewport
+
+  @unmapped
+  Scenario: Only the current disabled time-shift explanation is displayed
+    Given an upload with no capture times is open in the tagging workspace
+    Then only one time-shift explanation is visible at a time
+
+  @unmapped
+  Scenario: Keyboard selection transfers focus from the explanation to the enabled action
+    Given a single image is focused with no selection
+    When the keyboard selects images while the disabled selection explanation has focus
+    Then the enabled selection time-shift button receives focus
