@@ -158,11 +158,6 @@ Then('the whole-upload time shift is disabled with an explanation', async ({ pag
   const button = timeShiftButton(page);
   await expect(button).toBeDisabled();
   await expect(button).toHaveAttribute('title', 'No image in this upload has a capture time to shift');
-  await expect(button).toHaveAttribute('aria-describedby', 'upload-time-unavailable');
-  await expect(page.locator('#upload-time-unavailable')).toHaveText(
-    'No image in this upload has a capture time to shift',
-  );
-  await expect(page.locator('#upload-time-unavailable')).toBeVisible();
 });
 
 Given('a persisted whole-upload shift exists for an upload with no capture times', async ({ page }) => {
@@ -194,10 +189,6 @@ Then('time shift selection is disabled with an explanation', async ({ page }) =>
   const button = page.getByRole('button', { name: 'Time shift selection', exact: true });
   await expect(button).toBeDisabled();
   await expect(button).toHaveAttribute('title', 'Select one or more images to time shift');
-  await expect(page.locator('#scoped-time-unavailable')).toHaveText(
-    'Select one or more images to time shift',
-  );
-  await expect(page.locator('#scoped-time-unavailable')).toBeVisible();
 });
 
 Given('exactly one image is selected', async ({ page }) => {
@@ -351,9 +342,6 @@ Then('time shift selection is disabled because no selected frame has a capture t
   const button = page.getByRole('button', { name: 'Time shift selection', exact: true });
   await expect(button).toBeDisabled();
   await expect(button).toHaveAttribute('title', 'None of the selected frames has a capture time to shift');
-  await expect(page.locator('#scoped-time-unavailable')).toHaveText(
-    'None of the selected frames has a capture time to shift',
-  );
 });
 
 // --- Per-image override -----------------------------------------------------

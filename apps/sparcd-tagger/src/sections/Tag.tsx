@@ -943,8 +943,7 @@ export function Tag() {
         <button
           onClick={() => setShowTimeShift(true)}
           disabled={!sampleTimestamp && !hasUploadShift}
-          aria-describedby={!sampleTimestamp && !hasUploadShift ? 'upload-time-unavailable' : undefined}
-          className={`inline-flex items-center gap-1.5 text-[11.5px] font-mono px-2 py-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 ${
+          className={`inline-flex items-center gap-1.5 text-[11.5px] font-mono px-2 py-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 disabled:cursor-not-allowed ${
             hasUploadShift
               ? 'bg-mark border border-ink text-ink font-[600]'
               : 'border border-rule text-inkSoft hover:text-ink hover:border-ink'
@@ -960,16 +959,6 @@ export function Tag() {
           <span aria-hidden>◷</span>
           {hasUploadShift ? `clock ${formatOffsetDelta(timeOffset)}` : 'Time shift'}
         </button>
-        {!sampleTimestamp && !hasUploadShift && (
-          <span
-            id="upload-time-unavailable"
-            role="status"
-            aria-live="polite"
-            className="text-[11px] font-mono text-inkSoft"
-          >
-            No image in this upload has a capture time to shift
-          </span>
-        )}
 
         {/* Shift only explicitly selected frames — e.g. one mis-set camera in a
             mixed upload. Stored as per-image corrections, so it stacks on the
@@ -979,11 +968,6 @@ export function Tag() {
             <button
               onClick={openBulkTime}
               disabled={selected.size === 0 || scopedTimeApplicableCount === 0}
-              aria-describedby={
-                selected.size === 0 || scopedTimeApplicableCount === 0
-                  ? 'scoped-time-unavailable'
-                  : undefined
-              }
               className="inline-flex items-center gap-1.5 text-[11.5px] font-mono px-2 py-1 border border-rule text-inkSoft hover:text-ink hover:border-ink disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
               title={
                 selected.size === 0 || scopedTimeApplicableCount === 0
@@ -996,16 +980,6 @@ export function Tag() {
               <span aria-hidden>◷</span>
               Time shift selection
             </button>
-            {(selected.size === 0 || scopedTimeApplicableCount === 0) && (
-              <span
-                id="scoped-time-unavailable"
-                role="status"
-                aria-live="polite"
-                className="text-[11px] font-mono text-inkSoft"
-              >
-                {scopedTimeUnavailableReason}
-              </span>
-            )}
           </>
         )}
 
