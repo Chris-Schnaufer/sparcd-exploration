@@ -107,3 +107,14 @@ host, while other browsers/mobile operating systems need their own #497 results.
 No uncached first-ever offline visit is promised. Assign, real upload, and
 standalone collection Tagger still require a connection. Full BDD suites remain
 separate from this production suite.
+
+## Issue #497 acceptance extensions
+
+Browser and PWA lifecycle tests also edit a species count before restarting,
+then reconnect and publish the recovered batch through the real pipeline with
+mocked S3. They verify timestamp/linkage, species/count/person, one completed
+upload and removal of the handoff record. `missing-species-restart.spec.ts`
+covers assets-only preparation followed by cold offline recovery and online
+species repair in both modes. These checks run in the existing production CI
+job. The requirement mapping and remaining manual computer/device steps are in
+`docs/2026-10-18-issue-497-offline-acceptance.md` at the repository root.

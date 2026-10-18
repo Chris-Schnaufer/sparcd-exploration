@@ -157,3 +157,14 @@ failure/retry, verified reselection, readiness and cache isolation. Run
 for exact boundaries. This adds #498 regression evidence without marking #497's
 independent browser/platform/manual shutdown acceptance matrix complete or
 expanding F1-2 beyond offline Inspect.
+
+## Issue #497: offline acceptance follow-up
+
+The #498 production harness is extended by `offline-restart.spec.ts`,
+`pwa.spec.ts`, and `missing-species-restart.spec.ts` under Uploader's
+`e2e/production/`. Coverage adds edited-count restart persistence, browser/PWA
+missing-species cold recovery, reconnection through verified publication, and
+accessible online-only scope explanations. See
+`docs/2026-10-18-issue-497-offline-acceptance.md` for the requirement mapping and
+remaining manual OS-restart/device checks. No new story identifier is invented;
+F1-2 remains scoped to offline Inspect. #497 is not closed by automation alone.
