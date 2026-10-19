@@ -338,6 +338,7 @@ Feature: Assign species to images in an upload
     Then the reference image is shown enlarged over the workspace
     And that species was not applied by the click
     And the enlarge control shows no icon of its own
+    And the enlarge control exposes its hover text and accessible name
 
   @H2
   Scenario: An upload with nothing to tag offers no species panel at all

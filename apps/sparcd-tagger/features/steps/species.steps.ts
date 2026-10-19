@@ -965,6 +965,12 @@ Then('the enlarge control shows no icon of its own', async ({ page }) => {
   await expect(speciesLoupeButton(page, 'Puma concolor')).toBeEmpty();
 });
 
+Then('the enlarge control exposes its hover text and accessible name', async ({ page }) => {
+  const button = speciesLoupeButton(page, 'Puma concolor');
+  await expect(button).toHaveAttribute('title', 'Enlarge reference');
+  await expect(button).toHaveAccessibleName('Enlarge Mountain Lion reference image');
+});
+
 Then('the reference image is shown enlarged over the workspace', async ({ page }) => {
   const img = loupe(page).locator('img[alt="Mountain Lion"]');
   await expect(img).toBeVisible();
