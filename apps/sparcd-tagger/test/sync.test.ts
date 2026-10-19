@@ -3,6 +3,7 @@ import {
   serializeCsvRows,
   parseCsvRows,
   serializeUploadMeta,
+  parseUploadMeta,
   buildUploadMeta,
   serializeDeployments,
   MEDIA_COL,
@@ -771,6 +772,30 @@ describe('runSync — dry-run default writes nothing', () => {
 });
 
 describe('runSync — live write path', () => {
+  it('combines Need expert with species, time, and location edits without losing media comments', async () => {
+    const mediaRows = parseCsvRows(MEDIA_CSV);
+    mediaRows[0][MEDIA_COL.comments] = '[TIMESTAMP:spread][FUTURE:keep]';
+    const cur = await canonical({ media: serializeCsvRows(mediaRows) });
+    const images = [{ ...IMAGES[0], timestampSource: 'spread' as const }, IMAGES[1]];
+    const pending = draft({
+      mediaPath: K1,
+      observations: [...IMAGES[0].baseObservations, obs('Canis latrans', 1, 'Coyote')],
+      timeOverride: '2024-01-10T09:00:00',
+      questionable: true,
+    });
+    const plan = buildSyncPlan(images, { [K1]: pending }, null, NEW_DEPLOYMENT);
+    const { io, rec } = fakeIO(cur);
+    const result = await runSync({ bucket: 'sparcd-x', uploadPrefix: PREFIX, user: 'jg', base: baseFrom(cur), plan, dryRun: false }, io);
+    expect(result.status).toBe('synced');
+    const written = (role: string) => rec.replaces.find((entry) => entry.key.endsWith(`${role}.csv`))?.body;
+    const media = parseCsvRows(written('media')!)[0];
+    expect(media[MEDIA_COL.comments]).toContain('[FUTURE:keep]');
+    expect(media[MEDIA_COL.comments]).toContain('[TIMESTAMP:manual]');
+    expect(media[MEDIA_COL.comments].match(/\[NEED_EXPERT:true\]/g)).toHaveLength(1);
+    expect(media[MEDIA_COL.deploymentId]).toBe(NEW_DEPLOYMENT.deploymentId);
+    expect(parseObservations(written('observations')!).filter((row) => row.mediaId === K1).map((row) => row.scientificName)).toEqual(['Puma concolor', 'Canis latrans']);
+    expect(parseUploadMeta(rec.replaces.find((entry) => entry.key.endsWith('UploadMeta.json'))!.body).imagesWithSpecies).toBe(1);
+  });
   it('writes a status-only change to media.csv, not observations.csv, and grounds it against media ETag', async () => {
     const cur = await canonical();
     const plan = buildSyncPlan(IMAGES, { [K1]: draft({ mediaPath: K1, observations: IMAGES[0].baseObservations, questionable: true }) }, null);
@@ -779,6 +804,7 @@ describe('runSync — live write path', () => {
     expect(res.status).toBe('synced');
     expect(rec.replaces.map((write) => write.key.split('/').pop())).toEqual(['media.csv', 'UploadMeta.json']);
     expect(rec.replaces[0].etag).toBe('"media-1"');
+    expect(rec.journals[0].syncedMediaIds).toEqual([K1]);
     expect(parseCsvRows(rec.replaces[0].body).find((row) => row[MEDIA_COL.mediaId] === K1)?.[MEDIA_COL.comments]).toContain('[NEED_EXPERT:true]');
     if (res.status === 'synced') expect(res.syncedMediaIds).toEqual([K1]);
 
@@ -989,6 +1015,28 @@ describe('reader-listing contract — snapshot subtree adds no images', () => {
 });
 
 describe('runSync — resume a partial sync from the journal', () => {
+  it('cleans only the status draft recorded by a safely resumed journal', async () => {
+    const cur = await canonical();
+    const media = mergeMedia(cur.media.text, [{ mediaId: K1, deploymentId: DEP, timestamp: IMAGES[0].baseTimestamp, observations: [], needExpert: true }]);
+    const journal: SyncJournal = {
+      id: `sparcd-x::${PREFIX}`, bucket: 'sparcd-x', uploadPrefix: PREFIX,
+      snapshotPrefix: `${PREFIX}.sparcd-tagger-snapshots/jg/stamp/`, user: 'jg', startedAt: NOW.toISOString(),
+      syncedMediaIds: [K1],
+      objects: [
+        { role: 'media', key: `${PREFIX}media.csv`, baseETag: cur.media.etag, baseHash: cur.media.hash, body: media, intendedHash: await sha256Hex(media), status: 'pending' },
+      ],
+    };
+    const { io, rec } = fakeIO(cur);
+    const result = await runSync({ bucket: 'sparcd-x', uploadPrefix: PREFIX, user: 'jg', base: baseFrom(cur), plan: emptyPlan(), dryRun: false, resumeJournal: journal }, io);
+    expect(result.status).toBe('synced');
+    if (result.status === 'synced') expect(result.syncedMediaIds).toEqual([K1]);
+    expect(rec.replaces).toHaveLength(1);
+    expect(rec.replaces[0].body).toBe(media);
+
+    const changed = await canonical({ media: MEDIA_CSV.replace('IMG001.JPG', 'IMG-REMOTE.JPG') });
+    const conflict = await runSync({ bucket: 'sparcd-x', uploadPrefix: PREFIX, user: 'jg', base: baseFrom(cur), plan: emptyPlan(), dryRun: false, resumeJournal: journal }, fakeIO(changed).io);
+    expect(conflict.status).toBe('conflict');
+  });
   it('verifies the written object and continues from the first pending one', async () => {
     const cur = await canonical();
     const { io, rec } = fakeIO(cur);

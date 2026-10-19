@@ -89,9 +89,11 @@ Feature: Review, correct and remove identifications that already exist
     Given an image is focused
     Then the compact Need expert control is accessible in Overview
     When Need expert is enabled from the compact control
+    And the Need expert sync preview reports one marked image
     And a live sync is run
     Then media.csv stores Need expert without rewriting observations
     And the Need expert marker returns after a reload
+    And a new browser session sees the saved Need expert status
     And the compact Need expert control is accessible in Focus
     When Need expert is cleared from Focus
     And a live sync is run
@@ -103,6 +105,30 @@ Feature: Review, correct and remove identifications that already exist
     When the workspace is narrowed to a phone width
     Then Need expert can be toggled from the keyboard in Overview
     And Need expert fits and remains keyboard reachable in Focus
+
+  @H3
+  Scenario: A mixed selection shows its target and one action applies the focused state
+    Given an image is focused
+    When one image is marked Need expert and three images are selected
+    Then the compact toggle describes the mixed selection and marks it in one activation
+
+  @H3
+  Scenario: A touch activation changes Need expert exactly once
+    Then a touch user can mark and clear Need expert with one tap each
+
+  @H3
+  Scenario: Reversing an unsynced Need expert status resolves the local edit
+    Given an image is focused
+    When Need expert is enabled from the compact control
+    And Need expert is toggled off before syncing
+    Then the image has no pending Need expert edit
+
+  @H3
+  Scenario: A concurrent media edit blocks a pending Need expert status
+    Given an image is focused
+    When Need expert is enabled from the compact control
+    And another writer changes media.csv
+    Then Sync reports a media conflict and keeps the local Need expert edit
 
   @H3 @H3-2
   Scenario: A confirmation records who reviewed it and when, even though nothing changes

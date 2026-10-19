@@ -678,7 +678,7 @@ async function tryResume(
     if (dryRun)
       return { status: 'dry-run', summary: EMPTY_SUMMARY, snapshotPrefix: journal.snapshotPrefix, writes: [] };
     await io.clearJournal();
-    return { status: 'synced', summary: EMPTY_SUMMARY, newETags: collectNewETags(journal) };
+    return { status: 'synced', summary: EMPTY_SUMMARY, newETags: collectNewETags(journal), syncedMediaIds: journal.syncedMediaIds };
   }
   if (dryRun) {
     // A dry-run never writes — describe the pending objects a real resume would.
@@ -692,7 +692,8 @@ async function tryResume(
         .map((o) => ({ role: o.role, key: o.key, bytes: byteLen(o.body), baseETag: o.baseETag })),
     };
   }
-  return writePending(io, journal, decision.fromIndex);
+  const result = await writePending(io, journal, decision.fromIndex);
+  return result.status === 'synced' ? { ...result, syncedMediaIds: journal.syncedMediaIds } : result;
 }
 
 type CommitCtx = {
@@ -703,6 +704,7 @@ type CommitCtx = {
   writes: PreparedWrite[];
   editStamp: string;
   snapshotPrefix: string;
+  syncedMediaIds?: string[];
 };
 
 /**
@@ -735,6 +737,7 @@ async function commitWrites(io: SyncIO, c: CommitCtx, summary: DiffSummary): Pro
     snapshotPrefix: activePrefix,
     user: c.user,
     startedAt: io.now().toISOString(),
+    syncedMediaIds: c.syncedMediaIds,
     objects: c.writes.map<JournalObject>((w) => ({
       role: w.role,
       key: key(c.uploadPrefix, w.role),
@@ -777,6 +780,7 @@ export async function runSync(params: SyncParams, io: SyncIO): Promise<SyncResul
 
   const editStamp = javaEditStamp(io.now());
   const writes = await buildWrites(current, plan, user, editStamp, uploadPrefix);
+  const syncedMediaIds = [...new Set([...plan.tagEdits, ...plan.timeEdits, ...plan.statusEdits].map((edit) => edit.mediaId))];
   const snapshotPrefix = snapshotPrefixOf(uploadPrefix, user, snapshotStamp(io.now()));
 
   if (dryRun) {
@@ -795,11 +799,10 @@ export async function runSync(params: SyncParams, io: SyncIO): Promise<SyncResul
 
   const result = await commitWrites(
     io,
-    { bucket, uploadPrefix, user, current, writes, editStamp, snapshotPrefix },
+    { bucket, uploadPrefix, user, current, writes, editStamp, snapshotPrefix, syncedMediaIds },
     plan.summary,
   );
   if (result.status === 'synced') {
-    const syncedMediaIds = [...new Set([...plan.tagEdits, ...plan.timeEdits, ...plan.statusEdits].map((e) => e.mediaId))];
     return { ...result, syncedMediaIds };
   }
   return result;

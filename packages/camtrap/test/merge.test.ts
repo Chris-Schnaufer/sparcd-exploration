@@ -110,6 +110,10 @@ describe('tagger merge contract → tagger-edited-v016 golden', () => {
 });
 
 describe('no accidental data loss', () => {
+  it('leaves observation bytes untouched when a media-only status changes', () => {
+    const original = fixture('java-v016', 'observations.csv').trimEnd();
+    expect(mergeObservations(original, [])).toBe(original);
+  });
   const merged = parseObservations(mergeObservations(fixture('java-v016', 'observations.csv'), EDITS));
 
   it('keeps the unrelated IMG004 survivor row untouched', () => {

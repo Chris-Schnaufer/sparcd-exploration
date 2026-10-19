@@ -14,7 +14,9 @@ import {
   enterFocusView,
   selectCollection,
   openUpload,
+  ENDPOINT,
 } from './support/world';
+import { installS3Mock } from './support/s3mock';
 import { BUCKET, PREFIX_A, MEDIA_A } from './support/data';
 import { openSyncDialog, setSyncDryRun, readStore, waitForDirtyDrafts, waitForSyncDialogClosed } from './support/flows';
 
@@ -301,14 +303,26 @@ const expertToggle = (page: Page) => page.getByRole('button', { name: "Toggle ne
 
 Then('the compact Need expert control is accessible in Overview', async ({ page, s3, scratch }) => {
   scratch.originalObservations = s3.text(BUCKET, `${PREFIX_A}observations.csv`);
-  await expect(expertToggle(page)).toBeVisible();
-  await expect(expertToggle(page)).toHaveAttribute('title', "Toggle needing an expert's opinion");
+  const control = expertToggle(page);
+  await expect(control).toBeVisible();
+  await control.hover();
+  await expect(page.getByRole('tooltip', { name: "Toggle needing an expert's opinion" })).toBeVisible();
+  await page.mouse.move(0, 0);
+  await control.focus();
+  await expect(page.getByRole('tooltip', { name: "Toggle needing an expert's opinion" })).toBeVisible();
   await expect(expertToggle(page)).toHaveAttribute('aria-pressed', 'false');
 });
 
 When('Need expert is enabled from the compact control', async ({ page }) => {
   await expertToggle(page).click();
   await expect(expertToggle(page)).toHaveAttribute('aria-pressed', 'true');
+});
+
+When('the Need expert sync preview reports one marked image', async ({ page }) => {
+  await openSyncDialog(page);
+  await expect(page.getByText('Need expert: 1 marked, 0 cleared')).toBeVisible();
+  await expect(page.getByText(/Would write 2 file\(s\).*media, uploadMeta/)).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel' }).click();
 });
 
 Then('media.csv stores Need expert without rewriting observations', async ({ s3, scratch }) => {
@@ -324,6 +338,19 @@ Then('the Need expert marker returns after a reload', async ({ page }) => {
   await focusFrame(page, 'IMG002.JPG');
   await expect(expertToggle(page)).toHaveAttribute('aria-pressed', 'true');
   await expect(gridCell(page, 'IMG002.JPG').locator('[title="Needs expert opinion"]')).toBeVisible();
+});
+
+Then('a new browser session sees the saved Need expert status', async ({ browser, s3 }) => {
+  const context = await browser.newContext({ baseURL: ENDPOINT });
+  const fresh = await context.newPage();
+  try {
+    await installS3Mock(fresh, s3);
+    await openWorkspace(fresh);
+    await focusFrame(fresh, 'IMG002.JPG');
+    await expect(expertToggle(fresh)).toHaveAttribute('aria-pressed', 'true');
+  } finally {
+    await context.close();
+  }
 });
 
 Then('the compact Need expert control is accessible in Focus', async ({ page }) => {
@@ -366,6 +393,72 @@ Then('Need expert fits and remains keyboard reachable in Focus', async ({ page }
   await page.keyboard.press('Enter');
   await expect(control).toHaveAttribute('aria-pressed', 'true');
   await expect(control).toBeFocused();
+});
+
+When('one image is marked Need expert and three images are selected', async ({ page }) => {
+  await expertToggle(page).click();
+  await gridCell(page, 'IMG001.JPG').click();
+  await gridCell(page, 'IMG003.JPG').click({ modifiers: ['Shift'] });
+});
+
+Then('the compact toggle describes the mixed selection and marks it in one activation', async ({ page }) => {
+  const control = expertToggle(page);
+  await expect(control).toHaveAttribute('aria-pressed', 'mixed');
+  const description = await control.getAttribute('aria-describedby');
+  expect(description).toBeTruthy();
+  const text = await page.locator(description!.split(' ').map((id) => `[id="${id}"]`).join(',')).allTextContents();
+  expect(text.join(' ')).toContain('Applies to 3 selected images.');
+  expect(text.join(' ')).toContain('Selected statuses are mixed.');
+  expect(text.join(' ')).toContain('Activating will mark all selected images');
+  await control.click();
+  for (const name of ['IMG001.JPG', 'IMG002.JPG', 'IMG003.JPG']) {
+    await expect(gridCell(page, name).locator('[title="Needs expert opinion"]')).toBeVisible();
+  }
+});
+
+Then('a touch user can mark and clear Need expert with one tap each', async ({ browser, s3 }) => {
+  const context = await browser.newContext({ baseURL: ENDPOINT, hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+  const touchPage = await context.newPage();
+  try {
+    await installS3Mock(touchPage, s3);
+    await openWorkspace(touchPage);
+    await focusFrame(touchPage, 'IMG002.JPG');
+    const control = expertToggle(touchPage);
+    await control.tap();
+    await expect(control).toHaveAttribute('aria-pressed', 'true');
+    await control.tap();
+    await expect(control).toHaveAttribute('aria-pressed', 'false');
+  } finally {
+    await context.close();
+  }
+});
+
+When('Need expert is toggled off before syncing', async ({ page }) => {
+  await expertToggle(page).click();
+});
+
+Then('the image has no pending Need expert edit', async ({ page }) => {
+  await expect(expertToggle(page)).toHaveAttribute('aria-pressed', 'false');
+  await expect(gridCell(page, 'IMG002.JPG').locator('[title="unsaved edit"]')).toHaveCount(0);
+  await openSyncDialog(page);
+  await expect(page.getByText('No local edits to sync — everything matches the canonical files.')).toBeVisible();
+});
+
+When('another writer changes media.csv', async ({ s3 }) => {
+  const key = `${PREFIX_A}media.csv`;
+  const rows = parseCsvRows(s3.text(BUCKET, key));
+  rows[0][10] = `${rows[0][10] ?? ''}[OTHER_WRITER:kept]`;
+  s3.put(BUCKET, key, serializeCsvRows(rows), 'text/csv');
+});
+
+Then('Sync reports a media conflict and keeps the local Need expert edit', async ({ page, s3 }) => {
+  await openSyncDialog(page);
+  await expect(page.getByText('Conflict — the upload changed since you loaded it.')).toBeVisible();
+  await expect(page.getByText(/media/).last()).toBeVisible();
+  await page.getByRole('button', { name: 'Close' }).click();
+  await expect(gridCell(page, 'IMG002.JPG').locator('[title="unsaved edit"]')).toBeVisible();
+  await expect(expertToggle(page)).toHaveAttribute('aria-pressed', 'true');
+  expect(s3.text(BUCKET, `${PREFIX_A}media.csv`)).not.toContain('[NEED_EXPERT:true]');
 });
 
 // --- Confirmation records a review (#368) -----------------------------------

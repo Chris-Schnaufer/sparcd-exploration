@@ -312,6 +312,7 @@ export const useDraftStore = create<DraftState>((set, get) => {
     ctx: UploadCtx,
     targets: TagTarget[],
     patch: Partial<DraftRecord> | ((prev: DraftRecord, base?: BaseSeed) => Partial<DraftRecord>),
+    resolveDirty?: (next: DraftRecord, base?: BaseSeed) => boolean,
   ): void => {
     if (!targets.length) return;
     const now = new Date().toISOString();
@@ -331,6 +332,7 @@ export const useDraftStore = create<DraftState>((set, get) => {
         lastEdited: now,
         dirty: true,
       };
+      if (resolveDirty) next.dirty = resolveDirty(next, base);
       updates[mediaPath] = next;
       scheduleSave(next);
     }
@@ -467,7 +469,12 @@ export const useDraftStore = create<DraftState>((set, get) => {
       mutateMany(ctx, targets, (prev, base) => ({
         questionable: value,
         baseQuestionable: base?.questionable ?? prev.baseQuestionable,
-      })),
+      }), (next, base) => !base ||
+        next.questionable !== !!base.questionable ||
+        next.timeOverride !== null ||
+        !!next.confirmedSpecies?.length ||
+        !!next.removedSpecies?.length ||
+        JSON.stringify(next.observations) !== JSON.stringify(base.observations)),
 
     applyTimeOffsetToSelection: (ctx, targets, delta, timeZone) => {
       // Precompute the new absolute override per image (delta on top of the

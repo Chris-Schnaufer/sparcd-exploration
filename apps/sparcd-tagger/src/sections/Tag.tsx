@@ -767,7 +767,14 @@ export function Tag() {
     selectedExpertStates.some((value) => value !== selectedExpertStates[0])
     ? 'mixed'
     : selectedExpertStates[0] ?? (current ? effectiveOf(current, drafts[current.key]).questionable : false);
-  const expertToggle = <NeedExpertToggle pressed={expertPressed} disabled={!current} onClick={toggleNeedExpert} />;
+  const expertToggle = (align: 'left' | 'right') => <NeedExpertToggle
+    pressed={expertPressed}
+    disabled={!current}
+    onClick={toggleNeedExpert}
+    selectionCount={selectedExpertStates.length}
+    nextState={current ? !effectiveOf(current, drafts[current.key]).questionable : undefined}
+    align={align}
+  />;
   // --- Global key handler: attached once, reads the latest state via a ref so
   // it never re-binds per render (plan perf requirement). ----------------------
   const stateRef = useRef<HandlerState>(null!);
@@ -897,7 +904,7 @@ export function Tag() {
             ]}
           />
         )}
-        {view === 'overview' && expertToggle}
+        {view === 'overview' && expertToggle('left')}
 
         <span className="text-[12px] font-mono text-inkSoft">
           {selected.size > 0 ? (
@@ -1320,7 +1327,7 @@ export function Tag() {
                 EXIF Modified
               </span>
             )}
-            {expertToggle}
+            {expertToggle('right')}
             <button
               ref={focusCloseRef}
               type="button"

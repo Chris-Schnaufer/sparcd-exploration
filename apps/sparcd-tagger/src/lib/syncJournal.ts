@@ -33,6 +33,8 @@ export type SyncJournal = {
   snapshotPrefix: string; // where the pre-write snapshot landed
   user: string;
   startedAt: string; // ISO
+  /** Drafts included in this sync; optional for journals written before this field existed. */
+  syncedMediaIds?: string[];
   objects: JournalObject[]; // in ROLE_ORDER
 };
 

@@ -733,6 +733,7 @@ export function mergeObservations(
   edits: MediaEdit[],
   opts: MergeObservationsOptions = {},
 ): string {
+  if (edits.length === 0) return canonicalObsCsv;
   const genId = opts.observationId ?? defaultObservationId;
   const editByMedia = new Map(edits.map((e) => [e.mediaId, e]));
   const rows = parseCsvRows(canonicalObsCsv);
