@@ -15,6 +15,8 @@ Feature: Focus shows position in the navigable image list
     And the Focus next control is absent at the boundary
     When Focus returns to the first media item
     Then Focus position is "Image 1 of 6 total" at 1 of 6
+    When Focus is closed with Escape after position coverage
+    Then the Focus position bar is gone and the opener is focused
 
   Scenario: Filtered progress follows the filtered navigation list
     When Focus opens with a two-image date filter

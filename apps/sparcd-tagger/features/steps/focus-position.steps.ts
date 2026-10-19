@@ -33,6 +33,14 @@ When('Focus moves to a middle media item', async ({ page }) => {
 When('Focus returns to the first media item', async ({ page }) => {
   for (let index = 0; index < 5; index++) await page.keyboard.press('ArrowLeft');
 });
+When('Focus is closed with Escape after position coverage', async ({ page }) => {
+  await page.keyboard.press('Escape');
+});
+Then('the Focus position bar is gone and the opener is focused', async ({ page }) => {
+  await expect(viewer(page)).toHaveCount(0);
+  await expect(progress(page)).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Focus', exact: true })).toBeFocused();
+});
 
 Then('the focused media is the final video', async ({ page }) => {
   await expect(viewer(page)).toContainText('VID001.MP4');

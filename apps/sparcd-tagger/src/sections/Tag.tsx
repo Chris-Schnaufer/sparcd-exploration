@@ -37,6 +37,7 @@ import { rangeSet, toggleIndex, burstIndexSet, visibleRangeSet } from '../lib/se
 import { effectiveOf } from '../lib/effective';
 import { sortIndices, type SortField, type SortDir } from '../lib/sortImages';
 import { findFilenameMatches } from '../lib/imageSearch';
+import { formatFocusPosition } from '../lib/focusPosition';
 import { EMPTY_IMAGE_FILTER, matchesImageFilter, type ImageFilter } from '../lib/imageFilter';
 import { parseSpeciesDrag, SPECIES_DRAG_TYPE } from '../lib/speciesDrag';
 import {
@@ -747,7 +748,7 @@ export function Tag() {
   const focusPositionCount = imageFilterActive ? visibleIndices.length : list.length;
   const focusPosition = filteredFocusPosition + 1;
   const focusPositionValid = !!current && focusPosition > 0 && focusPosition <= focusPositionCount;
-  const focusPositionLabel = `Image ${focusPosition.toLocaleString()} of ${focusPositionCount.toLocaleString()} ${imageFilterActive ? 'filtered' : 'total'}`;
+  const focusPositionLabel = formatFocusPosition(focusPosition, focusPositionCount, imageFilterActive);
   const canGoPrevious = filteredFocusPosition > 0;
   const canGoNext = imageFilterActive
     ? filteredFocusPosition >= 0 && filteredFocusPosition < visibleIndices.length - 1
