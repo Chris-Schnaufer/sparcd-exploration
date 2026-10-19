@@ -427,7 +427,8 @@ export function Tag() {
   useEffect(() => {
     // Positions still refer to the previous list until the sort-remap effect
     // commits. Do not interpret them against the new order in this render.
-    if (prevOrderRef.current !== order) return;
+    const prev = prevOrderRef.current;
+    if (prev && prev !== order && prev.length === order.length && prev[focus] !== order[focus]) return;
     if (!imageFilterActive || visibleIndices.includes(focus)) {
       exhaustedFocusRef.current = null;
       return;
