@@ -90,6 +90,35 @@ Then('the species list is headed "Available species"', async ({ page }) => {
   await expect(page.getByText('Available species', { exact: true })).toBeVisible();
 });
 
+// --- Species list info popup --------------------------------------------------
+
+const speciesHelp = (page: Page) =>
+  page.locator('div[role="dialog"][aria-label="Using the species list"]');
+
+When("the species list's info control is used", async ({ page }) => {
+  await page.getByRole('button', { name: 'About the species list' }).click();
+  await expect(speciesHelp(page)).toBeVisible();
+});
+
+Then('a popup explains how to use the species list', async ({ page }) => {
+  await expect(speciesHelp(page).getByRole('heading', { name: 'Using the species list' })).toBeVisible();
+  await expect(speciesHelp(page).getByText('Applying a species')).toBeVisible();
+  await expect(speciesHelp(page).getByText('Keyboard keys')).toBeVisible();
+});
+
+Then('it can be dismissed with Escape, its close control, or a click outside', async ({ page }) => {
+  await page.keyboard.press('Escape');
+  await expect(speciesHelp(page)).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'About the species list' }).click();
+  await speciesHelp(page).getByRole('button', { name: 'Close' }).click();
+  await expect(speciesHelp(page)).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'About the species list' }).click();
+  await speciesHelp(page).click({ position: { x: 4, y: 4 } });
+  await expect(speciesHelp(page)).toHaveCount(0);
+});
+
 Then('each species shows its reference image where one exists', async ({ page }) => {
   for (const s of VOCAB) {
     await expect(speciesRow(page, s.scientific).locator('img')).toHaveAttribute(

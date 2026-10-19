@@ -1,8 +1,9 @@
-import { useMemo, type ReactNode, type RefObject } from 'react';
+import { useMemo, useState, type ReactNode, type RefObject } from 'react';
 import Fuse from 'fuse.js';
 import type { Species } from '../lib/species';
 import type { AppliedTag } from '../lib/drafts';
 import { encodeSpeciesDrag, SPECIES_DRAG_TYPE } from '../lib/speciesDrag';
+import { SpeciesHelp } from './SpeciesHelp';
 
 // The species selector. Persistent, scrollable, browsable — not only a
 // type-to-filter popover — because volunteers scan to recognize a species.
@@ -35,6 +36,7 @@ export type SpeciesPanelProps = {
 
 export function SpeciesPanel(props: SpeciesPanelProps) {
   const { species, filter } = props;
+  const [showHelp, setShowHelp] = useState(false);
 
   const fuse = useMemo(
     () =>
@@ -88,8 +90,20 @@ export function SpeciesPanel(props: SpeciesPanelProps) {
         />
         {props.headerSlot}
         {props.hasFocus && (
-          <p className="text-[11px] font-body tracking-[0.12em] uppercase text-inkSoft">Available species</p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[11px] font-body tracking-[0.12em] uppercase text-inkSoft">Available species</p>
+            <button
+              type="button"
+              onClick={() => setShowHelp(true)}
+              className="shrink-0 min-w-11 min-h-11 md:min-w-5 md:min-h-5 grid place-items-center text-[13px] text-inkSoft hover:text-ink focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+              title="About the species list"
+              aria-label="About the species list"
+            >
+              ⓘ
+            </button>
+          </div>
         )}
+        {showHelp && <SpeciesHelp onClose={() => setShowHelp(false)} />}
       </div>
 
       <div className="flex-1 overflow-y-auto min-h-0">
