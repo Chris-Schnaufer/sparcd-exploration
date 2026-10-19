@@ -55,8 +55,9 @@ async function setImg004ReviewState(
 }
 
 async function expandApplied(page: Page): Promise<void> {
-  const summary = page.locator('button[title="Show all applied species"]');
-  const controls = page.locator(
+  const speciesPanel = page.getByTestId('species-panel');
+  const summary = speciesPanel.locator('button[title="Show all applied species"]');
+  const controls = speciesPanel.locator(
     '[data-testid="applied-species-summary"], span.inline-flex:not([data-testid="applied-species-summary"])',
   ).first();
   await expect(controls).toBeVisible();
@@ -173,6 +174,10 @@ Then('expanded species controls show positive review information without negativ
 
 When('species controls are collapsed', async ({ page }) => {
   await page.getByRole('button', { name: 'Collapse applied species' }).click();
+});
+
+When('the viewport is set to 390 pixels wide', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
 });
 
 Then('the collapsed species summary has no review label or original attribution', async ({ page }) => {

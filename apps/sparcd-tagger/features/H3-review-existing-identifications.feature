@@ -129,6 +129,8 @@ Feature: Review, correct and remove identifications that already exist
   @H3 @H3-8
   Scenario: Unreviewed multi-species controls omit attribution and review summaries in Overview and Focus
     Given a multi-species image with no review events is focused
+    When species controls are collapsed
+    And the viewport is set to 390 pixels wide
     Then expanded species controls have no original attribution or negative review text
     When species controls are collapsed
     Then the collapsed species summary has no review label or original attribution
