@@ -954,7 +954,12 @@ When('its enlarge control is used', async ({ page }) => {
 // top-left — a direct click on the img there would instead be refused as
 // intercepted if the overlay were still corner-sized.
 When('the thumbnail is clicked away from its top-left corner', async ({ page }) => {
-  await speciesLoupeButton(page, 'Puma concolor').click({ position: { x: 34, y: 34 } });
+  const thumbnail = speciesRow(page, 'Puma concolor').locator('img');
+  const box = await thumbnail.boundingBox();
+  expect(box).not.toBeNull();
+  // Click the thumbnail's true bottom-right pixel. The overlay must cover
+  // the complete image even when row actions make the row taller than it.
+  await page.mouse.click(box!.x + box!.width - 1, box!.y + box!.height - 1);
 });
 
 Then('that species was not applied by the click', async ({ page }) => {

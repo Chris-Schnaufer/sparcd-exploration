@@ -183,7 +183,7 @@ function Row(p: RowProps) {
             e.preventDefault();
             p.onZoom!();
           }}
-          className="absolute top-2 left-3 w-10 h-10 cursor-zoom-in focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+          className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 cursor-zoom-in focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
           title="Enlarge reference"
           aria-label={`Enlarge ${p.common} reference image`}
         />
