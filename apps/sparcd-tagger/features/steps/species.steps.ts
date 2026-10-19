@@ -124,6 +124,10 @@ Then('the Add controls align in Overview, Focus and narrow layouts', async ({ pa
   await expect(javelinaAdd).toHaveAccessibleName('Apply Javelina');
   await expect(javelinaAdd).toHaveAttribute('title', 'Apply Javelina');
 
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectAligned();
+
+  await page.setViewportSize({ width: 1440, height: 950 });
   await enterFocusView(page);
   await expectAligned();
 
