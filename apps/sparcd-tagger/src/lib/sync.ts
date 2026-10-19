@@ -30,6 +30,7 @@ import {
   parseCsvRows,
   serializeCsvRows,
   rebaseCaptureTimestamp,
+  needExpertFromComments,
   MEDIA_COL,
   OBS_COL,
   type MediaEdit,
@@ -41,6 +42,7 @@ import tzlookup from 'tz-lookup';
 import type { TagImage } from './workspace';
 import type { DraftRecord, DraftObservation } from './db';
 import { sha256Hex } from './hash';
+import { draftRevisionOf } from './draftRevision';
 import {
   ROLE_ORDER,
   planResume,
@@ -49,6 +51,7 @@ import {
   type SyncJournal,
   type JournalObject,
   type RemoteState,
+  type SyncReceipt,
 } from './syncJournal';
 
 // --- Canonical state -------------------------------------------------------
@@ -84,6 +87,8 @@ export type DiffSummary = {
 };
 
 export type SyncPlan = {
+  /** Submitted dirty draft contents, used only to acknowledge matching edits. */
+  draftRevisions?: Record<string, string>;
   /** Images whose observation rows change — drive `mergeObservations` + the delta. */
   tagEdits: MediaEdit[];
   /** Images whose `media.csv` col-4 timestamp changes but whose tags don't. */
@@ -323,7 +328,12 @@ export function buildSyncPlan(
     }
   }
 
-  return { tagEdits, timeEdits, statusEdits, locationEdit: pendingLocation, summary };
+  const draftRevisions = Object.fromEntries(
+    [...new Set([...tagEdits, ...timeEdits, ...statusEdits].map((edit) => edit.mediaId))]
+      .filter((id) => drafts[id]?.dirty)
+      .map((id) => [id, draftRevisionOf(drafts[id])]),
+  );
+  return { tagEdits, timeEdits, statusEdits, draftRevisions, locationEdit: pendingLocation, summary };
 }
 
 export function planIsEmpty(plan: SyncPlan): boolean {
@@ -394,10 +404,9 @@ export type SyncResult =
       status: 'synced';
       summary: DiffSummary;
       newETags: Partial<Record<CanonicalRole, string>>;
-      /** The media IDs written to canonical, so the caller can clear exactly
-       *  those drafts. Absent on a journal resume (the journal carries bodies,
-       *  not per-image edits). */
+      /** Written IDs; cleanup additionally requires a matching receipt revision. */
       syncedMediaIds?: string[];
+      receipt?: SyncReceipt;
     }
   | { status: 'conflict'; role: CanonicalRole; reason: string }
   | { status: 'unsupported'; message: string };
@@ -678,7 +687,7 @@ async function tryResume(
     if (dryRun)
       return { status: 'dry-run', summary: EMPTY_SUMMARY, snapshotPrefix: journal.snapshotPrefix, writes: [] };
     await io.clearJournal();
-    return { status: 'synced', summary: EMPTY_SUMMARY, newETags: collectNewETags(journal), syncedMediaIds: journal.syncedMediaIds };
+    return { status: 'synced', summary: EMPTY_SUMMARY, newETags: collectNewETags(journal), syncedMediaIds: journal.syncedMediaIds, receipt: journal.receipt };
   }
   if (dryRun) {
     // A dry-run never writes — describe the pending objects a real resume would.
@@ -693,7 +702,7 @@ async function tryResume(
     };
   }
   const result = await writePending(io, journal, decision.fromIndex);
-  return result.status === 'synced' ? { ...result, syncedMediaIds: journal.syncedMediaIds } : result;
+  return result.status === 'synced' ? { ...result, syncedMediaIds: journal.syncedMediaIds, receipt: journal.receipt } : result;
 }
 
 type CommitCtx = {
@@ -705,6 +714,7 @@ type CommitCtx = {
   editStamp: string;
   snapshotPrefix: string;
   syncedMediaIds?: string[];
+  receipt?: SyncReceipt;
 };
 
 /**
@@ -738,6 +748,7 @@ async function commitWrites(io: SyncIO, c: CommitCtx, summary: DiffSummary): Pro
     user: c.user,
     startedAt: io.now().toISOString(),
     syncedMediaIds: c.syncedMediaIds,
+    receipt: c.receipt,
     objects: c.writes.map<JournalObject>((w) => ({
       role: w.role,
       key: key(c.uploadPrefix, w.role),
@@ -781,6 +792,14 @@ export async function runSync(params: SyncParams, io: SyncIO): Promise<SyncResul
   const editStamp = javaEditStamp(io.now());
   const writes = await buildWrites(current, plan, user, editStamp, uploadPrefix);
   const syncedMediaIds = [...new Set([...plan.tagEdits, ...plan.timeEdits, ...plan.statusEdits].map((edit) => edit.mediaId))];
+  const syncedIds = new Set(syncedMediaIds);
+  const mediaRows = parseCsvRows(writes.find((write) => write.role === 'media')?.body ?? current.media.text)
+    .filter((row) => syncedIds.has(row[MEDIA_COL.mediaId]));
+  const receipt: SyncReceipt = {
+    draftRevisions: plan.draftRevisions ?? {},
+    mediaTimestamps: Object.fromEntries(mediaRows.map((row) => [row[MEDIA_COL.mediaId], row[MEDIA_COL.timestamp]])),
+    needExpert: Object.fromEntries(mediaRows.map((row) => [row[MEDIA_COL.mediaId], needExpertFromComments(row[MEDIA_COL.comments] ?? '')])),
+  };
   const snapshotPrefix = snapshotPrefixOf(uploadPrefix, user, snapshotStamp(io.now()));
 
   if (dryRun) {
@@ -799,11 +818,11 @@ export async function runSync(params: SyncParams, io: SyncIO): Promise<SyncResul
 
   const result = await commitWrites(
     io,
-    { bucket, uploadPrefix, user, current, writes, editStamp, snapshotPrefix, syncedMediaIds },
+    { bucket, uploadPrefix, user, current, writes, editStamp, snapshotPrefix, syncedMediaIds, receipt },
     plan.summary,
   );
   if (result.status === 'synced') {
-    return { ...result, syncedMediaIds };
+    return { ...result, syncedMediaIds, receipt };
   }
   return result;
 }

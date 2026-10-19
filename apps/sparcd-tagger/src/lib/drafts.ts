@@ -9,6 +9,8 @@
 
 import { create } from 'zustand';
 import { shiftTimestamp, type Deployment } from '@sparcd/camtrap';
+import { draftRevisionOf } from './draftRevision';
+import type { SyncReceipt } from './syncJournal';
 import {
   db,
   draftId,
@@ -250,8 +252,9 @@ type DraftState = {
   /** Flush every pending debounced Dexie write now (manual Cmd/Ctrl+S confirm). */
   flushSaves: () => Promise<void>;
   discardUpload: (ctx: UploadCtx) => Promise<void>;
-  /** Clear `dirty` on drafts included in a successful canonical sync. */
-  markUploadSynced: (ctx: UploadCtx, mediaPaths: string[]) => Promise<void>;
+  /** Acknowledge matching submitted revisions; preserve newer edits after retry. */
+  markUploadSynced: (ctx: UploadCtx, receipt: SyncReceipt | undefined) => Promise<void>;
+  markUploadPendingSync: (ctx: UploadCtx, revisions: Record<string, string>) => Promise<void>;
 };
 
 // Per-record debounce so a burst of keystrokes coalesces into one Dexie write.
@@ -470,6 +473,7 @@ export const useDraftStore = create<DraftState>((set, get) => {
         questionable: value,
         baseQuestionable: base?.questionable ?? prev.baseQuestionable,
       }), (next, base) => !base ||
+        !!next.pendingSync ||
         next.questionable !== !!base.questionable ||
         next.timeOverride !== null ||
         !!next.confirmedSpecies?.length ||
@@ -551,23 +555,48 @@ export const useDraftStore = create<DraftState>((set, get) => {
       }
     },
 
-    markUploadSynced: async (ctx, mediaPaths) => {
-      void ctx;
-      if (!mediaPaths.length) return;
+    markUploadPendingSync: async (ctx, revisions) => {
       const next = { ...get().drafts };
       const changed: DraftRecord[] = [];
-      for (const path of mediaPaths) {
+      for (const path of Object.keys(revisions)) {
         const rec = next[path];
-        if (!rec?.dirty) continue;
+        if (!rec || rec.bucket !== ctx.bucket || rec.uploadPrefix !== ctx.uploadPrefix || rec.pendingSync) continue;
+        const timer = pending.get(rec.id);
+        if (timer) clearTimeout(timer);
+        pending.delete(rec.id);
+        const submitted = { ...rec, pendingSync: true };
+        next[path] = submitted;
+        changed.push(submitted);
+      }
+      if (changed.length) {
+        set({ drafts: next });
+        await db.drafts.bulkPut(changed);
+      }
+    },
+
+    markUploadSynced: async (ctx, receipt) => {
+      // Legacy journals cannot prove which revision was written. Keep their
+      // drafts pending rather than acknowledging unrelated current edits.
+      if (!receipt) return;
+      const next = { ...get().drafts };
+      const changed: DraftRecord[] = [];
+      for (const [path, submitted] of Object.entries(receipt.draftRevisions)) {
+        const rec = next[path];
+        if (!rec || rec.bucket !== ctx.bucket || rec.uploadPrefix !== ctx.uploadPrefix) continue;
+        const matches = draftRevisionOf(rec) === submitted;
+        if (matches && !rec.dirty) continue;
+        const publishedStatus = receipt.needExpert[path];
+        if (!matches && publishedStatus === undefined) continue;
         // Drop any debounced write for this record — we rewrite it clean now.
         const timer = pending.get(rec.id);
         if (timer) {
           clearTimeout(timer);
           pending.delete(rec.id);
         }
-        const clean = {
+        const acknowledged: DraftRecord = matches ? {
           ...rec,
           dirty: false,
+          pendingSync: undefined,
           baseQuestionable: rec.questionable,
           confirmedSpecies: undefined,
           removedSpecies: undefined,
@@ -577,9 +606,17 @@ export const useDraftStore = create<DraftState>((set, get) => {
             ...observation,
             reviewEvents: undefined,
           })),
+        } : {
+          ...rec,
+          pendingSync: undefined,
+          // The old operation completed, but a newer draft still owns its
+          // intended status/species/time. Rebase only the published status so
+          // a reversal before retry remains a pending clear after reload.
+          baseQuestionable: publishedStatus,
+          dirty: rec.dirty || rec.questionable !== publishedStatus,
         };
-        next[path] = clean;
-        changed.push(clean);
+        next[path] = acknowledged;
+        changed.push(acknowledged);
       }
       if (changed.length) {
         set({ drafts: next });

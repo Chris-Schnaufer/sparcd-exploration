@@ -760,7 +760,7 @@ export function Tag() {
     const targets = targetsOf();
     if (targets.length) setQuestionableManyFn(ctx, targets, !effectiveOf(current, drafts[current.key]).questionable);
   };
-  const selectedExpertStates = [...selected].filter((index) => visibleIndices.includes(index))
+  const selectedExpertStates = selectedForActions
     .map((index) => list[index]).filter((image): image is TagImage => !!image)
     .map((image) => effectiveOf(image, drafts[image.key]).questionable);
   const expertPressed: boolean | 'mixed' = selectedExpertStates.length &&

@@ -805,6 +805,8 @@ describe('runSync — live write path', () => {
     expect(rec.replaces.map((write) => write.key.split('/').pop())).toEqual(['media.csv', 'UploadMeta.json']);
     expect(rec.replaces[0].etag).toBe('"media-1"');
     expect(rec.journals[0].syncedMediaIds).toEqual([K1]);
+    expect(rec.journals[0].receipt?.draftRevisions).toEqual(plan.draftRevisions);
+    expect(rec.journals[0].receipt?.mediaTimestamps[K1]).toBe(IMAGES[0].baseTimestamp);
     expect(parseCsvRows(rec.replaces[0].body).find((row) => row[MEDIA_COL.mediaId] === K1)?.[MEDIA_COL.comments]).toContain('[NEED_EXPERT:true]');
     if (res.status === 'synced') expect(res.syncedMediaIds).toEqual([K1]);
 
@@ -1022,14 +1024,18 @@ describe('runSync — resume a partial sync from the journal', () => {
       id: `sparcd-x::${PREFIX}`, bucket: 'sparcd-x', uploadPrefix: PREFIX,
       snapshotPrefix: `${PREFIX}.sparcd-tagger-snapshots/jg/stamp/`, user: 'jg', startedAt: NOW.toISOString(),
       syncedMediaIds: [K1],
+      receipt: { draftRevisions: { [K1]: 'submitted-revision' }, mediaTimestamps: { [K1]: IMAGES[0].baseTimestamp }, needExpert: { [K1]: true } },
       objects: [
         { role: 'media', key: `${PREFIX}media.csv`, baseETag: cur.media.etag, baseHash: cur.media.hash, body: media, intendedHash: await sha256Hex(media), status: 'pending' },
       ],
     };
     const { io, rec } = fakeIO(cur);
-    const result = await runSync({ bucket: 'sparcd-x', uploadPrefix: PREFIX, user: 'jg', base: baseFrom(cur), plan: emptyPlan(), dryRun: false, resumeJournal: journal }, io);
+    const result = await runSync({ bucket: 'sparcd-x', uploadPrefix: PREFIX, user: 'jg', base: baseFrom(cur), plan: emptyPlan(), dryRun: false, resumeJournal: JSON.parse(JSON.stringify(journal)) }, io);
     expect(result.status).toBe('synced');
-    if (result.status === 'synced') expect(result.syncedMediaIds).toEqual([K1]);
+    if (result.status === 'synced') {
+      expect(result.syncedMediaIds).toEqual([K1]);
+      expect(result.receipt).toEqual(journal.receipt);
+    }
     expect(rec.replaces).toHaveLength(1);
     expect(rec.replaces[0].body).toBe(media);
 
