@@ -35,6 +35,7 @@ import { groupBursts, type BurstGrouping } from '../lib/bursts';
 import { offsetActive, formatOffsetDelta, earliestCorrected } from '../lib/timeshift';
 import { rangeSet, toggleIndex, burstIndexSet, visibleRangeSet } from '../lib/selection';
 import { effectiveOf } from '../lib/effective';
+import { focusLocationLabel } from '../lib/focusLocation';
 import { sortIndices, type SortField, type SortDir } from '../lib/sortImages';
 import { findFilenameMatches } from '../lib/imageSearch';
 import { EMPTY_IMAGE_FILTER, matchesImageFilter, type ImageFilter } from '../lib/imageFilter';
@@ -102,6 +103,7 @@ export function Tag() {
   const species = useSpecies(cfg, connectionId, collectionKey);
   const locations = useLocations(cfg, connectionId, collectionKey);
   const currentDeployment = useCurrentDeployment(cfg, connectionId, collectionKey, uploadPrefix);
+  const locationLabel = focusLocationLabel(currentDeployment.data);
   const captureTimeZone = currentDeployment.data
     ? tzlookup(currentDeployment.data.latitude, currentDeployment.data.longitude)
     : undefined;
@@ -1285,22 +1287,22 @@ export function Tag() {
           aria-modal="true"
           aria-label="Focus image viewer"
         >
-          <div className="shrink-0 flex items-center justify-between gap-3 border-b border-rule bg-panel px-3 py-1">
-            <div className="min-w-0 text-[13px] font-mono text-ink truncate">
+          <div className="shrink-0 grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-1 border-b border-rule bg-panel px-3 py-1 sm:flex sm:justify-between">
+            <div className="col-span-2 min-w-0 text-[13px] font-mono text-ink truncate sm:flex-1">
               Focus{current ? ` · ${current.fileName}` : ''}
             </div>
-            {currentDeployment.data && (
+            {locationLabel && (
               <span
-                className="shrink-0 max-w-[42vw] truncate font-mono text-[10px] text-inkSoft"
-                aria-label={`Location: ${currentDeployment.data.locationName} (${currentDeployment.data.locationId})`}
-                title={`Location: ${currentDeployment.data.locationName} (${currentDeployment.data.locationId})`}
+                className="col-start-1 row-start-2 min-w-0 max-w-full truncate font-mono text-[10px] text-inkSoft sm:shrink-0 sm:max-w-[42vw]"
+                aria-label={`Location: ${locationLabel}`}
+                title={`Location: ${locationLabel}`}
               >
-                {currentDeployment.data.locationName} ({currentDeployment.data.locationId})
+                {locationLabel}
               </span>
             )}
             {current?.timestampSource === 'exif-modify' && (
               <span
-                className="shrink-0 font-body text-[10px] font-[600] tracking-[0.08em] uppercase text-inkSoft border border-rule px-1"
+                className="col-start-2 row-start-2 shrink-0 whitespace-nowrap font-body text-[10px] font-[600] tracking-[0.08em] uppercase text-inkSoft border border-rule px-1"
                 title="Read from EXIF ModifyDate. This can be metadata-edit time rather than the camera capture time."
               >
                 EXIF Modified
@@ -1310,7 +1312,7 @@ export function Tag() {
               ref={focusCloseRef}
               type="button"
               onClick={closeFocus}
-              className="min-h-11 min-w-11 grid place-items-center border border-rule text-[20px] leading-none text-inkSoft hover:border-ink hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              className="col-start-3 row-start-1 row-span-2 shrink-0 min-h-11 min-w-11 grid place-items-center border border-rule text-[20px] leading-none text-inkSoft hover:border-ink hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
               aria-label="Close Focus"
               title="Close Focus (Escape)"
             >
