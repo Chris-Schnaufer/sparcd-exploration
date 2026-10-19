@@ -744,6 +744,10 @@ export function Tag() {
   };
 
   const filteredFocusPosition = imageFilterActive ? visibleIndices.indexOf(focus) : focus;
+  const focusPositionCount = imageFilterActive ? visibleIndices.length : list.length;
+  const focusPosition = filteredFocusPosition + 1;
+  const focusPositionValid = !!current && focusPosition > 0 && focusPosition <= focusPositionCount;
+  const focusPositionLabel = `Image ${focusPosition.toLocaleString()} of ${focusPositionCount.toLocaleString()} ${imageFilterActive ? 'filtered' : 'total'}`;
   const canGoPrevious = filteredFocusPosition > 0;
   const canGoNext = imageFilterActive
     ? filteredFocusPosition >= 0 && filteredFocusPosition < visibleIndices.length - 1
@@ -1285,37 +1289,37 @@ export function Tag() {
           aria-modal="true"
           aria-label="Focus image viewer"
         >
-          <div className="shrink-0 flex items-center justify-between gap-3 border-b border-rule bg-panel px-3 py-1">
-            <div className="min-w-0 text-[13px] font-mono text-ink truncate">
+          <div className="shrink-0 grid grid-cols-[minmax(0,1fr)_auto] lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1 border-b border-rule bg-panel px-3 py-1">
+            <div className="min-w-0 text-[13px] font-mono text-ink truncate" title={current?.fileName}>
               Focus{current ? ` · ${current.fileName}` : ''}
             </div>
-            {current?.deploymentId && (
-              <span
-                className="shrink-0 max-w-[42vw] truncate font-mono text-[10px] text-inkSoft"
-                aria-label={`Deployment: ${current.deploymentId}`}
-                title={`Deployment: ${current.deploymentId}`}
-              >
-                {current.deploymentId}
-              </span>
+            {focusPositionValid && (
+              <div role="progressbar" aria-label="Image position" aria-valuemin={1}
+                aria-valuenow={focusPosition} aria-valuemax={focusPositionCount} aria-valuetext={focusPositionLabel}
+                className="col-span-2 row-start-2 justify-self-center w-[min(70vw,260px)] min-w-0 lg:col-span-1 lg:col-start-2 lg:row-start-1 lg:w-[min(26vw,260px)] text-center font-mono text-[11px] text-inkSoft">
+                <span aria-hidden="true" className="block whitespace-nowrap">{focusPositionLabel}</span>
+                <span aria-hidden="true" className="mt-0.5 block h-1.5 overflow-hidden rounded-full bg-rule">
+                  <span className="block h-full bg-accent" style={{ width: `${focusPosition / focusPositionCount * 100}%` }} />
+                </span>
+              </div>
             )}
-            {current?.timestampSource === 'exif-modify' && (
-              <span
-                className="shrink-0 font-body text-[10px] font-[600] tracking-[0.08em] uppercase text-inkSoft border border-rule px-1"
-                title="Read from EXIF ModifyDate. This can be metadata-edit time rather than the camera capture time."
-              >
-                EXIF Modified
-              </span>
-            )}
-            <button
-              ref={focusCloseRef}
-              type="button"
-              onClick={closeFocus}
-              className="min-h-11 min-w-11 grid place-items-center border border-rule text-[20px] leading-none text-inkSoft hover:border-ink hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-              aria-label="Close Focus"
-              title="Close Focus (Escape)"
-            >
-              ×
-            </button>
+            <div className="col-start-2 row-start-1 lg:col-start-3 flex w-full min-w-0 items-center justify-end gap-2">
+              {current?.deploymentId && (
+                <span className="min-w-0 max-w-[35vw] truncate font-mono text-[10px] text-inkSoft"
+                  aria-label={`Deployment: ${current.deploymentId}`} title={`Deployment: ${current.deploymentId}`}>
+                  {current.deploymentId}
+                </span>
+              )}
+              {current?.timestampSource === 'exif-modify' && (
+                <span className="shrink-0 font-body text-[10px] font-[600] tracking-[0.08em] uppercase text-inkSoft border border-rule px-1"
+                  title="Read from EXIF ModifyDate. This can be metadata-edit time rather than the camera capture time.">
+                  EXIF Modified
+                </span>
+              )}
+              <button ref={focusCloseRef} type="button" onClick={closeFocus}
+                className="shrink-0 min-h-11 min-w-11 grid place-items-center border border-rule text-[20px] leading-none text-inkSoft hover:border-ink hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                aria-label="Close Focus" title="Close Focus (Escape)">×</button>
+            </div>
           </div>
           <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] overflow-y-auto lg:overflow-visible">
             <FocusPane
