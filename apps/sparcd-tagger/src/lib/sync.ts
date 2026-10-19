@@ -79,6 +79,8 @@ export type DiffSummary = {
   removals: number; // tagged → detagged
   timeCorrections: number; // images whose capture time changes
   confirmations: number; // species/count unchanged, but explicitly re-reviewed (#368)
+  expertMarked: number;
+  expertCleared: number;
 };
 
 export type SyncPlan = {
@@ -86,6 +88,8 @@ export type SyncPlan = {
   tagEdits: MediaEdit[];
   /** Images whose `media.csv` col-4 timestamp changes but whose tags don't. */
   timeEdits: MediaEdit[];
+  /** Per-image Need expert marker changes in media.csv, independent of species. */
+  statusEdits: MediaEdit[];
   /** A whole-upload location correction — the wrong camera location was
    *  recorded. Rewrites `deployments.csv` to this single row and every media/
    *  observation row's deployment id to `locationEdit.deploymentId`. */
@@ -124,8 +128,8 @@ function mergeReviewEvents(base: ReviewEvent[] = [], draft: ReviewEvent[] = []):
 /**
  * Diff the loaded drafts against the canonical base into the edits the merge
  * helpers consume. A draft whose observation multiset equals its base produces
- * no tag edit (re-applying the same species, or a questionable-only toggle, is
- * not a canonical change). The full observation array flows through, so a
+ * no tag edit (re-applying the same species is not a canonical change).
+ * Need expert changes are independent media edits. The full observation array flows through, so a
  * multi-species image is never collapsed to one row.
  */
 export function buildSyncPlan(
@@ -138,12 +142,15 @@ export function buildSyncPlan(
 ): SyncPlan {
   const tagEdits: MediaEdit[] = [];
   const timeEdits: MediaEdit[] = [];
+  const statusEdits: MediaEdit[] = [];
   const summary: DiffSummary = {
     additions: 0,
     modifications: 0,
     removals: 0,
     timeCorrections: 0,
     confirmations: 0,
+    expertMarked: 0,
+    expertCleared: 0,
   };
 
   for (const img of images) {
@@ -159,6 +166,18 @@ export function buildSyncPlan(
 
     const corrected = correctedTimestamp(img.baseTimestamp, offset, d?.timeOverride ?? null, timeZone);
     const timeChanged = !!img.baseTimestamp && corrected !== img.baseTimestamp;
+    const statusChanged = !!d && d.questionable !== !!d.baseQuestionable;
+    if (statusChanged) {
+      statusEdits.push({
+        mediaId: img.key,
+        deploymentId,
+        timestamp: corrected,
+        needExpert: d.questionable,
+        observations: [],
+      });
+      if (d.questionable) summary.expertMarked++;
+      else summary.expertCleared++;
+    }
     // A Tagger correction replaces an uploader estimate with a user-provided
     // time. Keep the marker so downstream readers still know the camera did
     // not supply it, but make its source accurately say "manual".
@@ -304,11 +323,11 @@ export function buildSyncPlan(
     }
   }
 
-  return { tagEdits, timeEdits, locationEdit: pendingLocation, summary };
+  return { tagEdits, timeEdits, statusEdits, locationEdit: pendingLocation, summary };
 }
 
 export function planIsEmpty(plan: SyncPlan): boolean {
-  return plan.tagEdits.length === 0 && plan.timeEdits.length === 0 && plan.locationEdit === null;
+  return plan.tagEdits.length === 0 && plan.timeEdits.length === 0 && plan.statusEdits.length === 0 && plan.locationEdit === null;
 }
 
 // --- Snapshot stamp --------------------------------------------------------
@@ -480,7 +499,7 @@ async function buildWrites(
   editStamp: string,
   uploadPrefix: string,
 ): Promise<PreparedWrite[]> {
-  const allMediaEdits = [...plan.tagEdits, ...plan.timeEdits];
+  const allMediaEdits = [...plan.tagEdits, ...plan.timeEdits, ...plan.statusEdits];
   let mediaBody = mergeMedia(current.media.text, allMediaEdits);
   let observationsBody = mergeObservations(current.observations.text, plan.tagEdits, {
     observationId: (mediaId, i) => `${mediaId.slice(uploadPrefix.length)}:${i}`,
@@ -587,6 +606,8 @@ const EMPTY_SUMMARY: DiffSummary = {
   removals: 0,
   timeCorrections: 0,
   confirmations: 0,
+  expertMarked: 0,
+  expertCleared: 0,
 };
 
 /**
@@ -778,7 +799,7 @@ export async function runSync(params: SyncParams, io: SyncIO): Promise<SyncResul
     plan.summary,
   );
   if (result.status === 'synced') {
-    const syncedMediaIds = [...plan.tagEdits, ...plan.timeEdits].map((e) => e.mediaId);
+    const syncedMediaIds = [...new Set([...plan.tagEdits, ...plan.timeEdits, ...plan.statusEdits].map((e) => e.mediaId))];
     return { ...result, syncedMediaIds };
   }
   return result;

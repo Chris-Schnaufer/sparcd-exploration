@@ -6,7 +6,7 @@ import { useStore } from '../store';
 import { useDraftStore, type UploadCtx } from '../lib/drafts';
 import { performSync } from '../lib/syncRunner';
 import { useCollections } from '../lib/queries';
-import type { SyncResult } from '../lib/sync';
+import type { DiffSummary, SyncResult } from '../lib/sync';
 import type { TagImage } from '../lib/workspace';
 import type { DraftRecord } from '../lib/db';
 
@@ -156,8 +156,8 @@ export function SyncDialog({
           );
           await waitForCanonicalTimes(r.syncedMediaIds ?? []);
           await queryClient.invalidateQueries({ queryKey: ['currentDeployment', connectionId] });
-          // Clear dirty only on the drafts actually written — questionable-only
-          // drafts (no canonical target) stay surfaced as unsaved.
+          // Clear dirty only after canonical media/observations have refreshed;
+          // status-only edits now have a media.csv target too.
           await markUploadSynced(ctx, r.syncedMediaIds ?? []);
         } finally {
           // The offset/location were baked into the canonical files (performSync
@@ -350,17 +350,7 @@ function LocationChangeNote({ pendingLocation }: { pendingLocation: Deployment }
   );
 }
 
-function SummaryGrid({
-  summary,
-}: {
-  summary: {
-    additions: number;
-    modifications: number;
-    removals: number;
-    timeCorrections: number;
-    confirmations: number;
-  };
-}) {
+function SummaryGrid({ summary }: { summary: DiffSummary }) {
   const cells: [string, number][] = [
     ['Added', summary.additions],
     ['Changed', summary.modifications],
@@ -368,7 +358,7 @@ function SummaryGrid({
     ['Time-corrected', summary.timeCorrections],
     ['Confirmed', summary.confirmations],
   ];
-  return (
+  return <>
     <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
       {cells.map(([label, n]) => (
         <div key={label} className="border border-rule px-2 py-1.5 text-center">
@@ -377,7 +367,12 @@ function SummaryGrid({
         </div>
       ))}
     </div>
-  );
+    {(summary.expertMarked > 0 || summary.expertCleared > 0) && (
+      <p className="text-[13px] font-mono text-inkSoft">
+        Need expert: {summary.expertMarked} marked, {summary.expertCleared} cleared
+      </p>
+    )}
+  </>;
 }
 
 function Backdrop({ children, onClose }: { children: React.ReactNode; onClose?: () => void }) {

@@ -82,9 +82,27 @@ Feature: Review, correct and remove identifications that already exist
     Then the image's tile carries a questionable marker
     And the marker can be toggled off again
     And a selection of images can be marked in one action
-    # As-built: the questionable flag stays in this browser. It is not part of
-    # the canonical files a sync writes, so it does not travel to other users
-    # and its drafts stay listed as unsaved after a sync. Flag for review.
+    # Need expert is stored in media.csv and shared after Sync.
+
+  @H3
+  Scenario: Need expert is a compact shared status in Overview and Focus
+    Given an image is focused
+    Then the compact Need expert control is accessible in Overview
+    When Need expert is enabled from the compact control
+    And a live sync is run
+    Then media.csv stores Need expert without rewriting observations
+    And the Need expert marker returns after a reload
+    And the compact Need expert control is accessible in Focus
+    When Need expert is cleared from Focus
+    And a live sync is run
+    Then media.csv no longer stores Need expert
+
+  @H3
+  Scenario: Need expert remains keyboard reachable in narrow Overview and Focus
+    Given an image is focused
+    When the workspace is narrowed to a phone width
+    Then Need expert can be toggled from the keyboard in Overview
+    And Need expert fits and remains keyboard reachable in Focus
 
   @H3 @H3-2
   Scenario: A confirmation records who reviewed it and when, even though nothing changes

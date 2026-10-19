@@ -280,12 +280,12 @@ When('it is marked questionable', async ({ page }) => {
 });
 
 Then("the image's tile carries a questionable marker", async ({ page }) => {
-  await expect(gridCell(page, 'IMG002.JPG').locator('[title="questionable"]')).toBeVisible();
+  await expect(gridCell(page, 'IMG002.JPG').locator('[title="Needs expert opinion"]')).toBeVisible();
 });
 
 Then('the marker can be toggled off again', async ({ page }) => {
   await page.keyboard.press('Shift+Space');
-  await expect(gridCell(page, 'IMG002.JPG').locator('[title="questionable"]')).toHaveCount(0);
+  await expect(gridCell(page, 'IMG002.JPG').locator('[title="Needs expert opinion"]')).toHaveCount(0);
 });
 
 Then('a selection of images can be marked in one action', async ({ page }) => {
@@ -293,8 +293,79 @@ Then('a selection of images can be marked in one action', async ({ page }) => {
   await gridCell(page, 'IMG003.JPG').click({ modifiers: ['Shift'] });
   await page.keyboard.press('Shift+Space');
   for (const f of ['IMG001.JPG', 'IMG002.JPG', 'IMG003.JPG']) {
-    await expect(gridCell(page, f).locator('[title="questionable"]')).toBeVisible();
+    await expect(gridCell(page, f).locator('[title="Needs expert opinion"]')).toBeVisible();
   }
+});
+
+const expertToggle = (page: Page) => page.getByRole('button', { name: "Toggle needing an expert's opinion" });
+
+Then('the compact Need expert control is accessible in Overview', async ({ page, s3, scratch }) => {
+  scratch.originalObservations = s3.text(BUCKET, `${PREFIX_A}observations.csv`);
+  await expect(expertToggle(page)).toBeVisible();
+  await expect(expertToggle(page)).toHaveAttribute('title', "Toggle needing an expert's opinion");
+  await expect(expertToggle(page)).toHaveAttribute('aria-pressed', 'false');
+});
+
+When('Need expert is enabled from the compact control', async ({ page }) => {
+  await expertToggle(page).click();
+  await expect(expertToggle(page)).toHaveAttribute('aria-pressed', 'true');
+});
+
+Then('media.csv stores Need expert without rewriting observations', async ({ s3, scratch }) => {
+  const media = parseMedia(s3.text(BUCKET, `${PREFIX_A}media.csv`));
+  expect(media.find((row) => row.fileName === 'IMG002.JPG')?.comments).toContain('[NEED_EXPERT:true]');
+  expect(parseCsvRows(s3.text(BUCKET, `${PREFIX_A}observations.csv`))).toEqual(parseCsvRows(scratch.originalObservations as string));
+});
+
+Then('the Need expert marker returns after a reload', async ({ page }) => {
+  await waitForSyncDialogClosed(page);
+  await page.reload();
+  await openWorkspace(page);
+  await focusFrame(page, 'IMG002.JPG');
+  await expect(expertToggle(page)).toHaveAttribute('aria-pressed', 'true');
+  await expect(gridCell(page, 'IMG002.JPG').locator('[title="Needs expert opinion"]')).toBeVisible();
+});
+
+Then('the compact Need expert control is accessible in Focus', async ({ page }) => {
+  await enterFocusView(page);
+  await expect(expertToggle(page)).toBeVisible();
+  await expect(expertToggle(page)).toHaveAttribute('aria-pressed', 'true');
+});
+
+When('Need expert is cleared from Focus', async ({ page }) => {
+  await expertToggle(page).click();
+  await expect(expertToggle(page)).toHaveAttribute('aria-pressed', 'false');
+});
+
+Then('media.csv no longer stores Need expert', async ({ s3 }) => {
+  const media = parseMedia(s3.text(BUCKET, `${PREFIX_A}media.csv`));
+  expect(media.find((row) => row.fileName === 'IMG002.JPG')?.comments).not.toContain('[NEED_EXPERT:true]');
+});
+
+When('the workspace is narrowed to a phone width', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 780 });
+});
+
+Then('Need expert can be toggled from the keyboard in Overview', async ({ page }) => {
+  const control = expertToggle(page);
+  await control.focus();
+  await page.keyboard.press('Enter');
+  await expect(control).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('Space');
+  await expect(control).toHaveAttribute('aria-pressed', 'false');
+});
+
+Then('Need expert fits and remains keyboard reachable in Focus', async ({ page }) => {
+  await enterFocusView(page);
+  const control = expertToggle(page);
+  const box = await control.boundingBox();
+  expect(box).toBeTruthy();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(360);
+  await control.focus();
+  await page.keyboard.press('Enter');
+  await expect(control).toHaveAttribute('aria-pressed', 'true');
+  await expect(control).toBeFocused();
 });
 
 // --- Confirmation records a review (#368) -----------------------------------

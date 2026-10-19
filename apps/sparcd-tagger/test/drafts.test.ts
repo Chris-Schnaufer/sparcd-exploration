@@ -157,6 +157,16 @@ describe('draft store — add-only over a base multi-species image', () => {
     useDraftStore.setState({ drafts: {}, loadedKey: null, loading: false, timeOffset: null });
   });
 
+  it('rebases a clean draft before toggling a status changed by another user', () => {
+    const stale = blankDraft(CTX, PATH, DEP, { ...BASE, questionable: false });
+    useDraftStore.setState({ drafts: { [PATH]: stale } });
+    useDraftStore.getState().setQuestionableMany(CTX, [target({ ...BASE, questionable: true })], false);
+    const updated = useDraftStore.getState().drafts[PATH];
+    expect(updated.baseQuestionable).toBe(true);
+    expect(updated.questionable).toBe(false);
+    expect(updated.observations).toEqual(BASE.observations);
+  });
+
   it('addSpecies on a base multi-species image preserves every existing species', () => {
     useDraftStore.getState().addSpecies(CTX, [target()], tag('Lynx rufus', 1, 'Bobcat'));
     const d = useDraftStore.getState().drafts[PATH];
