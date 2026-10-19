@@ -229,10 +229,14 @@ Then('the removed species is absent from the stored image and marked as removed'
 
 // --- Clear Species ------------------------------------------------------------------
 
-// The Focus footer's own control and the applied-species strip's control
-// (AppliedSpecies.tsx) both say "Clear Species" now and do the same thing —
-// disambiguate by title, since the two accessible names collide.
+// Clear Species is view-scoped: in the Overview it clears a whole selection
+// (like the other bulk actions), but in Focus it only ever clears the
+// focused image, even if a selection from the Overview is still active.
 const focusClearSpecies = (page: Page) => page.getByRole('button', { name: 'Clear Species', exact: true });
+
+When('Focus is entered', async ({ page }) => {
+  await enterFocusView(page);
+});
 
 Given('the focused image carries at least one species', async ({ page }) => {
   await focusFrame(page, 'IMG001.JPG');
@@ -261,16 +265,25 @@ Then('the Clear Species control is unavailable on an image that has none', async
 });
 
 When('identifications are cleared', async ({ page }) => {
-  await page.getByRole('button', { name: 'Focus', exact: true }).click();
   await focusClearSpecies(page).click();
 });
 
+// `several images are selected` leaves IMG003 focused (the last shift-click)
+// with IMG001 and IMG003 carrying species from the H3 background fixture;
+// IMG002 starts untagged.
 Then('every selected image is left with no species', async ({ page }) => {
-  for (const f of ['IMG001.JPG', 'IMG002.JPG', 'IMG003.JPG']) {
-    await expect.poll(async () => draftSpecies(page, f)).toEqual([]);
-  }
+  await expect(gridCell(page, 'IMG001.JPG')).not.toContainText('Mule Deer');
+  await expect(gridCell(page, 'IMG003.JPG')).not.toContainText('Ghost');
+});
+
+Then('only the focused image is left with no species', async ({ page }) => {
+  // The Overview (and its grid cells) aren't mounted while Focus is open.
   await page.getByRole('button', { name: 'Close Focus', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Overview', exact: true })).toBeVisible();
+  await expect(gridCell(page, 'IMG003.JPG')).not.toContainText('Ghost');
+});
+
+Then('the other selected images keep their species', async ({ page }) => {
+  await expect(gridCell(page, 'IMG001.JPG')).toContainText('Mule Deer');
 });
 
 // --- Questionable -----------------------------------------------------------

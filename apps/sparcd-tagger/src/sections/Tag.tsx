@@ -1390,6 +1390,22 @@ export function Tag() {
 
   function speciesPanelProps() {
     const observations = eff?.observations ?? [];
+    // Clear Species is view-scoped rather than always selection-scoped: in
+    // Focus only one image is ever on screen, so it must only ever clear
+    // `current` — even if a multi-selection from the Overview is still sitting
+    // in state. In the Overview, it clears the whole selection like the other
+    // bulk actions (species-add, questionable toggle), via the shared
+    // selection-or-focus helper `targetsOf()`.
+    const overviewDetagTargets = targetsOf();
+    const detagTargets: TagTarget[] = view === 'focus'
+      ? (current ? [{ mediaPath: current.key, deploymentId: current.deploymentId, base: currentBase }] : [])
+      : overviewDetagTargets;
+    const detagImages: TagImage[] = view === 'focus'
+      ? (current ? [current] : [])
+      : overviewDetagTargets
+          .map((t) => list.find((img) => img.key === t.mediaPath))
+          .filter((img): img is TagImage => !!img);
+    const canDetag = detagImages.some((img) => speciesCountOf(img) > 0);
     return {
       species: speciesList,
       onApply: apply,
@@ -1433,16 +1449,9 @@ export function Tag() {
             onRemove={(sci) =>
               current && removeSpeciesFn(ctx, current.key, current.deploymentId, currentBase, sci)
             }
-            onDetagAll={() =>
-              current &&
-              detagFn(ctx, [
-                {
-                  mediaPath: current.key,
-                  deploymentId: current.deploymentId,
-                  base: currentBase,
-                },
-              ])
-            }
+            onDetagAll={() => detagTargets.length && detagFn(ctx, detagTargets)}
+            canDetag={canDetag}
+            detagCount={detagTargets.length}
           />
           {current && (
             <button

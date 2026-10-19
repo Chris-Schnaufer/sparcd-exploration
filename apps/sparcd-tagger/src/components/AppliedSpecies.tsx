@@ -15,6 +15,12 @@ export type AppliedSpeciesProps = {
   onSetCount: (scientificName: string, count: number) => void;
   onRemove: (scientificName: string) => void;
   onDetagAll: () => void;
+  // Clear Species is view-scoped: in Focus this is always 1 (the current
+  // image); in the Overview with a selection it can be more. These describe
+  // what Clear Species is actually about to affect, which may include images
+  // beyond the focused one even when the focused image itself has none.
+  canDetag: boolean;
+  detagCount: number;
 };
 
 function labelOf(o: DraftObservation): string {
@@ -37,7 +43,10 @@ export function AppliedSpecies(props: AppliedSpeciesProps) {
   const [expanded, setExpanded] = useState(false);
   const obs = props.observations;
 
-  if (props.disabled || obs.length === 0) return null;
+  // The strip itself still reflects the focused image's own species. Clear
+  // Species stays available even when the focused image has none, as long as
+  // it would still clear species elsewhere in the current selection.
+  if (props.disabled || (obs.length === 0 && !props.canDetag)) return null;
 
   const multi = obs.length > 1;
   // Collapsed multi-species summary: first chip + "+N more".
@@ -85,7 +94,11 @@ export function AppliedSpecies(props: AppliedSpeciesProps) {
       <button
         onClick={props.onDetagAll}
         className="text-[11px] font-mono text-inkMute hover:text-warn underline decoration-dotted focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
-        title="Remove all species from this image"
+        title={
+          props.detagCount > 1
+            ? `Remove all species from these ${props.detagCount} images`
+            : 'Remove all species from this image'
+        }
       >
         Clear Species
       </button>

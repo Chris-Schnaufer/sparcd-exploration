@@ -76,6 +76,14 @@ Feature: Review, correct and remove identifications that already exist
     Then every selected image is left with no species
 
   @H3
+  Scenario: Clearing identifications in Focus only affects the focused image
+    Given several images are selected
+    When Focus is entered
+    And identifications are cleared
+    Then only the focused image is left with no species
+    And the other selected images keep their species
+
+  @H3
   Scenario: An image can be flagged as questionable for a second opinion
     Given an image is focused
     When it is marked questionable
