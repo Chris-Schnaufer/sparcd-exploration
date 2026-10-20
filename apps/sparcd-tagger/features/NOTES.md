@@ -134,4 +134,5 @@ Marked with trailing comments in the feature files:
   shift has been baked into the stored capture times; leaving it would shift
   them twice on the next sync.
 
+Sync-state explanations (#525/#528): header and Browse row native hover titles are supplemented by keyboard-visible, Escape-dismissible descriptions. Coverage exercises all seven header states, dry-run progress with no writes, and completed sync with questionable-only drafts still pending; Browse checks local-only/unsynced/synced help at 375px and 1440px. Sync semantics are unchanged.
 Collection rail ID help (#523): Browse BDD covers per-collection hover and keyboard descriptions, Escape/pointer dismissal, keyboard selection, matching names, single-tooltip ownership across focus/hover, non-obstructing narrow-row help with selection-changing click-through at 320px/375px, separate desktop tooltip clicks that preserve selection at 1280px/1440px, and viewport bounds at 375px/1280px/1440px.
