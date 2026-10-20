@@ -53,7 +53,17 @@ for (const path of ['Flip files', 'Flip directory', 'preparation directory'] as 
         // The established shared-session transport is the production boundary.
         await page.evaluate(() => {
           const channel = new BroadcastChannel('sparcd-connection-live');
-          channel.postMessage({ type: 'connect', config: { endpoint: 'https://replacement.example', region: 'us-west-2', accessKey: 'AKIAREPLACEMENT', secretKey: 'replacement-secret', forcePathStyle: false, secure: true } });
+          const current = JSON.parse(localStorage.getItem('sparcd-connection-revision') ?? 'null');
+          const counter = Number.isSafeInteger(current?.revision?.counter)
+            ? current.revision.counter + 1
+            : 1;
+          channel.postMessage({
+            protocol: 1,
+            revision: { counter, id: crypto.randomUUID() },
+            connected: true,
+            type: 'connect',
+            config: { endpoint: 'https://replacement.example', region: 'us-west-2', accessKey: 'AKIAREPLACEMENT', secretKey: 'replacement-secret', forcePathStyle: false, secure: true },
+          });
           channel.close();
         });
         await expect(page.locator('header')).toContainText('replacement.example');
