@@ -9,9 +9,12 @@ import plugin from 'tailwindcss/plugin';
 // progress cell its 130px one, over 16px grid gaps and the row's own 34px of
 // horizontal padding and accent border. Tagged/Total and Collected are what
 // this list exists to answer, so they get the earlier step; Sync waits.
+//   compact: 34 + 78 + 160 + 96 + 84 tagged + 80 collected + 124 sync + 56 open + 6×6 gaps = 748px
+//      → keeps all status available in the 768–939px compact band
 //   sm  34 + 120 + 256 + 160 + 130 tagged + 90 collected + 5 gaps =  940px → adds Tagged/Total + Collected
 //   md  …                                 + 140 sync      + 1 gap = 1096px → adds Sync
 const browseTableSizes = {
+  'browse-compact': '48rem',
   'browse-sm': '58.75rem',
   'browse-md': '68.5rem',
 };
@@ -63,7 +66,13 @@ export default {
     // source order; the steps still resolve against each other in size order.
     plugin(({ addVariant }) => {
       for (const [name, size] of Object.entries(browseTableSizes)) {
-        addVariant(name, `@container browse-upload (min-width: ${size}) { && }`);
+        // This compact layout is only for the narrow band before the normal
+        // Tagged/Total and Collected tracks fit. At 940px the regular table
+        // layout takes over and Sync can again wait for its larger step.
+        const range = name === 'browse-compact'
+          ? `(min-width: ${size}) and (max-width: 58.74rem)`
+          : `(min-width: ${size})`;
+        addVariant(name, `@container browse-upload ${range} { && }`);
       }
     }),
   ],

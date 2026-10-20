@@ -509,8 +509,28 @@ Then(
   },
 );
 
+Then('a compact Browse at an 853px effective viewport keeps Upload and Sync available', async ({ page }) => {
+  // 1280px at 150% display scaling is about 853 CSS pixels. This is the
+  // compact pre-940px table band where all status columns should remain usable.
+  await page.setViewportSize({ width: 853, height: 900 });
+  const row = uploadRow(page, 'priortagger');
+  const upload = row.locator('[data-column="upload"]');
+  const sync = row.locator('[data-column="sync"]');
+
+  await expect(upload).toBeVisible();
+  await expect(upload).toContainText('priortagger');
+  await expect(row.locator('[data-column="tagged-total"]')).toBeVisible();
+  await expect(row.locator('[data-column="collected"]')).toBeVisible();
+  await expect(sync).toBeVisible();
+  await expect(sync).toContainText('local-only');
+  await expect.poll(async () => (await upload.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(160);
+  await expect.poll(async () => (await sync.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(124);
+  expect(await row.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
 Then('a narrower desktop Browse hides tagging progress, collected date and sync together', async ({ page }) => {
-  await page.setViewportSize({ width: 900, height: 900 });
+  await page.setViewportSize({ width: 800, height: 900 });
   const row = uploadRow(page, 'priortagger');
   const upload = row.locator('[data-column="upload"]');
 

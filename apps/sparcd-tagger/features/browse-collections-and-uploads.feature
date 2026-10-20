@@ -144,6 +144,7 @@ Feature: Find the upload that needs tagging
     Given a collection is selected
     Then a wide Browse shows every column
     And a medium Browse yields sync status to the collection rail but keeps tagging progress and the collected date
+    And a compact Browse at an 853px effective viewport keeps Upload and Sync available
     And a narrower desktop Browse hides tagging progress, collected date and sync together
     And wide Browse gives tagging progress usable space
     And mobile Browse keeps tagging progress aligned
