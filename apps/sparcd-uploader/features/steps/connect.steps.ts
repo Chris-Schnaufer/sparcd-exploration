@@ -438,3 +438,10 @@ Then('the remember checkbox describes its public-computer warning', async ({ app
   await expect(checkbox).toBeFocused();
   await expect(checkbox).toHaveAccessibleDescription("(Don't set remember endpoint & access key if on a public computer)");
 });
+
+Then('the connected login identity is available to the preserved batch', async ({ app }) => {
+  await app.page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(app.page.getByRole('heading', { name: 'Target collection' })).toBeVisible();
+  await expect(app.page.locator('#uploaderUser')).toHaveValue(ACCESS_KEY);
+});
+});
