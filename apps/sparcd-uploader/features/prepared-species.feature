@@ -4,7 +4,7 @@ Feature: Prepare collection species for local tagging
 
   Background:
     Given a folder of media has been scanned
-    And the New upload section is showing the Inspect step
+    And the New upload section is showing the Verify step
 
   Scenario: Missing preparation preserves Inspect but prevents local tagging
     Then local tagging requires online species preparation
@@ -12,7 +12,7 @@ Feature: Prepare collection species for local tagging
   Scenario: A collection vocabulary is frozen into the real handoff
     Given Alpha has a collection-specific species list
     And species have been prepared for local tagging
-    When "Tag species first" is chosen through the unified dev origin
+    When "Tag species before upload" is chosen through the unified dev origin
     Then the real Tagger uses only the prepared Alpha species
     When the live shared account changes during local tagging
     Then the real Tagger uses only the prepared Alpha species
@@ -29,7 +29,7 @@ Feature: Prepare collection species for local tagging
 
   Scenario Outline: Assign reviews current vocabulary without discarding returned tags
     Given species have been prepared for local tagging
-    When "Tag species first" is chosen through the unified dev origin
+    When "Tag species before upload" is chosen through the unified dev origin
     And Coyote is applied in the real Tagger
     And the real Tagger identity is set to Anita
     And the real Tagger hands the batch back
@@ -42,7 +42,7 @@ Feature: Prepare collection species for local tagging
 
   Scenario Outline: An invalid handoff snapshot explains recovery without losing tags
     Given species have been prepared for local tagging
-    When "Tag species first" is chosen through the unified dev origin
+    When "Tag species before upload" is chosen through the unified dev origin
     And Coyote is applied in the real Tagger
     And the handoff preparation becomes "<problem>"
     Then the Tagger explains preparation recovery and preserves the batch

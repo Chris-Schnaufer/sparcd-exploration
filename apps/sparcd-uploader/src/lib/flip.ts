@@ -239,5 +239,5 @@ async function attach(record: FlipRecord, attached: Map<string, File>, guard: ()
     files,
     dirHandle: record.dirHandle ?? null,
   });
-  if (preparation) useStore.setState(preparation.inputs);
+  if (preparation) useStore.setState({ mountainRange: '', dateCollected: '', uploadCommentDate: null, ...preparation.inputs });
 }

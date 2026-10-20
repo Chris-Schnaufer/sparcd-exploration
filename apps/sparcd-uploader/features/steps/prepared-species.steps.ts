@@ -9,7 +9,7 @@ Given('Alpha has a collection-specific species list', async ({ app }) => {
 });
 
 Then('local tagging requires online species preparation', async ({ app }) => {
-  await expect(app.page.getByRole('button', { name: 'Tag species first', exact: true })).toBeDisabled();
+  await expect(app.page.getByRole('button', { name: 'Tag species before upload', exact: true })).toBeDisabled();
   await expect(app.page.getByText('Tagging requires prior online species preparation.', { exact: false })).toBeVisible();
   await expect(app.continueButton()).toBeEnabled();
   expect(await app.listedFiles()).toHaveLength(4);
@@ -60,7 +60,7 @@ When('Alpha species preparation is attempted', async ({ app }) => {
 Then('a preparation error preserves Inspect and blocks local tagging', async ({ app }) => {
   const panel = app.page.getByRole('region', { name: 'Prepare species for local tagging' });
   await expect(panel.getByRole('alert')).toBeVisible();
-  await expect(app.page.getByRole('button', { name: 'Tag species first', exact: true })).toBeDisabled();
+  await expect(app.page.getByRole('button', { name: 'Tag species before upload', exact: true })).toBeDisabled();
   await expect(app.continueButton()).toBeEnabled();
   expect(await app.listedFiles()).toHaveLength(4);
 });
@@ -76,6 +76,7 @@ Then('Assign requires species review for {string}', async ({ app }, change: stri
   await app.waitForCollections();
   await app.setUploader('Anita');
   await app.chooseDeployment('Bear Canyon');
+  await app.fillRequiredUploadComments();
   const review = app.page.getByRole('region', { name: 'Prepared species assignment review' });
   if (change === 'renamed') {
     const confirm = review.getByRole('checkbox');

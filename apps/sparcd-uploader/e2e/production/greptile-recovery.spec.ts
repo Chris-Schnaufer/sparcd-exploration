@@ -48,7 +48,7 @@ for (const nativeFolderAPI of [false, true]) test(`individual-file preparation r
   await select(edited.bytes!);
   await expect(recovery.getByRole('alert')).toContainText('content hash differs');
   await select(spec.bytes!); await app.waitForInspected();
-  await current.getByRole('button', { name: 'Tag species first', exact: true }).click();
+  await current.getByRole('button', { name: 'Tag species before upload', exact: true }).click();
   await current.waitForURL(/\/tagger\/\?batch=/);
   const record = (await app.readFlipRecords())[0];
   expect(record.files[0].relPath).toBe('ROOT.JPG');
@@ -134,7 +134,7 @@ for (const source of ['saved handle', 'newly selected handle']) test(`recovery p
   await page.reload();
   await recovery.getByRole('button', { name: 'Reopen saved folder' }).click();
   await app.waitForInspected();
-  await page.getByRole('button', { name: 'Tag species first', exact: true }).click();
+  await page.getByRole('button', { name: 'Tag species before upload', exact: true }).click();
   await page.waitForURL(/\/tagger\/\?batch=/);
   await expect(page.getByText('Showing saved thumbnails.', { exact: false })).toHaveCount(0);
   await page.locator('button[title="SOURCE.JPG"]').click();

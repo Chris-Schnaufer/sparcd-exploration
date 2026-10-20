@@ -40,6 +40,10 @@ test('prepared production apps and inspected batch survive a real offline Chrome
     await expect(page.getByRole('region', { name: 'Offline preparation' })).toContainText('Ready for offline Inspect and local tagging.');
     await app.dropFolder(specs);
     await app.waitForInspected();
+    await app.continueToAssign();
+    await page.locator('#mountainRange').fill('Saved mountain range');
+    await page.locator('#dateCollected').fill('2026-07-01');
+    await page.getByRole('button', { name: 'Back', exact: true }).click();
     await expect(page.getByText('Local preparation saved. Original files remain in your folder.', { exact: true })).toBeVisible();
     await close();
 
@@ -59,7 +63,7 @@ test('prepared production apps and inspected batch survive a real offline Chrome
     await app.seedPickedFolder(specs);
     await recovery.getByRole('button', { name: 'Reselect saved batch folder' }).click();
     await app.waitForInspected();
-    await page.getByRole('button', { name: 'Tag species first', exact: true }).click();
+    await page.getByRole('button', { name: 'Tag species before upload', exact: true }).click();
     await expect(page.getByText('Local batch · 1 files · from Uploader')).toBeVisible();
     await expect(page.getByText('Showing saved thumbnails.', { exact: false })).toBeVisible();
     await page.getByRole('button', { name: 'Settings', exact: true }).click();
@@ -77,8 +81,8 @@ test('prepared production apps and inspected batch survive a real offline Chrome
     app = new App(page, s3);
     await app.open({ path: taggingUrl });
     await expect(page.locator('button[title="OFFLINE.JPG"]')).toContainText('Coyote');
-    // Local batch identity is intentionally session-only; tags retain their attribution.
-    await expect(page.getByRole('button', { name: 'Done · back to Uploader' })).toBeDisabled();
+    // Return stays available after restart; tags retain their original attribution.
+    await expect(page.getByRole('button', { name: 'Done · back to Uploader' })).toBeEnabled();
     await page.getByRole('button', { name: 'Settings', exact: true }).click();
     await page.locator('#user').fill('offline-person');
     await page.getByRole('button', { name: 'Tag', exact: true }).click();
@@ -103,6 +107,8 @@ test('prepared production apps and inspected batch survive a real offline Chrome
     await context!.setOffline(false);
     await app.connect();
     await app.waitForCollections();
+    await expect(page.locator('#mountainRange')).toHaveValue('Saved mountain range');
+    await expect(page.locator('#dateCollected')).toHaveValue('2026-07-01');
     expect((await app.readFlipRecords())[0]?.tags?.['SDCARD/OFFLINE.JPG']?.[0]?.scientificName).toBe('Canis latrans');
     await context!.setOffline(true);
     await page.goto('/sparcd-exploration/tagger/');

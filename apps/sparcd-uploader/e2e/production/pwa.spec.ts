@@ -65,7 +65,7 @@ test('installed Uploader launches as an app offline after a Chrome process resta
     await app.getByRole('button', { name: 'Login later', exact: true }).click();
     const specs = [jpegAt('PWA.JPG', '2026:07:01 12:00:00')];
     await local.dropFolder(specs); await local.waitForInspected();
-    await app.getByRole('button', { name: 'Tag species first', exact: true }).click();
+    await app.getByRole('button', { name: 'Tag species before upload', exact: true }).click();
     await expect(app.locator('button[title="PWA.JPG"]')).toBeVisible();
     expect(await app.evaluate(() => matchMedia('(display-mode: standalone)').matches)).toBe(true);
     await app.getByRole('button', { name: 'Settings', exact: true }).click();
@@ -85,8 +85,8 @@ test('installed Uploader launches as an app offline after a Chrome process resta
     local = new App(app, s3);
     await local.open({ path: batchUrl });
     await expect(app.locator('button[title="PWA.JPG"]')).toContainText('Coyote');
-    // Local batch identity is intentionally session-only; tags retain their attribution.
-    await expect(app.getByRole('button', { name: 'Done · back to Uploader' })).toBeDisabled();
+    // Return stays available after restart; tags retain their original attribution.
+    await expect(app.getByRole('button', { name: 'Done · back to Uploader' })).toBeEnabled();
     await app.getByRole('button', { name: 'Settings', exact: true }).click();
     await app.locator('#user').fill('pwa-person');
     await app.getByRole('button', { name: 'Tag', exact: true }).click();

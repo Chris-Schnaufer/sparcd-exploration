@@ -29,13 +29,13 @@ for (const prepared of [true, false]) test(`recovering a ${prepared ? 'prepared 
   const area = page.getByRole('region', { name: 'Prepare species for local tagging' });
   if (prepared) {
     await expect(area).toContainText('Species prepared for Alpha Collection');
-    await page.getByRole('button', { name: 'Tag species first', exact: true }).click();
+    await page.getByRole('button', { name: 'Tag species before upload', exact: true }).click();
     await page.waitForURL(/\/tagger\/\?batch=/);
     expect((await a.readFlipRecords())[0].preparedSpecies.collectionName).toBe('Alpha Collection');
   } else {
     await expect(area).not.toContainText('Species prepared for Beta Collection');
     await expect(area).toContainText('Tagging requires prior online species preparation');
-    const tag = page.getByRole('button', { name: 'Tag species first', exact: true });
+    const tag = page.getByRole('button', { name: 'Tag species before upload', exact: true });
     await expect(tag).toBeDisabled();
     await expect(tag).toHaveAttribute('aria-describedby', 'species-preparation-help');
     await expect(page.locator('#species-preparation-help')).toBeVisible();
@@ -47,7 +47,7 @@ test('a Disconnect while the Flip folder picker is open cannot restore that batc
   const a = new App(page, s3); await a.connect(); await prepare(a, 'Alpha Collection');
   const specs = [jpegAt('OLD.JPG', '2026:07:01 12:00:00')];
   await a.dropFolder(specs); await a.waitForInspected();
-  await page.getByRole('button', { name: 'Tag species first', exact: true }).click();
+  await page.getByRole('button', { name: 'Tag species before upload', exact: true }).click();
   await page.waitForURL(/\/tagger\/\?batch=/);
   const record = (await a.readFlipRecords())[0];
   await page.goto(record.returnUrl);
@@ -66,8 +66,8 @@ test('a Disconnect while the Flip folder picker is open cannot restore that batc
   // Allow hashing to finish while disconnected; UI state must remain discarded.
   await page.waitForTimeout(1500);
   await a.connect();
-  await expect(a.activeStep()).toContainText('Files');
-  await expect(page.getByRole('button', { name: 'Tag species first', exact: true })).toHaveCount(0);
+  await expect(a.activeStep()).toContainText('Choose');
+  await expect(page.getByRole('button', { name: 'Tag species before upload', exact: true })).toHaveCount(0);
 });
 
 test('a damaged sibling journal does not hide a healthy saved batch', async ({ page }) => {
@@ -93,7 +93,7 @@ test('a damaged sibling journal does not hide a healthy saved batch', async ({ p
   await app.seedPickedFolder([jpegAt('HEALTHY.JPG', '2026:07:01 12:00:00')]);
   await recovery.getByRole('button', { name: 'Reselect saved batch folder' }).click();
   await app.waitForInspected();
-  await page.getByRole('button', { name: 'Tag species first', exact: true }).click();
+  await page.getByRole('button', { name: 'Tag species before upload', exact: true }).click();
   await page.waitForURL(/\/tagger\/\?batch=/);
   const record = (await app.readFlipRecords())[0];
   await page.goto(record.returnUrl);

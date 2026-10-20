@@ -21,7 +21,7 @@ for (const drop of ['before', 'after'] as const) test(`parallel batch handoff ke
   if (drop === 'after') { await a.dropFolder([jpegAt('ALPHA.JPG', '2026:07:01 12:00:00')]); await a.waitForInspected(); }
   await b.dropFolder([jpegAt('BETA.JPG', '2026:07:01 12:00:00')]); await b.waitForInspected();
   await expect(sibling.getByText('Local preparation saved. Original files remain in your folder.', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Tag species first', exact: true }).click();
+  await page.getByRole('button', { name: 'Tag species before upload', exact: true }).click();
   await page.waitForURL(/\/tagger\/\?batch=/);
   const [record] = await a.readFlipRecords();
   expect(record.files[0].fileName).toBe('ALPHA.JPG');
@@ -41,9 +41,9 @@ test('selecting another preparation collection before dropping files must not st
   await region.getByRole('button', { name: 'Collection for species preparation', exact: true }).click();
   await region.getByRole('option').filter({ hasText: 'Beta Collection' }).click();
   await app.dropFolder([jpegAt('NEW.JPG', '2026:07:01 12:00:00')]); await app.waitForInspected();
-  await expect(page.getByRole('button', { name: 'Tag species first', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Tag species before upload', exact: true })).toBeEnabled();
   await expect(region.getByRole('status')).toContainText('Species prepared for Alpha Collection');
-  await page.getByRole('button', { name: 'Tag species first', exact: true }).click();
+  await page.getByRole('button', { name: 'Tag species before upload', exact: true }).click();
   await page.waitForURL(/\/tagger\/\?batch=/);
   expect((await app.readFlipRecords())[0].preparedSpecies.collectionName).toBe('Alpha Collection');
 });

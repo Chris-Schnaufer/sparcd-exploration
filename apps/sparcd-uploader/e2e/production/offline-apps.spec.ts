@@ -90,14 +90,14 @@ test('journal quota failure blocks handoff without losing Inspect and exposes a 
   });
   await app.dropFolder([jpegAt('QUOTA.JPG', '2026:07:01 12:00:00')]); await app.waitForInspected();
   await expect(page.getByRole('alert').filter({ hasText: 'Local preparation could not be saved.' })).toBeVisible();
-  await page.getByRole('button', { name: 'Tag species first', exact: true }).click();
-  await app.expectStep('Inspect');
+  await page.getByRole('button', { name: 'Tag species before upload', exact: true }).click();
+  await app.expectStep('Verify');
   await expect(page.getByRole('alert').filter({ hasText: 'Keep this tab open and retry' })).toBeVisible();
   expect(await app.readFlipRecords()).toEqual([]);
   await page.evaluate(() => (window as any).__restoreQuotaFault());
   await page.getByRole('button', { name: 'Retry saving preparation' }).click();
   await expect(page.getByText('Local preparation saved. Original files remain in your folder.', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Tag species first', exact: true }).click();
+  await page.getByRole('button', { name: 'Tag species before upload', exact: true }).click();
   await expect(page.locator('button[title="QUOTA.JPG"]')).toBeVisible();
   expect((await app.readFlipRecords())[0].files[0].sha256).toMatch(/^[a-f0-9]{64}$/);
 });

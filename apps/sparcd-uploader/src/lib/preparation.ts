@@ -14,7 +14,7 @@ export type LocalPreparation = {
   files: (Omit<FileEntry, 'file'> & { lastModified: number })[];
   flipId: string | null;
   species: PreparedSpecies | null;
-  inputs: Pick<ReturnType<typeof useStore.getState>, 'selectedBucket' | 'selectedLocationId' | 'uploadDescription' | 'uploadTimeZone'>;
+  inputs: Pick<ReturnType<typeof useStore.getState>, 'selectedBucket' | 'selectedLocationId' | 'uploadDescription' | 'uploadTimeZone'> & Partial<Pick<ReturnType<typeof useStore.getState>, 'mountainRange' | 'dateCollected' | 'uploadCommentDate'>>;
 };
 let installed = false;
 let batchSpecies: PreparedSpecies | null = null;
@@ -89,6 +89,9 @@ function validatePreparation(raw: unknown): LocalPreparation | null {
       Number.isFinite(f.size) && f.size >= 0 && Number.isFinite(f.lastModified) && ['image', 'video'].includes(f.mediaKind) &&
       ['queued', 'processing', 'ready', 'error'].includes(f.processState) && (f.processState !== 'ready' || typeof f.sha256 === 'string')) &&
     !!value.inputs && typeof value.inputs.uploadDescription === 'string' && typeof value.inputs.uploadTimeZone === 'string' &&
+    (value.inputs.mountainRange === undefined || typeof value.inputs.mountainRange === 'string') &&
+    (value.inputs.dateCollected === undefined || typeof value.inputs.dateCollected === 'string') &&
+    (value.inputs.uploadCommentDate == null || typeof value.inputs.uploadCommentDate === 'string') &&
     (value.inputs.selectedBucket === null || typeof value.inputs.selectedBucket === 'string') &&
     (value.inputs.selectedLocationId === null || typeof value.inputs.selectedLocationId === 'string');
   if (!valid) throw new Error('Saved preparation is damaged or from an unsupported version. Its stored data has been kept. Reopen the compatible app or reselect your folder to start a new batch.');
@@ -98,14 +101,14 @@ export function startPreparationJournal(): void {
   if (installed) return;
   installed = true;
   useStore.subscribe((s, previous) => {
-    const changed = s.files !== previous.files || s.flipId !== previous.flipId || s.selectedBucket !== previous.selectedBucket || s.selectedLocationId !== previous.selectedLocationId || s.uploadDescription !== previous.uploadDescription || s.uploadTimeZone !== previous.uploadTimeZone;
+    const changed = s.files !== previous.files || s.flipId !== previous.flipId || s.selectedBucket !== previous.selectedBucket || s.selectedLocationId !== previous.selectedLocationId || s.uploadDescription !== previous.uploadDescription || s.uploadTimeZone !== previous.uploadTimeZone || s.mountainRange !== previous.mountainRange || s.dateCollected !== previous.dateCollected || s.uploadCommentDate !== previous.uploadCommentDate;
     const published = s.activeSnap?.phase === 'done' && !s.activeSnap.dryRun;
     if (!changed && !published) return;
     // Do not erase a recoverable batch merely because the startup store is empty.
     if (!s.files.length && !previous.files.length && !published) return;
     // Retain immutable references; serialize only the snapshot that actually writes.
     const files = s.files;
-    const inputs = { selectedBucket: s.selectedBucket, selectedLocationId: s.selectedLocationId, uploadDescription: s.uploadDescription, uploadTimeZone: s.uploadTimeZone };
+    const inputs = { selectedBucket: s.selectedBucket, selectedLocationId: s.selectedLocationId, uploadDescription: s.uploadDescription, uploadTimeZone: s.uploadTimeZone, mountainRange: s.mountainRange, dateCollected: s.dateCollected, uploadCommentDate: s.uploadCommentDate };
     // Capture ownership before queuing writes. Other windows have independent IDs.
     if (s.files.length && !published && lastToken !== s.batchToken) {
       batchSpecies = null;
@@ -185,5 +188,5 @@ async function applyRecoveredPreparation(saved: LocalPreparation, result: Pick<R
   batchSpecies = flip?.preparedSpecies ?? saved.species;
   lastToken = useStore.getState().batchToken + 1;
   useStore.getState().adoptTaggedBatch({ flipId: saved.flipId, files, dirHandle });
-  useStore.setState(saved.inputs);
+  useStore.setState({ mountainRange: '', dateCollected: '', uploadCommentDate: null, ...saved.inputs });
 }

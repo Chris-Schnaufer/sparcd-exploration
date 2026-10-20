@@ -22,7 +22,7 @@ for (const path of ['Flip files', 'Flip directory', 'preparation directory'] as 
       await app.dropFolder([spec]); await app.waitForInspected();
       await expect(page.getByText('Local preparation saved. Original files remain in your folder.', { exact: true })).toBeVisible();
       if (path.startsWith('Flip')) {
-        await page.getByRole('button', { name: 'Tag species first', exact: true }).click();
+        await page.getByRole('button', { name: 'Tag species before upload', exact: true }).click();
         await page.waitForURL(/\/tagger\/\?batch=/);
         const record = (await app.readFlipRecords())[0];
         await page.goto(record.returnUrl);
@@ -78,8 +78,8 @@ for (const path of ['Flip files', 'Flip directory', 'preparation directory'] as 
       await selectOriginal(chooser);
       if (replace) {
         await expect(page.getByRole('alert').filter({ hasText: 'The batch or connection changed' })).toBeVisible();
-        await expect(app.activeStep()).toContainText('Files');
-        await expect(page.getByRole('button', { name: 'Tag species first', exact: true })).toHaveCount(0);
+        await expect(app.activeStep()).toContainText('Choose');
+        await expect(page.getByRole('button', { name: 'Tag species before upload', exact: true })).toHaveCount(0);
         // A new explicit recovery belongs to the replacement session.
         await selectOriginal(await openPicker());
       }

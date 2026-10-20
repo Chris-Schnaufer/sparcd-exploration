@@ -16,13 +16,14 @@ beforeAll(async () => { ({ useStore: store } = await import('../src/store')); jo
 it('persists only non-secret batch data, survives failed writes, retries, and validates originals before recovery', async () => {
   const file = new File(['original bytes'], 'original.jpg', { lastModified: 123 });
   store.getState().setFiles([{ id: 'SD/a.jpg', relPath: 'SD/a.jpg', fileName: 'a.jpg', size: file.size, mediaKind: 'image', file }]);
-  store.setState({ files: [{ ...store.getState().files[0], processState: 'ready', sha256: 'original', manualNaive: { year: 2026, month: 7, day: 1, hour: 12, minute: 0, second: 0 }, manualSource: 'manual', thumbnail: new Blob(['thumb']) }], uploadDescription: 'preserved notes', uploadTimeZone: 'America/Phoenix', s3Config: { endpoint: 'https://example.test', accessKey: 'person', secretKey: 'NEVER-PERSIST', region: 'us-east-1', forcePathStyle: true } });
+  store.setState({ files: [{ ...store.getState().files[0], processState: 'ready', sha256: 'original', manualNaive: { year: 2026, month: 7, day: 1, hour: 12, minute: 0, second: 0 }, manualSource: 'manual', thumbnail: new Blob(['thumb']) }], mountainRange: 'Santa Rita', dateCollected: '2026-07-01', uploadCommentDate: '07-02-2026', uploadDescription: 'preserved notes', uploadTimeZone: 'America/Phoenix', s3Config: { endpoint: 'https://example.test', accessKey: 'person', secretKey: 'NEVER-PERSIST', region: 'us-east-1', forcePathStyle: true } });
   await journal.flushPreparation();
   const saved = (await journal.readPreparation())!;
   expect(saved.files[0].thumbnail).toBeInstanceOf(Blob);
   expect(saved.files[0]).not.toHaveProperty('file');
   expect(JSON.stringify(saved)).not.toContain('NEVER-PERSIST');
   expect(saved.inputs.uploadDescription).toBe('preserved notes');
+  expect(saved.inputs).toMatchObject({ mountainRange: 'Santa Rita', dateCollected: '2026-07-01', uploadCommentDate: '07-02-2026' });
   memory.fail = true;
   store.getState().setUploadDescription('pending notes');
   await expect(journal.flushPreparation()).rejects.toThrow('could not be saved');
@@ -32,9 +33,10 @@ it('persists only non-secret batch data, survives failed writes, retries, and va
   const scanned = { id: 'SD/a.jpg', relPath: 'SD/a.jpg', fileName: 'a.jpg', size: file.size, mediaKind: 'image' as const, file };
   await expect(journal.recoverPreparation(saved, [])).rejects.toThrow('not in the selected folder');
   await expect(journal.recoverPreparation(saved, [{ ...scanned, file: new File(['changed bytes!'], 'edited.jpg') }])).rejects.toThrow('content hash differs');
+  store.setState({ mountainRange: 'Other batch', dateCollected: '2020-01-01', uploadCommentDate: null });
   await journal.recoverPreparation(saved, [scanned]); await journal.flushPreparation();
   expect(store.getState().files[0]).toMatchObject({ sha256: 'original', manualSource: 'manual', manualNaive: saved.files[0].manualNaive });
-  expect(store.getState().uploadDescription).toBe('preserved notes');
+  expect(store.getState()).toMatchObject({ mountainRange: 'Santa Rita', dateCollected: '2026-07-01', uploadCommentDate: '07-02-2026', uploadDescription: 'preserved notes' });
   store.getState().resetBatch(); await journal.flushPreparation();
   expect(await journal.readPreparation()).toBeNull();
 });
@@ -57,6 +59,7 @@ it('recovers a legacy singleton without losing it until the batch-owned replacem
   const saved = { v: 1 as const, id: 'legacy-batch', savedAt: new Date().toISOString(), files: [{ id: 'original.jpg', relPath: 'original.jpg', fileName: 'original.jpg', size: file.size, mediaKind: 'image' as const, processState: 'ready' as const, sha256: 'original', lastModified: file.lastModified }], flipId: null, species: null, inputs: { selectedBucket: null, selectedLocationId: null, uploadDescription: 'legacy notes', uploadTimeZone: 'America/Phoenix' } };
   memory.rows.set('active', { id: 'active', value: saved });
   expect((await journal.listPreparations())[0].id).toBe(saved.id);
+  store.setState({ mountainRange: 'Unrelated batch', dateCollected: '2020-01-01', uploadCommentDate: '01-02-2020' });
   memory.fail = true;
   await journal.recoverPreparation(saved, [{ id: file.name, relPath: file.name, fileName: file.name, size: file.size, mediaKind: 'image', file }]);
   await expect(journal.flushPreparation()).rejects.toThrow('could not be saved');
@@ -65,6 +68,7 @@ it('recovers a legacy singleton without losing it until the batch-owned replacem
   expect(memory.rows.has('active')).toBe(false);
   expect((await journal.listPreparations()).map(item => item.id)).toEqual([saved.id]);
   expect((await journal.readPreparation())?.inputs.uploadDescription).toBe('legacy notes');
+  expect(store.getState()).toMatchObject({ mountainRange: '', dateCollected: '', uploadCommentDate: null });
   store.getState().resetBatch(); await journal.flushPreparation();
 });
 it('reports unsupported journals without deleting them or blocking healthy batch lookup', async () => {

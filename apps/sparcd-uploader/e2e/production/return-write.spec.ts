@@ -14,7 +14,7 @@ test('a failed final local-Tagger write keeps edits visible and Done retryable',
   await expect(preparation.getByRole('status')).toContainText('Species prepared for');
   const specs = [jpegAt('RETURN.JPG', '2026:07:01 12:00:00')];
   await app.dropFolder(specs); await app.waitForInspected();
-  await page.getByRole('button', { name: 'Tag species first', exact: true }).click();
+  await page.getByRole('button', { name: 'Tag species before upload', exact: true }).click();
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page.locator('#user').fill('return-person');
   await page.getByRole('button', { name: 'Tag', exact: true }).click();
@@ -31,7 +31,7 @@ test('a failed final local-Tagger write keeps edits visible and Done retryable',
   });
   const done = page.getByRole('button', { name: 'Done · back to Uploader' });
   await done.click();
-  await expect(page.getByRole('alert').filter({ hasText: 'Could not save the tags.' })).toBeVisible();
+  await expect(page.getByRole('alert').filter({ hasText: 'Could not save the batch for the Uploader.' })).toBeVisible();
   await expect(done).toBeEnabled();
   await expect(page.locator('button[title="RETURN.JPG"]')).toContainText('Coyote');
   await page.evaluate(() => (window as any).__restoreReturnWrite());

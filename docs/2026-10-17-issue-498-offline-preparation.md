@@ -250,3 +250,32 @@ coordinated offline release was regenerated. The full BDD run used a temporary
 local configuration selecting actual Google Chrome on port 5338; production ran
 on port 5337. Test outputs were separate, and the temporary configuration was
 removed after the runs. No user's existing browser window or app server was used.
+
+## Main integration — October 20, 2026
+
+Merged main through `ac6e694`. Retained preparation/species readiness alongside
+required assignment comments, moved the guarded local-tagging action to main’s
+Verify header, and retained both Settings cleanup and remembered-login guidance.
+Local Tagger retains main’s accessible retry, blank-identity return and immediate
+duplicate-submission guard alongside offline thumbnail and storage-error states.
+Updated offline fixtures for Choose/Verify labels and the enabled Done action.
+
+Preparation journals now also save mountain range, date collected and the frozen
+upload-comment preview date. Recovery and Tagger return restore those fields;
+legacy journals clear them instead of borrowing another batch’s values. Unit
+coverage checks round-trip and legacy behavior; the real offline restart case
+checks required fields after recovery and local tagging/return.
+
+Validation: both application TypeScript checks and production builds passed;
+all 49 production Google Chrome cases passed on port 5349, including real browser
+and installed-PWA restarts. All 13 local Tagger Chrome cases passed on port 5350.
+The 74 focused Uploader cases passed across the initial 73 successes and the
+corrected Settings security-explanation rerun on port 5351. All 306 Tagger unit
+tests and four production server/worker checks passed. A Uploader performance
+threshold exceeded its budget while concurrent Chrome suites were running;
+all 409 Uploader unit tests passed on a separate rerun after browser completion
+(the 17,000-file check completed in 1.09 seconds against its 2-second limit).
+
+PR #565’s preparation-ownership cleanup remains on that separate branch. It
+still needs to be rebased after this integration; these changes do not replace
+its acceptance work or the separate manual/platform boundaries of #497.
