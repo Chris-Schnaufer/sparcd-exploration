@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   rangeSet,
   toggleIndex,
+  toggleSelectionWithFocus,
   burstIndexSet,
   isRangeFullySelected,
   nextVisibleIndex,
@@ -106,5 +107,35 @@ describe('empty filtered navigation', () => {
     expect(nextVisibleIndex([], 4, 1)).toBeUndefined();
     expect(nextVisibleIndex([], 4, -1)).toBeUndefined();
     expect(nearestVisibleIndex([], 4)).toBeUndefined();
+  });
+});
+
+describe('toggleSelectionWithFocus', () => {
+  it('selects the focused image directly without mutating an empty selection', () => {
+    const empty = new Set<number>();
+    expect([...toggleSelectionWithFocus(empty, 2, 2)]).toEqual([2]);
+    expect(empty.size).toBe(0);
+  });
+
+  it('includes the focused image when starting selection on a different image', () => {
+    expect([...toggleSelectionWithFocus(new Set(), 2, 4)]).toEqual([2, 4]);
+  });
+
+  it('deselects the sole selected image on a second click', () => {
+    const selected = new Set([2]);
+    expect(toggleSelectionWithFocus(selected, 2, 2).size).toBe(0);
+    expect([...selected]).toEqual([2]);
+  });
+
+  it('adds to an existing selection without inserting an unselected focus', () => {
+    const selected = new Set([4]);
+    expect([...toggleSelectionWithFocus(selected, 2, 3)]).toEqual([4, 3]);
+    expect([...selected]).toEqual([4]);
+  });
+
+  it('removes only the clicked image from an existing selection', () => {
+    const selected = new Set([2, 4]);
+    expect([...toggleSelectionWithFocus(selected, 2, 2)]).toEqual([4]);
+    expect([...selected]).toEqual([2, 4]);
   });
 });
