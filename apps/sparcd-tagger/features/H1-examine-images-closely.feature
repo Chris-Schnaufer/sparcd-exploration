@@ -93,6 +93,47 @@ Feature: Examine an image closely enough to catch every species
     And the control is not shown while the image is already fitted
 
   @H1
+  Scenario: The fitted image keeps fitting when the window shrinks
+    When the workspace window is resized smaller
+    Then the image still fits the pane
+    When the workspace window is restored to its original size
+    Then the image still fits the pane
+
+  @H1
+  Scenario: A zoomed-in image is refitted when the window shrinks
+    Given the image is zoomed in
+    When the workspace window is resized smaller
+    Then the image still fits the pane
+    When the workspace window is restored to its original size
+    Then the image still fits the pane
+
+  @H1
+  Scenario: Narrowing a portrait pane refits even when the fitted dimensions are unchanged
+    Given a height-constrained portrait is shown in Focus
+    And the image is zoomed in
+    When the window narrows without changing the portrait fitted size
+    Then the image still fits the pane
+    When the workspace window is restored to its original size
+    Then the image still fits the pane
+
+  @H1
+  Scenario: The fullscreen fitted image follows smaller and restored windows
+    When the image is opened fullscreen
+    And the workspace window is resized smaller
+    Then the image still fits the pane
+    When the workspace window is restored to its original size
+    Then the image still fits the pane
+
+  @H1
+  Scenario: A zoomed fullscreen image refits on smaller and restored windows
+    When the image is opened fullscreen
+    And the fullscreen image is zoomed in
+    And the workspace window is resized smaller
+    Then the image still fits the pane
+    When the workspace window is restored to its original size
+    Then the image still fits the pane
+
+  @H1
   Scenario: Fullscreen gives a larger canvas and a deeper zoom
     When the image is opened fullscreen
     Then it fills the window over a dimmed background
@@ -206,6 +247,30 @@ Feature: Examine an image closely enough to catch every species
     When the adjustment panel is opened on a phone-sized screen
     Then the adjustment panel stays inside the window on a phone
 
+  @unmapped
+  Scenario: The Adjust control sits under the zoom column on a wide screen
+    Given the focused item is a still image
+    Then the Adjust control sits under the zoom button column, with a gap
+
+  @unmapped
+  Scenario: The Adjust control stays top-left on a phone
+    Given the focused item is a still image
+    When the viewport is narrowed to a phone size
+    Then the Adjust control sits at the top-left, clear of the zoom column
+
+  @unmapped
+  Scenario: Adjust remains below the zoom column while Reset is shown
+    Given the focused item is a still image
+    And the image is zoomed in
+    Then a "Reset" control is offered
+    And the Adjust control sits under the zoom button column, with a gap
+
+  @unmapped
+  Scenario: Adjust retains its popup and focus while crossing responsive placements
+    Given the focused item is a still image
+    When the open Adjust panel crosses the desktop breakpoint in both directions
+    Then Escape closes the adjustment panel and returns focus to Adjust
+
   @H1
   Scenario: Adjustment controls follow the focused image
     Given the focused item is a still image
@@ -235,8 +300,55 @@ Feature: Examine an image closely enough to catch every species
     And the adjustments can be reset to neutral in one action
 
   @H1
-  Scenario: Display adjustments persist across images within a viewing session
+  Scenario: Display adjustments reset by default on the next image
     Given the display adjustments have been changed in the Focus view
+    When another image is opened in the Focus view
+    Then the adjustments have reset to neutral
+
+  @H1
+  Scenario: "Keep values" carries adjustments across images until Focus closes
+    Given "Keep values" is checked
+    And the display adjustments have been changed in the Focus view
     When another image is opened in the Focus view
     Then the same adjustments still apply
     And leaving the Focus view returns the adjustments to neutral
+
+  @unmapped
+  Scenario: "Keep values" is unchecked by default
+    When the adjustment panel is opened
+    Then the Keep values checkbox is unchecked
+
+  @H1
+  Scenario: Previous-image navigation resets adjustments by default
+    Given a later image is open for testing previous-image adjustments
+    And the display adjustments have been changed in the Focus view
+    When the previous image is opened in the Focus view
+    Then the adjustments have reset to neutral
+
+  @H1
+  Scenario: Keep values also preserves adjustments on previous-image navigation
+    Given a later image is open for testing previous-image adjustments
+    And "Keep values" is checked
+    And the display adjustments have been changed in the Focus view
+    When the previous image is opened in the Focus view
+    Then the same adjustments still apply
+
+  @H1
+  Scenario: Turning Keep values off preserves current values until navigation
+    Given "Keep values" is checked
+    And the display adjustments have been changed in the Focus view
+    When Keep values is turned off without navigating
+    Then the current adjustment values are preserved with Keep values off
+    When another image is opened in the Focus view
+    Then the adjustments have reset to neutral
+
+  @unmapped
+  Scenario Outline: Keep values leaves species and navigation shortcuts available
+    Given auto-advance is disabled for adjustment shortcut checks
+    And an image is shown in the Focus view
+    Then Keep values supports <activation> toggling without blocking workspace shortcuts
+
+    Examples:
+      | activation |
+      | pointer    |
+      | keyboard   |
