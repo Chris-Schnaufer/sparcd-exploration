@@ -1,15 +1,24 @@
 /**
- * A browser-local custom identity associated with one connected login.
+ * A browser-local attribution preference associated with one connected login.
  * The login identifier is not a credential secret; never pass secret keys to
- * this module. Each account has its own storage key so writes for one login do
- * not overwrite another login's preference.
+ * this module. Custom identity and resolved default are stored separately so
+ * a refreshed account name never overwrites a user's choice.
  */
 const STORAGE_PREFIX = 'sparcd-login-identity-v1:';
 const RECORD_VERSION = 1;
 
 type IdentityRecord = {
   version: typeof RECORD_VERSION;
-  identity: string;
+  /** `identity` is the original v1 custom-identity field. */
+  identity?: string;
+  defaultIdentity?: string;
+  defaultSource?: 'whoami' | 'access-key';
+};
+
+export type LoginIdentityPreference = {
+  customIdentity: string | null;
+  defaultIdentity: string | null;
+  defaultSource: IdentityRecord['defaultSource'] | null;
 };
 
 export type LoginIdentityChange = {
@@ -25,38 +34,63 @@ function storageKey(loginIdentifier: string): string {
   return `${STORAGE_PREFIX}${encodeURIComponent(loginIdentifier)}`;
 }
 
-function getStoredCustomIdentity(loginIdentifier: string): string | null {
+function readRecord(loginIdentifier: string): IdentityRecord | null {
   try {
     const raw = localStorage.getItem(storageKey(loginIdentifier));
     if (!raw) return null;
     const value = JSON.parse(raw) as Partial<IdentityRecord> | null;
-    if (
-      !value ||
-      value.version !== RECORD_VERSION ||
-      typeof value.identity !== 'string' ||
-      !value.identity.trim()
-    ) {
-      return null;
-    }
-    return value.identity;
+    if (!value || value.version !== RECORD_VERSION) return null;
+    return {
+      version: RECORD_VERSION,
+      identity: typeof value.identity === 'string' && value.identity.trim() ? value.identity : undefined,
+      defaultIdentity: typeof value.defaultIdentity === 'string' && value.defaultIdentity.trim()
+        ? value.defaultIdentity
+        : undefined,
+      defaultSource: value.defaultSource === 'whoami' || value.defaultSource === 'access-key'
+        ? value.defaultSource
+        : undefined,
+    };
   } catch {
     // Storage may be unavailable, or an older/corrupt record may be present.
-    // In either case use the login-name default rather than blocking login.
     return null;
   }
 }
 
-/** Read this login's custom identity, falling back to its login identifier. */
+function writeRecord(login: string, record: IdentityRecord): boolean {
+  try {
+    const key = storageKey(login);
+    if (!record.identity && !record.defaultIdentity) localStorage.removeItem(key);
+    else localStorage.setItem(key, JSON.stringify(record));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Read the saved custom and resolved default values without inventing a fallback. */
+export function loadLoginIdentityPreference(
+  loginIdentifier: string | null | undefined,
+): LoginIdentityPreference {
+  const login = normalizeLoginIdentifier(loginIdentifier);
+  const record = login ? readRecord(login) : null;
+  return {
+    customIdentity: record?.identity ?? null,
+    defaultIdentity: record?.defaultIdentity ?? null,
+    defaultSource: record?.defaultSource ?? null,
+  };
+}
+
+/** Read this login's custom identity or resolved default; unresolved stays blank. */
 export function loadLoginIdentity(loginIdentifier: string | null | undefined): string {
   const login = normalizeLoginIdentifier(loginIdentifier);
   if (!login) return '';
-  return getStoredCustomIdentity(login) ?? login;
+  const preference = loadLoginIdentityPreference(login);
+  return preference.customIdentity ?? preference.defaultIdentity ?? '';
 }
 
 /**
- * Save a custom identity for one login. Empty/whitespace values remove that
- * login's custom override so the UI can restore the login-name default on blur.
- * Returns false when browser storage is unavailable or cannot be updated.
+ * Save a custom identity for one login. Empty/whitespace removes the custom
+ * override but preserves the resolved default so it returns on blur.
  */
 export function saveLoginIdentity(
   loginIdentifier: string | null | undefined,
@@ -64,21 +98,30 @@ export function saveLoginIdentity(
 ): boolean {
   const login = normalizeLoginIdentifier(loginIdentifier);
   if (!login) return false;
+  const current = readRecord(login);
+  return writeRecord(login, {
+    version: RECORD_VERSION,
+    identity: identity.trim() ? identity : undefined,
+    defaultIdentity: current?.defaultIdentity,
+    defaultSource: current?.defaultSource,
+  });
+}
 
-  try {
-    const key = storageKey(login);
-    if (!identity.trim()) {
-      localStorage.removeItem(key);
-    } else {
-      localStorage.setItem(
-        key,
-        JSON.stringify({ version: RECORD_VERSION, identity } satisfies IdentityRecord),
-      );
-    }
-    return true;
-  } catch {
-    return false;
-  }
+/** Cache a default attribution name without replacing the user's custom value. */
+export function saveLoginIdentityDefault(
+  loginIdentifier: string | null | undefined,
+  identity: string,
+  source: NonNullable<IdentityRecord['defaultSource']>,
+): boolean {
+  const login = normalizeLoginIdentifier(loginIdentifier);
+  if (!login || !identity.trim()) return false;
+  const current = readRecord(login);
+  return writeRecord(login, {
+    version: RECORD_VERSION,
+    identity: current?.identity,
+    defaultIdentity: identity,
+    defaultSource: source,
+  });
 }
 
 /** Subscribe to identity changes made in another same-origin tab/app. */

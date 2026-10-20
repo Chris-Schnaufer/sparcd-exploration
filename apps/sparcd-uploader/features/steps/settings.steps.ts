@@ -1,4 +1,5 @@
 import { Given, When, Then, expect } from './fixtures';
+import type { Page } from '@playwright/test';
 import { ACCESS_KEY, S3_ORIGIN, SECRET_KEY } from './app';
 import { standardBatch } from './batches';
 import { produceCompleteRun, producePartialRun } from './helpers';
@@ -6,9 +7,16 @@ import { produceCompleteRun, producePartialRun } from './helpers';
 const identityField = 'e.g. John Doe';
 const LOGIN_B = 'AKIATESTKEY0002';
 
+async function openIdentityInput(page: Page) {
+  const defaults = page.getByText('Defaults', { exact: true });
+  const isOpen = await defaults.evaluate((element) => element.closest('details')?.open ?? false);
+  if (!isOpen) await defaults.click();
+  return page.getByPlaceholder(identityField);
+}
+
 async function identityInput(app: import('./app').App) {
   await app.gotoSection('Settings');
-  return app.page.getByPlaceholder(identityField);
+  return openIdentityInput(app.page);
 }
 
 async function connectAs(app: import('./app').App, login: string) {
@@ -40,8 +48,9 @@ When('the Uploader switches to Login B', async ({ app }) => {
   await connectAs(app, LOGIN_B);
 });
 
-Then("Login B's identity defaults to its login name", async ({ app }) => {
+Then("Login B's identity defaults to the confirmed endpoint fallback", async ({ app }) => {
   await expect(await identityInput(app)).toHaveValue(LOGIN_B);
+  expect(app.s3.whoamiResponse.body).toContain('<Code>NoSuchKey</Code>');
 });
 
 When('Login B saves custom identity {string}', async ({ app }, identity: string) => {
@@ -71,12 +80,12 @@ When('a second Uploader tab adopts the same login', async ({ app }) => {
 Then("the second tab shows Login A's custom identity", async ({ app }) => {
   const second = app.notes.identitySecondTab as import('@playwright/test').Page;
   await second.locator('nav[aria-label="Sections"]').getByRole('button', { name: 'Settings' }).click();
-  await expect(second.getByPlaceholder(identityField)).toHaveValue('Ada Lovelace');
+  await expect(await openIdentityInput(second)).toHaveValue('Ada Lovelace');
 });
 
 When('the second tab changes Login A\'s identity to {string}', async ({ app }, identity: string) => {
   const second = app.notes.identitySecondTab as import('@playwright/test').Page;
-  const input = second.getByPlaceholder(identityField);
+  const input = await openIdentityInput(second);
   await input.fill(identity);
   await input.press('Tab');
 });
@@ -316,7 +325,7 @@ When('identity is cleared, typed, and left blank', async ({ app }) => {
   await input.fill('   ');
   await expect(input).toHaveValue('   ');
 });
-Then('the login default returns on blur', async ({ app }) => {
+Then('the account default returns on blur', async ({ app }) => {
   const input = app.page.getByPlaceholder(identityField);
   await input.press('Tab');
   await expect(input).toHaveValue(ACCESS_KEY);
@@ -341,11 +350,13 @@ When('the blank identity session is restored and shared', async ({ app }) => {
   await app.reopen();
   app.notes.identityTab = await app.openSecondTab();
 });
-Then('both sessions default identity from the connected access key', async ({ app }) => {
+Then('both sessions use the confirmed Access-key fallback', async ({ app }) => {
+  expect(app.s3.whoamiRequests).toBeGreaterThan(0);
+  expect(app.s3.whoamiResponse.body).toContain('<Code>NoSuchKey</Code>');
   const second = app.notes.identityTab as import('@playwright/test').Page;
   for (const page of [app.page, second]) {
     await page.locator('nav[aria-label="Sections"]').getByRole('button', { name: 'Settings', exact: true }).click();
-    await page.getByText('Defaults', { exact: true }).click();
+    await openIdentityInput(page);
     await expect(page.getByPlaceholder(identityField)).toHaveValue(ACCESS_KEY);
     expect(await page.locator('header').evaluate((element) => element.outerHTML)).not.toContain(ACCESS_KEY);
   }

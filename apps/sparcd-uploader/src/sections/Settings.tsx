@@ -14,6 +14,9 @@ export function Settings() {
   const setUploaderUser = useStore((s) => s.setUploaderUser);
   const ensureUploaderIdentity = useStore((s) => s.ensureUploaderIdentity);
   const identityPersistenceError = useStore((s) => s.identityPersistenceError);
+  const identityResolutionStatus = useStore((s) => s.identityResolutionStatus);
+  const identityResolutionError = useStore((s) => s.identityResolutionError);
+  const refreshUploaderIdentity = useStore((s) => s.refreshUploaderIdentity);
   const concurrencyMode = useStore((s) => s.concurrencyMode);
   const setConcurrencyMode = useStore((s) => s.setConcurrencyMode);
   const concurrency = useStore((s) => s.uploadConcurrency);
@@ -91,9 +94,12 @@ export function Settings() {
               value={uploaderUser}
               onChange={(e) => setUploaderUser(e.target.value)}
               onBlur={ensureUploaderIdentity}
-              aria-describedby={identityPersistenceError
-                ? 'uploader-identity-help uploader-identity-error'
-                : 'uploader-identity-help'}
+              aria-describedby={[
+                'uploader-identity-help',
+                ...(identityPersistenceError ? ['uploader-identity-error'] : []),
+                ...(identityResolutionStatus === 'error' ? ['uploader-identity-resolution-error'] : []),
+              ].join(' ')}
+              aria-invalid={identityResolutionStatus === 'error' && !uploaderUser.trim()}
               placeholder="e.g. John Doe"
               className="w-full border border-rule bg-paper px-3 py-2 font-body text-[14px] text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1"
             />
@@ -104,13 +110,32 @@ export function Settings() {
               ) : (
                 <span className="italic">a key-safe slug</span>
               )}
-              . A blank identity uses this login's default attribution name, or its Access key ID when whoami is unavailable, after you leave the field.
+              . A blank identity uses this login's account name, or its Access key ID only when the endpoint has no account-name route, after you leave the field.
             </span>
           </label>
           {identityPersistenceError && (
             <p id="uploader-identity-error" role="alert" className="font-body text-[12px] text-warn">
               This identity could not be saved in this browser. It may reset when the page is reloaded.
             </p>
+          )}
+          {identityResolutionStatus === 'loading' && (
+            <p role="status" aria-live="polite" className="font-body text-[12px] text-inkMute">
+              Checking the connected account's attribution name…
+            </p>
+          )}
+          {identityResolutionStatus === 'error' && (
+            <div id="uploader-identity-resolution-error" role="alert" className="flex flex-wrap items-center gap-2 font-body text-[12px] text-warn">
+              <span>{identityResolutionError ?? 'The connected account name is unavailable.'} {uploaderUser.trim()
+                ? 'The saved identity remains available.'
+                : 'Enter and save a custom identity before assigning an upload.'}</span>
+              <button
+                type="button"
+                onClick={() => void refreshUploaderIdentity()}
+                className="underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              >
+                Retry account-name lookup
+              </button>
+            </div>
           )}
         </div>
       </details>

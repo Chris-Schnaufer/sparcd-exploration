@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   loadLoginIdentity,
+  loadLoginIdentityPreference,
+  saveLoginIdentityDefault,
   saveLoginIdentity,
   subscribeLoginIdentityChanges,
 } from '../../../packages/auth-ui/src/loginIdentity';
@@ -53,13 +55,13 @@ afterEach(() => {
 });
 
 describe('shared per-login identity preference', () => {
-  it('falls back to the login identifier and stores custom identities separately per login', () => {
-    expect(loadLoginIdentity(ACCESS_KEY_A)).toBe(ACCESS_KEY_A);
-    expect(loadLoginIdentity(ACCESS_KEY_B)).toBe(ACCESS_KEY_B);
+  it('keeps an unresolved default blank and stores custom identities separately per login', () => {
+    expect(loadLoginIdentity(ACCESS_KEY_A)).toBe('');
+    expect(loadLoginIdentity(ACCESS_KEY_B)).toBe('');
 
     expect(saveLoginIdentity(ACCESS_KEY_A, 'Ada Lovelace')).toBe(true);
     expect(loadLoginIdentity(ACCESS_KEY_A)).toBe('Ada Lovelace');
-    expect(loadLoginIdentity(ACCESS_KEY_B)).toBe(ACCESS_KEY_B);
+    expect(loadLoginIdentity(ACCESS_KEY_B)).toBe('');
     expect(JSON.parse(storage.records.get(keyFor(ACCESS_KEY_A))!)).toEqual({
       version: 1,
       identity: 'Ada Lovelace',
@@ -67,21 +69,36 @@ describe('shared per-login identity preference', () => {
     expect(storage.records.has(keyFor(ACCESS_KEY_B))).toBe(false);
   });
 
-  it('removes a blank custom value so the login-name default returns', () => {
+  it('removes a blank custom value but preserves a resolved account-name default', () => {
+    saveLoginIdentityDefault(ACCESS_KEY_A, 'Account Name', 'whoami');
     saveLoginIdentity(ACCESS_KEY_A, 'Ada');
     expect(saveLoginIdentity(ACCESS_KEY_A, '  ')).toBe(true);
-    expect(storage.records.has(keyFor(ACCESS_KEY_A))).toBe(false);
-    expect(loadLoginIdentity(ACCESS_KEY_A)).toBe(ACCESS_KEY_A);
+    expect(storage.records.has(keyFor(ACCESS_KEY_A))).toBe(true);
+    expect(loadLoginIdentity(ACCESS_KEY_A)).toBe('Account Name');
+    expect(loadLoginIdentityPreference(ACCESS_KEY_A)).toEqual({
+      customIdentity: null,
+      defaultIdentity: 'Account Name',
+      defaultSource: 'whoami',
+    });
+  });
+
+  it('updates the cached default without overwriting a custom identity', () => {
+    expect(saveLoginIdentityDefault(ACCESS_KEY_A, 'First Name', 'whoami')).toBe(true);
+    expect(loadLoginIdentity(ACCESS_KEY_A)).toBe('First Name');
+    saveLoginIdentity(ACCESS_KEY_A, 'Ada');
+    expect(saveLoginIdentityDefault(ACCESS_KEY_A, 'Updated Name', 'whoami')).toBe(true);
+    expect(loadLoginIdentity(ACCESS_KEY_A)).toBe('Ada');
+    expect(loadLoginIdentityPreference(ACCESS_KEY_A).defaultIdentity).toBe('Updated Name');
   });
 
   it('ignores malformed records and safely replaces them on the next successful save', () => {
     storage.records.set(keyFor(ACCESS_KEY_A), '{broken json');
-    expect(loadLoginIdentity(ACCESS_KEY_A)).toBe(ACCESS_KEY_A);
+    expect(loadLoginIdentity(ACCESS_KEY_A)).toBe('');
     expect(saveLoginIdentity(ACCESS_KEY_A, 'Ada')).toBe(true);
     expect(loadLoginIdentity(ACCESS_KEY_A)).toBe('Ada');
 
     storage.records.set(keyFor(ACCESS_KEY_B), JSON.stringify({ version: 99, identity: 'Wrong version' }));
-    expect(loadLoginIdentity(ACCESS_KEY_B)).toBe(ACCESS_KEY_B);
+    expect(loadLoginIdentity(ACCESS_KEY_B)).toBe('');
   });
 
   it('falls back without throwing when browser storage is unavailable', () => {
@@ -95,9 +112,10 @@ describe('shared per-login identity preference', () => {
       throw new Error('storage denied');
     });
 
-    expect(loadLoginIdentity(ACCESS_KEY_A)).toBe(ACCESS_KEY_A);
+    expect(loadLoginIdentity(ACCESS_KEY_A)).toBe('');
     expect(saveLoginIdentity(ACCESS_KEY_A, 'Ada')).toBe(false);
     expect(saveLoginIdentity(ACCESS_KEY_A, '')).toBe(false);
+    expect(saveLoginIdentityDefault(ACCESS_KEY_A, 'Name', 'whoami')).toBe(false);
   });
 
   it('notifies same-origin app tabs when a login identity record changes or is cleared', () => {

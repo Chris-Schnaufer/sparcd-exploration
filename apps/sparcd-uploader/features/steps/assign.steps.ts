@@ -72,6 +72,8 @@ Then('the Continue gate never has to ask for a collection', async ({ app }) => {
 
 Given('the uploader identity is empty', async ({ app }) => {
   await app.chooseDeployment('Bear Canyon');
+  await app.page.getByLabel('Mountain range (required)', { exact: true }).fill('Santa Catalina Mountains');
+  await app.page.getByLabel('Date collected (required)', { exact: true }).fill('2026-10-01');
   await app.setUploader('');
   await expect(app.page.getByPlaceholder('e.g. John Doe').first()).toHaveValue('');
 });
@@ -84,8 +86,10 @@ When('the blank Assign identity field loses focus', async ({ app }) => {
   await app.page.getByPlaceholder('e.g. John Doe').first().press('Tab');
 });
 
-Then('Assign restores the connected default identity', async ({ app }) => {
+Then('Assign restores the confirmed connected account default', async ({ app }) => {
   await expect(app.page.getByPlaceholder('e.g. John Doe').first()).toHaveValue(ACCESS_KEY);
+  expect(app.s3.whoamiRequests).toBeGreaterThan(0);
+  expect(app.s3.whoamiResponse.body).toContain('<Code>NoSuchKey</Code>');
 });
 
 // --- the collection list ---------------------------------------------------
@@ -640,6 +644,8 @@ Then('Describe help can be opened and dismissed on a touch screen', async ({ app
 When('the blank Describe identity field loses focus', async ({ app }) => {
   await app.page.locator('#uploaderUser').press('Tab');
 });
-Then('Describe restores the connected default identity', async ({ app }) => {
+Then('Describe restores the confirmed connected account default', async ({ app }) => {
   await expect(app.page.locator('#uploaderUser')).toHaveValue(ACCESS_KEY);
+  expect(app.s3.whoamiRequests).toBeGreaterThan(0);
+  expect(app.s3.whoamiResponse.body).toContain('<Code>NoSuchKey</Code>');
 });

@@ -19,10 +19,12 @@ export { loadSharedTheme, saveSharedTheme } from './theme';
 export type { Theme } from './theme';
 export {
   loadLoginIdentity,
+  loadLoginIdentityPreference,
   saveLoginIdentity,
+  saveLoginIdentityDefault,
   subscribeLoginIdentityChanges,
 } from './loginIdentity';
-export type { LoginIdentityChange } from './loginIdentity';
+export type { LoginIdentityChange, LoginIdentityPreference } from './loginIdentity';
 export {
   KEYBINDING_STORAGE_KEY,
   MAX_SPECIES_SOURCES,
