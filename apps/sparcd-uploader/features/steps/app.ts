@@ -178,7 +178,7 @@ export class App {
     return this.page.locator('ol[aria-label="Upload steps"] span.bg-mark');
   }
 
-  async expectStep(label: 'Files' | 'Inspect' | 'Assign' | 'Upload'): Promise<void> {
+  async expectStep(label: 'Choose' | 'Verify' | 'Describe' | 'Upload'): Promise<void> {
     await expect(this.activeStep()).toContainText(label);
   }
 
@@ -671,10 +671,10 @@ export class App {
   async continueToAssign(): Promise<void> {
     const control = this.page.getByRole('button', { name: 'Continue' });
     await expect(control).toBeEnabled();
-    // Pointer hover stops the Inspect attention animation before the click.
+    // Pointer hover stops the Verify attention animation before the click.
     await control.hover({ force: true });
     await control.click();
-    await expect(this.page.getByRole('heading', { name: 'Target collection' })).toBeVisible();
+    await expect(this.page.getByRole('heading', { name: 'Collection' })).toBeVisible();
   }
 
   async fillRequiredUploadComments(): Promise<void> {
@@ -692,10 +692,10 @@ export class App {
 
   /** Throw the current batch away and scan a different one. */
   async rescan(specs: FileSpec[], opts: { raw?: boolean } = {}): Promise<void> {
-    const startOver = this.page.getByRole('button', { name: 'Start over' });
-    if (await startOver.isVisible().catch(() => false)) {
-      await startOver.click();
-      await this.expectStep('Files');
+    const backToChoose = this.page.getByRole('button', { name: 'Back', exact: true });
+    if (await backToChoose.isVisible().catch(() => false)) {
+      await backToChoose.click();
+      await this.expectStep('Choose');
     }
     if (opts.raw) await this.dropRawEntries(specs);
     else await this.dropFolder(specs);
@@ -717,7 +717,7 @@ export class App {
   /** Back out to Drop, re-scan the same folder, and return to the Upload step. */
   async rescanFromUploadStep(): Promise<void> {
     await this.page.getByRole('button', { name: 'Back' }).click();
-    await expect(this.page.getByRole('heading', { name: 'Target collection' })).toBeVisible();
+    await expect(this.page.getByRole('heading', { name: 'Collection' })).toBeVisible();
     await this.page.getByRole('button', { name: 'Back' }).click();
     await expect(this.fileListToggle()).toBeVisible();
     await this.rescan(this.lastSpecs);

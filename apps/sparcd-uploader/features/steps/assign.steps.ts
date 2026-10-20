@@ -1,6 +1,6 @@
 import { Given, When, Then, expect } from './fixtures';
 import { ACCESS_KEY, type App } from './app';
-import { clipVideo, jpegAt, standardBatch } from './batches';
+import { clipVideo, jpegAt, jpegNoTime, standardBatch } from './batches';
 import { expectStoredAtLocation, publishedUploads, reconnectAndReturnToAssign, rescanFromAssign } from './helpers';
 import {
   BUCKET_A,
@@ -26,13 +26,13 @@ const METADATA_NAMES = [
   'UploadComplete.json',
 ];
 
-Given('a scanned batch has passed the Inspect step', async ({ app }) => {
+Given('a scanned batch has passed the Verify step', async ({ app }) => {
   await app.connect();
   await app.dropFolder(standardBatch());
   await app.waitForInspected();
 });
 
-Given('the New upload section is showing the Assign step', async ({ app }) => {
+Given('the New upload section is showing the Describe step', async ({ app }) => {
   await app.continueToAssign();
   await app.waitForCollections();
 });
@@ -81,7 +81,7 @@ Then('it states that an uploader identity must be set first', async ({ app }) =>
 
 // --- the collection list ---------------------------------------------------
 
-When('the Assign step opens', async ({ app }) => {
+When('the Describe step opens', async ({ app }) => {
   await expect(app.collectionTrigger()).toBeVisible();
 });
 
@@ -303,7 +303,7 @@ Given('the location registry cannot be read with the connected credentials', asy
   await reconnectAndReturnToAssign(app);
 });
 
-Then('the Assign step explains that the registry could not be loaded', async ({ app }) => {
+Then('the Describe step explains that the registry could not be loaded', async ({ app }) => {
   await expect(app.page.getByText(/No readable settings bucket found/)).toBeVisible({ timeout: 30_000 });
 });
 
@@ -510,7 +510,7 @@ Then('Continue allows the Upload step', async ({ app }) => {
   await expect(app.continueButton()).toHaveAttribute('title', 'Continue to upload');
 });
 
-When('the next day arrives while Assign stays open', async ({ app }) => {
+When('the next day arrives while Describe stays open', async ({ app }) => {
   await app.page.clock.setSystemTime(new Date('2026-10-15T00:00:01-04:00'));
 });
 
@@ -554,9 +554,75 @@ Given('the batch contains one JPEG and two MP4 videos', async ({ app }) => {
   await rescanFromAssign(app, [standardBatch()[0], clipVideo('FIRST.MP4'), clipVideo('SECOND.MP4')]);
 });
 
-When('the blank Assign identity field loses focus', async ({ app }) => {
+Then('Describe help is keyboard accessible and clamped at phone widths', async ({ app }) => {
+  await rescanFromAssign(app, [jpegNoTime('NO_TIME.JPG')]);
+  await expect(app.page.getByRole('button', { name: 'About Capture times', exact: true })).toBeVisible();
+  for (const width of [320, 375]) {
+    await app.page.setViewportSize({ width, height: 640 });
+    for (const label of ['Collection', 'Site ID', 'Uploader', 'Timezone of images', 'Capture times', 'Mountain range', 'Date collected', 'Comments']) {
+      const button = app.page.getByRole('button', { name: `About ${label}`, exact: true });
+      await button.scrollIntoViewIfNeeded();
+      await button.focus();
+      await expect(button).toHaveAttribute('aria-expanded', 'true');
+      const popup = app.page.getByRole('tooltip');
+      await expect(popup).toBeVisible();
+      const box = await popup.boundingBox();
+      expect(box!.x).toBeGreaterThanOrEqual(16);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(width - 16);
+      expect(box!.y).toBeGreaterThanOrEqual(16);
+      expect(box!.y + box!.height).toBeLessThanOrEqual(640 - 16);
+      await app.page.keyboard.press('Escape');
+      await expect(button).toHaveAttribute('aria-expanded', 'false');
+      await expect(button).toBeFocused();
+      await expect(app.page.getByRole('tooltip')).toHaveCount(0);
+    }
+  }
+  const hover = app.page.getByRole('button', { name: 'About Collection', exact: true });
+  await hover.hover();
+  const tooltip = app.page.getByRole('tooltip');
+  await expect(tooltip).toBeVisible();
+  await tooltip.hover();
+  // Stay past the pointer-transfer grace period to prove the help is hoverable.
+  await app.page.waitForTimeout(200);
+  await expect(tooltip).toBeVisible();
+  await app.page.mouse.move(0, 0);
+  await expect(tooltip).toHaveCount(0);
+});
+
+Then('Describe help can be opened and dismissed on a touch screen', async ({ app, browser, s3 }) => {
+  const { App } = await import('./app');
+  const context = await browser.newContext({ hasTouch: true, viewport: { width: 375, height: 640 }, baseURL: new URL(app.page.url()).origin });
+  try {
+    const page = await context.newPage();
+    const touchApp = new App(page, s3);
+    await touchApp.connect();
+    await touchApp.dropFolder(standardBatch());
+    await touchApp.waitForInspected();
+    await touchApp.continueToAssign();
+    await touchApp.waitForCollections();
+    const button = page.getByRole('button', { name: 'About Timezone of images', exact: true });
+    await button.tap();
+    const popup = page.getByRole('tooltip');
+    await expect(popup).toBeVisible();
+    await page.setViewportSize({ width: 320, height: 480 });
+    await expect.poll(async () => {
+      const bounds = await popup.boundingBox();
+      return !!bounds && bounds.x >= 16 && bounds.x + bounds.width <= 304 && bounds.y >= 16 && bounds.y + bounds.height <= 464;
+    }).toBe(true);
+    await page.evaluate(() => window.scrollBy(0, 100));
+    await expect(popup).toBeInViewport();
+    await button.tap();
+    await expect(popup).toHaveCount(0);
+    await button.tap();
+    await expect(popup).toBeVisible();
+    await page.locator('#uploadTimeZone').tap();
+    await expect(popup).toHaveCount(0);
+  } finally { await context.close(); }
+});
+
+When('the blank Describe identity field loses focus', async ({ app }) => {
   await app.page.locator('#uploaderUser').press('Tab');
 });
-Then('Assign restores the connected default identity', async ({ app }) => {
+Then('Describe restores the connected default identity', async ({ app }) => {
   await expect(app.page.locator('#uploaderUser')).toHaveValue(ACCESS_KEY);
 });

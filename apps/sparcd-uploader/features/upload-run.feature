@@ -300,12 +300,12 @@ Feature: Upload and publish a batch
     # resumed later.
 
   @unmapped
-  Scenario: Going back to Assign is blocked while a run is in progress
+  Scenario: Going back to Describe is blocked while a run is in progress
     Given a run is in progress
     Then the Back button is disabled
 
   @AL2
-  Scenario: Going back to Assign is blocked after a real upload completes
+  Scenario: Going back to Describe is blocked after a real upload completes
     Given a real upload has completed
     Then the Back button is disabled
     And the Back explanation is keyboard discoverable
@@ -313,7 +313,7 @@ Feature: Upload and publish a batch
     # the same destination — Next batch is the only way past a completed run.
 
   @AL2
-  Scenario: Going back to Assign is blocked after a real upload ends partially
+  Scenario: Going back to Describe is blocked after a real upload ends partially
     Given a real upload in which some files failed after their retries
     Then the Back button is disabled
     # Retry failed files is the only way past a partial run — not Back.
@@ -322,7 +322,7 @@ Feature: Upload and publish a batch
   Scenario: The next batch starts with assignment details cleared
     Given a real upload has completed
     When "Next batch" is chosen
-    Then the wizard returns to the Files step with an empty batch
+    Then the wizard returns to the Choose step with an empty batch
     And the next batch has no collection, deployment, description or timezone selected
     And the uploader identity is still filled in
     And continuing without a timezone is disabled
@@ -344,14 +344,14 @@ Feature: Upload and publish a batch
     And releasing the held blob lets the upload complete
 
   @AL2
-  Scenario: A completed dry run permits returning to Assign
+  Scenario: A completed dry run permits returning to Describe
     When the operator opts into a dry run
     And the dry run is started and completes
-    Then Back returns to Assign after the dry run
+    Then Back returns to Describe after the dry run
 
   @AL2
   Scenario: Next batch restores pre-upload Back navigation
     Given a real upload has completed
     When "Next batch" is chosen
     And a fresh batch reaches Upload
-    Then Back returns to Assign before another real run starts
+    Then Back returns to Describe before another real run starts
