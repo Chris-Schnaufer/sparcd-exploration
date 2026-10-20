@@ -18,6 +18,7 @@ export type { PersistedConnection } from './session';
 export { loadSharedTheme, saveSharedTheme } from './theme';
 export type { Theme } from './theme';
 export {
+  loginIdentityPreferenceKey,
   loadLoginIdentity,
   loadLoginIdentityPreference,
   saveLoginIdentity,

@@ -174,6 +174,13 @@ Feature: Connect the uploader to storage and manage the session
     Then continuing to upload is enabled with the custom identity
 
   @unmapped
+  Scenario: Identity preferences do not retain the login ID after an unremembered connection logs out
+    When a connection is made without remembering its login
+    Then the uploader identity defaults to the Access key after route absence is confirmed
+    When this unremembered login disconnects
+    Then the retained identity preference exposes no login ID
+
+  @unmapped
   Scenario: An unscoped legacy identity is not assigned to the active login
     Given the uploader is connected
     When a legacy session-wide uploader identity is present and the page reloads

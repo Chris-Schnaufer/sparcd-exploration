@@ -8,6 +8,7 @@ import {
   clearSharedConnection,
   subscribeSharedConnection,
   loadLoginIdentityPreference,
+  loginIdentityPreferenceKey,
   saveLoginIdentity,
   saveLoginIdentityDefault,
   subscribeLoginIdentityChanges,
@@ -110,6 +111,7 @@ type UploaderState = {
   flipId: string | null;
   uploaderUser: string; // free-text identity, normalized into a slug for keys
   identityPersistenceError: boolean;
+  identityUnsavedCustom: string | null; // current-login override when browser storage rejects a write
   identityResolutionStatus: 'idle' | 'loading' | 'ready' | 'error';
   identityResolutionError: string | null;
   selectedLocationId: string | null; // chosen deployment location ID (Assign)
@@ -236,6 +238,7 @@ function disconnectedState(s: UploaderState): Partial<UploaderState> {
     requireCollectionSelection: false,
     uploaderUser: '',
     identityPersistenceError: false,
+    identityUnsavedCustom: null,
     identityResolutionStatus: 'idle',
     identityResolutionError: null,
     uploadTimeZone: localTimeZone(),
@@ -357,6 +360,7 @@ export const useStore = create<UploaderState>()(
       flipId: null,
       uploaderUser: savedIdentityFor(initialSession?.accessKey),
       identityPersistenceError: false,
+      identityUnsavedCustom: null,
       identityResolutionStatus: 'idle',
       identityResolutionError: null,
       selectedLocationId: null,
@@ -391,6 +395,7 @@ export const useStore = create<UploaderState>()(
           loginDeferred: false,
           uploaderUser: savedIdentityFor(config.accessKey),
           identityPersistenceError: false,
+          identityUnsavedCustom: null,
           identityResolutionStatus: 'idle',
           identityResolutionError: null,
           selectedLocationId: null,
@@ -688,7 +693,11 @@ export const useStore = create<UploaderState>()(
       setUploaderUser: (value) => {
         const { s3Config } = get();
         const saved = s3Config ? saveLoginIdentity(s3Config.accessKey, value) : true;
-        set({ uploaderUser: value, identityPersistenceError: !!s3Config && !saved });
+        set({
+          uploaderUser: value,
+          identityPersistenceError: !!s3Config && !saved,
+          identityUnsavedCustom: s3Config && !saved && value.trim() ? value : null,
+        });
       },
       ensureUploaderIdentity: () => {
         const { s3Config, uploaderUser, identityResolutionStatus } = get();
@@ -706,7 +715,7 @@ export const useStore = create<UploaderState>()(
         const requestGeneration = ++identityLookupGeneration;
         const initialPreference = loadLoginIdentityPreference(login);
         set({
-          uploaderUser: initialPreference.customIdentity ?? initialPreference.defaultIdentity ?? '',
+          uploaderUser: get().identityUnsavedCustom ?? initialPreference.customIdentity ?? initialPreference.defaultIdentity ?? '',
           identityResolutionStatus: 'loading',
           identityResolutionError: null,
         });
@@ -719,8 +728,8 @@ export const useStore = create<UploaderState>()(
           const saved = saveLoginIdentityDefault(login, identity, source);
           const preference = loadLoginIdentityPreference(login);
           set({
-            uploaderUser: preference.customIdentity ?? preference.defaultIdentity ?? identity,
-            identityPersistenceError: !saved,
+            uploaderUser: current.identityUnsavedCustom ?? preference.customIdentity ?? preference.defaultIdentity ?? identity,
+            identityPersistenceError: current.identityUnsavedCustom !== null || !saved,
             identityResolutionStatus: 'ready',
             identityResolutionError: null,
           });
@@ -729,7 +738,7 @@ export const useStore = create<UploaderState>()(
           if (requestGeneration !== identityLookupGeneration || current.connectionId !== connectionId || current.s3Config?.accessKey.trim() !== login) return;
           const preference = loadLoginIdentityPreference(login);
           set({
-            uploaderUser: preference.customIdentity ?? preference.defaultIdentity ?? '',
+            uploaderUser: current.identityUnsavedCustom ?? preference.customIdentity ?? preference.defaultIdentity ?? '',
             identityResolutionStatus: 'error',
             identityResolutionError: error instanceof Error
               ? error.message
@@ -845,6 +854,7 @@ export const useStore = create<UploaderState>()(
         ...(persistedState as Partial<UploaderState>),
         uploaderUser: currentState.uploaderUser,
         identityPersistenceError: false,
+        identityUnsavedCustom: null,
         identityResolutionStatus: currentState.s3Config ? currentState.identityResolutionStatus : 'idle',
         identityResolutionError: currentState.identityResolutionError,
       }),
@@ -890,6 +900,7 @@ subscribeSharedConnection((cfg) => {
             s3Config: cfg,
             uploaderUser: savedIdentityFor(cfg.accessKey),
             identityPersistenceError: false,
+            identityUnsavedCustom: null,
           }
         : {}),
     }));
@@ -903,21 +914,24 @@ subscribeSharedConnection((cfg) => {
     loginDeferred: false,
     uploaderUser: savedIdentityFor(cfg.accessKey),
     identityPersistenceError: false,
+    identityUnsavedCustom: null,
     identityResolutionStatus: 'idle',
     identityResolutionError: null,
   }));
   void useStore.getState().refreshUploaderIdentity();
 }, () => useStore.getState().s3Config);
 
-subscribeLoginIdentityChanges(({ loginIdentifier }) => {
+subscribeLoginIdentityChanges(({ preferenceKey }) => {
   const { s3Config } = useStore.getState();
   if (!s3Config) return;
   const activeLogin = s3Config.accessKey.trim();
-  if (loginIdentifier !== null && loginIdentifier !== activeLogin) return;
+  if (preferenceKey !== null && preferenceKey !== loginIdentityPreferenceKey(activeLogin)) return;
+  if (useStore.getState().identityUnsavedCustom !== null) return;
   const savedIdentity = savedIdentityFor(activeLogin);
   useStore.setState({
     uploaderUser: savedIdentity,
     identityPersistenceError: false,
+    identityUnsavedCustom: null,
     ...(!savedIdentity ? { identityResolutionStatus: 'idle' as const } : {}),
   });
   if (!savedIdentity) void useStore.getState().refreshUploaderIdentity();

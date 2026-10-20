@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url';
+import { loginIdentityPreferenceKey } from '../../../../packages/auth-ui/src/loginIdentity';
 import type { Page } from '@playwright/test';
 import { Given, When, Then, expect } from './fixtures';
 import { ACCESS_KEY, SECRET_KEY, S3_ORIGIN, type App } from './app';
@@ -443,7 +444,7 @@ Then('the remember checkbox describes its public-computer warning', async ({ app
 
 Then('the connected login identity is available to the preserved batch', async ({ app }) => {
   await app.page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(app.page.getByRole('heading', { name: 'Target collection' })).toBeVisible();
+  await expect(app.page.getByRole('heading', { name: 'Collection (required)', exact: true })).toBeVisible();
   await expect(app.page.locator('#uploaderUser')).toHaveValue(ACCESS_KEY);
 });
 
@@ -466,12 +467,9 @@ Then('the uploader identity defaults to {string}', async ({ app }, name: string)
 });
 
 Then('the account-name default is stored under the connected login', async ({ app }) => {
-  const record = await app.page.evaluate((accessKey) => {
-    const key = `sparcd-login-identity-v1:${encodeURIComponent(accessKey)}`;
-    return JSON.parse(localStorage.getItem(key) ?? 'null');
-  }, ACCESS_KEY);
-  expect(record).toMatchObject({ version: 1, defaultIdentity: 'Research Account', defaultSource: 'whoami' });
-  expect(await app.page.evaluate(() => localStorage.getItem('sparcd-login-identity-v1:Research%20Account'))).toBeNull();
+  const record = await app.page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? 'null'), loginIdentityPreferenceKey(ACCESS_KEY));
+  expect(record).toMatchObject({ version: 2, defaultIdentity: 'Research Account', defaultSource: 'whoami' });
+  expect(await app.page.evaluate(() => Object.keys(localStorage).filter((key) => key.startsWith('sparcd-login-identity-')))).toEqual([loginIdentityPreferenceKey(ACCESS_KEY)]);
 });
 
 When('the same connected session is restored', async ({ app }) => {
@@ -535,4 +533,26 @@ When('the uploader enters custom identity {string}', async ({ app }, identity: s
 
 Then('continuing to upload is enabled with the custom identity', async ({ app }) => {
   await expect(app.continueButton()).toBeEnabled();
+});
+
+
+When('a connection is made without remembering its login', async ({ app }) => {
+  await app.fillConnection();
+  await app.page.getByLabel('Remember endpoint & access key on this device').uncheck();
+  await app.page.getByRole('button', { name: 'Connect', exact: true }).click();
+  await expect(app.page.getByRole('button', { name: 'Logout' })).toBeVisible();
+});
+
+When('this unremembered login disconnects', async ({ app }) => {
+  await app.disconnectFromHeader();
+  await expect(app.connectForm()).toBeVisible();
+});
+
+Then('the retained identity preference exposes no login ID', async ({ app }) => {
+  const records = await app.page.evaluate(() => Object.entries(localStorage)
+    .filter(([key]) => key.startsWith('sparcd-login-identity-')));
+  expect(records).toHaveLength(1);
+  expect(records[0][0]).toBe(loginIdentityPreferenceKey(ACCESS_KEY));
+  expect(JSON.stringify(records)).not.toContain(ACCESS_KEY);
+  expect(JSON.stringify(records)).not.toContain(SECRET_KEY);
 });
