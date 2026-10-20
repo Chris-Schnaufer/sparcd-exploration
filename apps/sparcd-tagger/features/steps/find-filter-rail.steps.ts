@@ -185,3 +185,44 @@ Then('the overlay supports touch clearing, resetting, and closing', async ({ pag
   await expect(panel(page)).not.toBeVisible();
   await session.detach();
 });
+
+Then('the {string} dialog keeps priority while resizing and restores the rail at {int} pixels', async ({ page }, name: string, width: number) => {
+  await page.getByRole('button', { name: name === 'Sync' ? 'Sync…' : 'Time shift', exact: true }).click();
+  const close = name === 'Sync'
+    ? page.getByRole('heading', { name: 'Sync to S3', exact: true }).locator('..').getByRole('button', { name: 'Close', exact: true })
+    : page.getByRole('dialog', { name: 'Time shift', exact: true }).getByRole('button', { name: 'Close', exact: true });
+  await expect(close).toBeEnabled();
+  await close.focus();
+  await expect(panel(page)).not.toBeVisible();
+  for (const resized of [600, 1440, 600, width]) {
+    await page.setViewportSize({ width: resized, height: 860 });
+    await expect(panel(page)).not.toBeVisible();
+    await expect(close).toBeFocused();
+    await expect.poll(() => panel(page).evaluate(node => node.matches(':modal'))).toBe(false);
+  }
+  await close.click();
+  await expect(panel(page)).toBeVisible();
+  await expect(panel(page)).toHaveAttribute('data-layout', width === 600 ? 'overlay' : 'docked');
+  await expect(find(page)).toHaveValue('IMG004');
+  await expect(page.getByLabel('Match text')).toHaveValue('IMG');
+  if (width === 600) {
+    await expect(find(page)).toBeFocused();
+    await page.keyboard.press('Escape');
+  } else await panel(page).getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(panel(page)).not.toBeVisible();
+  await openFindFilter(page);
+  await expect(find(page)).toHaveValue('');
+  await expect(page.getByLabel('Match text')).toHaveValue('');
+});
+
+Then('Escape closes only the species dialog after narrowing the window', async ({ page }) => {
+  await page.getByRole('button', { name: 'Enlarge Coyote reference image', exact: true }).click();
+  const close = page.getByRole('dialog', { name: 'Coyote reference image', exact: true }).getByRole('button', { name: 'Close', exact: true });
+  await page.setViewportSize({ width: 600, height: 860 });
+  await expect(panel(page)).not.toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(close).toHaveCount(0);
+  await expect(panel(page)).toBeVisible();
+  await expect(find(page)).toHaveValue('IMG004');
+  await expect(page.getByLabel('Match text')).toHaveValue('IMG');
+});

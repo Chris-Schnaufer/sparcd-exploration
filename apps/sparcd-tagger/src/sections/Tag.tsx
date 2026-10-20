@@ -421,6 +421,12 @@ export function Tag() {
   const imageFilterButtonRef = useRef<HTMLButtonElement>(null);
   const overviewAreaRef = useRef<HTMLDivElement>(null);
   const [railDocked, setRailDocked] = useState(false);
+  // Yield to the active workspace dialog without invoking Close's clearing
+  // behavior. Restore the remembered rail in the current layout on dismissal.
+  const overviewDialogOpen = showSync || showSnapshots || showDiscard || showTimeShift ||
+    showChangeLocation || bulkTime !== null || zoomSpecies !== null ||
+    pendingKeyConflict !== null || showCheatsheet;
+  const railVisible = showImageFilter && !overviewDialogOpen;
   useLayoutEffect(() => {
     if (view !== 'overview' || !overviewAreaRef.current) return;
     const area = overviewAreaRef.current;
@@ -904,7 +910,7 @@ export function Tag() {
     enterFocus,
     closeFocus,
     isModalOpen: () =>
-      (showImageFilter && !railDocked) ||
+      (railVisible && !railDocked) ||
       modalOpenRef.current ||
       speciesHelpOpenRef.current ||
       showSpeciesHelp ||
@@ -1177,7 +1183,7 @@ export function Tag() {
         {view === 'overview' ? (
           <div className="h-full grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] min-h-0 overflow-y-auto lg:overflow-visible">
             <div ref={overviewAreaRef} className="flex min-w-0 min-h-[60svh] lg:min-h-0">
-              <FindFilterRail open={showImageFilter} docked={railDocked} onClose={closeImageFilter}
+              <FindFilterRail open={railVisible} docked={railDocked} onClose={closeImageFilter}
                 findRef={imgSearchRef} query={imgQuery} setQuery={setImgQuery}
                 position={matchPos} matchCount={matches.length} jump={jumpToMatch}
                 filter={imageFilter} setFilter={setImageFilter} shown={visibleIndices.length} total={list.length} />
