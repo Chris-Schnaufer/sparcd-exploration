@@ -80,11 +80,72 @@ Feature: Find the upload that needs tagging
     And it shows the image count and how many of those images already carry a species
 
   @unmapped
+  Scenario: The Location column pairs the location name with its plain site ID
+    Given a collection is selected
+    Then the upload row shows the location name followed by its site ID
+
+  @unmapped
+  Scenario: The Collected column reads the generated upload comment's collected date
+    Given an upload's description records a collection date
+    Then the upload row shows that date in the Collected column
+
+  @unmapped
+  Scenario: A missing or non-standard collected date explains itself on hover and keyboard focus
+    Given a collection is selected
+    Then the upload row's Collected column shows a dash
+    And hovering it explains the date is missing or not in a recognized format
+    And the missing collected date is explained on keyboard focus
+
+  @unmapped
+  Scenario Outline: Legacy or non-string descriptions do not break Browse
+    Given the upload metadata description is "<kind>"
+    Then the upload row's Collected column shows a dash
+    And the missing collected date is explained on keyboard focus
+    And the upload retains its metadata and still opens for tagging
+
+    Examples:
+      | kind    |
+      | omitted |
+      | null    |
+      | number  |
+      | boolean |
+      | array   |
+      | object  |
+
+  @unmapped
+  Scenario Outline: Impossible calendar dates are unavailable rather than normalized
+    Given the upload description contains collected date "<date>"
+    Then the upload row's Collected column shows a dash
+    And the missing collected date is explained on keyboard focus
+
+    Examples:
+      | date       |
+      | 2024-02-30 |
+      | 2023-02-29 |
+      | 2024-04-31 |
+
+  @unmapped
+  Scenario: A real leap date survives appended comments
+    Given the upload description contains collected date "2024-02-29"
+    Then the Collected value is "2024-02-29"
+
+  @unmapped
+  Scenario: Long location names do not hide IDs or other locations
+    Given the upload has long names for multiple locations
+    Then the full location names and both IDs remain readable at desktop and mobile widths
+
+  @unmapped
+  Scenario: Mobile rows label their metadata and explain missing collection dates
+    Given a collection is selected
+    Then mobile upload rows label their fields and explain unavailable collection dates
+
+  @unmapped
   Scenario: Narrow Browse windows retain the upload column
     Given a collection is selected
-    Then at 1440px Browse shows every column
-    And at 1280px Browse yields image counts and tagging progress to the collection rail
-    And at 1100px Browse shows tagging progress but not image counts
+    Then a wide Browse shows every column
+    And a medium Browse yields sync status to the collection rail but keeps tagging progress and the collected date
+    And a compact Browse at an 853px effective viewport keeps Upload and Sync available
+    And a narrower desktop Browse hides tagging progress, collected date and sync together
     And wide Browse gives tagging progress usable space
     And mobile Browse keeps tagging progress aligned
 

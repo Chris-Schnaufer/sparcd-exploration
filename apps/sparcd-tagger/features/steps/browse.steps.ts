@@ -25,6 +25,9 @@ import {
   PREFIX_B,
   LOCATION_NAME,
   PREFIX_F,
+  uploadMetaJson,
+  MEDIA_A,
+  deploymentsCsv,
 } from './support/data';
 import { makeLocalEdit, runLiveSync, waitForDirtyDrafts } from './support/flows';
 
@@ -341,54 +344,207 @@ Then(
   },
 );
 
+Then('the upload row shows the location name followed by its site ID', async ({ page }) => {
+  await expect(uploadRow(page, 'priortagger')).toContainText(`${LOCATION_NAME} (SAN15)`);
+});
+
+Given("an upload's description records a collection date", async ({ page, s3 }) => {
+  s3.put(
+    BUCKET,
+    `${PREFIX_A}UploadMeta.json`,
+    uploadMetaJson({
+      bucket: BUCKET,
+      prefix: PREFIX_A,
+      user: 'priortagger',
+      imageCount: MEDIA_A.length,
+      imagesWithSpecies: 3,
+      description: 'Santa Rita Mountains - San Pedro 15 - 6 images - uploaded 2024-01-15 - collected 2024-01-10',
+    }),
+    'application/json',
+  );
+  await openAppConnected(page);
+  await selectCollection(page);
+});
+
+Then('the upload row shows that date in the Collected column', async ({ page }) => {
+  await expect(uploadRow(page, 'priortagger').locator('[data-column="collected"] [data-collected-value]')).toHaveText('2024-01-10');
+});
+
+Then("the upload row's Collected column shows a dash", async ({ page }) => {
+  await expect(uploadRow(page, 'priortagger').locator('[data-column="collected"] [data-collected-value]').getByText('—', { exact: true })).toBeVisible();
+});
+
+Then('hovering it explains the date is missing or not in a recognized format', async ({ page }) => {
+  await uploadRow(page, 'priortagger').locator('[data-column="collected"]').hover();
+  await expect(uploadRow(page, 'priortagger').locator('[data-column="collected"]')).toHaveAttribute(
+    'title',
+    'Date collected is missing or not in a recognized format',
+  );
+});
+
+Given('the upload metadata description is {string}', async ({ page, s3 }, kind: string) => {
+  const meta: Record<string, unknown> = JSON.parse(uploadMetaJson({
+    bucket: BUCKET, prefix: PREFIX_A, user: 'priortagger', imageCount: MEDIA_A.length,
+    imagesWithSpecies: 3, description: '',
+  }));
+  const values: Record<string, unknown> = {
+    null: null, number: 42, boolean: true,
+    array: ['collected 2024-02-29'], object: { date: 'collected 2024-02-29' },
+  };
+  if (kind === 'omitted') delete meta.description;
+  else {
+    expect(Object.hasOwn(values, kind)).toBe(true);
+    meta.description = values[kind];
+  }
+  s3.put(BUCKET, `${PREFIX_A}UploadMeta.json`, JSON.stringify(meta), 'application/json');
+  await openAppConnected(page);
+  await selectCollection(page);
+});
+
+Then('the upload retains its metadata and still opens for tagging', async ({ page }) => {
+  const row = uploadRow(page, 'priortagger');
+  await expect(row.locator('[data-column="location"]')).toContainText(`${LOCATION_NAME} (SAN15)`);
+  await expect(row.locator('[data-column="tagged-total"]')).toContainText('3 / 6');
+  // Another upload remains usable too: a bad description cannot crash the collection.
+  await expect(uploadRow(page, 'videoproducer')).toBeVisible();
+  await openUpload(page);
+  await expect(gridCell(page, 'IMG001.JPG')).toBeVisible();
+});
+
+Given('the upload description contains collected date {string}', async ({ page, s3 }, date: string) => {
+  s3.put(BUCKET, `${PREFIX_A}UploadMeta.json`, uploadMetaJson({
+    bucket: BUCKET, prefix: PREFIX_A, user: 'priortagger', imageCount: MEDIA_A.length,
+    imagesWithSpecies: 3,
+    description: `Santa Rita Mountains - San Pedro 15 - 6 images - uploaded 2024-01-15 - collected ${date} - optional notes`,
+  }), 'application/json');
+  await openAppConnected(page);
+  await selectCollection(page);
+});
+
+Then('the Collected value is {string}', async ({ page }, date: string) => {
+  await expect(uploadRow(page, 'priortagger').locator('[data-collected-value]')).toHaveText(date);
+});
+
+Then('the missing collected date is explained on keyboard focus', async ({ page }) => {
+  const row = uploadRow(page, 'priortagger');
+  // Reach the upload through the real keyboard order after the filter buttons.
+  await page.getByRole('button', { name: /^Done\s+\d/ }).focus();
+  for (let i = 0; i < 20 && !await row.evaluate(el => el === document.activeElement); i++) {
+    await page.keyboard.press('Tab');
+  }
+  await expect(row).toBeFocused();
+  await expect(row).toHaveAccessibleDescription(/Not yet synced.*Date collected is missing or not in a recognized format/);
+  await expect(row.locator('[data-collected-help]')).toBeVisible();
+});
+
+Given('the upload has long names for multiple locations', async ({ page, s3 }) => {
+  const first = deploymentsCsv().replace(LOCATION_NAME, 'Santa Rita Mountains - San Pedro 15');
+  const second = deploymentsCsv().replaceAll('SAN15', 'SAN99').replace(LOCATION_NAME, 'Northern mountain range camera with a long location name');
+  s3.put(BUCKET, `${PREFIX_A}deployments.csv`, `${first}\n${second}\n${first}`, 'text/csv');
+  await openAppConnected(page);
+  await selectCollection(page);
+});
+
+Then('the full location names and both IDs remain readable at desktop and mobile widths', async ({ page }) => {
+  const row = uploadRow(page, 'priortagger');
+  for (const width of [1600, 1350, 900, 390, 320]) {
+    await page.setViewportSize({ width, height: 950 });
+    const cell = row.locator('[data-column="location"]');
+    await expect(cell).toContainText('Santa Rita Mountains - San Pedro 15');
+    await expect(cell).toContainText('Northern mountain range camera with a long location name');
+    await expect(cell.locator('[data-location-id]')).toHaveText(['(SAN15)', '(SAN99)']);
+    for (const node of [cell, ...await cell.locator('[data-location-id]').all()]) {
+      await expect(node).toBeVisible();
+      expect(await node.evaluate(el => el.scrollWidth <= el.clientWidth && el.scrollHeight <= el.clientHeight)).toBe(true);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+});
+
+Then('mobile upload rows label their fields and explain unavailable collection dates', async ({ page }) => {
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 950 });
+    const row = uploadRow(page, 'priortagger');
+    for (const label of ['Uploaded:', 'Upload:', 'Location:', 'Tagged/Total:', 'Collected:', 'Sync:']) {
+      await expect(row.getByText(label, { exact: true })).toBeVisible();
+    }
+    await expect(row.getByText('Not recorded or unrecognized', { exact: true })).toBeVisible();
+    await expect(row).toHaveAccessibleName(/Uploaded:.*Upload:.*Location:.*Tagged\/Total:.*3 \/ 6.*Collected:.*Not recorded or unrecognized.*Sync:/);
+    await expect(row).toHaveAccessibleDescription(/Not yet synced.*Date collected is missing or not in a recognized format/);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+});
+
 // The table sits beside a 320px rail from 1280px up, so the same viewport
-// width means two different table widths either side of that: 1440px leaves
-// the table 1078px, while 1280px leaves it only 918px.
-Then('at 1440px Browse shows every column', async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
+// width means two different table widths either side of that: 1600px leaves
+// the table 1238px, 1350px leaves it 988px, and 900px (below the rail's `xl`
+// breakpoint) leaves it 858px. Tagged/Total and Collected are promoted ahead
+// of Sync (see tailwind.config.ts), so they reappear before Sync does.
+Then('a wide Browse shows every column', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
   const row = uploadRow(page, 'priortagger');
   const upload = row.locator('[data-column="upload"]');
 
   await expect(upload).toBeVisible();
   await expect(upload).toContainText('priortagger');
-  await expect(row.locator('[data-column="images"]')).toBeVisible();
-  await expect(row.locator('[data-column="tagged"]')).toBeVisible();
+  await expect(row.locator('[data-column="tagged-total"]')).toBeVisible();
+  await expect(row.locator('[data-column="collected"]')).toBeVisible();
   await expect(row.locator('[data-column="sync"]')).toBeVisible();
   await expect.poll(async () => (await upload.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(256);
 });
 
 Then(
-  'at 1280px Browse yields image counts and tagging progress to the collection rail',
+  'a medium Browse yields sync status to the collection rail but keeps tagging progress and the collected date',
   async ({ page }) => {
-    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.setViewportSize({ width: 1350, height: 900 });
     const row = uploadRow(page, 'priortagger');
     const upload = row.locator('[data-column="upload"]');
 
     await expect(upload).toBeVisible();
     await expect(upload).toContainText('priortagger');
-    await expect(row.locator('[data-column="images"]')).toBeHidden();
-    await expect(row.locator('[data-column="tagged"]')).toBeHidden();
-    await expect(row.locator('[data-column="sync"]')).toBeVisible();
+    await expect(row.locator('[data-column="tagged-total"]')).toBeVisible();
+    await expect(row.locator('[data-column="collected"]')).toBeVisible();
+    await expect(row.locator('[data-column="sync"]')).toBeHidden();
     await expect.poll(async () => (await upload.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(256);
   },
 );
 
-Then('at 1100px Browse shows tagging progress but not image counts', async ({ page }) => {
-  await page.setViewportSize({ width: 1100, height: 900 });
+Then('a compact Browse at an 853px effective viewport keeps Upload and Sync available', async ({ page }) => {
+  // 1280px at 150% display scaling is about 853 CSS pixels. This is the
+  // compact pre-940px table band where all status columns should remain usable.
+  await page.setViewportSize({ width: 853, height: 900 });
+  const row = uploadRow(page, 'priortagger');
+  const upload = row.locator('[data-column="upload"]');
+  const sync = row.locator('[data-column="sync"]');
+
+  await expect(upload).toBeVisible();
+  await expect(upload).toContainText('priortagger');
+  await expect(row.locator('[data-column="tagged-total"]')).toBeVisible();
+  await expect(row.locator('[data-column="collected"]')).toBeVisible();
+  await expect(sync).toBeVisible();
+  await expect(sync).toContainText('local-only');
+  await expect.poll(async () => (await upload.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(160);
+  await expect.poll(async () => (await sync.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(124);
+  expect(await row.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+Then('a narrower desktop Browse hides tagging progress, collected date and sync together', async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 900 });
   const row = uploadRow(page, 'priortagger');
   const upload = row.locator('[data-column="upload"]');
 
   await expect(upload).toBeVisible();
   await expect(upload).toContainText('priortagger');
-  await expect(row.locator('[data-column="images"]')).toBeHidden();
-  await expect(row.locator('[data-column="tagged"]')).toBeVisible();
-  await expect(row.locator('[data-column="sync"]')).toBeVisible();
+  await expect(row.locator('[data-column="tagged-total"]')).toBeHidden();
+  await expect(row.locator('[data-column="collected"]')).toBeHidden();
+  await expect(row.locator('[data-column="sync"]')).toBeHidden();
   await expect.poll(async () => (await upload.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(256);
 });
 
 Then('wide Browse gives tagging progress usable space', async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
-  const tagged = uploadRow(page, 'priortagger').locator('[data-column="tagged"]');
+  await page.setViewportSize({ width: 1600, height: 900 });
+  const tagged = uploadRow(page, 'priortagger').locator('[data-column="tagged-total"]');
 
   await expect(tagged).toBeVisible();
   await expect(tagged).toContainText('3 / 6');
@@ -400,7 +556,7 @@ Then('wide Browse gives tagging progress usable space', async ({ page }) => {
 
 Then('mobile Browse keeps tagging progress aligned', async ({ page }) => {
   await page.setViewportSize({ width: 767, height: 900 });
-  const tagged = uploadRow(page, 'priortagger').locator('[data-column="tagged"]');
+  const tagged = uploadRow(page, 'priortagger').locator('[data-column="tagged-total"]');
   await expect(tagged).toBeVisible();
   await expect(tagged).toHaveCSS('display', 'flex');
 });
@@ -534,7 +690,7 @@ async function expectRowPill(
         const content = await uploadRow(page, user).locator('[data-column="sync"]').evaluate((cell) => {
           const copy = cell.cloneNode(true) as HTMLElement;
           copy.querySelectorAll('[aria-hidden="true"]').forEach((glyph) => glyph.remove());
-          return copy.textContent?.trim() ?? '';
+          return copy.textContent?.replace(/^Sync:\s*/, '').trim() ?? '';
         });
         if (content === text) return text;
         await sectionTab(page, 'Settings').click();
@@ -570,7 +726,7 @@ async function checkSyncExplanation(page: import('@playwright/test').Page, user:
     const pill = row.locator('[data-column="sync"] span[title]');
     await pill.hover();
     await expect(pill).toHaveAttribute('title', explanation);
-    await expect(row).toHaveAccessibleDescription(explanation);
+    await expect(row).toHaveAccessibleDescription(new RegExp(escapeRegExp(explanation)));
     await row.focus();
     await expect(row).toBeFocused();
     const tooltip = page.getByRole('tooltip');
@@ -586,6 +742,10 @@ async function checkSyncExplanation(page: import('@playwright/test').Page, user:
     await page.getByLabel('Filter collections').focus();
     await expect(page.getByRole('tooltip')).toHaveCount(0);
   }
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 Then('its unsynced explanation is available on hover and keyboard focus', async ({ page }) => {
