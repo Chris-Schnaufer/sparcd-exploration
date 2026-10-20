@@ -222,10 +222,6 @@ Then('the species panel keeps the width that was chosen', async ({ page, scratch
   expect(species.width).toBeCloseTo(scratch.speciesWidthChosen as number, 0);
 });
 
-Given('the viewport is narrowed to a phone size', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-});
-
 When("the species panel's divider is dragged shorter", async ({ page, scratch }) => {
   scratch.speciesSizeBefore = (await page.getByTestId('focus-species-pane').boundingBox())!.height;
   scratch.canvasSizeBefore = (await page.getByTestId('focus-drop-zone').boundingBox())!.height;

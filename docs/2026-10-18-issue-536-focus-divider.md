@@ -14,3 +14,17 @@ Coverage includes mouse bounds, keyboard image-identity preservation, horizontal
 - The final two keyboard/pointer tests also passed after adding all-four-arrow, unrelated-pointer, and lost-capture assertions.
 - All 294 Tagger unit tests, TypeScript, production build, and diff checks passed (existing bundle-size warning).
 - The full Tagger BDD suite was not rerun for this follow-up.
+
+## Main integration and duplicate step — October 20, 2026
+
+Merged main through `7f7c1e9`, including the Adjust placement and Keep values
+changes from #569/#570. BDD generation reproduced Juli4nG’s reported ambiguous
+phone-size step. Removed #571’s duplicate Given definition and retained main’s
+identical shared When definition; both scenarios continue to use it.
+
+BDD generation now passes. All 49 H1 scenarios passed without retries in
+independent actual Google Chrome on isolated port 5357 (1.3 minutes), covering
+the divider together with responsive Adjust placement, image refitting and
+Keep values keyboard behavior. All 347 Tagger unit tests, TypeScript, production
+build and diff checks passed. Temporary Chrome configuration was restored.
+The full Tagger BDD suite was not rerun for this integration.
