@@ -433,7 +433,7 @@ Then('the missing collected date is explained on keyboard focus', async ({ page 
     await page.keyboard.press('Tab');
   }
   await expect(row).toBeFocused();
-  await expect(row).toHaveAccessibleDescription('Date collected is missing or not in a recognized format');
+  await expect(row).toHaveAccessibleDescription(/Not yet synced.*Date collected is missing or not in a recognized format/);
   await expect(row.locator('[data-collected-help]')).toBeVisible();
 });
 
@@ -470,7 +470,7 @@ Then('mobile upload rows label their fields and explain unavailable collection d
     }
     await expect(row.getByText('Not recorded or unrecognized', { exact: true })).toBeVisible();
     await expect(row).toHaveAccessibleName(/Uploaded:.*Upload:.*Location:.*Tagged\/Total:.*3 \/ 6.*Collected:.*Not recorded or unrecognized.*Sync:/);
-    await expect(row).toHaveAccessibleDescription('Date collected is missing or not in a recognized format');
+    await expect(row).toHaveAccessibleDescription(/Not yet synced.*Date collected is missing or not in a recognized format/);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   }
 });
@@ -690,7 +690,7 @@ async function expectRowPill(
         const content = await uploadRow(page, user).locator('[data-column="sync"]').evaluate((cell) => {
           const copy = cell.cloneNode(true) as HTMLElement;
           copy.querySelectorAll('[aria-hidden="true"]').forEach((glyph) => glyph.remove());
-          return copy.textContent?.trim() ?? '';
+          return copy.textContent?.replace(/^Sync:\s*/, '').trim() ?? '';
         });
         if (content === text) return text;
         await sectionTab(page, 'Settings').click();
@@ -726,7 +726,7 @@ async function checkSyncExplanation(page: import('@playwright/test').Page, user:
     const pill = row.locator('[data-column="sync"] span[title]');
     await pill.hover();
     await expect(pill).toHaveAttribute('title', explanation);
-    await expect(row).toHaveAccessibleDescription(explanation);
+    await expect(row).toHaveAccessibleDescription(new RegExp(escapeRegExp(explanation)));
     await row.focus();
     await expect(row).toBeFocused();
     const tooltip = page.getByRole('tooltip');
@@ -742,6 +742,10 @@ async function checkSyncExplanation(page: import('@playwright/test').Page, user:
     await page.getByLabel('Filter collections').focus();
     await expect(page.getByRole('tooltip')).toHaveCount(0);
   }
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 Then('its unsynced explanation is available on hover and keyboard focus', async ({ page }) => {

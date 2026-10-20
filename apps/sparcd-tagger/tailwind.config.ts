@@ -13,10 +13,12 @@ import plugin from 'tailwindcss/plugin';
 //      → keeps all status available in the 768–939px compact band
 //   sm  34 + 120 + 256 + 160 + 130 tagged + 90 collected + 5 gaps =  940px → adds Tagged/Total + Collected
 //   md  …                                 + 140 sync      + 1 gap = 1096px → adds Sync
+//   md's lower edge is 1072px so the flexible progress track can compress by 24px
+//      in the 1440px desktop layout while leaving Sync available.
 const browseTableSizes = {
   'browse-compact': '48rem',
   'browse-sm': '58.75rem',
-  'browse-md': '68.5rem',
+  'browse-md': '67rem',
 };
 
 // Field Notebook v2 tokens are driven by CSS variables (see index.css) so the
