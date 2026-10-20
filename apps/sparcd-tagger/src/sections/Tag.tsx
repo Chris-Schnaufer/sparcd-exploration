@@ -2168,6 +2168,11 @@ function isRangeTarget(t: EventTarget | null): boolean {
   return !!el && el.tagName === 'INPUT' && el.type === 'range';
 }
 
+function isKeepValuesTarget(t: EventTarget | null): boolean {
+  const el = t as HTMLInputElement | null;
+  return !!el && el.tagName === 'INPUT' && el.type === 'checkbox' && el.hasAttribute('data-keep-values');
+}
+
 // Every key a native range input responds to itself: arrows step by one,
 // Home/End jump to min/max, Page Up/Down step by a larger increment. Two of
 // these (Page Up/Down) are also tagger burst-navigation hotkeys, so a range
@@ -2269,6 +2274,9 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
   // of being swallowed like a text input's.
   if (isRangeTarget(e.target)) {
     if (RANGE_NAV_KEYS.has(e.key)) return;
+  } else if (isKeepValuesTarget(e.target)) {
+    // Keep native checkbox activation; other keys still operate the workspace.
+    if (e.key === ' ' || e.key === 'Enter') return;
   } else if (isTypingTarget(e.target)) {
     // Any other focused text input suppresses the tagger hotkeys. The
     // Escape/Enter species-filter behavior is scoped to the species filter

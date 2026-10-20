@@ -147,6 +147,7 @@ export function ImageAdjustments({
             >
               <input
                 type="checkbox"
+                data-keep-values
                 aria-describedby={keepValuesHelp}
                 checked={keepValues}
                 onChange={(e) => onKeepValuesChange(e.target.checked)}

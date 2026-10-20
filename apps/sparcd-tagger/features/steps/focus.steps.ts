@@ -14,6 +14,7 @@ import {
 } from './support/world';
 import { BUCKET, PREFIX_A, mediaCsv, MEDIA_A, mediaKey } from './support/data';
 import { makePng } from './support/png';
+import { autoAdvanceCheckbox } from './support/flows';
 
 // --- react-zoom-pan-pinch introspection -------------------------------------
 
@@ -1059,4 +1060,59 @@ Then('the current adjustment values are preserved with Keep values off', async (
   await expect(page.getByLabel('Keep values')).not.toBeChecked();
   await expect(page.getByLabel('Contrast', { exact: true })).toHaveValue('90');
   await expect(page.locator('.react-transform-component img').first()).toHaveAttribute('style', scratch.filterBeforeUncheck as string);
+});
+
+Given('auto-advance is disabled for adjustment shortcut checks', async ({ page }) => {
+  await page.getByRole('button', { name: 'Close Focus', exact: true }).click();
+  await sectionTab(page, 'Settings').click();
+  await autoAdvanceCheckbox(page).uncheck();
+  await sectionTab(page, 'Tag').click();
+});
+
+Then('Keep values supports {word} toggling without blocking workspace shortcuts', async ({ page }, activation: string) => {
+  const image = page.locator('.react-transform-component img');
+  const originalSrc = await image.getAttribute('src');
+  const originalName = await image.getAttribute('alt');
+  expect(originalSrc).toBeTruthy();
+  expect(originalName).toBeTruthy();
+  const count = page.getByRole('spinbutton', { name: 'Count for Mule Deer', exact: true });
+  let expectedCount = Number(await count.inputValue());
+
+  for (const checked of [true, false]) {
+    await adjustToggle(page).click();
+    await expect(page.getByLabel('Brightness', { exact: true })).toBeFocused();
+    await page.getByLabel('Contrast', { exact: true }).fill('90');
+    const checkbox = page.getByRole('checkbox', { name: 'Keep values', exact: true });
+    if (activation === 'pointer') {
+      await page.getByText('Keep values', { exact: true }).click();
+    } else {
+      await page.getByLabel('Brightness', { exact: true }).focus();
+      for (let tab = 0; tab < 4; tab++) await page.keyboard.press('Tab');
+      await expect(checkbox).toBeFocused();
+      await page.keyboard.press('Space');
+    }
+    await expect(checkbox).toBeFocused();
+    await expect(checkbox).toBeChecked({ checked });
+    await expect(image).toHaveAttribute('src', originalSrc!);
+    await expect(count).toHaveValue(String(expectedCount));
+    await page.keyboard.press('Enter');
+    await expect(checkbox).toBeFocused();
+    await expect(checkbox).toBeChecked({ checked });
+
+    await page.keyboard.press('d');
+    await expect(count).toHaveValue(String(++expectedCount));
+    await expect(checkbox).toBeFocused();
+    await expect(checkbox).toBeChecked({ checked });
+    await page.keyboard.press('ArrowRight');
+    await expect(image).not.toHaveAttribute('src', originalSrc!);
+    await expect(image).not.toHaveAttribute('alt', originalName!);
+    await expect.poll(() => image.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth > 0)).toBe(true);
+    await expect(adjustmentPanel(page)).toHaveCount(0);
+    await page.keyboard.press('ArrowLeft');
+    await expect(image).toHaveAttribute('src', originalSrc!);
+    await expect(image).toHaveAttribute('alt', originalName!);
+    await expect(count).toHaveValue(String(expectedCount));
+    const style = await image.getAttribute('style');
+    expect(style).toContain(checked ? 'contrast(180%)' : 'contrast(100%)');
+  }
 });

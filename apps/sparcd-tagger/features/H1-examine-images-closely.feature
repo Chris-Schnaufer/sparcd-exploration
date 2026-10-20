@@ -253,3 +253,14 @@ Feature: Examine an image closely enough to catch every species
     Then the current adjustment values are preserved with Keep values off
     When another image is opened in the Focus view
     Then the adjustments have reset to neutral
+
+  @unmapped
+  Scenario Outline: Keep values leaves species and navigation shortcuts available
+    Given auto-advance is disabled for adjustment shortcut checks
+    And an image is shown in the Focus view
+    Then Keep values supports <activation> toggling without blocking workspace shortcuts
+
+    Examples:
+      | activation |
+      | pointer    |
+      | keyboard   |
