@@ -57,7 +57,7 @@ for (const installed of [false, true]) test(`${installed ? 'PWA' : 'browser'} co
     await app.seedPickedFolder(specs);
     await page.getByRole('button', { name: 'Reselect saved batch folder' }).click();
     await app.waitForInspected();
-    const tag = page.getByRole('button', { name: 'Tag species first', exact: true });
+    const tag = page.getByRole('button', { name: 'Tag species before upload', exact: true });
     await expect(tag).toBeDisabled();
     await expect(tag).toHaveAttribute('aria-describedby', 'species-preparation-help');
     await expect(page.locator('#species-preparation-help')).toContainText('Tagging requires prior online species preparation');

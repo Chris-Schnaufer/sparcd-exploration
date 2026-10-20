@@ -32,7 +32,7 @@ export async function verifyRecoveredUpload(
   expect(record.tags[`SDCARD/${filename}`]).toHaveLength(1);
   expect(record.tags[`SDCARD/${filename}`][0]).toMatchObject({ scientificName: 'Canis latrans', count: 3 });
   await app.continueToUpload();
-  await app.dryRunCheckbox().uncheck();
+  await (await app.dryRunCheckbox()).uncheck();
   await app.startRun();
   await app.waitForRunPhase('done');
   const prefixes = publishedUploads(app);
