@@ -357,6 +357,23 @@ Then('the uploader identity defaults to the access key', async ({ app }) => {
   await expect(app.page.getByPlaceholder('e.g. John Doe')).toHaveValue(ACCESS_KEY);
 });
 
+When('a legacy session-wide uploader identity is present and the page reloads', async ({ app }) => {
+  await app.page.evaluate(() => {
+    sessionStorage.setItem('sparcd-uploader-session', JSON.stringify({
+      state: { uploaderUser: 'Legacy unscoped identity' },
+    }));
+  });
+  await app.reopen();
+  await app.gotoSection('Settings');
+});
+
+Then('the legacy session-wide uploader identity is removed', async ({ app }) => {
+  const persisted = await app.page.evaluate(() =>
+    JSON.parse(sessionStorage.getItem('sparcd-uploader-session') ?? '{}'),
+  );
+  expect(persisted.state).not.toHaveProperty('uploaderUser');
+});
+
 Then('the header shows the access key only in its masked form', async ({ app }) => {
   const header = app.page.locator('header');
   await expect(header).toContainText(`${ACCESS_KEY.slice(0, 2)}…${ACCESS_KEY.slice(-2)}`);

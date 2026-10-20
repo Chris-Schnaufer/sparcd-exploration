@@ -14,6 +14,7 @@ export function Settings() {
   const uploaderUser = useStore((s) => s.uploaderUser);
   const setUploaderUser = useStore((s) => s.setUploaderUser);
   const ensureUploaderIdentity = useStore((s) => s.ensureUploaderIdentity);
+  const identityPersistenceError = useStore((s) => s.identityPersistenceError);
   const concurrencyMode = useStore((s) => s.concurrencyMode);
   const setConcurrencyMode = useStore((s) => s.setConcurrencyMode);
   const concurrency = useStore((s) => s.uploadConcurrency);
@@ -98,22 +99,31 @@ export function Settings() {
           <label className="block">
             <span className="block font-body text-[13px] text-inkSoft mb-1.5">Uploader identity</span>
             <input
+              id="uploader-identity"
               value={uploaderUser}
               onChange={(e) => setUploaderUser(e.target.value)}
               onBlur={ensureUploaderIdentity}
+              aria-describedby={identityPersistenceError
+                ? 'uploader-identity-help uploader-identity-error'
+                : 'uploader-identity-help'}
               placeholder="e.g. John Doe"
               className="w-full border border-rule bg-paper px-3 py-2 font-body text-[14px] text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1"
             />
-            <span className="block font-body text-[12px] text-inkMute mt-1.5">
+            <span id="uploader-identity-help" className="block font-body text-[12px] text-inkMute mt-1.5">
               Used in upload prefixes and object keys as{' '}
               {slug ? (
                 <span className="font-mono text-inkSoft">{slug}</span>
               ) : (
                 <span className="italic">a key-safe slug</span>
               )}
-              . A blank identity defaults to your connected Access key when you leave the field.
+              . A blank identity uses this login's default attribution name, or its Access key ID when whoami is unavailable, after you leave the field.
             </span>
           </label>
+          {identityPersistenceError && (
+            <p id="uploader-identity-error" role="alert" className="font-body text-[12px] text-warn">
+              This identity could not be saved in this browser. It may reset when the page is reloaded.
+            </p>
+          )}
         </div>
       </details>
 

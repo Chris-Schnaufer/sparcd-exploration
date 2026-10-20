@@ -247,7 +247,6 @@ describe('store persistence', () => {
 
     expect(persisted).toEqual({
       elevationUnit: 'meters',
-      uploaderUser: 'Ada Lovelace',
       uploadDescription: 'Sky Island transect',
       uploadCommentDate: null,
       mountainRange: 'Santa Catalina Mountains',
@@ -260,6 +259,40 @@ describe('store persistence', () => {
       concurrencyMode: 'manual',
       uploadConcurrency: 16,
     });
+  });
+});
+
+describe('account-scoped uploader identity', () => {
+  const config = (accessKey: string) => ({
+    endpoint: 'http://localhost',
+    accessKey,
+    secretKey: 'test-secret',
+    region: 'us-east-1',
+    forcePathStyle: true,
+    secure: false,
+  });
+
+  it('loads each login identity on direct login and account replacement', () => {
+    useStore.setState({ s3Config: null, uploaderUser: '' });
+    useStore.getState().connect(config('login-a'), false);
+    useStore.getState().setUploaderUser('Ada');
+    useStore.getState().connect(config('login-b'), false);
+    expect(useStore.getState().uploaderUser).toBe('login-b');
+
+    useStore.getState().setUploaderUser('Grace');
+    useStore.getState().connect(config('login-a'), false);
+    expect(useStore.getState().uploaderUser).toBe('Ada');
+    useStore.getState().connect(config('login-b'), false);
+    expect(useStore.getState().uploaderUser).toBe('Grace');
+  });
+
+  it('uses login identity in new state without persisting it in the tab session', () => {
+    useStore.setState({ s3Config: null, uploaderUser: '' });
+    useStore.getState().connect(config('login-a'), false);
+    useStore.getState().setUploaderUser('Ada');
+    const persisted = JSON.parse(window.sessionStorage.getItem('sparcd-uploader-session')!).state;
+    expect(persisted).not.toHaveProperty('uploaderUser');
+    expect(useStore.getState().uploaderUser).toBe('Ada');
   });
 });
 
@@ -291,13 +324,13 @@ describe('starting a new batch', () => {
     });
     const persisted = JSON.parse(window.sessionStorage.getItem('sparcd-uploader-session')!).state;
     expect(persisted).toMatchObject({
-      uploaderUser: 'Ada Lovelace',
       selectedBucket: null,
       selectedLocationId: null,
       requireCollectionSelection: true,
       uploadDescription: '',
       uploadTimeZone: '',
     });
+    expect(persisted).not.toHaveProperty('uploaderUser');
   });
 });
 

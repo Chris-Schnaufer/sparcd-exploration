@@ -136,11 +136,18 @@ Feature: Connect the uploader to storage and manage the session
     And no result cached under the previous connection is reused
 
   @unmapped
-  Scenario: A blank uploader identity defaults to the connected access key
+  Scenario: An unset uploader identity defaults to the connected login
     Given no uploader identity has been entered
     When a connection is made
     Then the uploader identity defaults to the access key
     And the header shows the access key only in its masked form
+
+  @unmapped
+  Scenario: An unscoped legacy identity is not assigned to the active login
+    Given the uploader is connected
+    When a legacy session-wide uploader identity is present and the page reloads
+    Then the uploader identity defaults to the access key
+    And the legacy session-wide uploader identity is removed
 
   @unmapped
   Scenario: What the tool may read or write is decided by the credentials, not the page

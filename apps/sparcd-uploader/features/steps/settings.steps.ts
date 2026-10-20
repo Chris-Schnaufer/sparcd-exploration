@@ -4,6 +4,21 @@ import { standardBatch } from './batches';
 import { produceCompleteRun, producePartialRun } from './helpers';
 
 const identityField = 'e.g. John Doe';
+const LOGIN_B = 'AKIATESTKEY0002';
+
+async function identityInput(app: import('./app').App) {
+  await app.gotoSection('Settings');
+  return app.page.getByPlaceholder(identityField);
+}
+
+async function connectAs(app: import('./app').App, login: string) {
+  await app.disconnectFromHeader();
+  await expect(app.connectForm()).toBeVisible();
+  await app.fillConnection({ accessKey: login });
+  await app.page.getByLabel('Remember endpoint & access key on this device').check();
+  await app.page.getByRole('button', { name: 'Connect', exact: true }).click();
+  await expect(app.page.getByRole('button', { name: 'Logout' })).toBeVisible();
+}
 
 // --- the default identity --------------------------------------------------
 
@@ -11,6 +26,78 @@ When('an uploader identity is entered in Settings', async ({ app }) => {
   await app.gotoSection('Settings');
   await app.page.getByText('Defaults', { exact: true }).click();
   await app.page.getByPlaceholder(identityField).fill('Ada Lovelace');
+});
+
+When('Login A saves custom identity {string} and reloads', async ({ app }, identity: string) => {
+  const input = await identityInput(app);
+  await input.fill(identity);
+  await input.press('Tab');
+  await app.reopen();
+  await expect(await identityInput(app)).toHaveValue(identity);
+});
+
+When('the Uploader switches to Login B', async ({ app }) => {
+  await connectAs(app, LOGIN_B);
+});
+
+Then("Login B's identity defaults to its login name", async ({ app }) => {
+  await expect(await identityInput(app)).toHaveValue(LOGIN_B);
+});
+
+When('Login B saves custom identity {string}', async ({ app }, identity: string) => {
+  const input = await identityInput(app);
+  await input.fill(identity);
+  await input.press('Tab');
+});
+
+When('the Uploader switches back to Login A', async ({ app }) => {
+  await connectAs(app, ACCESS_KEY);
+});
+
+Then("Login A's custom identity is restored", async ({ app }) => {
+  await expect(await identityInput(app)).toHaveValue('Ada Lovelace');
+});
+
+Then("Login B's custom identity is restored", async ({ app }) => {
+  await expect(await identityInput(app)).toHaveValue('Grace Hopper');
+});
+
+When('a second Uploader tab adopts the same login', async ({ app }) => {
+  app.notes.identitySecondTab = await app.openSecondTab();
+  const second = app.notes.identitySecondTab as import('@playwright/test').Page;
+  await expect(second.getByRole('button', { name: 'Logout' })).toBeVisible();
+});
+
+Then("the second tab shows Login A's custom identity", async ({ app }) => {
+  const second = app.notes.identitySecondTab as import('@playwright/test').Page;
+  await second.locator('nav[aria-label="Sections"]').getByRole('button', { name: 'Settings' }).click();
+  await expect(second.getByPlaceholder(identityField)).toHaveValue('Ada Lovelace');
+});
+
+When('the second tab changes Login A\'s identity to {string}', async ({ app }, identity: string) => {
+  const second = app.notes.identitySecondTab as import('@playwright/test').Page;
+  const input = second.getByPlaceholder(identityField);
+  await input.fill(identity);
+  await input.press('Tab');
+});
+
+Then('the first tab shows Login A\'s updated identity', async ({ app }) => {
+  await expect(await identityInput(app)).toHaveValue('Grace Hopper');
+  const second = app.notes.identitySecondTab as import('@playwright/test').Page;
+  await second.close();
+});
+
+When('the Uploader identity field is cleared', async ({ app }) => {
+  const input = await identityInput(app);
+  await input.fill('');
+});
+
+Then('the field remains blank while it is being edited', async ({ app }) => {
+  await expect(app.page.getByPlaceholder(identityField)).toHaveValue('');
+});
+
+When('the blank Uploader identity field loses focus', async ({ app }) => {
+  await app.page.getByPlaceholder(identityField).press('Tab');
 });
 
 Then('the tool shows the key-safe form of it that will appear in upload paths', async ({ app }) => {

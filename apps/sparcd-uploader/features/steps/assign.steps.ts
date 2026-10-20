@@ -73,10 +73,19 @@ Then('the Continue gate never has to ask for a collection', async ({ app }) => {
 Given('the uploader identity is empty', async ({ app }) => {
   await app.chooseDeployment('Bear Canyon');
   await app.setUploader('');
+  await expect(app.page.getByPlaceholder('e.g. John Doe').first()).toHaveValue('');
 });
 
 Then('it states that an uploader identity must be set first', async ({ app }) => {
   await expect(app.continueButton()).toHaveAttribute('title', 'Set an uploader identity first');
+});
+
+When('the blank Assign identity field loses focus', async ({ app }) => {
+  await app.page.getByPlaceholder('e.g. John Doe').first().press('Tab');
+});
+
+Then('Assign restores the connected default identity', async ({ app }) => {
+  await expect(app.page.getByPlaceholder('e.g. John Doe').first()).toHaveValue(ACCESS_KEY);
 });
 
 // --- the collection list ---------------------------------------------------
