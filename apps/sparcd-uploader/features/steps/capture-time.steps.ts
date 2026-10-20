@@ -92,7 +92,7 @@ Given('a file whose camera wrote a wall-clock time', async ({ app }) => {
 
 When('the batch is published', async ({ app }) => {
   await app.continueToUpload();
-  await app.dryRunCheckbox().uncheck();
+  await (await app.dryRunCheckbox()).uncheck();
   await app.startRun();
   await app.waitForRunPhase('done');
 });

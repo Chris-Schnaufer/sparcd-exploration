@@ -194,7 +194,7 @@ Feature: Describe a batch with its collection and a camera location
     When Upload is opened and another day arrives before starting
     Then the Upload preview keeps the original preview date
     When the batch is uploaded after midnight
-    Then the saved comment matches the Upload preview and keeps its original preview date
+    Then the saved comment includes optional notes and keeps its original preview date
 
   @unmapped
   Scenario: The images shorthand counts all valid uploaded files including videos

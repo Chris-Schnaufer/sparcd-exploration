@@ -102,7 +102,11 @@ test('uploads the fixed corpus through the real app', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Continue' })).toBeEnabled();
   await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByRole('heading', { name: 'Upload', exact: true })).toBeVisible();
-  const dryRun = page.getByRole('checkbox');
+  const advanced = page.getByRole('button', { name: 'Advanced', exact: true });
+  await expect(advanced).toHaveAttribute('aria-expanded', 'false');
+  await advanced.click();
+  const dryRun = page.getByRole('checkbox', { name: 'Test the upload, nothing is written', exact: true });
+  await expect(dryRun).toBeVisible();
   if (await dryRun.isChecked()) await dryRun.uncheck();
   await page.getByRole('button', { name: 'Start upload' }).click();
   await expect(page.getByRole('button', { name: 'Next batch' })).toBeVisible({ timeout: 120_000 });

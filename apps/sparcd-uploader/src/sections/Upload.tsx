@@ -37,44 +37,6 @@ const concurrencyControl = (): ConcurrencyControl =>
     ? { mode: 'manual', get: () => useStore.getState().uploadConcurrency }
     : { mode: 'adaptive' };
 
-// What "adaptive" means, on demand — the explanation only matters the first time
-// someone wonders, so it stays behind the 'i' rather than sitting in the layout.
-function AdaptiveInfo() {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLSpanElement>(null);
-
-  // Close on outside click.
-  useEffect(() => {
-    if (!open) return;
-    const onDoc = (e: PointerEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('pointerdown', onDoc);
-    return () => document.removeEventListener('pointerdown', onDoc);
-  }, [open]);
-
-  return (
-    <span ref={rootRef} className="relative inline-flex">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        aria-label="About adaptive concurrency"
-        className="shrink-0 min-w-11 min-h-11 sm:min-w-5 sm:min-h-5 grid place-items-center border border-rule text-inkSoft hover:text-ink hover:border-ink [@media(hover:none)]:text-ink [@media(hover:none)]:border-ink text-[11px] font-mono focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
-      >
-        i
-      </button>
-      {open && (
-        <span className="absolute left-0 top-full z-10 mt-1 block w-[min(22rem,calc(100vw-2.5rem))] border border-rule bg-panel px-3 py-2 font-body text-[12px] leading-[1.5] text-inkSoft">
-          Adaptive probes different lane counts against measured throughput and keeps whichever is
-          fastest. The lane count it has settled on shows here while a run is in flight. To pin a
-          fixed number instead, switch to manual in Settings.
-        </span>
-      )}
-    </span>
-  );
-}
-
 const uploadConnectivityStatusId = 'upload-connectivity-status';
 
 function UploadConnectivityStatus({
@@ -135,9 +97,6 @@ export function Upload() {
   const selectedBucket = useStore((s) => s.selectedBucket);
   const dryRun = useStore((s) => s.dryRun);
   const setDryRun = useStore((s) => s.setDryRun);
-  const concurrencyMode = useStore((s) => s.concurrencyMode);
-  const concurrency = useStore((s) => s.uploadConcurrency);
-  const setConcurrency = useStore((s) => s.setUploadConcurrency);
   const nextBatch = useStore((s) => s.nextBatch);
   const flipId = useStore((s) => s.flipId);
   const fileAccessMode = useStore((s) => s.fileAccessMode);
@@ -154,27 +113,15 @@ export function Upload() {
     collections.data?.find((c) => c.key === selectedBucket || c.bucket === selectedBucket) ?? null;
   const effectiveDryRun = dryRun;
 
-  // One browser connection per origin the blob lanes are built from: the main
-  // endpoint plus each shard proxy port that answered. Asking here also warms
-  // the probe, so a run started now already has the shards that are up. The set
-  // grows as they answer and there is no event for a join, so poll it until the
-  // slowest probe times out.
-  const [connections, setConnections] = useState(1);
+  // Warms the shard connection pool ahead of a real run — probeShardClients
+  // caches per connection, so a run started now already has whichever shards
+  // are up instead of discovering them from scratch at the first PUT.
   useEffect(() => {
-    setConnections(1);
     if (!s3Config || effectiveDryRun) return;
-    const shards = probeShardClients(s3Config);
-    let mounted = true;
-    const joins = setInterval(() => setConnections(shards.live.length), 250);
-    void shards.settled.then((clients) => {
-      clearInterval(joins);
-      if (mounted) setConnections(clients.length);
-    });
-    return () => {
-      mounted = false;
-      clearInterval(joins);
-    };
+    probeShardClients(s3Config);
   }, [s3Config, effectiveDryRun]);
+  const [showComments, setShowComments] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   // A dry run never touches the network (nothing is written), so it's still
   // usable offline — only a real upload/retry needs to be gated.
   const online = useOnline();
@@ -266,6 +213,12 @@ export function Upload() {
   // gap; falling back to Assign here can briefly name a different batch.
   const savedBatch = resumedBatch ?? pendingResume?.session.batch ?? null;
   const isResumed = Boolean(attachedFiles || pendingResume || resumedSessionId);
+  // Resume never borrows metadata from the current wizard, including while
+  // its saved record is loading or when legacy fields are unavailable.
+  const summaryTimeZone = isResumed ? savedBatch?.uploadTimeZone : uploadTimeZone;
+  const summaryMountainRange = isResumed ? savedBatch?.requiredComments?.mountainRange : mountainRange;
+  const summaryDateCollected = isResumed ? savedBatch?.requiredComments?.dateCollected : dateCollected;
+  const summaryComments = isResumed ? savedBatch?.description : description;
   const dest = savedBatch
     ? {
         collectionName:
@@ -455,7 +408,7 @@ export function Upload() {
           <p aria-label="Generated upload comment" className="font-body text-[13px] text-inkSoft">
             {formatUploadComments({
               required: { mountainRange, dateCollected, previewUploadDate: previewUploadDate ?? undefined }, siteName: location.name,
-              imageCount: files.length, uploadDate: new Date(), comments: description,
+              imageCount: files.length, uploadDate: new Date(), comments: '',
             })}
           </p>
         </div>
@@ -477,7 +430,9 @@ export function Upload() {
             <dl className="space-y-1.5 font-body text-[13px]">
               <div className="flex items-baseline gap-3">
                 <dt className="text-inkSoft w-28 shrink-0">Collection</dt>
-                <dd className="text-ink min-w-0 break-words">{dest.collectionName}</dd>
+                <dd className="text-ink min-w-0 break-words">
+                  {dest.collectionName} <span className="font-mono text-inkMute">({dest.collectionUuid})</span>
+                </dd>
               </div>
               {dest.location && (
                 <div className="flex items-baseline gap-3">
@@ -492,23 +447,71 @@ export function Upload() {
               )}
               {dest.folder && (
                 <div className="flex items-baseline gap-3">
-                  <dt className="text-inkSoft w-28 shrink-0">Folder</dt>
+                  <dt className="text-inkSoft w-28 shrink-0">Source folder</dt>
                   <dd className="font-mono text-ink min-w-0 break-all">{dest.folder}</dd>
+                </div>
+              )}
+              {summaryTimeZone && (
+                <div className="flex items-baseline gap-3">
+                  <dt className="text-inkSoft w-28 shrink-0">Timezone</dt>
+                  <dd className="text-ink min-w-0">{summaryTimeZone}</dd>
+                </div>
+              )}
+              {summaryMountainRange?.trim() && (
+                <div className="flex items-baseline gap-3">
+                  <dt className="text-inkSoft w-28 shrink-0">Mountain range</dt>
+                  <dd className="text-ink min-w-0 break-words">{summaryMountainRange}</dd>
+                </div>
+              )}
+              {summaryDateCollected && (
+                <div className="flex items-baseline gap-3">
+                  <dt className="text-inkSoft w-28 shrink-0">Date collected</dt>
+                  <dd className="text-ink min-w-0">{summaryDateCollected}</dd>
                 </div>
               )}
             </dl>
 
+            {summaryComments?.trim() && (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowComments((v) => !v)}
+                  aria-expanded={showComments}
+                  className="inline-flex items-center gap-1.5 font-body text-[13px] text-inkSoft hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                >
+                  <span aria-hidden>{showComments ? '▾' : '▸'}</span>
+                  Comments
+                </button>
+                {showComments && (
+                  <p className="font-body text-[13px] text-inkSoft mt-1.5 whitespace-pre-wrap break-words">{summaryComments}</p>
+                )}
+              </div>
+            )}
+
             {!isResumed && (
-              <label className="flex items-center gap-2.5 font-body text-[14px] text-ink">
-                <input
-                  type="checkbox"
-                  checked={effectiveDryRun}
-                  disabled={anyRunActive}
-                  onChange={(e) => setDryRun(e.target.checked)}
-                  className="accent-accent"
-                />
-                Test the upload, nothing is written
-              </label>
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowAdvanced((v) => !v)}
+                  aria-expanded={showAdvanced}
+                  className="inline-flex items-center gap-1.5 font-body text-[13px] text-inkSoft hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                >
+                  <span aria-hidden>{showAdvanced ? '▾' : '▸'}</span>
+                  Advanced
+                </button>
+                {showAdvanced && (
+                  <label className="flex items-center gap-2.5 font-body text-[14px] text-ink mt-1.5">
+                    <input
+                      type="checkbox"
+                      checked={effectiveDryRun}
+                      disabled={anyRunActive}
+                      onChange={(e) => setDryRun(e.target.checked)}
+                      className="accent-accent"
+                    />
+                    Test the upload, nothing is written
+                  </label>
+                )}
+              </div>
             )}
 
             {snap && (snap.phase === 'error' || snap.phase === 'partial') && !snap.dryRun && (
@@ -530,48 +533,6 @@ export function Upload() {
           />
         )}
 
-        {/* Concurrency sits outside the config gate: a resume handed off from
-            History has no Assign state behind it but still runs lanes. */}
-        {(collection || snap || pendingResume) && (
-          <div className="space-y-1.5">
-            {concurrencyMode === 'adaptive' ? (
-              <div className="flex items-center gap-3">
-                <span className="font-body text-[13px] text-inkSoft w-28">Concurrency</span>
-                <span className="flex items-center gap-2 font-mono text-[13px] text-ink">
-                  adaptive
-                  <AdaptiveInfo />
-                  {running && snap?.lanes ? <span>· {snap.lanes} lanes</span> : null}
-                </span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-3">
-                <label className="font-body text-[13px] text-inkSoft w-28">Concurrency</label>
-                <input
-                  type="range"
-                  min={4}
-                  max={32}
-                  value={concurrency}
-                  onChange={(e) => setConcurrency(Number(e.target.value))}
-                  className="flex-1 accent-accent"
-                />
-                <span className="font-mono text-[13px] text-ink w-8 text-right">{concurrency}</span>
-              </div>
-            )}
-            {concurrencyMode === 'manual' && (
-              <p className="font-body text-[12px] text-inkMute">
-                Changes apply immediately, mid-run. Switch to adaptive tuning in Settings.
-              </p>
-            )}
-            <div className="flex items-center gap-3">
-              <span className="font-body text-[13px] text-inkSoft w-28">Endpoints</span>
-              <span className="font-mono text-[13px] text-ink">
-                {connections} connection{connections === 1 ? '' : 's'}
-                {connections > 1 &&
-                  ` (main + ${connections - 1} shard${connections === 2 ? '' : 's'})`}
-              </span>
-            </div>
-          </div>
-        )}
       </section>
 
       {resumeProblems.length > 0 && (
