@@ -36,6 +36,7 @@ Feature: Assign species to images in an upload
     Given an image is focused
     When the species list's info control is used
     Then a popup explains how to use the species list
+    And clicking inside the popup does not dismiss it
     And it can be dismissed with Escape, its close control, or a click outside
 
   @H2

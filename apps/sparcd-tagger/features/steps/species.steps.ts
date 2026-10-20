@@ -101,9 +101,28 @@ When("the species list's info control is used", async ({ page }) => {
 });
 
 Then('a popup explains how to use the species list', async ({ page }) => {
-  await expect(speciesHelp(page).getByRole('heading', { name: 'Using the species list' })).toBeVisible();
-  await expect(speciesHelp(page).getByText('Applying a species')).toBeVisible();
-  await expect(speciesHelp(page).getByText('Keyboard keys')).toBeVisible();
+  const dialog = speciesHelp(page);
+  await expect(dialog.getByRole('heading', { name: 'Using the species list' })).toBeVisible();
+  await expect(dialog).toContainText('Each row is one species');
+  await expect(dialog.getByRole('heading', { name: 'Applying a species' })).toBeVisible();
+  await expect(dialog).toContainText('Click + to add it to the focused image');
+  await expect(dialog).toContainText('Press its assigned key');
+  await expect(dialog).toContainText('Drag it onto an image');
+  await expect(dialog).toContainText('Type to filter the list, then press Enter');
+  await expect(dialog).toContainText('A ✓ means that species is already on the focused image');
+  await expect(dialog.getByRole('heading', { name: 'Reference photos' })).toBeVisible();
+  await expect(dialog).toContainText('Click a thumbnail to see it enlarged');
+  await expect(dialog.getByRole('heading', { name: 'Keyboard keys' })).toBeVisible();
+  await expect(dialog).toContainText('Hover (or focus) a row to assign or change its key');
+  await expect(dialog).toContainText('A struck-through key means another species is already using it');
+  await expect(dialog.getByRole('heading', { name: 'Recently used' })).toBeVisible();
+  await expect(dialog).toContainText("Species you've applied recently float to the top of the list");
+});
+
+Then('clicking inside the popup does not dismiss it', async ({ page }) => {
+  const dialog = speciesHelp(page);
+  await dialog.getByRole('heading', { name: 'Applying a species' }).click();
+  await expect(dialog).toBeVisible();
 });
 
 Then('it can be dismissed with Escape, its close control, or a click outside', async ({ page }) => {
