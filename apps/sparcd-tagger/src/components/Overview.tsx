@@ -440,13 +440,19 @@ function GridCell({
     ...(hasSpecies(eff) ? ['Has species — one or more species, or an explicit no-species classification'] : []),
     ...(eff.questionable ? ['Questionable'] : []),
   ];
+  const tileLabel = [
+    `Filename: ${img.fileName}`,
+    `Species: ${summarize(eff.observations) || 'untagged'}`,
+    ...(reviewLabel ? [`Review status: ${reviewLabel}`] : []),
+    ...statusLabels,
+  ].join('; ');
   return (
     <button
       {...speciesDropProps(index, onDropSpecies)}
       onClick={(e) => onPick(index, modsOf(e))}
       onDoubleClick={onDrill ? (e) => plainDrill(e, onDrill, index) : undefined}
       aria-current={active ? 'true' : undefined}
-      aria-label={[`Filename: ${img.fileName}`, ...statusLabels].join('; ')}
+      aria-label={tileLabel}
       title={img.fileName}
       className={`group relative flex flex-col text-left border p-1 ${
         selected
