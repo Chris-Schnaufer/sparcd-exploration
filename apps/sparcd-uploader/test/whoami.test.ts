@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { S3Config } from '@sparcd/types';
 import { fetchWhoAmI } from '../src/lib/whoami';
+// @ts-expect-error The production access-service verifier is JavaScript without type declarations.
+import { verifySignature } from '../../sparcd-shard-proxy/access/sigv4.mjs';
 
 const config: S3Config = {
   endpoint: 'https://accounts.example.org',
@@ -21,6 +23,13 @@ describe('signed account-name lookup', () => {
       const headers = new Headers(init?.headers);
       expect(headers.get('authorization')).toMatch(/^AWS4-HMAC-SHA256 Credential=SPKPERSON123\//);
       expect(headers.get('authorization')).not.toContain(config.secretKey);
+      const verified = await verifySignature({
+        method: 'GET', url: new URL(String(_input)), headers, body: new Uint8Array(),
+        lookupSecret: (accessKey: string) => accessKey === config.accessKey ? config.secretKey : null,
+        requireSignedBody: true,
+      });
+      expect(verified.error).toBeUndefined();
+      expect(verified.accessKeyId).toBe(config.accessKey);
       return new Response(JSON.stringify({ id: 'person-123', name: 'Account Name' }), { status: 200 });
     });
     vi.stubGlobal('fetch', fetchMock);

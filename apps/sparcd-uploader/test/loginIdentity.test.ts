@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  loginIdentityPreferenceKey,
   loadLoginIdentity,
   loadLoginIdentityPreference,
   saveLoginIdentityDefault,
@@ -9,12 +10,14 @@ import {
 
 const ACCESS_KEY_A = 'AKIATESTKEY0001';
 const ACCESS_KEY_B = 'AKIATESTKEY0002';
-const keyFor = (login: string) => `sparcd-login-identity-v1:${encodeURIComponent(login)}`;
+const keyFor = loginIdentityPreferenceKey;
 
 function memoryStorage() {
   const records = new Map<string, string>();
   return {
     records,
+    get length() { return records.size; },
+    key: (index: number) => [...records.keys()][index] ?? null,
     getItem: (key: string) => records.get(key) ?? null,
     setItem: (key: string, value: string) => void records.set(key, value),
     removeItem: (key: string) => void records.delete(key),
@@ -55,6 +58,19 @@ afterEach(() => {
 });
 
 describe('shared per-login identity preference', () => {
+  it('discards exposed legacy records and keeps login IDs out of persisted keys and fallback values', () => {
+    storage.records.set(`sparcd-login-identity-v1:${ACCESS_KEY_A}`, JSON.stringify({ version: 1, identity: 'Old Custom' }));
+    storage.records.set(`sparcd-login-identity-v1:${ACCESS_KEY_B}`, JSON.stringify({ version: 1, defaultIdentity: ACCESS_KEY_B }));
+    expect(loadLoginIdentity(ACCESS_KEY_A)).toBe('');
+    expect([...storage.records.keys()]).toEqual([]);
+    saveLoginIdentityDefault(ACCESS_KEY_A, ACCESS_KEY_A, 'access-key');
+    expect(loadLoginIdentity(ACCESS_KEY_A)).toBe(ACCESS_KEY_A);
+    expect(JSON.stringify([...storage.records])).not.toContain(ACCESS_KEY_A);
+    saveLoginIdentity(ACCESS_KEY_A, ACCESS_KEY_A);
+    expect(loadLoginIdentity(ACCESS_KEY_A)).toBe(ACCESS_KEY_A);
+    expect(JSON.stringify([...storage.records])).not.toContain(ACCESS_KEY_A);
+  });
+
   it('keeps an unresolved default blank and stores custom identities separately per login', () => {
     expect(loadLoginIdentity(ACCESS_KEY_A)).toBe('');
     expect(loadLoginIdentity(ACCESS_KEY_B)).toBe('');
@@ -63,7 +79,7 @@ describe('shared per-login identity preference', () => {
     expect(loadLoginIdentity(ACCESS_KEY_A)).toBe('Ada Lovelace');
     expect(loadLoginIdentity(ACCESS_KEY_B)).toBe('');
     expect(JSON.parse(storage.records.get(keyFor(ACCESS_KEY_A))!)).toEqual({
-      version: 1,
+      version: 2,
       identity: 'Ada Lovelace',
     });
     expect(storage.records.has(keyFor(ACCESS_KEY_B))).toBe(false);
@@ -128,8 +144,8 @@ describe('shared per-login identity preference', () => {
     notify!({ key: 'unrelated-preference' } as StorageEvent);
     notify!({ key: null } as StorageEvent);
 
-    expect(changed).toHaveBeenNthCalledWith(1, { loginIdentifier: ACCESS_KEY_A });
-    expect(changed).toHaveBeenNthCalledWith(2, { loginIdentifier: null });
+    expect(changed).toHaveBeenNthCalledWith(1, { preferenceKey: keyFor(ACCESS_KEY_A) });
+    expect(changed).toHaveBeenNthCalledWith(2, { preferenceKey: null });
     unsubscribe();
     expect(listeners.get('storage')?.size).toBe(0);
   });

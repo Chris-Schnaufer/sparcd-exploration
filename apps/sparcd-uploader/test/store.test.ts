@@ -4,7 +4,7 @@ import type { ProcessResponse } from '../src/lib/processPool';
 import type { FileValidation } from '../src/lib/validation';
 import type { NaiveDateTime } from '../src/lib/exifTime';
 import type { UploadPhase, UploadSnapshot } from '../src/lib/upload';
-import { saveLoginIdentityDefault } from '../../../packages/auth-ui/src/loginIdentity';
+import { loginIdentityPreferenceKey, saveLoginIdentityDefault } from '../../../packages/auth-ui/src/loginIdentity';
 
 const storage = () => {
   const m = new Map<string, string>();
@@ -81,6 +81,7 @@ beforeEach(() => {
     s3Config: null,
     uploaderUser: '',
     identityPersistenceError: false,
+    identityUnsavedCustom: null,
     identityResolutionStatus: 'idle',
     identityResolutionError: null,
     files: [],
@@ -589,6 +590,26 @@ describe('connected identity fallback', () => {
     expect(useStore.getState()).toMatchObject({ uploaderUser: '', identityResolutionStatus: 'error' });
   });
 
+  it.each([200, 403])('preserves an unsaved custom name when a pending lookup completes with %s and when retry starts', async (status) => {
+    useStore.setState({ s3Config: config, connectionId: 84, uploaderUser: '' });
+    const write = vi.spyOn(window.localStorage, 'setItem').mockImplementation(() => { throw new Error('storage full'); });
+    let respond!: (response: Response) => void;
+    const fetchMock = vi.fn(() => new Promise<Response>((resolve) => { respond = resolve; }));
+    vi.stubGlobal('fetch', fetchMock);
+    const lookup = useStore.getState().refreshUploaderIdentity();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    useStore.getState().setUploaderUser('Unsaved Custom Name');
+    respond(new Response(status === 200 ? JSON.stringify({ id: 'person', name: 'Default Name' }) : 'denied', { status }));
+    await lookup;
+    expect(useStore.getState()).toMatchObject({ uploaderUser: 'Unsaved Custom Name', identityPersistenceError: true });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('denied', { status: 403 })));
+    const retry = useStore.getState().refreshUploaderIdentity();
+    expect(useStore.getState().uploaderUser).toBe('Unsaved Custom Name');
+    await retry;
+    expect(useStore.getState().uploaderUser).toBe('Unsaved Custom Name');
+    write.mockRestore();
+  });
+
   it('refreshes the cached account-name default without affecting the login key', async () => {
     useStore.setState({ s3Config: config, connectionId: 83, uploaderUser: 'Previous Name' });
     saveLoginIdentityDefault('storage-user', 'Previous Name', 'whoami');
@@ -598,6 +619,6 @@ describe('connected identity fallback', () => {
     )));
     await useStore.getState().refreshUploaderIdentity();
     expect(useStore.getState()).toMatchObject({ uploaderUser: 'Updated Name', identityResolutionStatus: 'ready' });
-    expect(JSON.parse(window.localStorage.getItem('sparcd-login-identity-v1:storage-user')!).defaultIdentity).toBe('Updated Name');
+    expect(JSON.parse(window.localStorage.getItem(loginIdentityPreferenceKey('storage-user'))!).defaultIdentity).toBe('Updated Name');
   });
 });

@@ -34,7 +34,7 @@ function amzDate(date: Date): { timestamp: string; day: string } {
 
 async function signedHeaders(url: URL, config: S3Config, date = new Date()): Promise<Record<string, string>> {
   const { timestamp, day } = amzDate(date);
-  const canonicalHeaders = `host:${url.host}\nx-amz-content-sha256:${EMPTY_SHA256}\nx-amz-date:${timestamp}`;
+  const canonicalHeaders = `host:${url.host}\nx-amz-content-sha256:${EMPTY_SHA256}\nx-amz-date:${timestamp}\n`;
   const signedHeaders = 'host;x-amz-content-sha256;x-amz-date';
   const canonicalRequest = [
     'GET',
