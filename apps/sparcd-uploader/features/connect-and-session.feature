@@ -137,17 +137,47 @@ Feature: Connect the uploader to storage and manage the session
     And no result cached under the previous connection is reused
 
   @unmapped
-  Scenario: An unset uploader identity defaults to the connected login
+  Scenario: An unset uploader identity uses the confirmed Access-key fallback
     Given no uploader identity has been entered
     When a connection is made
-    Then the uploader identity defaults to the access key
+    Then the uploader identity defaults to the Access key after route absence is confirmed
     And the header shows the access key only in its masked form
+
+  @unmapped
+  Scenario: The access-service account name is the per-login default across reload and tab adoption
+    Given the account-name endpoint returns "Research Account" before login
+    When a connection is made
+    Then the uploader identity defaults to "Research Account"
+    And the account-name default is stored under the connected login
+    When the same connected session is restored
+    Then the uploader identity defaults to "Research Account"
+    When a second Uploader tab adopts the connection
+    Then the second tab defaults to "Research Account"
+
+  @unmapped
+  Scenario: A whoami authorization failure is not treated as an unsupported route
+    Given the account-name endpoint rejects the login with AccessDenied
+    When a connection is made
+    Then Settings shows the account-name error and no Access-key fallback
+    Given the account-name endpoint now returns "Research Account"
+    When the account-name lookup is retried
+    Then the uploader identity defaults to "Research Account"
+
+  @unmapped
+  Scenario: Upload attribution stays unavailable until a custom or resolved identity exists
+    Given the account-name endpoint rejects the login with AccessDenied
+    When a connection is made
+    And the account-name error leaves the identity unresolved
+    When Assign is opened without a custom identity
+    Then continuing to upload is disabled because attribution is unresolved
+    When the uploader enters custom identity "Field Researcher"
+    Then continuing to upload is enabled with the custom identity
 
   @unmapped
   Scenario: An unscoped legacy identity is not assigned to the active login
     Given the uploader is connected
     When a legacy session-wide uploader identity is present and the page reloads
-    Then the uploader identity defaults to the access key
+    Then the uploader identity defaults to the Access key after route absence is confirmed
     And the legacy session-wide uploader identity is removed
 
   @unmapped

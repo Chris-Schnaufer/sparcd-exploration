@@ -7,8 +7,9 @@ import {
   saveSharedConnection,
   clearSharedConnection,
   subscribeSharedConnection,
-  loadLoginIdentity,
+  loadLoginIdentityPreference,
   saveLoginIdentity,
+  saveLoginIdentityDefault,
   subscribeLoginIdentityChanges,
   loadSharedTheme,
   saveSharedTheme,
@@ -31,6 +32,7 @@ import { localTimeZone, type NaiveDateTime } from './lib/exifTime';
 import type { ElevationUnit } from './lib/coords';
 import { loadSession } from './lib/db';
 import { resumeUpload } from './lib/upload';
+import { fetchWhoAmI } from './lib/whoami';
 
 export type { ElevationUnit };
 export type Section = 'new' | 'history' | 'settings';
@@ -110,6 +112,8 @@ type UploaderState = {
   flipId: string | null;
   uploaderUser: string; // free-text identity, normalized into a slug for keys
   identityPersistenceError: boolean;
+  identityResolutionStatus: 'idle' | 'loading' | 'ready' | 'error';
+  identityResolutionError: string | null;
   selectedLocationId: string | null; // chosen deployment location ID (Assign)
   selectedBucket: string | null; // selected collection key `${bucket}::${uuid}` (Assign)
   requireCollectionSelection: boolean; // keep a new batch visibly unassigned
@@ -200,6 +204,7 @@ type UploaderState = {
   resetBatch: () => void;
   setUploaderUser: (value: string) => void;
   ensureUploaderIdentity: () => void;
+  refreshUploaderIdentity: () => Promise<void>;
   setSelectedLocationId: (id: string | null) => void;
   setSelectedBucket: (bucket: string | null) => void;
   setUploadDescription: (value: string) => void;
@@ -233,6 +238,8 @@ function disconnectedState(s: UploaderState): Partial<UploaderState> {
     requireCollectionSelection: false,
     uploaderUser: '',
     identityPersistenceError: false,
+    identityResolutionStatus: 'idle',
+    identityResolutionError: null,
     uploadTimeZone: localTimeZone(),
     pendingResume: null,
     activeRun: null,
@@ -245,6 +252,11 @@ function disconnectedState(s: UploaderState): Partial<UploaderState> {
     historyResumePreparation: null,
     attachedFiles: null,
   };
+}
+
+function savedIdentityFor(loginIdentifier: string | null | undefined): string {
+  const preference = loadLoginIdentityPreference(loginIdentifier);
+  return preference.customIdentity ?? preference.defaultIdentity ?? '';
 }
 
 function sameConnection(a: S3Config | null, b: S3Config): boolean {
@@ -269,6 +281,7 @@ const toEntry = (f: ScannedFile): FileEntry => ({ ...f, processState: 'queued' }
 let fileIndexById: Map<string, number> | null = null;
 let retryPartialRunGeneration = 0;
 let retryPartialRunPending: number | null = null;
+let identityLookupGeneration = 0;
 
 function invalidateRetryPartialRun(): void {
   retryPartialRunGeneration++;
@@ -344,8 +357,10 @@ export const useStore = create<UploaderState>()(
       dirHandle: null,
       fileAccessMode: 'reselect-required',
       flipId: null,
-      uploaderUser: loadLoginIdentity(initialSession?.accessKey),
+      uploaderUser: savedIdentityFor(initialSession?.accessKey),
       identityPersistenceError: false,
+      identityResolutionStatus: 'idle',
+      identityResolutionError: null,
       selectedLocationId: null,
       selectedBucket: null,
       requireCollectionSelection: false,
@@ -376,12 +391,15 @@ export const useStore = create<UploaderState>()(
           s3Config: config,
           connectionId: s.connectionId + 1,
           loginDeferred: false,
-          uploaderUser: loadLoginIdentity(config.accessKey),
+          uploaderUser: savedIdentityFor(config.accessKey),
           identityPersistenceError: false,
+          identityResolutionStatus: 'idle',
+          identityResolutionError: null,
           selectedLocationId: null,
           selectedBucket: null,
           requireCollectionSelection: false,
         }));
+        void get().refreshUploaderIdentity();
       },
       setLoginDeferred: (value) => set({ loginDeferred: value }),
       disconnect: () => {
@@ -675,9 +693,51 @@ export const useStore = create<UploaderState>()(
         set({ uploaderUser: value, identityPersistenceError: !!s3Config && !saved });
       },
       ensureUploaderIdentity: () => {
-        const { s3Config, uploaderUser } = get();
-        if (!s3Config || uploaderUser.trim()) return;
-        set({ uploaderUser: loadLoginIdentity(s3Config.accessKey) });
+        const { s3Config, uploaderUser, identityResolutionStatus } = get();
+        if (!s3Config) return;
+        if (!uploaderUser.trim()) {
+          const savedIdentity = savedIdentityFor(s3Config.accessKey);
+          if (savedIdentity) set({ uploaderUser: savedIdentity });
+        }
+        if (identityResolutionStatus === 'idle') void get().refreshUploaderIdentity();
+      },
+      refreshUploaderIdentity: async () => {
+        const { s3Config, connectionId } = get();
+        if (!s3Config) return;
+        const login = s3Config.accessKey.trim();
+        const requestGeneration = ++identityLookupGeneration;
+        const initialPreference = loadLoginIdentityPreference(login);
+        set({
+          uploaderUser: initialPreference.customIdentity ?? initialPreference.defaultIdentity ?? '',
+          identityResolutionStatus: 'loading',
+          identityResolutionError: null,
+        });
+        try {
+          const result = await fetchWhoAmI(s3Config);
+          const current = get();
+          if (requestGeneration !== identityLookupGeneration || current.connectionId !== connectionId || current.s3Config?.accessKey.trim() !== login) return;
+          const identity = result.kind === 'unsupported' ? login : result.name;
+          const source = result.kind === 'unsupported' ? 'access-key' : 'whoami';
+          const saved = saveLoginIdentityDefault(login, identity, source);
+          const preference = loadLoginIdentityPreference(login);
+          set({
+            uploaderUser: preference.customIdentity ?? preference.defaultIdentity ?? identity,
+            identityPersistenceError: !saved,
+            identityResolutionStatus: 'ready',
+            identityResolutionError: null,
+          });
+        } catch (error) {
+          const current = get();
+          if (requestGeneration !== identityLookupGeneration || current.connectionId !== connectionId || current.s3Config?.accessKey.trim() !== login) return;
+          const preference = loadLoginIdentityPreference(login);
+          set({
+            uploaderUser: preference.customIdentity ?? preference.defaultIdentity ?? '',
+            identityResolutionStatus: 'error',
+            identityResolutionError: error instanceof Error
+              ? error.message
+              : 'The account name could not be loaded. Check the connection and retry.',
+          });
+        }
       },
       setSelectedLocationId: (id) => set({ selectedLocationId: id }),
       setSelectedBucket: (bucket) => set({ selectedBucket: bucket, requireCollectionSelection: false }),
@@ -787,6 +847,8 @@ export const useStore = create<UploaderState>()(
         ...(persistedState as Partial<UploaderState>),
         uploaderUser: currentState.uploaderUser,
         identityPersistenceError: false,
+        identityResolutionStatus: currentState.s3Config ? currentState.identityResolutionStatus : 'idle',
+        identityResolutionError: currentState.identityResolutionError,
       }),
       // Other Assign controls and run options remain tab-scoped and survive a
       // reload. The login identity itself is account-scoped and shared with
@@ -828,21 +890,25 @@ subscribeSharedConnection((cfg) => {
       ...(cfg
         ? {
             s3Config: cfg,
-            uploaderUser: loadLoginIdentity(cfg.accessKey),
+            uploaderUser: savedIdentityFor(cfg.accessKey),
             identityPersistenceError: false,
           }
         : {}),
     }));
     run?.cancel();
+    if (cfg) void useStore.getState().refreshUploaderIdentity();
     return;
   }
   useStore.setState((s) => ({
     s3Config: cfg,
     connectionId: s.connectionId + 1,
     loginDeferred: false,
-    uploaderUser: loadLoginIdentity(cfg.accessKey),
+    uploaderUser: savedIdentityFor(cfg.accessKey),
     identityPersistenceError: false,
+    identityResolutionStatus: 'idle',
+    identityResolutionError: null,
   }));
+  void useStore.getState().refreshUploaderIdentity();
 }, () => useStore.getState().s3Config);
 
 subscribeLoginIdentityChanges(({ loginIdentifier }) => {
@@ -850,8 +916,11 @@ subscribeLoginIdentityChanges(({ loginIdentifier }) => {
   if (!s3Config) return;
   const activeLogin = s3Config.accessKey.trim();
   if (loginIdentifier !== null && loginIdentifier !== activeLogin) return;
+  const savedIdentity = savedIdentityFor(activeLogin);
   useStore.setState({
-    uploaderUser: loadLoginIdentity(activeLogin),
+    uploaderUser: savedIdentity,
     identityPersistenceError: false,
+    ...(!savedIdentity ? { identityResolutionStatus: 'idle' as const } : {}),
   });
+  if (!savedIdentity) void useStore.getState().refreshUploaderIdentity();
 });

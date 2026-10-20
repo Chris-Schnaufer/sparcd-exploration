@@ -23,7 +23,7 @@ Feature: Settings and the data the uploader keeps on this machine
   Scenario: Custom uploader identities follow their connected login
     When Login A saves custom identity "Ada Lovelace" and reloads
     And the Uploader switches to Login B
-    Then Login B's identity defaults to its login name
+    Then Login B's identity defaults to the confirmed endpoint fallback
     When Login B saves custom identity "Grace Hopper"
     And the Uploader switches back to Login A
     Then Login A's custom identity is restored
@@ -39,11 +39,11 @@ Feature: Settings and the data the uploader keeps on this machine
     Then the first tab shows Login A's updated identity
 
   @unmapped
-  Scenario: A blank custom identity remains editable until blur restores the login default
+  Scenario: A blank custom identity remains editable until blur restores the account default
     When the Uploader identity field is cleared
     Then the field remains blank while it is being edited
     When the blank Uploader identity field loses focus
-    Then the uploader identity defaults to the access key
+    Then the uploader identity defaults to the Access key after route absence is confirmed
 
   @unmapped
   @preparation-cleanup
@@ -94,7 +94,7 @@ Feature: Settings and the data the uploader keeps on this machine
   @unmapped
   Scenario: Blank identity falls back on blur and custom identity survives reload
     When identity is cleared, typed, and left blank
-    Then the login default returns on blur
+    Then the account default returns on blur
     When an uploader identity is entered in Settings
     And the custom identity is reloaded
     Then the custom identity is preserved
@@ -102,4 +102,4 @@ Feature: Settings and the data the uploader keeps on this machine
   @unmapped
   Scenario: Restored and shared sessions supply a missing identity
     When the blank identity session is restored and shared
-    Then both sessions default identity from the connected access key
+    Then both sessions use the confirmed Access-key fallback
