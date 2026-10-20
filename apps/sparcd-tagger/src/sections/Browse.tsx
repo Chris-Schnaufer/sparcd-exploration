@@ -11,6 +11,9 @@ import {
   type UploadDraftState,
 } from '../lib/queries';
 import { PawPads } from '../components/Paw';
+import { useFocusExplanation } from '../components/useFocusExplanation';
+import { SYNC_EXPLANATIONS } from '../lib/syncExplanations';
+import { CollectionButton } from '../components/CollectionButton';
 
 const kicker = 'font-body text-[11px] font-[600] tracking-[0.16em] uppercase text-inkSoft';
 
@@ -50,6 +53,7 @@ export function Browse() {
   const draftStates = useUploadDraftStates(connectionId, collectionKey);
 
   const [filter, setFilter] = useState('');
+  const [tooltipCollectionKey, setTooltipCollectionKey] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('all');
 
   const collection = collections.data?.find((c) => c.key === collectionKey);
@@ -106,20 +110,13 @@ export function Browse() {
           <ul>
             {shownCollections.map((c) => (
               <li key={c.key}>
-                <button
-                  onClick={() => selectCollection(c.key)}
-                  aria-current={c.key === collectionKey ? 'true' : undefined}
-                  className={`w-full text-left px-4 py-3.5 border-b border-ruleSoft border-l-2 hover:bg-panelHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
-                    c.key === collectionKey ? 'bg-mark border-l-accent' : 'border-l-transparent'
-                  }`}
-                >
-                  <div className={`text-[14px] text-ink ${c.key === collectionKey ? 'font-[600]' : ''}`}>
-                    {c.name ?? c.bucket}
-                  </div>
-                  {c.organization && (
-                    <div className="text-[12px] text-inkSoft font-mono mt-1">{c.organization}</div>
-                  )}
-                </button>
+                <CollectionButton
+                  collection={c}
+                  selected={c.key === collectionKey}
+                  onSelect={() => selectCollection(c.key)}
+                  tooltipActive={tooltipCollectionKey === c.key}
+                  onTooltipActivate={() => setTooltipCollectionKey(c.key)}
+                />
               </li>
             ))}
           </ul>
@@ -137,30 +134,30 @@ export function Browse() {
         )}
         {collectionKey && (
           <>
-            <nav className="flex items-center gap-1.5 text-[13px] mb-3">
-              <span className="text-inkSoft">Browse</span>
-              <span className="text-inkMute">/</span>
-              <span className="text-ink">{collection?.name ?? collection?.bucket ?? '…'}</span>
-            </nav>
+              <nav className="flex items-center gap-1.5 text-[13px] mb-3">
+                <span className="text-inkSoft">Browse</span>
+                <span className="text-inkMute">/</span>
+                <span className="text-ink">{collection?.name ?? collection?.bucket ?? '…'}</span>
+              </nav>
 
-            <div className="flex items-baseline justify-between gap-4 flex-wrap mb-4">
-              <div>
-                <h1 className="font-display text-[28px] leading-tight text-ink">
-                  Uploads in {collection?.name ?? collection?.bucket ?? 'this collection'}
-                </h1>
-                <p className="text-[13px] text-inkSoft mt-1">
-                  {uploads.isLoading ? (
-                    'Loading uploads…'
-                  ) : (
-                    <>
-                      {uploadCount} upload{uploadCount === 1 ? '' : 's'}
-                      <Dot />
-                      {images.toLocaleString()} image{images === 1 ? '' : 's'}
-                      <Dot />
-                      {tagged.toLocaleString()} tagged
-                      <Dot />
-                      {Math.max(0, images - tagged).toLocaleString()} to go
-                      {anyPending && <span className="text-inkMute"> · tallying…</span>}
+              <div className="flex items-baseline justify-between gap-4 flex-wrap mb-4">
+                <div>
+                  <h1 className="font-display text-[28px] leading-tight text-ink">
+                    Uploads in {collection?.name ?? collection?.bucket ?? 'this collection'}
+                  </h1>
+                  <p className="text-[13px] text-inkSoft mt-1">
+                    {uploads.isLoading ? (
+                      'Loading uploads…'
+                    ) : (
+                      <>
+                        {uploadCount} upload{uploadCount === 1 ? '' : 's'}
+                        <Dot />
+                        {images.toLocaleString()} image{images === 1 ? '' : 's'}
+                        <Dot />
+                        {tagged.toLocaleString()} tagged
+                        <Dot />
+                        {Math.max(0, images - tagged).toLocaleString()} to go
+                        {anyPending && <span className="text-inkMute"> · tallying…</span>}
                     </>
                   )}
                 </p>
@@ -262,13 +259,17 @@ function UploadRow({
   onOpen: () => void;
 }) {
   const { date, time, user } = parseStamp(stamp);
+  const help = useFocusExplanation(SYNC_EXPLANATIONS[draftState ?? 'local-only']);
   const s = query?.data;
   const loading = query?.isLoading ?? true;
   const pct = s && s.imageCount > 0 ? Math.round((s.imagesWithSpecies / s.imageCount) * 100) : 0;
 
   return (
+    <>
     <button
       onClick={onOpen}
+      aria-describedby={help.id}
+      {...help.triggerProps}
       className={`w-full text-left grid ${uploadGrid} gap-2 md:gap-4 items-center px-4 py-3 border-b border-ruleSoft border-l-2 border-l-transparent hover:bg-panelHover hover:border-l-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent group`}
     >
       <span data-column="date" className="font-mono text-[12.5px] text-inkSoft">{date}</span>
@@ -309,6 +310,8 @@ function UploadRow({
         Open →
       </span>
     </button>
+    {help.explanation}
+    </>
   );
 }
 
@@ -318,7 +321,10 @@ function UploadRow({
 function SyncPill({ state }: { state: UploadDraftState | 'local-only' }) {
   if (state === 'local-only') {
     return (
-      <span className="inline-flex items-center gap-1.5 border border-rule px-3 h-7 text-[12px] font-body font-[600] text-inkSoft lowercase">
+      <span
+        className="inline-flex items-center gap-1.5 border border-rule px-3 h-7 text-[12px] font-body font-[600] text-inkSoft lowercase"
+        title={SYNC_EXPLANATIONS['local-only']}
+      >
         <span className="font-mono" aria-hidden>
           ○
         </span>
@@ -328,12 +334,25 @@ function SyncPill({ state }: { state: UploadDraftState | 'local-only' }) {
   }
   const spec =
     state === 'unsynced'
-      ? { bg: 'bg-accent', glyph: '●', label: 'unsynced edits', clip: 'polygon(0 0, calc(100% - 9px) 0, 100% 50%, calc(100% - 9px) 100%, 0 100%)' }
-      : { bg: 'bg-ok', glyph: '✓', label: 'synced', clip: 'polygon(9px 0, 100% 0, 100% 100%, 9px 100%, 0 50%)' };
+      ? {
+          bg: 'bg-accent',
+          glyph: '●',
+          label: 'unsynced edits',
+          clip: 'polygon(0 0, calc(100% - 9px) 0, 100% 50%, calc(100% - 9px) 100%, 0 100%)',
+          explain: SYNC_EXPLANATIONS.unsynced,
+        }
+      : {
+          bg: 'bg-ok',
+          glyph: '✓',
+          label: 'synced',
+          clip: 'polygon(9px 0, 100% 0, 100% 100%, 9px 100%, 0 50%)',
+          explain: SYNC_EXPLANATIONS.synced,
+        };
   return (
     <span
       className={`inline-flex items-center gap-1.5 px-3.5 h-7 text-[12px] font-body font-[600] text-paper lowercase ${spec.bg}`}
       style={{ clipPath: spec.clip }}
+      title={spec.explain}
     >
       <span className="font-mono" aria-hidden>
         {spec.glyph}
@@ -473,22 +492,21 @@ function CollectionPrompt({
         </div>
 
         <p className={`fn-rise ${kicker} block`} style={{ animationDelay: '0.15s' }}>
-          Field Notebook · Tagger
+          Tagger
         </p>
 
         <h1
           className="fn-rise font-display text-[27px] leading-tight text-ink mt-2 text-balance"
           style={{ animationDelay: '0.25s' }}
         >
-          Pick up a collection to begin
+          Pick a collection to begin
         </h1>
 
         <p
           className="fn-rise font-body text-[14px] leading-relaxed text-inkSoft mt-3 mx-auto max-w-[34ch] text-pretty"
           style={{ animationDelay: '0.35s' }}
         >
-          Choose one from the rail on the left to see its uploads — then open an
-          upload to start tagging what the cameras caught.
+          Pick a collection on the left to show the uploads that can be tagged
         </p>
 
         <div

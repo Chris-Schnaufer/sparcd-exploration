@@ -42,3 +42,17 @@ Validation:
 Tests used actual Google Chrome in independent sessions on isolated port 5339;
 the user's browser windows and existing app servers were not reused. The full
 Tagger BDD suite was not rerun for this update.
+
+## Main integration — October 20, 2026
+
+Merged main through `ac6e694`. Resolved overlapping test definitions by retaining
+main’s collection-ID tooltip and count-preview coverage, retaining this PR’s
+cached-species refresh guidance, and removing obsolete diagnostic-footer steps.
+The runtime Browse and Tag changes merged automatically.
+
+Validation: all 306 Tagger unit tests, TypeScript and production build passed.
+All 97 focused Browse, H2 species-assignment and local-batch BDD cases passed
+without retries in independent actual Google Chrome on isolated port 5354
+(2.1 minutes), including retry keyboard controls, footer absence, inherited
+count-preview behavior and local save recovery. Temporary Chrome configuration
+changes were restored; diff checks passed.
