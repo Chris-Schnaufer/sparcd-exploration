@@ -39,6 +39,15 @@ Feature: Describe a batch with its collection and a camera location
     Then Describe restores the connected default identity
 
   @unmapped
+  Scenario: Clearing the uploader identity pauses Assign until blur restores the login default
+    Given the uploader identity is empty
+    Then the Continue button is disabled
+    And it states that an uploader identity must be set first
+    When the blank Assign identity field loses focus
+    Then Assign restores the connected default identity
+    And the Continue button is enabled
+
+  @unmapped
   Scenario: The collections offered are the ones the connection can actually read
     When the Describe step opens
     Then the tool lists the collections readable with the connected credentials
