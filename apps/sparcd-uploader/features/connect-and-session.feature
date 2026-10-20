@@ -53,6 +53,7 @@ Feature: Connect the uploader to storage and manage the session
     When a connection is made
     Then Assign loads collections without losing the batch
     And the deferred inspection finishes after connecting
+    And the connected login identity is available to the preserved batch
 
   @unmapped
   Scenario: Connecting requires an endpoint, an access key and a secret key
