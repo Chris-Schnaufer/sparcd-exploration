@@ -56,3 +56,14 @@ without retries in independent actual Google Chrome on isolated port 5354
 (2.1 minutes), including retry keyboard controls, footer absence, inherited
 count-preview behavior and local save recovery. Temporary Chrome configuration
 changes were restored; diff checks passed.
+
+### Integration after Browse columns and filtering merged
+
+Merged main through `bb94d25` (including #563/#564). Retained both the species
+loading/retry definitions and the newly merged free-text upload filter definitions
+at their shared insertion point. Runtime changes merged automatically.
+
+All 43 combined Browse scenarios passed without retries in independent actual
+Google Chrome on isolated port 5356. All 347 Tagger unit tests, TypeScript,
+production build, BDD generation and diff checks passed. The temporary Chrome
+configuration change was restored.
