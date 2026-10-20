@@ -147,6 +147,110 @@ Then('the Focus image canvas fills the available area beside the species picker'
   expect(canvas.height).toBeGreaterThan(viewport.height * 0.45);
 });
 
+// --- Resizable Focus split (issue #536) -------------------------------------
+
+async function dragDivider(page: Page, deltaX: number, deltaY: number): Promise<void> {
+  const box = (await page.getByRole('separator').boundingBox())!;
+  const startX = box.x + box.width / 2;
+  const startY = box.y + box.height / 2;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + deltaX, startY + deltaY, { steps: 5 });
+  await page.mouse.up();
+}
+
+When("the species panel's divider is dragged narrower", async ({ page, scratch }) => {
+  scratch.speciesSizeBefore = (await page.getByTestId('focus-species-pane').boundingBox())!.width;
+  scratch.canvasSizeBefore = (await page.getByTestId('focus-drop-zone').boundingBox())!.width;
+  await dragDivider(page, 80, 0);
+});
+
+Then('the species panel is narrower and the image canvas is wider', async ({ page, scratch }) => {
+  const species = (await page.getByTestId('focus-species-pane').boundingBox())!;
+  const canvas = (await page.getByTestId('focus-drop-zone').boundingBox())!;
+  expect(species.width).toBeLessThan(scratch.speciesSizeBefore as number);
+  expect(canvas.width).toBeGreaterThan(scratch.canvasSizeBefore as number);
+});
+
+When("the species panel's divider is dragged wider", async ({ page }) => {
+  await dragDivider(page, -200, 0);
+});
+
+Then('the species panel is wider than its default width', async ({ page }) => {
+  const species = (await page.getByTestId('focus-species-pane').boundingBox())!;
+  expect(species.width).toBeGreaterThan(340);
+});
+
+When("the species panel's divider is dragged as far narrow as it will go", async ({ page }) => {
+  await dragDivider(page, 2000, 0);
+});
+
+Then('the species panel stays at least 100px wide', async ({ page }) => {
+  const species = (await page.getByTestId('focus-species-pane').boundingBox())!;
+  expect(species.width).toBeGreaterThanOrEqual(100);
+  expect(species.width).toBeLessThan(150);
+  const pane = page.getByTestId('focus-species-pane');
+  expect(await pane.evaluate(el => el.scrollWidth > el.clientWidth)).toBe(true);
+  await pane.evaluate(el => { el.scrollLeft = el.scrollWidth; });
+  expect(await pane.evaluate(el => el.scrollLeft)).toBeGreaterThan(0);
+  await pane.evaluate(el => { el.scrollLeft = 0; });
+});
+
+When("the species panel's divider is dragged as far wide as it will go", async ({ page }) => {
+  await dragDivider(page, -2000, 0);
+});
+
+Then('the image canvas does not shrink away to nothing', async ({ page }) => {
+  const canvas = (await page.getByTestId('focus-drop-zone').boundingBox())!;
+  expect(canvas.width).toBeGreaterThanOrEqual(200);
+});
+
+Given("the species panel's divider has been dragged to a new width", async ({ page, scratch }) => {
+  await dragDivider(page, 80, 0);
+  scratch.speciesWidthChosen = (await page.getByTestId('focus-species-pane').boundingBox())!.width;
+});
+
+When('Focus is closed and reopened', async ({ page }) => {
+  await page.getByRole('button', { name: 'Close Focus' }).click();
+  await expect(page.getByRole('button', { name: 'Overview', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await focusFrame(page, 'IMG001.JPG');
+  await enterFocusView(page);
+});
+
+Then('the species panel keeps the width that was chosen', async ({ page, scratch }) => {
+  const species = (await page.getByTestId('focus-species-pane').boundingBox())!;
+  expect(species.width).toBeCloseTo(scratch.speciesWidthChosen as number, 0);
+});
+
+When("the species panel's divider is dragged shorter", async ({ page, scratch }) => {
+  scratch.speciesSizeBefore = (await page.getByTestId('focus-species-pane').boundingBox())!.height;
+  scratch.canvasSizeBefore = (await page.getByTestId('focus-drop-zone').boundingBox())!.height;
+  await dragDivider(page, 0, 80);
+});
+
+Then('the species panel is shorter and the image canvas is taller', async ({ page, scratch }) => {
+  const species = (await page.getByTestId('focus-species-pane').boundingBox())!;
+  const canvas = (await page.getByTestId('focus-drop-zone').boundingBox())!;
+  expect(species.height).toBeLessThan(scratch.speciesSizeBefore as number);
+  expect(canvas.height).toBeGreaterThan(scratch.canvasSizeBefore as number);
+});
+
+When("the species panel's divider is focused", async ({ page, scratch }) => {
+  scratch.speciesSizeBefore = (await page.getByTestId('focus-species-pane').boundingBox())!.width;
+  await page.getByRole('separator').focus();
+});
+
+When('the narrowing arrow key is pressed', async ({ page }) => {
+  const before = await page.locator('.react-transform-component img').getAttribute('alt');
+  for (const key of ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'ArrowRight']) await page.keyboard.press(key);
+  await expect(page.locator('.react-transform-component img')).toHaveAttribute('alt', before!);
+});
+
+Then('the species panel becomes narrower', async ({ page, scratch }) => {
+  const species = (await page.getByTestId('focus-species-pane').boundingBox())!;
+  expect(species.width).toBeLessThan(scratch.speciesSizeBefore as number);
+});
+
 Given('Overview thumbnail downloads are delayed', async ({ page, s3 }) => {
   for (const image of MEDIA_A.slice(1)) s3.delay(mediaKey(PREFIX_A, image.file), 2_000);
   await page.reload();
@@ -1178,4 +1282,76 @@ Then('Keep values supports {word} toggling without blocking workspace shortcuts'
     const style = await image.getAttribute('style');
     expect(style).toContain(checked ? 'contrast(180%)' : 'contrast(100%)');
   }
+});
+
+Then('split preferences survive resizing and reload without hiding controls', async ({ page }) => {
+  const divider = page.getByRole('separator'), pane = page.getByTestId('focus-species-pane');
+  await page.setViewportSize({ width: 1920, height: 950 });
+  await divider.focus(); await page.keyboard.press('End');
+  const width = await page.evaluate(() => localStorage.getItem('sparcd-tagger:focus-split:w'));
+  expect(Number(width)).toBeGreaterThan(1000);
+  await page.setViewportSize({ width: 1024, height: 950 });
+  await expect.poll(() => pane.evaluate(el => el.clientWidth)).toBeLessThanOrEqual(776);
+  expect((await page.getByTestId('focus-drop-zone').boundingBox())!.width).toBeGreaterThanOrEqual(239);
+  await page.setViewportSize({ width: 390, height: 600 });
+  await expect(divider).toHaveAttribute('aria-orientation', 'horizontal');
+  await divider.focus(); await page.keyboard.press('Home'); await page.keyboard.press('ArrowUp');
+  const height = await page.evaluate(() => localStorage.getItem('sparcd-tagger:focus-split:h'));
+  expect(height).toBe('116');
+  await page.setViewportSize({ width: 1440, height: 950 });
+  await page.reload(); await openWorkspace(page); await enterFocusView(page);
+  await expect.poll(() => pane.evaluate(el => el.clientWidth)).toBe(Math.min(Number(width), 1192));
+  expect(await page.evaluate(() => localStorage.getItem('sparcd-tagger:focus-split:w'))).toBe(width);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => pane.evaluate(el => el.clientHeight)).toBe(Number(height));
+  const id = await divider.getAttribute('aria-controls');
+  expect(id).toBeTruthy(); await expect(pane).toHaveAttribute('id', id!);
+  await expect(divider).toHaveAttribute('aria-valuenow', height!);
+  await page.setViewportSize({ width: 390, height: 300 });
+  await expect.poll(() => page.getByTestId('focus-drop-zone').evaluate(el => el.clientHeight)).toBeGreaterThanOrEqual(240);
+  await page.getByTestId('species-panel').getByRole('textbox').scrollIntoViewIfNeeded();
+  expect(await pane.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
+});
+
+Then('a touch drag resizes the phone split', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const divider = page.getByRole('separator'), pane = page.getByTestId('focus-species-pane');
+  await expect(divider).toHaveCSS('touch-action', 'none');
+  const before = (await pane.boundingBox())!.height, box = (await divider.boundingBox())!;
+  const cdp = await page.context().newCDPSession(page);
+  try {
+    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true });
+    const x = box.x + box.width / 2, y = box.y + box.height / 2;
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+    for (let delta = 10; delta <= 60; delta += 10) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y + delta }] });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await expect.poll(() => pane.evaluate(el => el.clientHeight)).toBeLessThan(before - 30);
+  } finally { await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false }); await cdp.detach(); }
+});
+
+Then('canceled and unmounted drags stop resizing', async ({ page }) => {
+  const divider = page.getByRole('separator'), pane = page.getByTestId('focus-species-pane');
+  const box = (await divider.boundingBox())!;
+  await page.mouse.move(box.x + 4, box.y + 20); await page.mouse.down();
+  await page.mouse.move(box.x + 50, box.y + 20);
+  const activeSize = (await pane.boundingBox())!.width;
+  await divider.evaluate(el => el.dispatchEvent(new PointerEvent('pointermove', { pointerId: 999, clientX: 0, bubbles: true })));
+  expect((await pane.boundingBox())!.width).toBe(activeSize);
+  await divider.evaluate(el => el.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 1, bubbles: true })));
+  const canceled = (await pane.boundingBox())!.width;
+  await page.mouse.move(box.x + 150, box.y + 20); await page.mouse.up();
+  expect((await pane.boundingBox())!.width).toBe(canceled);
+  const capture = (await divider.boundingBox())!;
+  await page.mouse.move(capture.x + 4, capture.y + 20); await page.mouse.down();
+  await divider.evaluate(el => el.releasePointerCapture(1));
+  const released = (await pane.boundingBox())!.width;
+  await page.mouse.move(capture.x + 80, capture.y + 20); await page.mouse.up();
+  expect((await pane.boundingBox())!.width).toBe(released);
+  const next = (await divider.boundingBox())!;
+  await page.mouse.move(next.x + 4, next.y + 20); await page.mouse.down();
+  await page.keyboard.press('Escape'); await expect(divider).toHaveCount(0);
+  const saved = await page.evaluate(() => localStorage.getItem('sparcd-tagger:focus-split:w'));
+  await page.mouse.move(10, 10); await page.mouse.up();
+  expect(await page.evaluate(() => localStorage.getItem('sparcd-tagger:focus-split:w'))).toBe(saved);
+  await enterFocusView(page); await expect(divider).toBeVisible();
 });

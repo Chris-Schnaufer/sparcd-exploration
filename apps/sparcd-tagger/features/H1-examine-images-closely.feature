@@ -20,6 +20,53 @@ Feature: Examine an image closely enough to catch every species
   Scenario: Focus gives the image the largest available canvas beside the species picker
     Then the Focus image canvas fills the available area beside the species picker
 
+  @unmapped
+  Scenario: The species panel's width can be dragged narrower or wider
+    When the species panel's divider is dragged narrower
+    Then the species panel is narrower and the image canvas is wider
+    When the species panel's divider is dragged wider
+    Then the species panel is wider than its default width
+
+  @unmapped
+  Scenario: The species panel never gives up all its width
+    When the species panel's divider is dragged as far narrow as it will go
+    Then the species panel stays at least 100px wide
+
+  @unmapped
+  Scenario: The image canvas keeps a usable minimum width too
+    When the species panel's divider is dragged as far wide as it will go
+    Then the image canvas does not shrink away to nothing
+
+  @unmapped
+  Scenario: A chosen width is remembered the next time Focus opens
+    Given the species panel's divider has been dragged to a new width
+    When Focus is closed and reopened
+    Then the species panel keeps the width that was chosen
+
+  @unmapped
+  Scenario: On a phone, the same divider resizes height instead of width
+    Given the viewport is narrowed to a phone size
+    When the species panel's divider is dragged shorter
+    Then the species panel is shorter and the image canvas is taller
+
+  @unmapped
+  Scenario: The divider can be resized from the keyboard
+    When the species panel's divider is focused
+    And the narrowing arrow key is pressed
+    Then the species panel becomes narrower
+
+  @unmapped
+  Scenario: Split bounds and preferences survive window changes and reload
+    Then split preferences survive resizing and reload without hiding controls
+
+  @unmapped
+  Scenario: The phone divider supports actual touch input
+    Then a touch drag resizes the phone split
+
+  @unmapped
+  Scenario: Cancellation and Focus closing stop divider drags
+    Then canceled and unmounted drags stop resizing
+
   @H1
   Scenario: An image can be enlarged well beyond its fit-to-screen size
     When the image is zoomed in
