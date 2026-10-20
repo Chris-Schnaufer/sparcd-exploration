@@ -14,6 +14,7 @@ import {
 } from './support/world';
 import { BUCKET, PREFIX_A, mediaCsv, MEDIA_A, mediaKey } from './support/data';
 import { makePng } from './support/png';
+import { autoAdvanceCheckbox } from './support/flows';
 
 // --- react-zoom-pan-pinch introspection -------------------------------------
 
@@ -928,10 +929,12 @@ Then('keyboard focus enters the adjustment panel', async ({ page }) => {
 Then('Tab wraps between the Focus viewer and the adjustment panel', async ({ page }) => {
   const focusDialog = page.getByRole('dialog', { name: 'Focus image viewer' });
   const brightness = page.getByLabel('Brightness');
-  const saturation = page.getByLabel('Saturation');
+  // Reset stays disabled (and so out of the tab order) while the values are
+  // still neutral, so "Keep values" is the last enabled control at this point.
+  const keepValues = page.getByLabel('Keep values');
   await brightness.focus();
   await page.keyboard.press('Shift+Tab');
-  await expect(saturation).toBeFocused();
+  await expect(keepValues).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(page.getByRole('button', { name: 'Close Focus' })).toBeFocused();
   await adjustToggle(page).click();
@@ -1001,6 +1004,32 @@ Given('the display adjustments have been changed in the Focus view', async ({ pa
   await expect(adjustToggle(page).locator('span.bg-accent')).toBeVisible();
 });
 
+Given('"Keep values" is checked', async ({ page }) => {
+  await adjustToggle(page).click();
+  await page.getByLabel('Keep values').check();
+  await expect(page.getByLabel('Keep values')).toBeChecked();
+  await page.keyboard.press('Escape');
+  await expect(adjustmentPanel(page)).toHaveCount(0);
+});
+
+Then('the Keep values checkbox is unchecked', async ({ page }) => {
+  await expect(page.getByLabel('Keep values')).not.toBeChecked();
+  await expect(page.getByLabel('Keep values')).toHaveAccessibleDescription('Keep adjustments when moving to the next or previous image. Turning this off leaves the current image unchanged.');
+});
+
+async function navigateAdjustmentImage(page: Page, direction: 'Next' | 'Previous') {
+  const image = page.locator('.react-transform-component img');
+  const beforeSrc = await image.getAttribute('src');
+  const beforeName = await image.getAttribute('alt');
+  expect(beforeSrc).toBeTruthy();
+  expect(beforeName).toBeTruthy();
+  await page.getByRole('button', { name: `${direction} image`, exact: true }).click();
+  await expect(image).toBeVisible();
+  await expect(image).not.toHaveAttribute('src', beforeSrc!);
+  await expect(image).not.toHaveAttribute('alt', beforeName!);
+  await expect.poll(() => image.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth > 0)).toBe(true);
+}
+
 When('another image is opened in the Focus view', async ({ page, scratch }) => {
   scratch.filterBefore = await page
     .locator('.react-transform-component img')
@@ -1008,14 +1037,27 @@ When('another image is opened in the Focus view', async ({ page, scratch }) => {
     .getAttribute('style');
   await page.keyboard.press('Escape');
   await expect(adjustmentPanel(page)).toHaveCount(0);
-  await page.getByRole('button', { name: 'Next image' }).click();
-  await expect(page.locator('.react-transform-component img')).toBeVisible();
+  await navigateAdjustmentImage(page, 'Next');
 });
 
 Then('the same adjustments still apply', async ({ page, scratch }) => {
   const now = await page.locator('.react-transform-component img').first().getAttribute('style');
   expect(now).toBe(scratch.filterBefore);
   await expect(adjustToggle(page).locator('span.bg-accent')).toBeVisible();
+  await adjustToggle(page).click();
+  for (const [label, value] of [['Brightness', '50'], ['Contrast', '90'], ['Hue', '50'], ['Saturation', '50']]) {
+    await expect(page.getByLabel(label, { exact: true })).toHaveValue(value);
+  }
+});
+
+Then('the adjustments have reset to neutral', async ({ page }) => {
+  await adjustToggle(page).click();
+  for (const label of ['Brightness', 'Contrast', 'Hue', 'Saturation']) {
+    await expect(page.getByLabel(label, { exact: true })).toHaveValue('50');
+  }
+  await expect(adjustToggle(page).locator('span.bg-accent')).toHaveCount(0);
+  const style = await page.locator('.react-transform-component img').first().getAttribute('style');
+  expect(style ?? '').toContain('brightness(100%) contrast(100%) hue-rotate(0deg) saturate(100%)');
 });
 
 Then('leaving the Focus view returns the adjustments to neutral', async ({ page }) => {
@@ -1027,6 +1069,11 @@ Then('leaving the Focus view returns the adjustments to neutral', async ({ page 
   await expect(adjustToggle(page).locator('span.bg-accent')).toHaveCount(0);
   const style = await page.locator('.react-transform-component img').first().getAttribute('style');
   expect(style ?? '').toContain('brightness(100%) contrast(100%) hue-rotate(0deg) saturate(100%)');
+  await adjustToggle(page).click();
+  await expect(page.getByLabel('Keep values')).not.toBeChecked();
+  for (const label of ['Brightness', 'Contrast', 'Hue', 'Saturation']) {
+    await expect(page.getByLabel(label, { exact: true })).toHaveValue('50');
+  }
 });
 
 When('the open Adjust panel crosses the desktop breakpoint in both directions', async ({ page }) => {
@@ -1053,5 +1100,82 @@ When('the open Adjust panel crosses the desktop breakpoint in both directions', 
     await page.keyboard.press('Enter');
     await expect(brightness).toBeFocused();
     await expect(brightness).toHaveValue('73');
+  }
+});
+
+Given('a later image is open for testing previous-image adjustments', async ({ page }) => {
+  await navigateAdjustmentImage(page, 'Next');
+});
+
+When('the previous image is opened in the Focus view', async ({ page, scratch }) => {
+  scratch.filterBefore = await page.locator('.react-transform-component img').first().getAttribute('style');
+  await page.keyboard.press('Escape');
+  await expect(adjustmentPanel(page)).toHaveCount(0);
+  await navigateAdjustmentImage(page, 'Previous');
+});
+
+When('Keep values is turned off without navigating', async ({ page, scratch }) => {
+  scratch.filterBeforeUncheck = await page.locator('.react-transform-component img').first().getAttribute('style');
+  await page.getByLabel('Keep values').uncheck();
+});
+
+Then('the current adjustment values are preserved with Keep values off', async ({ page, scratch }) => {
+  await expect(page.getByLabel('Keep values')).not.toBeChecked();
+  await expect(page.getByLabel('Contrast', { exact: true })).toHaveValue('90');
+  await expect(page.locator('.react-transform-component img').first()).toHaveAttribute('style', scratch.filterBeforeUncheck as string);
+});
+
+Given('auto-advance is disabled for adjustment shortcut checks', async ({ page }) => {
+  await page.getByRole('button', { name: 'Close Focus', exact: true }).click();
+  await sectionTab(page, 'Settings').click();
+  await autoAdvanceCheckbox(page).uncheck();
+  await sectionTab(page, 'Tag').click();
+});
+
+Then('Keep values supports {word} toggling without blocking workspace shortcuts', async ({ page }, activation: string) => {
+  const image = page.locator('.react-transform-component img');
+  const originalSrc = await image.getAttribute('src');
+  const originalName = await image.getAttribute('alt');
+  expect(originalSrc).toBeTruthy();
+  expect(originalName).toBeTruthy();
+  const count = page.getByRole('spinbutton', { name: 'Count for Mule Deer', exact: true });
+  let expectedCount = Number(await count.inputValue());
+
+  for (const checked of [true, false]) {
+    await adjustToggle(page).click();
+    await expect(page.getByLabel('Brightness', { exact: true })).toBeFocused();
+    await page.getByLabel('Contrast', { exact: true }).fill('90');
+    const checkbox = page.getByRole('checkbox', { name: 'Keep values', exact: true });
+    if (activation === 'pointer') {
+      await page.getByText('Keep values', { exact: true }).click();
+    } else {
+      await page.getByLabel('Brightness', { exact: true }).focus();
+      for (let tab = 0; tab < 4; tab++) await page.keyboard.press('Tab');
+      await expect(checkbox).toBeFocused();
+      await page.keyboard.press('Space');
+    }
+    await expect(checkbox).toBeFocused();
+    await expect(checkbox).toBeChecked({ checked });
+    await expect(image).toHaveAttribute('src', originalSrc!);
+    await expect(count).toHaveValue(String(expectedCount));
+    await page.keyboard.press('Enter');
+    await expect(checkbox).toBeFocused();
+    await expect(checkbox).toBeChecked({ checked });
+
+    await page.keyboard.press('d');
+    await expect(count).toHaveValue(String(++expectedCount));
+    await expect(checkbox).toBeFocused();
+    await expect(checkbox).toBeChecked({ checked });
+    await page.keyboard.press('ArrowRight');
+    await expect(image).not.toHaveAttribute('src', originalSrc!);
+    await expect(image).not.toHaveAttribute('alt', originalName!);
+    await expect.poll(() => image.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth > 0)).toBe(true);
+    await expect(adjustmentPanel(page)).toHaveCount(0);
+    await page.keyboard.press('ArrowLeft');
+    await expect(image).toHaveAttribute('src', originalSrc!);
+    await expect(image).toHaveAttribute('alt', originalName!);
+    await expect(count).toHaveValue(String(expectedCount));
+    const style = await image.getAttribute('style');
+    expect(style).toContain(checked ? 'contrast(180%)' : 'contrast(100%)');
   }
 });

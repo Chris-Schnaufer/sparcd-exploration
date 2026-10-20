@@ -1503,9 +1503,18 @@ function FocusPane({
   onDropSpecies: (tag: AppliedTag) => void;
 }) {
   // View-only display adjustments live here so they reset to neutral when the
-  // user leaves Focus (this component unmounts) and stay sticky while paging
-  // through images within a Focus session — the night-frame burst workflow.
+  // user leaves Focus (this component unmounts). By default they also reset
+  // on every image change; "Keep values" opts back into the old sticky
+  // behavior for a run of similarly-dark frames (the night-frame burst case).
   const [adjustments, setAdjustments] = useState<Adjustments>(NEUTRAL);
+  const [keepValues, setKeepValues] = useState(false);
+  const adjustedImageKey = useRef(current?.key);
+  useLayoutEffect(() => {
+    if (adjustedImageKey.current !== current?.key) {
+      adjustedImageKey.current = current?.key;
+      if (!keepValues) setAdjustments(NEUTRAL);
+    }
+  }, [current?.key, keepValues]);
   const filter = useMemo(() => cssFilter(adjustments), [adjustments]);
   const isVideo = !!current && isVideoImage(current);
   const showAdjust = !!current && !isVideo;
@@ -1574,6 +1583,8 @@ function FocusPane({
         return rails;
       }}
       mediaKey={current!.key}
+      keepValues={keepValues}
+      onKeepValuesChange={setKeepValues}
     />
   );
 
@@ -2178,6 +2189,11 @@ function isRangeTarget(t: EventTarget | null): boolean {
   return !!el && el.tagName === 'INPUT' && el.type === 'range';
 }
 
+function isKeepValuesTarget(t: EventTarget | null): boolean {
+  const el = t as HTMLInputElement | null;
+  return !!el && el.tagName === 'INPUT' && el.type === 'checkbox' && el.hasAttribute('data-keep-values');
+}
+
 // Every key a native range input responds to itself: arrows step by one,
 // Home/End jump to min/max, Page Up/Down step by a larger increment. Two of
 // these (Page Up/Down) are also tagger burst-navigation hotkeys, so a range
@@ -2281,6 +2297,9 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
   // of being swallowed like a text input's.
   if (isRangeTarget(e.target)) {
     if (RANGE_NAV_KEYS.has(e.key)) return;
+  } else if (isKeepValuesTarget(e.target)) {
+    // Keep native checkbox activation; other keys still operate the workspace.
+    if (e.key === ' ' || e.key === 'Enter') return;
   } else if (isTypingTarget(e.target)) {
     // Any other focused text input suppresses the tagger hotkeys. The
     // Escape/Enter species-filter behavior is scoped to the species filter
