@@ -200,6 +200,30 @@ Feature: Examine an image closely enough to catch every species
     When the adjustment panel is opened on a phone-sized screen
     Then the adjustment panel stays inside the window on a phone
 
+  @unmapped
+  Scenario: The Adjust control sits under the zoom column on a wide screen
+    Given the focused item is a still image
+    Then the Adjust control sits under the zoom button column, with a gap
+
+  @unmapped
+  Scenario: The Adjust control stays top-left on a phone
+    Given the focused item is a still image
+    When the viewport is narrowed to a phone size
+    Then the Adjust control sits at the top-left, clear of the zoom column
+
+  @unmapped
+  Scenario: Adjust remains below the zoom column while Reset is shown
+    Given the focused item is a still image
+    And the image is zoomed in
+    Then a "Reset" control is offered
+    And the Adjust control sits under the zoom button column, with a gap
+
+  @unmapped
+  Scenario: Adjust retains its popup and focus while crossing responsive placements
+    Given the focused item is a still image
+    When the open Adjust panel crosses the desktop breakpoint in both directions
+    Then Escape closes the adjustment panel and returns focus to Adjust
+
   @H1
   Scenario: Adjustment controls follow the focused image
     Given the focused item is a still image
