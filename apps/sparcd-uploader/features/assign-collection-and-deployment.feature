@@ -31,10 +31,12 @@ Feature: Describe a batch with its collection and a camera location
     # collection first" message in the code is unreachable.
 
   @unmapped
-  Scenario: The batch cannot be uploaded until an uploader identity is set
+  Scenario: An empty identity pauses Describe until blur restores the login default
     Given the uploader identity is empty
     Then the Continue button is disabled
     And it states that an uploader identity must be set first
+    When the blank Describe identity field loses focus
+    Then Describe restores the connected default identity
 
   @unmapped
   Scenario: The collections offered are the ones the connection can actually read

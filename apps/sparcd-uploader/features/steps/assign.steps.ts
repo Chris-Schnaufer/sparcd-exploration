@@ -1,5 +1,5 @@
 import { Given, When, Then, expect } from './fixtures';
-import type { App } from './app';
+import { ACCESS_KEY, type App } from './app';
 import { clipVideo, jpegAt, jpegNoTime, standardBatch } from './batches';
 import { expectStoredAtLocation, publishedUploads, reconnectAndReturnToAssign, rescanFromAssign } from './helpers';
 import {
@@ -322,6 +322,7 @@ Then(
   "the tool shows the key-safe form of it that will appear in the upload's storage path and object names",
   async ({ app }) => {
     await app.gotoSection('Settings');
+  await app.page.getByText('Defaults', { exact: true }).click();
     await expect(app.page.getByText(/Used in upload prefixes and object keys as/)).toContainText(
       'ada-lovelace',
     );
@@ -617,4 +618,11 @@ Then('Describe help can be opened and dismissed on a touch screen', async ({ app
     await page.locator('#uploadTimeZone').tap();
     await expect(popup).toHaveCount(0);
   } finally { await context.close(); }
+});
+
+When('the blank Describe identity field loses focus', async ({ app }) => {
+  await app.page.locator('#uploaderUser').press('Tab');
+});
+Then('Describe restores the connected default identity', async ({ app }) => {
+  await expect(app.page.locator('#uploaderUser')).toHaveValue(ACCESS_KEY);
 });
