@@ -220,7 +220,15 @@ Then('Escape closes only the species dialog after narrowing the window', async (
   const close = page.getByRole('dialog', { name: 'Coyote reference image', exact: true }).getByRole('button', { name: 'Close', exact: true });
   await page.setViewportSize({ width: 600, height: 860 });
   await expect(panel(page)).not.toBeVisible();
+  // Observe whether the owning viewer consumes Escape's native dismiss action,
+  // including on browsers where the restored rail opens before keyup.
+  await page.evaluate(() => window.addEventListener('keydown', (event) => {
+    setTimeout(() => {
+      document.documentElement.dataset.speciesEscapePrevented = String(event.defaultPrevented);
+    }, 0);
+  }, { capture: true, once: true }));
   await page.keyboard.press('Escape');
+  await expect(page.locator('html')).toHaveAttribute('data-species-escape-prevented', 'true');
   await expect(close).toHaveCount(0);
   await expect(panel(page)).toBeVisible();
   await expect(find(page)).toHaveValue('IMG004');
