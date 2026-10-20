@@ -9,7 +9,7 @@ Given('the resume notice has a {word} upload', async ({ app }, kind: string) => 
     app.s3.putDelayMs = 150;
     await app.dropFolder(publishableBatch());
     await app.walkToUploadStep({ uploader: 'Ada Lovelace' });
-    await app.dryRunCheckbox().uncheck();
+    await (await app.dryRunCheckbox()).uncheck();
     if (kind === 'publication') {
       app.s3.putHooks.push((_bucket, key) => key.endsWith('UploadMeta.json')
         ? { status: 400, code: 'InvalidRequest', message: 'Publication refused' } : undefined);
