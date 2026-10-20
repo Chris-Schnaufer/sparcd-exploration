@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode, type RefObject } from 'react';
+import { useMemo, type ReactNode, type RefObject } from 'react';
 import Fuse from 'fuse.js';
 import type { Species } from '../lib/species';
 import type { AppliedTag } from '../lib/drafts';
@@ -13,6 +13,9 @@ import { SpeciesHelp } from './SpeciesHelp';
 
 export type SpeciesPanelProps = {
   species: Species[];
+  showHelp: boolean;
+  onHelpOpen: () => void;
+  onHelpClose: () => void;
   onApply: (tag: AppliedTag) => void; // add-only; count omitted defaults to 1
   filter: string;
   onFilterChange: (v: string) => void;
@@ -36,7 +39,6 @@ export type SpeciesPanelProps = {
 
 export function SpeciesPanel(props: SpeciesPanelProps) {
   const { species, filter } = props;
-  const [showHelp, setShowHelp] = useState(false);
 
   const fuse = useMemo(
     () =>
@@ -94,7 +96,7 @@ export function SpeciesPanel(props: SpeciesPanelProps) {
             <p className="text-[11px] font-body tracking-[0.12em] uppercase text-inkSoft">Available species</p>
             <button
               type="button"
-              onClick={() => setShowHelp(true)}
+              onClick={props.onHelpOpen}
               className="shrink-0 min-w-11 min-h-11 md:min-w-5 md:min-h-5 grid place-items-center text-[13px] text-inkSoft hover:text-ink focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
               title="About the species list"
               aria-label="About the species list"
@@ -103,7 +105,7 @@ export function SpeciesPanel(props: SpeciesPanelProps) {
             </button>
           </div>
         )}
-        {showHelp && <SpeciesHelp onClose={() => setShowHelp(false)} />}
+        {props.showHelp && <SpeciesHelp onClose={props.onHelpClose} />}
       </div>
 
       <div className="flex-1 overflow-y-auto min-h-0">

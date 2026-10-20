@@ -107,11 +107,12 @@ Then('a popup explains how to use the species list', async ({ page }) => {
   await expect(dialog.getByRole('heading', { name: 'Applying a species' })).toBeVisible();
   await expect(dialog).toContainText('Click + to add it to the focused image');
   await expect(dialog).toContainText('Press its assigned key');
-  await expect(dialog).toContainText('Drag it onto an image');
-  await expect(dialog).toContainText('Type to filter the list, then press Enter');
+  await expect(dialog).toContainText('Drag it onto an image to add it there');
+  await expect(dialog).toContainText('Type to filter the visible list');
+  await expect(dialog).toContainText('Enter adds the first species in the original list');
   await expect(dialog).toContainText('A ✓ means that species is already on the focused image');
   await expect(dialog.getByRole('heading', { name: 'Reference photos' })).toBeVisible();
-  await expect(dialog).toContainText('Click a thumbnail to see it enlarged');
+  await expect(dialog).toContainText('Use the ⊕ control beside a thumbnail');
   await expect(dialog.getByRole('heading', { name: 'Keyboard keys' })).toBeVisible();
   await expect(dialog).toContainText('Hover (or focus) a row to assign or change its key');
   await expect(dialog).toContainText('A struck-through key means another species is already using it');
@@ -119,10 +120,23 @@ Then('a popup explains how to use the species list', async ({ page }) => {
   await expect(dialog).toContainText("Species you've applied recently float to the top of the list");
 });
 
+Given('a species keyboard shortcut is configured', async ({ page }) => {
+  await speciesAssignKey(page, 'Pecari tajacu').click();
+  await page.keyboard.press('v');
+  await expect(speciesBadge(page, 'Pecari tajacu')).toHaveText('V');
+});
+
 Then('clicking inside the popup does not dismiss it', async ({ page }) => {
   const dialog = speciesHelp(page);
   await dialog.getByRole('heading', { name: 'Applying a species' }).click();
   await expect(dialog).toBeVisible();
+});
+
+Then('the popup blocks species and navigation shortcuts', async ({ page }) => {
+  await page.keyboard.press('v');
+  await page.keyboard.press('ArrowRight');
+  await expect(gridCell(page, 'IMG002.JPG')).toHaveAttribute('aria-current', 'true');
+  await expect.poll(async () => draftSpecies(page, 'IMG002.JPG')).toEqual([]);
 });
 
 Then('it can be dismissed with Escape, its close control, or a click outside', async ({ page }) => {
