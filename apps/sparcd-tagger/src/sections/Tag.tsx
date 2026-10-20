@@ -1419,6 +1419,9 @@ export function Tag() {
     const observations = eff?.observations ?? [];
     return {
       species: speciesList,
+      speciesLoading: !localRecord && species.isLoading,
+      speciesLoadError: !localRecord && species.isError,
+      onRetrySpecies: async () => !(await species.refetch()).isError,
       onApply: apply,
       onZoom: openLoupe,
       selectedSpecies,

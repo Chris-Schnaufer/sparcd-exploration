@@ -65,11 +65,32 @@ Feature: Find the upload that needs tagging
     And a message names the filter text when nothing matches
 
   @unmapped
-  Scenario: The species vocabulary's load state is visible before tagging starts
-    When Browse is opened
-    Then the rail reports how many species were loaded and which settings bucket they came from
-    And it reports how many entries were skipped as malformed
-    And it reports the reason when the vocabulary cannot be read at all
+  Scenario Outline: Browse omits the species diagnostic footer in every request state
+    Given Browse loads species with "<state>" outcome
+    Then the collection rail contains no species diagnostic footer
+    And collection uploads remain available
+
+    Examples:
+      | state   |
+      | loading |
+      | success |
+      | failure |
+
+  @unmapped
+  Scenario Outline: A species read failure is explained in Tag and can be retried from the keyboard
+    Given Browse loads species with "failure" outcome
+    When the affected upload is opened for tagging in "<view>"
+    Then the species panel explains a load failure rather than an empty list
+    When the species retry still fails
+    Then the species panel retains its error and keyboard retry focus
+    When the species source recovers and retry is activated from the keyboard
+    Then the species list returns and keyboard focus moves to its filter
+    And loaded species can still be applied
+
+    Examples:
+      | view     |
+      | Overview |
+      | Focus    |
 
   @unmapped
   Scenario: Each upload shows its date, uploader, location, size and tagging progress
