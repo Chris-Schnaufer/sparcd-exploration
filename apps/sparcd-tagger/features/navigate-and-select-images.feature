@@ -68,6 +68,11 @@ Feature: Move through an upload and choose which images an action applies to
     Then the focused tile is named Questionable and not Has species
 
   @unmapped
+  Scenario: Grid tile announcements include species and review status
+    Given image "IMG004.JPG" is focused
+    Then the focused tile announces its species and review status
+
+  @unmapped
   Scenario: Image status badges appear on both grid tiles and list rows
     When it is marked questionable
     Then its grid tile shows Has species and Questionable badges

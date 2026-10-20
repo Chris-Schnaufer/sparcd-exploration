@@ -88,6 +88,12 @@ Then('the focused tile is named Questionable and not Has species', async ({ page
   await expect(tile.locator('[title^="Has species"]')).toHaveCount(0);
 });
 
+Then('the focused tile announces its species and review status', async ({ page }) => {
+  await expect(gridCell(page, 'IMG004.JPG')).toHaveAccessibleName(
+    /Species: Mountain Lion \+1; Review status: Mixed review/,
+  );
+});
+
 When('the image filter limits Tag state to Questionable only', async ({ page }) => {
   if (!(await page.getByLabel('Tag state').isVisible())) await page.getByRole('button', { name: 'Filter' }).click();
   await page.getByLabel('Tag state').selectOption('questionable');
