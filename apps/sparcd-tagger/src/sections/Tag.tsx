@@ -15,7 +15,9 @@ import { useMediaUrl } from '../lib/useMediaUrl';
 import { parseCollectionKey } from '../lib/s3';
 import { correctedTimestamp, shiftTimestamp } from '@sparcd/camtrap';
 import tzlookup from 'tz-lookup';
+import { DisabledActionHint } from '../components/DisabledActionHint';
 import { SpeciesPanel } from '../components/SpeciesPanel';
+import { ResizableSplit } from '../components/ResizableSplit';
 import { AppliedSpecies } from '../components/AppliedSpecies';
 import { Cheatsheet } from '../components/Cheatsheet';
 import { SyncDialog } from '../components/SyncDialog';
@@ -33,8 +35,17 @@ import { cssFilter, NEUTRAL, type Adjustments } from '../lib/adjustments';
 import { Overview, type PickMods, type ViewKind } from '../components/Overview';
 import { groupBursts, type BurstGrouping } from '../lib/bursts';
 import { offsetActive, formatOffsetDelta, earliestCorrected } from '../lib/timeshift';
-import { rangeSet, toggleIndex, burstIndexSet, visibleRangeSet } from '../lib/selection';
+import {
+  rangeSet,
+  toggleIndex,
+  toggleSelectionWithFocus,
+  burstIndexSet,
+  visibleRangeSet,
+  nextVisibleIndex,
+  nearestVisibleIndex,
+} from '../lib/selection';
 import { effectiveOf } from '../lib/effective';
+import { focusLocationLabel } from '../lib/focusLocation';
 import { sortIndices, type SortField, type SortDir } from '../lib/sortImages';
 import { findFilenameMatches } from '../lib/imageSearch';
 import { formatFocusPosition } from '../lib/focusPosition';
@@ -103,6 +114,7 @@ export function Tag() {
   const species = useSpecies(cfg, connectionId, collectionKey);
   const locations = useLocations(cfg, connectionId, collectionKey);
   const currentDeployment = useCurrentDeployment(cfg, connectionId, collectionKey, uploadPrefix);
+  const locationLabel = focusLocationLabel(currentDeployment.data);
   const captureTimeZone = currentDeployment.data
     ? tzlookup(currentDeployment.data.latitude, currentDeployment.data.longitude)
     : undefined;
@@ -232,8 +244,10 @@ export function Tag() {
       replacement?.focus();
     });
   }, [view]);
-  useEffect(() => {
-    if (view === 'focus') requestAnimationFrame(() => focusCloseRef.current?.focus());
+  useLayoutEffect(() => {
+    // Establish initial dialog focus before paint. A deferred callback can
+    // otherwise steal focus back after the user has focused the video.
+    if (view === 'focus') focusCloseRef.current?.focus();
   }, [view]);
   useEffect(() => {
     if (view !== 'focus') return;
@@ -347,6 +361,7 @@ export function Tag() {
   );
   const list = useMemo(() => order.map((i) => base[i]), [base, order]);
   const current = list[focus];
+  const prevOrderRef = useRef<number[] | null>(null);
 
   const handleSort = (field: SortField) => {
     if (field === sortField) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
@@ -382,25 +397,21 @@ export function Tag() {
   }, [focusedImageKey, uploadPrefix]);
   const matches = useMemo(() => findFilenameMatches(list, imgQuery), [list, imgQuery]);
   const [imageFilter, setImageFilter] = useState<ImageFilter>(EMPTY_IMAGE_FILTER);
+  const exhaustedFocusRef = useRef<{ key: string; filter: ImageFilter } | null>(null);
   const [showImageFilter, setShowImageFilter] = useState(false);
   const imageFilterButtonRef = useRef<HTMLButtonElement>(null);
   const imageFilterTextRef = useRef<HTMLInputElement>(null);
+  const matchesCurrentFilter = (image: TagImage, draft: DraftRecord | undefined) => matchesImageFilter(
+    {
+      fileName: image.fileName,
+      timestamp: correctedTimestamp(image.baseTimestamp, timeOffset, draft?.timeOverride ?? null, captureTimeZone),
+      observations: effectiveOf(image, draft).observations,
+    },
+    imageFilter,
+  );
   const visibleIndices = useMemo(
-    () =>
-      list.flatMap((image, index) => {
-        const draft = drafts[image.key];
-        return matchesImageFilter(
-          {
-            fileName: image.fileName,
-            timestamp: correctedTimestamp(image.baseTimestamp, timeOffset, draft?.timeOverride ?? null, captureTimeZone),
-            observations: effectiveOf(image, draft).observations,
-          },
-          imageFilter,
-        )
-          ? [index]
-          : [];
-      }),
-    [drafts, imageFilter, list, timeOffset],
+    () => list.flatMap((image, index) => matchesCurrentFilter(image, drafts[image.key]) ? [index] : []),
+    [captureTimeZone, drafts, imageFilter, list, timeOffset],
   );
   const imageFilterActive =
     imageFilter.text !== '' ||
@@ -426,18 +437,31 @@ export function Tag() {
     if (showImageFilter) imageFilterTextRef.current?.focus();
   }, [showImageFilter]);
 
-  // Focus navigation always has a visible current item while a filter has
-  // matches. Selection retains canonical indexes and is deliberately untouched.
+  // Exhausted auto-advance retains the image that was just tagged, even if
+  // that edit hid it. A changed filter or explicit move releases that hold.
   useEffect(() => {
-    if (!imageFilterActive || visibleIndices.length === 0 || visibleIndices.includes(focus)) return;
-    setFocus(visibleIndices[0]);
-    setAnchor(visibleIndices[0]);
-  }, [focus, imageFilterActive, visibleIndices]);
+    // Positions still refer to the previous list until the sort-remap effect
+    // commits. Do not interpret them against the new order in this render.
+    const prev = prevOrderRef.current;
+    if (prev && prev !== order && prev.length === order.length && prev[focus] !== order[focus]) return;
+    if (!imageFilterActive || visibleIndices.includes(focus)) {
+      exhaustedFocusRef.current = null;
+      return;
+    }
+    const held = exhaustedFocusRef.current;
+    if (held?.key === current?.key && held?.filter === imageFilter) return;
+    exhaustedFocusRef.current = null;
+    if (visibleIndices.length === 0) return;
+    const nearest = nearestVisibleIndex(visibleIndices, focus);
+    if (nearest == null) return;
+    setFocus(nearest);
+    setAnchor(nearest);
+  }, [current?.key, focus, imageFilter, imageFilterActive, order, visibleIndices]);
 
   useEffect(() => {
-    if (!imageFilterActive) return;
+    if (!imageFilterActive || prevOrderRef.current !== order) return;
     setSelected((prior) => new Set([...prior].filter((i) => visibleIndexSet.has(i))));
-  }, [imageFilterActive, visibleIndexSet]);
+  }, [imageFilterActive, order, visibleIndexSet]);
 
   const jumpToMatch = (pos: number) => {
     if (!matches.length) return;
@@ -483,8 +507,8 @@ export function Tag() {
   // Reset focus/selection when the upload changes / data arrives. Null the sort
   // permutation ref so the remap effect below treats the next `order` as a fresh
   // baseline rather than translating stale positions across a different upload.
-  const prevOrderRef = useRef<number[] | null>(null);
   useEffect(() => {
+    exhaustedFocusRef.current = null;
     setFocus(0);
     setAnchor(0);
     setSelected(new Set());
@@ -614,8 +638,24 @@ export function Tag() {
   // Move focus to the next image, clearing selection — mirrors the keyboard
   // handler's `focusMove`, scoped to this component's own focus/anchor/selected
   // state (the handler's copy lives in a separate closure keyed off HandlerState).
+  // With a filter active this must skip images the filter hides rather than
+  // stepping by raw list position (#442) — and if there's no further match,
+  // stay put rather than jumping elsewhere.
   const advanceFocus = () => {
-    const next = Math.max(0, Math.min(focus + 1, list.length - 1));
+    // Tagging can hide several selected images in the same action. Read the
+    // updated drafts before choosing a destination, rather than advancing into
+    // another image that this bulk edit has just removed from the filter.
+    const updatedDrafts = useDraftStore.getState().drafts;
+    const next = imageFilterActive
+      ? nextVisibleIndex(visibleIndices.filter((index) => matchesCurrentFilter(list[index], updatedDrafts[list[index].key])), focus, 1)
+      : Math.max(0, Math.min(focus + 1, list.length - 1));
+    if (next == null) {
+      if (imageFilterActive && current) exhaustedFocusRef.current = { key: current.key, filter: imageFilter };
+      setAnchor(focus);
+      setSelected(new Set());
+      return;
+    }
+    exhaustedFocusRef.current = null;
     setFocus(next);
     setAnchor(next);
     setSelected(new Set());
@@ -704,8 +744,8 @@ export function Tag() {
       setFocus(i);
     } else if (mods.meta) {
       // Seed from the focused image so the first Cmd-click yields a two-image
-      // selection (Finder-style) instead of restarting from the clicked one.
-      setSelected(toggleIndex(selected.size ? selected : new Set([focus]), i));
+      // selection (Finder-style). Clicking the focused image selects just it.
+      setSelected(toggleSelectionWithFocus(selected, focus, i));
       setFocus(i);
       setAnchor(i);
     } else {
@@ -739,8 +779,7 @@ export function Tag() {
 
   const gotoFilteredImage = (direction: -1 | 1) => {
     if (!imageFilterActive) return gotoImage(focus + direction);
-    const position = visibleIndices.indexOf(focus);
-    const target = visibleIndices[position + direction];
+    const target = nextVisibleIndex(visibleIndices, focus, direction);
     if (target != null) gotoImage(target);
   };
 
@@ -749,14 +788,16 @@ export function Tag() {
   const focusPosition = filteredFocusPosition + 1;
   const focusPositionValid = !!current && focusPosition > 0 && focusPosition <= focusPositionCount;
   const focusPositionLabel = formatFocusPosition(focusPosition, focusPositionCount, imageFilterActive);
-  const canGoPrevious = filteredFocusPosition > 0;
-  const canGoNext = imageFilterActive
-    ? filteredFocusPosition >= 0 && filteredFocusPosition < visibleIndices.length - 1
-    : focus < list.length - 1;
-  const hasPreviousAfterPrevious = filteredFocusPosition > 1;
-  const hasNextAfterNext = imageFilterActive
-    ? filteredFocusPosition >= 0 && filteredFocusPosition < visibleIndices.length - 2
-    : focus < list.length - 2;
+  const previousIndex = imageFilterActive ? nextVisibleIndex(visibleIndices, focus, -1) : focus > 0 ? focus - 1 : undefined;
+  const nextIndex = imageFilterActive ? nextVisibleIndex(visibleIndices, focus, 1) : focus < list.length - 1 ? focus + 1 : undefined;
+  const canGoPrevious = previousIndex != null;
+  const canGoNext = nextIndex != null;
+  const hasPreviousAfterPrevious = previousIndex != null && (imageFilterActive
+    ? nextVisibleIndex(visibleIndices, previousIndex, -1) != null
+    : previousIndex > 0);
+  const hasNextAfterNext = nextIndex != null && (imageFilterActive
+    ? nextVisibleIndex(visibleIndices, nextIndex, 1) != null
+    : nextIndex < list.length - 1);
 
   // On-screen questionable toggle mirrors Shift+Space: act on the selection
   // (or the focused image), flipping off the focused image's current state.
@@ -900,15 +941,6 @@ export function Tag() {
           )}
         </span>
 
-        {speciesCountPrefix && selected.size <= 1 && (
-          <span
-            className="border border-accent px-2 py-0.5 text-[12px] font-mono text-accent"
-            role="status"
-          >
-            Count: {speciesCountPrefix}
-          </span>
-        )}
-
         {/* Touch path for building a multi-select set (desktop uses Shift/Cmd
             click). Toggles the focused image in/out of the selection. */}
         <button
@@ -945,11 +977,11 @@ export function Tag() {
         {/* Upload time-shift entry + persistent active-offset indicator (§08).
             Disabled when no image in the upload has a capture time to shift —
             unless a shift is already in effect, so it stays reachable to clear. */}
+        <DisabledActionHint label="Time shift" reason={!sampleTimestamp && !hasUploadShift ? 'No image in this upload has a capture time to shift' : undefined}>
         <button
           onClick={() => setShowTimeShift(true)}
           disabled={!sampleTimestamp && !hasUploadShift}
-          aria-describedby={!sampleTimestamp && !hasUploadShift ? 'upload-time-unavailable' : undefined}
-          className={`inline-flex items-center gap-1.5 text-[11.5px] font-mono px-2 py-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 ${
+          className={`inline-flex items-center gap-1.5 text-[11.5px] font-mono px-2 py-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 disabled:cursor-not-allowed ${
             hasUploadShift
               ? 'bg-mark border border-ink text-ink font-[600]'
               : 'border border-rule text-inkSoft hover:text-ink hover:border-ink'
@@ -965,30 +997,16 @@ export function Tag() {
           <span aria-hidden>◷</span>
           {hasUploadShift ? `clock ${formatOffsetDelta(timeOffset)}` : 'Time shift'}
         </button>
-        {!sampleTimestamp && !hasUploadShift && (
-          <span
-            id="upload-time-unavailable"
-            role="status"
-            aria-live="polite"
-            className="text-[11px] font-mono text-inkSoft"
-          >
-            No image in this upload has a capture time to shift
-          </span>
-        )}
+        </DisabledActionHint>
 
         {/* Shift only explicitly selected frames — e.g. one mis-set camera in a
             mixed upload. Stored as per-image corrections, so it stacks on the
             upload offset. */}
         {!!current && (
-          <>
+          <DisabledActionHint label="Time shift selection" reason={selected.size === 0 || scopedTimeApplicableCount === 0 ? scopedTimeUnavailableReason : undefined}>
             <button
               onClick={openBulkTime}
               disabled={selected.size === 0 || scopedTimeApplicableCount === 0}
-              aria-describedby={
-                selected.size === 0 || scopedTimeApplicableCount === 0
-                  ? 'scoped-time-unavailable'
-                  : undefined
-              }
               className="inline-flex items-center gap-1.5 text-[11.5px] font-mono px-2 py-1 border border-rule text-inkSoft hover:text-ink hover:border-ink disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
               title={
                 selected.size === 0 || scopedTimeApplicableCount === 0
@@ -1001,17 +1019,7 @@ export function Tag() {
               <span aria-hidden>◷</span>
               Time shift selection
             </button>
-            {(selected.size === 0 || scopedTimeApplicableCount === 0) && (
-              <span
-                id="scoped-time-unavailable"
-                role="status"
-                aria-live="polite"
-                className="text-[11px] font-mono text-inkSoft"
-              >
-                {scopedTimeUnavailableReason}
-              </span>
-            )}
-          </>
+          </DisabledActionHint>
         )}
 
         {/* Find image by filename — jumps focus to a match (the virtualizer then
@@ -1291,24 +1299,24 @@ export function Tag() {
           aria-label="Focus image viewer"
         >
           <div className="shrink-0 grid grid-cols-[minmax(0,1fr)_auto] lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1 border-b border-rule bg-panel px-3 py-1">
-            <div className="min-w-0 text-[13px] font-mono text-ink truncate" title={current?.fileName}>
+            <div className="col-span-2 min-w-0 text-[13px] font-mono text-ink truncate lg:col-span-1" title={current?.fileName}>
               Focus{current ? ` · ${current.fileName}` : ''}
             </div>
             {focusPositionValid && (
               <div role="progressbar" aria-label="Image position" aria-valuemin={1}
                 aria-valuenow={focusPosition} aria-valuemax={focusPositionCount} aria-valuetext={focusPositionLabel}
-                className="col-span-2 row-start-2 justify-self-center w-[min(70vw,260px)] min-w-0 lg:col-span-1 lg:col-start-2 lg:row-start-1 lg:w-[min(26vw,260px)] text-center font-mono text-[11px] text-inkSoft">
+                className="col-span-2 row-start-3 justify-self-center w-[min(70vw,260px)] min-w-0 lg:col-span-1 lg:col-start-2 lg:row-start-1 lg:w-[min(26vw,260px)] text-center font-mono text-[11px] text-inkSoft">
                 <span aria-hidden="true" className="block whitespace-nowrap">{focusPositionLabel}</span>
                 <span aria-hidden="true" className="mt-0.5 block h-1.5 overflow-hidden rounded-full bg-rule">
                   <span className="block h-full bg-accent" style={{ width: `${focusPosition / focusPositionCount * 100}%` }} />
                 </span>
               </div>
             )}
-            <div className="col-start-2 row-start-1 lg:col-start-3 flex w-full min-w-0 items-center justify-end gap-2">
-              {current?.deploymentId && (
+            <div className="col-span-2 row-start-2 lg:col-span-1 lg:col-start-3 lg:row-start-1 flex w-full min-w-0 items-center justify-end gap-2">
+              {locationLabel && (
                 <span className="min-w-0 max-w-[35vw] truncate font-mono text-[10px] text-inkSoft"
-                  aria-label={`Deployment: ${current.deploymentId}`} title={`Deployment: ${current.deploymentId}`}>
-                  {current.deploymentId}
+                  aria-label={`Location: ${locationLabel}`} title={`Location: ${locationLabel}`}>
+                  {locationLabel}
                 </span>
               )}
               {current?.timestampSource === 'exif-modify' && (
@@ -1322,18 +1330,24 @@ export function Tag() {
                 aria-label="Close Focus" title="Close Focus (Escape)">×</button>
             </div>
           </div>
-          <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] overflow-y-auto lg:overflow-visible">
-            <FocusPane
-              current={current}
-              onPrev={() => gotoFilteredImage(-1)}
-              onNext={() => gotoFilteredImage(1)}
-              canPrev={canGoPrevious}
-              canNext={canGoNext}
-              hasPrevAfterPrev={hasPreviousAfterPrevious}
-              hasNextAfterNext={hasNextAfterNext}
-              onDropSpecies={(tag) => applyIncrementAt(focus, tag)}
+          <div className="flex-1 min-h-0">
+            <ResizableSplit
+              storageKey="sparcd-tagger:focus-split"
+              defaultSize={340}
+              first={
+                <FocusPane
+                  current={current}
+                  onPrev={() => gotoFilteredImage(-1)}
+                  onNext={() => gotoFilteredImage(1)}
+                  canPrev={canGoPrevious}
+                  canNext={canGoNext}
+                  hasPrevAfterPrev={hasPreviousAfterPrevious}
+                  hasNextAfterNext={hasNextAfterNext}
+                  onDropSpecies={(tag) => applyIncrementAt(focus, tag)}
+                />
+              }
+              second={<SpeciesPanel {...speciesPanelProps()} />}
             />
-            <SpeciesPanel {...speciesPanelProps()} />
           </div>
         </div>,
         document.body,
@@ -1397,6 +1411,9 @@ export function Tag() {
     const observations = eff?.observations ?? [];
     return {
       species: speciesList,
+      speciesLoading: !localRecord && species.isLoading,
+      speciesLoadError: !localRecord && species.isError,
+      onRetrySpecies: async () => !(await species.refetch()).isError,
       onApply: apply,
       onZoom: openLoupe,
       selectedSpecies,
@@ -1420,6 +1437,14 @@ export function Tag() {
       // same panel renders in both) with one site.
       headerSlot: (
         <div className="flex flex-wrap items-center gap-1.5">
+          {speciesCountPrefix && selected.size <= 1 && (
+            <span
+              className="border border-accent px-2 py-0.5 text-[12px] font-mono text-accent"
+              role="status"
+            >
+              Count: {speciesCountPrefix}
+            </span>
+          )}
           <AppliedSpecies
             observations={observations}
             disabled={!current}
@@ -1493,9 +1518,18 @@ function FocusPane({
   onDropSpecies: (tag: AppliedTag) => void;
 }) {
   // View-only display adjustments live here so they reset to neutral when the
-  // user leaves Focus (this component unmounts) and stay sticky while paging
-  // through images within a Focus session — the night-frame burst workflow.
+  // user leaves Focus (this component unmounts). By default they also reset
+  // on every image change; "Keep values" opts back into the old sticky
+  // behavior for a run of similarly-dark frames (the night-frame burst case).
   const [adjustments, setAdjustments] = useState<Adjustments>(NEUTRAL);
+  const [keepValues, setKeepValues] = useState(false);
+  const adjustedImageKey = useRef(current?.key);
+  useLayoutEffect(() => {
+    if (adjustedImageKey.current !== current?.key) {
+      adjustedImageKey.current = current?.key;
+      if (!keepValues) setAdjustments(NEUTRAL);
+    }
+  }, [current?.key, keepValues]);
   const filter = useMemo(() => cssFilter(adjustments), [adjustments]);
   const isVideo = !!current && isVideoImage(current);
   const showAdjust = !!current && !isVideo;
@@ -1523,14 +1557,14 @@ function FocusPane({
   const focusAfterNavigationRef = useRef<'previous' | 'next' | null>(null);
 
   useLayoutEffect(() => {
+    if (!focusAfterNavigationRef.current) return;
     const target = focusAfterNavigationRef.current === 'previous'
       ? previousButtonRef.current
       : focusAfterNavigationRef.current === 'next'
         ? nextButtonRef.current
         : null;
     focusAfterNavigationRef.current = null;
-    if (!target) return;
-    target.focus();
+    (target ?? document.querySelector<HTMLButtonElement>('[aria-label="Close Focus"]'))?.focus();
   }, [current?.key, canPrev, canNext]);
 
   const navigatePrevious = () => {
@@ -1546,8 +1580,31 @@ function FocusPane({
     onNext();
   };
 
+  const adjustPanel = showAdjust && (
+    <ImageAdjustments
+      value={adjustments}
+      onChange={setAdjustments}
+      onReset={() => setAdjustments(NEUTRAL)}
+      getMediaRect={getVisibleMediaRect}
+      getBlockedRects={() => {
+        const focus = dropRef.current?.getBoundingClientRect();
+        if (!focus) return [];
+        const rails: DOMRect[] = [];
+        if (focus.left > 0) rails.push(new DOMRect(0, focus.top, focus.left, focus.height));
+        const species = document
+          .querySelector('[data-testid="species-panel"]')
+          ?.getBoundingClientRect();
+        if (species && species.left >= focus.right) rails.push(species);
+        return rails;
+      }}
+      mediaKey={current!.key}
+      keepValues={keepValues}
+      onKeepValuesChange={setKeepValues}
+    />
+  );
+
   return (
-    <div className="flex flex-col min-h-[55svh] lg:min-h-0 bg-paper">
+    <div className="flex flex-col h-full min-h-0 bg-paper">
       <div
         ref={dropRef}
         className={`relative flex-1 min-h-0 grid place-items-center p-4 overflow-hidden${isDragOver ? ' ring-2 ring-inset ring-accent' : ''}`}
@@ -1574,6 +1631,7 @@ function FocusPane({
             alt={current.fileName}
             isVideo={isVideo}
             filter={filter}
+            adjust={adjustPanel}
           />
         )}
         {current && canPrev && (
@@ -1605,30 +1663,6 @@ function FocusPane({
         <span id="focus-navigation-help" className="sr-only">
           Use ArrowLeft or ArrowUp for the previous image. Use ArrowRight or ArrowDown for the next image.
         </span>
-        {showAdjust && (
-          // On phones the zoom controls own bottom-right, so park adjustments at
-          // top-left to keep both off the squeezed image; restore bottom-left ≥lg.
-          <div className="absolute top-4 left-4 lg:top-auto lg:bottom-4 z-10">
-            <ImageAdjustments
-              value={adjustments}
-              onChange={setAdjustments}
-              onReset={() => setAdjustments(NEUTRAL)}
-              getMediaRect={getVisibleMediaRect}
-              getBlockedRects={() => {
-                const focus = dropRef.current?.getBoundingClientRect();
-                if (!focus) return [];
-                const rails: DOMRect[] = [];
-                if (focus.left > 0) rails.push(new DOMRect(0, focus.top, focus.left, focus.height));
-                const species = document
-                  .querySelector('[data-testid="species-panel"]')
-                  ?.getBoundingClientRect();
-                if (species && species.left >= focus.right) rails.push(species);
-                return rails;
-              }}
-              mediaKey={current.key}
-            />
-          </div>
-        )}
       </div>
     </div>
   );
@@ -1707,11 +1741,13 @@ function FocusImage({
   alt,
   isVideo,
   filter,
+  adjust,
 }: {
   objectKey: string;
   alt: string;
   isVideo: boolean;
   filter?: string;
+  adjust?: React.ReactNode;
 }) {
   const { url, isError, markLoaded } = useMediaUrl(objectKey, 'high');
   const [loadedToken, setLoadedToken] = useState<string>();
@@ -1756,6 +1792,7 @@ function FocusImage({
             resetKey={objectKey}
             filter={filter}
             onLoaded={onLoaded}
+            adjust={adjust}
           />
         ))}
       {(!url || loadedToken !== mediaToken) && (
@@ -1835,10 +1872,13 @@ function useFittedZoom(src: string) {
   }, []);
   const fit = pane && natural ? Math.min(pane.w / natural.w, pane.h / natural.h) : null;
   const fitted = fit && natural ? { width: natural.w * fit, height: natural.h * fit } : undefined;
+  // Always re-fit on a pane or image-size change, even while zoomed in: a
+  // resolution change invalidates whatever framing the user had, so there is
+  // nothing worth preserving by skipping this when the view isn't at 1x.
   useLayoutEffect(() => {
     const zoom = zoomRef.current;
-    if (fitted && zoom && zoom.state.scale <= 1.01) zoom.centerView(1, 0);
-  }, [fitted?.width, fitted?.height]);
+    if (fitted && zoom) zoom.centerView(1, 0);
+  }, [pane?.w, pane?.h, fitted?.width, fitted?.height]);
   const onImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
     const img = e.currentTarget;
     setLoaded({ src, w: img.naturalWidth, h: img.naturalHeight });
@@ -1852,18 +1892,23 @@ function ZoomableImage({
   resetKey,
   filter,
   onLoaded,
+  adjust,
 }: {
   src: string;
   alt: string;
   resetKey: string;
   filter?: string;
   onLoaded: () => void;
+  adjust?: React.ReactNode;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [zoomed, setZoomed] = useState(false);
   const { paneRef, zoomRef, fitted, onImageLoad } = useFittedZoom(src);
+  // min-w-0/min-h-0 override the grid item's default content-based floor —
+  // without them, the pane can never measure smaller than the zoom content's
+  // last fitted pixel size, so a shrinking window gets stuck.
   return (
-    <div ref={paneRef} className="w-full h-full">
+    <div ref={paneRef} className="w-full h-full min-w-0 min-h-0">
       {/* key forces a fresh fit-to-view (reset zoom/pan) on every image change */}
       <TransformWrapper
         key={resetKey}
@@ -1897,6 +1942,7 @@ function ZoomableImage({
               onOut={() => zoomOut()}
               onExpand={() => setExpanded(true)}
               onReset={zoomed ? () => resetTransform() : undefined}
+              extra={adjust}
             />
           </>
         )}
@@ -1979,7 +2025,7 @@ function Lightbox({
       </div>
       <div
         ref={paneRef}
-        className="relative min-h-0"
+        className="relative min-h-0 min-w-0"
         onClick={(e) => e.target === e.currentTarget && onClose()}
       >
         <TransformWrapper
@@ -2025,12 +2071,14 @@ function ZoomControls({
   onExpand,
   onReset,
   dark,
+  extra,
 }: {
   onIn: () => void;
   onOut: () => void;
   onExpand?: () => void;
   onReset?: () => void;
   dark?: boolean;
+  extra?: React.ReactNode;
 }) {
   const tone = dark
     ? 'text-paper/80 hover:text-paper hover:bg-paper/10'
@@ -2040,7 +2088,8 @@ function ZoomControls({
     : 'bg-panel/90 border-rule divide-rule';
   const btn = `w-11 h-11 md:w-8 md:h-8 grid place-items-center text-[15px] leading-none ${tone} focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent`;
   return (
-    <div className="absolute bottom-4 right-4 flex flex-col items-end gap-2">
+    <div className={extra ? 'contents lg:absolute lg:bottom-4 lg:right-4 lg:flex lg:flex-col lg:items-end lg:gap-2' : 'absolute bottom-4 right-4 flex flex-col items-end gap-2'}>
+      <div className={extra ? 'absolute bottom-4 right-4 flex flex-col items-end gap-2 lg:static' : 'contents'}>
       {onReset && (
         <button
           type="button"
@@ -2070,6 +2119,10 @@ function ZoomControls({
           </button>
         )}
       </div>
+      </div>
+      {/* One mounted Adjust instance: CSS repositions its trigger without
+          discarding the portalled dialog or moving keyboard focus. */}
+      {extra && <div className="absolute top-4 left-4 z-10 lg:static lg:mt-2">{extra}</div>}
     </div>
   );
 }
@@ -2151,6 +2204,11 @@ function isRangeTarget(t: EventTarget | null): boolean {
   return !!el && el.tagName === 'INPUT' && el.type === 'range';
 }
 
+function isKeepValuesTarget(t: EventTarget | null): boolean {
+  const el = t as HTMLInputElement | null;
+  return !!el && el.tagName === 'INPUT' && el.type === 'checkbox' && el.hasAttribute('data-keep-values');
+}
+
 // Every key a native range input responds to itself: arrows step by one,
 // Home/End jump to min/max, Page Up/Down step by a larger increment. Two of
 // these (Page Up/Down) are also tagger burst-navigation hotkeys, so a range
@@ -2175,23 +2233,25 @@ function focusMove(s: HandlerState, i: number): void {
 }
 
 function filteredFocusMove(s: HandlerState, direction: 1 | -1): void {
-  if (s.view !== 'focus' || !s.imageFilterActive) return focusMove(s, s.focus + direction);
-  const target = s.visibleIndices[s.visibleIndices.indexOf(s.focus) + direction];
+  if (!s.imageFilterActive) return focusMove(s, s.focus + direction);
+  const target = nextVisibleIndex(s.visibleIndices, s.focus, direction);
   if (target != null) focusMove(s, target);
 }
 
 function filteredFocusMoveFromKeyboard(s: HandlerState, direction: 1 | -1): void {
   const active = document.activeElement;
   const navigationHasFocus = active?.getAttribute('aria-describedby') === 'focus-navigation-help';
-  const position = s.imageFilterActive ? s.visibleIndices.indexOf(s.focus) : s.focus;
-  const length = s.imageFilterActive ? s.visibleIndices.length : s.list.length;
-  const reachesBoundary = navigationHasFocus &&
-    ((direction < 0 && position === 1) || (direction > 0 && position === length - 2));
+  const target = s.imageFilterActive
+    ? nextVisibleIndex(s.visibleIndices, s.focus, direction)
+    : Math.max(0, Math.min(s.focus + direction, s.list.length - 1));
+  const reachesBoundary = navigationHasFocus && target != null && (s.imageFilterActive
+    ? nextVisibleIndex(s.visibleIndices, target, direction) == null
+    : target === 0 || target === s.list.length - 1);
   filteredFocusMove(s, direction);
   if (reachesBoundary) {
     requestAnimationFrame(() => {
       const selector = direction < 0 ? '[aria-label="Next image"]' : '[aria-label="Previous image"]';
-      document.querySelector<HTMLButtonElement>(selector)?.focus();
+      (document.querySelector<HTMLButtonElement>(selector) ?? document.querySelector<HTMLButtonElement>('[aria-label="Close Focus"]'))?.focus();
     });
   }
 }
@@ -2252,6 +2312,9 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
   // of being swallowed like a text input's.
   if (isRangeTarget(e.target)) {
     if (RANGE_NAV_KEYS.has(e.key)) return;
+  } else if (isKeepValuesTarget(e.target)) {
+    // Keep native checkbox activation; other keys still operate the workspace.
+    if (e.key === ' ' || e.key === 'Enter') return;
   } else if (isTypingTarget(e.target)) {
     // Any other focused text input suppresses the tagger hotkeys. The
     // Escape/Enter species-filter behavior is scoped to the species filter
