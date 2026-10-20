@@ -115,11 +115,12 @@ export function SpeciesHelp({ onClose }: { onClose: () => void }) {
 
           <section>
             <h3 className="font-body text-[11px] font-[600] tracking-[0.16em] uppercase text-inkSoft mb-1.5">
-              Recently used
+              List order
             </h3>
             <p>
-              Species you've applied recently float to the top of the list, so you don't have to
-              search for them again.
+              By default the list stays sorted alphabetically by common name. Turn on "Sort by
+              latest species assigned" in Settings to float recently applied species to the top
+              instead.
             </p>
           </section>
         </div>

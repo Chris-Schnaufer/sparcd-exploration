@@ -23,7 +23,9 @@ import {
   ghostRow,
   positionReadout,
   listRow,
+  openSettings,
 } from './support/world';
+import { sortSpeciesByRecentCheckbox } from './support/flows';
 import {
   BUCKET,
   BUCKET_B,
@@ -320,6 +322,28 @@ Then(
     expect(Array.isArray(drafts)).toBe(true);
   },
 );
+
+// --- Species order -----------------------------------------------------------
+
+Then('the species list is ordered alphabetically by common name', async ({ page }) => {
+  const names = await page.locator('div.group span.italic').allTextContents();
+  const vocabOrder = names.filter((n) => VOCAB.some((v) => v.scientific === n) || n === 'Casper');
+  expect(vocabOrder).toEqual(['Canis latrans', 'Casper', 'Pecari tajacu', 'Puma concolor', 'Odocoileus hemionus']);
+});
+
+Then('applying a species does not reorder the list', async ({ page }) => {
+  await focusFrame(page, 'IMG002.JPG');
+  await speciesApply(page, 'Pecari tajacu').click();
+  const names = await page.locator('div.group span.italic').allTextContents();
+  const vocabOrder = names.filter((n) => VOCAB.some((v) => v.scientific === n) || n === 'Casper');
+  expect(vocabOrder).toEqual(['Canis latrans', 'Casper', 'Pecari tajacu', 'Puma concolor', 'Odocoileus hemionus']);
+});
+
+Given('species sorting by recent is switched on in Settings', async ({ page }) => {
+  await openSettings(page);
+  await sortSpeciesByRecentCheckbox(page).check();
+  await sectionTab(page, 'Tag').click();
+});
 
 // --- Recents ----------------------------------------------------------------
 

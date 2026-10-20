@@ -24,6 +24,7 @@ export type SpeciesPanelProps = {
   onClearKey: (scientificName: string) => void;
   keysUnsaved: boolean; // the last key-settings write to localStorage failed
   recent: string[]; // scientificNames, most-recent first
+  sortByRecent: boolean; // off → always alphabetical by common name; on → recent float to top
   appliedSet: Set<string>; // scientificNames applied on the focused image (✓ + add-only NO-OP)
   hasFocus: boolean; // an image is focused
   selectionCount: number; // >0 → applying a species hits the whole selection
@@ -49,8 +50,14 @@ export function SpeciesPanel(props: SpeciesPanelProps) {
   );
 
   const ordered = useMemo(() => {
-    const base = filter.trim() ? fuse.search(filter.trim()).map((r) => r.item) : species;
-    if (!props.recent.length) return base;
+    // An active search ranks by text relevance regardless of the setting below
+    // — overriding what someone's actively typing to find with alphabetical
+    // order would fight the search, not help it.
+    if (filter.trim()) return fuse.search(filter.trim()).map((r) => r.item);
+    const base = props.sortByRecent
+      ? species
+      : [...species].sort((a, b) => a.commonName.localeCompare(b.commonName));
+    if (!props.sortByRecent || !props.recent.length) return base;
     const rank = new Map(props.recent.map((s, i) => [s, i]));
     // Stable float: recents to the top in recency order, everything else as-is.
     return [...base].sort((a, b) => {
@@ -58,7 +65,7 @@ export function SpeciesPanel(props: SpeciesPanelProps) {
       const rb = rank.has(b.scientificName) ? rank.get(b.scientificName)! : Infinity;
       return ra - rb;
     });
-  }, [species, filter, fuse, props.recent]);
+  }, [species, filter, fuse, props.recent, props.sortByRecent]);
 
   const trimmed = filter.trim();
   const exact = species.some(
