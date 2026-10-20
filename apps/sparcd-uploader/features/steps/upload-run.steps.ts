@@ -660,6 +660,7 @@ Then('it can be pinned to a number between 4 and 32', async ({ app }) => {
   // Settings, the only place it lives now, instead of relying on
   // pinConcurrency's own navigate-back-to-Upload side effect.
   await app.gotoSection('Settings');
+  await app.page.getByText('Advanced', { exact: true }).click();
   await app.concurrencyModeRadio('Manual').check();
   const slider = app.laneSlider();
   await expect(slider).toHaveAttribute('min', '4');
@@ -680,6 +681,7 @@ Then('a pinned number defaults to 8', async ({ app }) => {
   await app.waitForInspected();
   await app.walkToUploadStep();
   await app.gotoSection('Settings');
+  await app.page.getByText('Advanced', { exact: true }).click();
   await app.concurrencyModeRadio('Manual').check();
   await expect(app.laneSlider()).toHaveValue('8');
   await app.gotoSection('New upload');
@@ -696,6 +698,7 @@ Then('a pinned number can be changed while a run is in progress', async ({ app }
   // anywhere while a run is going — unlike the run options, which are locked
   // once bytes are moving.
   await app.gotoSection('Settings');
+  await app.page.getByText('Advanced', { exact: true }).click();
   await expect(app.laneSlider()).toBeEnabled();
   await app.laneSlider().fill('6');
   await expect(app.laneSlider()).toHaveValue('6');
