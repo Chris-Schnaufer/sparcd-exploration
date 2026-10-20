@@ -1252,10 +1252,10 @@ Then('the Back explanation is keyboard discoverable', async ({ app }) => {
   await expect(group).toHaveAccessibleDescription(/Back is unavailable once a real upload starts, to prevent duplicate uploads/);
   await expect(app.page.locator('#upload-back-help')).toBeVisible();
 });
-Then('Back returns to Assign after the dry run', async ({ app }) => {
+Then('Back returns to Describe after the dry run', async ({ app }) => {
   await expect(app.page.getByRole('button', { name: 'Back', exact: true })).toBeEnabled();
   await app.page.getByRole('button', { name: 'Back', exact: true }).click();
-  await app.expectStep('Assign');
+  await app.expectStep('Describe');
   expect(app.s3.puts).toHaveLength(0);
 });
 When('a fresh batch reaches Upload', async ({ app }) => {
@@ -1269,8 +1269,8 @@ When('a fresh batch reaches Upload', async ({ app }) => {
   await app.setDescription('Next batch');
   await app.continueToUpload();
 });
-Then('Back returns to Assign before another real run starts', async ({ app }) => {
+Then('Back returns to Describe before another real run starts', async ({ app }) => {
   await expect(app.page.getByRole('button', { name: 'Back', exact: true })).toBeEnabled();
   await app.page.getByRole('button', { name: 'Back', exact: true }).click();
-  await app.expectStep('Assign');
+  await app.expectStep('Describe');
 });
