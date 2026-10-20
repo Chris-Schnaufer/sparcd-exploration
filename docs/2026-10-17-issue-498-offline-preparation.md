@@ -279,3 +279,16 @@ all 409 Uploader unit tests passed on a separate rerun after browser completion
 PR #565’s preparation-ownership cleanup remains on that separate branch. It
 still needs to be rebased after this integration; these changes do not replace
 its acceptance work or the separate manual/platform boundaries of #497.
+
+### CI viewport regressions after integration
+
+The Uploader BDD job reported five deterministic viewport failures. The new
+preparation panels pushed the unfinished-upload notice below the phone viewport;
+it now appears before the preparation controls on Choose. The virtual-list
+preview regression now scrolls the list into view before scrolling its contents,
+while retaining the existing focus, virtualization and scroll-preservation checks.
+
+Reproduced the CI failures in independent Google Chrome. The five targeted cases
+passed after the fixes; the complete 217-scenario Uploader BDD suite then passed
+without retries on isolated port 5352 (10.4 minutes). TypeScript and diff checks
+passed. The temporary Chrome test configuration was restored.

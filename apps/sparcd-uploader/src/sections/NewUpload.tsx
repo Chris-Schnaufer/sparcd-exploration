@@ -177,6 +177,7 @@ export function NewUpload() {
         )}
       </div>
 
+      {step === 'drop' && !flip && <ResumeNotice />}
       {(step === 'drop' || step === 'inspect') && <PreparedSpeciesPanel onReady={setSpeciesReady} />}
       {(step === 'drop' || step === 'inspect') && <OfflineApps speciesReady={speciesReady} beforePrepare={flushPreparation} />}
       <PreparationSaveStatus />
@@ -188,7 +189,6 @@ export function NewUpload() {
         ) : (
           <>
             <PreparationRecovery />
-            <ResumeNotice />
             <DropZone />
           </>
         ))}
