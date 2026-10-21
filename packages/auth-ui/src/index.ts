@@ -43,3 +43,5 @@ export type {
   SpeciesKeyConfig,
   SpeciesListState,
 } from './speciesKeyProfiles';
+
+export { fetchWhoAmI, WhoAmIError, type WhoAmIResult } from './whoami';
