@@ -119,6 +119,93 @@ When('the tab is closed and the tagger is opened in a new one', async ({ page })
   await expect(page.getByRole('button', { name: 'Connect', exact: true })).toBeVisible();
 });
 
+// --- Credential probe (#589) ------------------------------------------------
+
+When('valid-looking credentials are submitted', async ({ page }) => {
+  await page.locator('#endpoint').fill(ENDPOINT);
+  await page.locator('#accessKey').fill('testkey');
+  await page.locator('#secretKey').fill('testsecret');
+  await page.getByRole('button', { name: 'Connect', exact: true }).click();
+});
+
+Then(
+  'the credentials are checked against the server before the workspace opens',
+  async ({ page, s3 }) => {
+    await expect(sectionTab(page, 'Browse')).toBeVisible();
+    expect(s3.listBucketsCalls).toBeGreaterThan(0);
+  },
+);
+
+Given('the storage endpoint cannot be reached', async ({ s3 }) => {
+  s3.listBucketsAborts = true;
+});
+
+Given('the server will reject these credentials', async ({ s3 }) => {
+  s3.listBucketsFailure = { status: 403, code: 'InvalidAccessKeyId' };
+});
+
+Given('the server denies the credential check itself', async ({ s3 }) => {
+  s3.listBucketsFailure = { status: 403, code: 'AccessDenied' };
+});
+
+Given("the server reports this computer's clock is skewed", async ({ s3 }) => {
+  s3.listBucketsFailure = { status: 403, code: 'RequestTimeTooSkewed' };
+});
+
+Given('the credential check hangs instead of responding', async ({ s3 }) => {
+  s3.listBucketsHangs = true;
+});
+
+Given('the browser is offline', async ({ page }) => {
+  await page.context().setOffline(true);
+});
+
+Then('connecting is refused with a message that the endpoint could not be reached', async ({ page }) => {
+  await expect(page.getByTestId('connection-probe-failure')).toContainText("Couldn't reach");
+});
+
+Then('connecting is refused with a message that the credentials were rejected', async ({ page }) => {
+  await expect(page.getByTestId('connection-probe-failure')).toContainText(
+    'rejected this access key and secret key',
+  );
+});
+
+Then(
+  'connecting is refused with a message that the check could not confirm the credentials',
+  async ({ page }) => {
+    await expect(page.getByTestId('connection-probe-failure')).toContainText(
+      'Unable to confirm your credentials',
+    );
+  },
+);
+
+Then("connecting is refused with a message about the computer's clock", async ({ page }) => {
+  await expect(page.getByTestId('connection-probe-failure')).toContainText(
+    "computer's time is correct",
+  );
+});
+
+Then('connecting is refused with a message that the check was interrupted', async ({ page }) => {
+  await expect(page.getByTestId('connection-probe-failure')).toContainText(
+    'request was interrupted',
+  );
+});
+
+Then('the workspace does not open', async ({ page }) => {
+  await expect(sectionTab(page, 'Browse')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Connect', exact: true })).toBeVisible();
+});
+
+Then('the form is available to try again', async ({ page }) => {
+  await expect(page.getByRole('button', { name: 'Connect', exact: true })).toBeEnabled();
+  await expect(page.locator('#endpoint')).toBeEnabled();
+});
+
+Then('the workspace opens without any credential check', async ({ page, s3 }) => {
+  await expect(sectionTab(page, 'Browse')).toBeVisible();
+  expect(s3.listBucketsCalls).toBe(0);
+});
+
 When('a different endpoint is entered and the field is left', async ({ page }) => {
   await page.locator('#endpoint').fill('https://s3.us-west-2.amazonaws.com');
   await page.locator('#endpoint').blur();
