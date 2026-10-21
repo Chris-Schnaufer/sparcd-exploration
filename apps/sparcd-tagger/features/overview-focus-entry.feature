@@ -101,6 +101,7 @@ Feature: Enter Focus from Overview images
     Given the Overview is set to the "<layout>" layout
     When IMG003.JPG receives keyboard focus and "Shift+Space" is pressed
     Then the Overview remains open and IMG003.JPG is marked questionable
+    And its existing species survive marking and sync
 
     Examples:
       | layout |

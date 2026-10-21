@@ -13,15 +13,18 @@ import {
   speciesFilter,
   imageSearch,
   speciesRow,
+  speciesApply,
   focusFrame,
   overviewImage,
   selectedOverviewImages,
   enterFocusView,
   expectOverviewView,
   closeFocusView,
+  openWorkspace,
 } from './support/world';
-import { COLLECTION_NAME, STAMP_A } from './support/data';
-import { readStore } from './support/flows';
+import { COLLECTION_NAME, STAMP_A, BUCKET, PREFIX_A } from './support/data';
+import { readStore, runLiveSync } from './support/flows';
+import { parseObservations } from '@sparcd/camtrap';
 
 const TOUCH = { width: 900, height: 860 };
 const DESKTOP = { width: 1440, height: 950 };
@@ -553,6 +556,27 @@ Then('the Overview remains open and IMG003.JPG is marked questionable', async ({
   await expect(page.getByRole('dialog', { name: 'Focus image viewer' })).toHaveCount(0);
 });
 
+Then('its existing species survive marking and sync', async ({ page, s3 }) => {
+  const savedSpecies = () => parseObservations(s3.text(BUCKET, `${PREFIX_A}observations.csv`))
+    .filter(entry => entry.mediaId === `${PREFIX_A}IMG003.JPG`);
+  const original = savedSpecies();
+  const image = overviewImage(page, 'IMG003.JPG');
+  await expect(image).toHaveAccessibleName(/Species: Ghost/);
+  await page.keyboard.press('Control+s');
+  const draft = (await readStore(page, 'drafts') as { mediaPath: string; observations: { scientificName: string; count: number }[] }[])
+    .find(entry => entry.mediaPath === `${PREFIX_A}IMG003.JPG`)!;
+  expect(draft.observations).toMatchObject([{ scientificName: 'Casper', count: 1 }]);
+  // Questionable is local-only on this branch. Save another image's edit to
+  // exercise canonical publication without changing this image's species.
+  await overviewImage(page, 'IMG001.JPG').click();
+  await speciesApply(page, 'Canis latrans').click();
+  await runLiveSync(page);
+  expect(savedSpecies()).toEqual(original);
+  await page.reload();
+  await openWorkspace(page);
+  await expect(overviewImage(page, 'IMG003.JPG')).toHaveAccessibleName(/Species: Ghost/);
+});
+
 When('the image filter matches IMG003.JPG', async ({ page }) => {
   await page.getByRole('button', { name: /^Filter/ }).click();
   await page.getByLabel('Match text').fill('IMG003.JPG');
@@ -609,7 +633,7 @@ When('Focus is closed with Escape', async ({ page }) => {
 });
 
 When('a touch starts on IMG003.JPG and moves before release', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 300 });
+  await page.setViewportSize({ width: 390, height: 844 });
   const target = overviewImage(page, 'IMG003.JPG');
   const scrollArea = page.getByTestId('overview-scroll');
   await scrollArea.evaluate((element) => { element.style.height = '100px'; });
@@ -632,20 +656,14 @@ When('a touch starts on IMG003.JPG and moves before release', async ({ page }) =
   const cdp = await page.context().newCDPSession(page);
   try {
     await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
-    await cdp.send('Input.dispatchTouchEvent', {
-      type: 'touchStart',
-      touchPoints: [{ id: 1, x, y, radiusX: 2, radiusY: 2, force: 1 }],
+    await cdp.send('Input.synthesizeScrollGesture', {
+      x, y, yDistance: -50, speed: 200, gestureSourceType: 'touch',
     });
-    await cdp.send('Input.dispatchTouchEvent', {
-      type: 'touchMove',
-      touchPoints: [{ id: 1, x, y: y - 50, radiusX: 2, radiusY: 2, force: 1 }],
-    });
-    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await expect.poll(() => scrollArea.evaluate((element) => element.scrollTop)).toBeGreaterThan(top);
   } finally {
     await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
     await cdp.detach();
   }
-  await expect.poll(() => scrollArea.evaluate((element) => element.scrollTop)).toBeGreaterThan(top);
 });
 
 When('IMG003.JPG is held by touch before release', async ({ page }) => {
