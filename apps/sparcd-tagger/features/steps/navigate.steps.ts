@@ -656,9 +656,20 @@ When('a touch starts on IMG003.JPG and moves before release', async ({ page }) =
   const cdp = await page.context().newCDPSession(page);
   try {
     await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
-    await cdp.send('Input.synthesizeScrollGesture', {
-      x, y, yDistance: -50, speed: 200, gestureSourceType: 'touch',
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: [{ id: 1, x, y }],
     });
+    // Cross the touch slop and continue moving before release, allowing the
+    // browser to scroll rather than treating the gesture as a single tap.
+    for (let distance = 10; distance <= 50; distance += 10) {
+      await cdp.send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: [{ id: 1, x, y: y - distance }],
+      });
+      await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
     await expect.poll(() => scrollArea.evaluate((element) => element.scrollTop)).toBeGreaterThan(top);
   } finally {
     await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
