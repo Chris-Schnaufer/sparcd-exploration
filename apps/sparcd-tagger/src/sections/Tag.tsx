@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { TransformWrapper, TransformComponent, type ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
 import { useStore } from '../store';
+import { attributionAvailable, IDENTITY_REQUIRED } from '../lib/attribution';
 import {
   useTagImages,
   useSpecies,
@@ -97,6 +98,7 @@ type PendingKeyConflict = {
 export function Tag() {
   const cfg = useStore((s) => s.s3Config);
   const taggerUser = useStore((s) => s.taggerUser);
+  const identityReady = !cfg || !!taggerUser.trim();
   const connectionId = useStore((s) => s.connectionId);
   const collectionKey = useStore((s) => s.selectedCollectionKey);
   const uploadPrefix = useStore((s) => s.selectedUploadPrefix);
@@ -717,6 +719,7 @@ export function Tag() {
     effectiveOf(img, drafts[img.key]).observations.some((o) => o.scientificName === sci);
 
   const apply = (tag: AppliedTag) => {
+    if (!attributionAvailable()) return;
     const targets = targetsOf();
     if (!targets.length) return;
     // A bulk operation changes every selected image, but only the focused
@@ -731,6 +734,7 @@ export function Tag() {
   };
 
   const applyIncrementAt = (index: number, tag: AppliedTag) => {
+    if (!attributionAvailable()) return;
     // A drop is spatial: it updates only the image under the drop zone, even
     // if a multi-image selection still exists.
     const image = list[index];
@@ -754,6 +758,7 @@ export function Tag() {
   };
 
   const applyIncrement = (tag: AppliedTag) => {
+    if (!attributionAvailable()) return;
     // Keyboard bindings are selection-scoped, like the panel's explicit add
     // control. Keep this separate from spatial drag/drop targeting.
     const targets = targetsOf();
@@ -1032,6 +1037,8 @@ export function Tag() {
             which has no connection to fetch the shared location registry. */}
         {canChangeLocation && (
           <button
+            disabled={!identityReady}
+            aria-describedby={!identityReady ? 'tagger-identity-required' : undefined}
             onClick={() => setShowChangeLocation(true)}
             className={`inline-flex items-center gap-1.5 text-[11.5px] font-mono px-2 py-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
               pendingLocation
@@ -1052,10 +1059,10 @@ export function Tag() {
         {/* Upload time-shift entry + persistent active-offset indicator (§08).
             Disabled when no image in the upload has a capture time to shift —
             unless a shift is already in effect, so it stays reachable to clear. */}
-        <DisabledActionHint label="Time shift" reason={!sampleTimestamp && !hasUploadShift ? 'No image in this upload has a capture time to shift' : undefined}>
+        <DisabledActionHint label="Time shift" reason={!identityReady ? IDENTITY_REQUIRED : !sampleTimestamp && !hasUploadShift ? 'No image in this upload has a capture time to shift' : undefined}>
         <button
           onClick={() => setShowTimeShift(true)}
-          disabled={!sampleTimestamp && !hasUploadShift}
+          disabled={!identityReady || (!sampleTimestamp && !hasUploadShift)}
           className={`inline-flex items-center gap-1.5 text-[11.5px] font-mono px-2 py-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 disabled:cursor-not-allowed ${
             hasUploadShift
               ? 'bg-mark border border-ink text-ink font-[600]'
@@ -1078,10 +1085,10 @@ export function Tag() {
             mixed upload. Stored as per-image corrections, so it stacks on the
             upload offset. */}
         {!!current && (
-          <DisabledActionHint label="Time shift selection" reason={selected.size === 0 || scopedTimeApplicableCount === 0 ? scopedTimeUnavailableReason : undefined}>
+          <DisabledActionHint label="Time shift selection" reason={!identityReady ? IDENTITY_REQUIRED : selected.size === 0 || scopedTimeApplicableCount === 0 ? scopedTimeUnavailableReason : undefined}>
             <button
               onClick={openBulkTime}
-              disabled={selected.size === 0 || scopedTimeApplicableCount === 0}
+              disabled={!identityReady || selected.size === 0 || scopedTimeApplicableCount === 0}
               className="inline-flex items-center gap-1.5 text-[11.5px] font-mono px-2 py-1 border border-rule text-inkSoft hover:text-ink hover:border-ink disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
               title={
                 selected.size === 0 || scopedTimeApplicableCount === 0
@@ -1153,6 +1160,8 @@ export function Tag() {
                 Snapshots…
               </button>
               <button
+                disabled={!identityReady}
+                aria-describedby={!identityReady ? 'tagger-identity-required' : undefined}
                 onClick={() => setShowSync(true)}
                 ref={syncButtonRef}
                 className="text-[12px] font-mono border border-ink px-2.5 py-1 text-ink hover:bg-panelHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
@@ -1373,8 +1382,8 @@ export function Tag() {
       appliedSet: new Set(observations.map((o) => o.scientificName)),
       hasFocus: !!current,
       selectionCount: selected.size,
-      disabled: !current,
-      // Chips edit the focused image; Clear Species follows the selection.
+      disabled: !current || !identityReady,
+      // Chips edit the focused image; Clear Species follows the visible selection.
       headerSlot: (
         <div
           className="min-h-11 flex flex-wrap items-center gap-1.5"
@@ -1394,6 +1403,10 @@ export function Tag() {
             applyIncrement(tag);
           }}
         >
+          {!identityReady && <div id="tagger-identity-required" role="status" className="w-full border border-warn p-2 text-[13px]">
+            <p>{IDENTITY_REQUIRED}</p>
+            <button type="button" className="min-h-11 underline" onClick={() => { closeFocus(); useStore.getState().setSection('settings'); }}>Set Tagger identity</button>
+          </div>}
           {speciesCountPrefix && selected.size <= 1 && (
             <span
               className="border border-accent px-2 py-0.5 text-[12px] font-mono text-accent"
@@ -1407,7 +1420,7 @@ export function Tag() {
           )}
           <AppliedSpecies
             observations={observations}
-            disabled={!current}
+            disabled={!current || !identityReady}
             onSetCount={(sci, n) =>
               current && setSpeciesCountFn(
                 ctx,
@@ -1428,6 +1441,24 @@ export function Tag() {
             detagCount={detagImages.length}
             detagSelection={selected.size > 0}
           />
+          {current && (
+            <button
+              type="button"
+              disabled={!identityReady}
+              aria-pressed={!!eff?.questionable}
+              aria-label={eff?.questionable ? 'Clear questionable flag' : 'Mark image questionable'}
+              title={eff?.questionable ? 'Clear questionable flag' : 'Mark image questionable'}
+              onClick={() => {
+                const targets = targetsOf();
+                if (targets.length) setQuestionableManyFn(ctx, targets, !eff?.questionable);
+              }}
+              className={`min-h-11 border px-2 text-[11px] font-mono focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
+                eff?.questionable ? 'border-warn text-warn' : 'border-rule text-inkMute hover:text-ink'
+              }`}
+            >
+              {eff?.questionable ? 'Questionable' : 'Mark questionable'}
+            </button>
+          )}
         </div>
       ),
     };
