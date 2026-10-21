@@ -19,7 +19,7 @@ export type ConnectionProps = {
    *  credential check runs before `onConnect` — see `testConnection` in
    *  `@sparcd/s3-safe` (#589). Skipped entirely while offline, preserving
    *  today's optimistic-accept behavior for deferred/offline login. */
-  onTestConnection?: (config: S3Config) => Promise<ConnectionProbeResult>;
+  onTestConnection?: (config: S3Config, signal?: AbortSignal) => Promise<ConnectionProbeResult>;
   /** When provided, offers a secondary "Login later" action so a caller can
    *  let someone proceed without a connection until one is actually needed. */
   onSkip?: () => void;
@@ -107,10 +107,12 @@ export function Connection({
   // the ref has to be re-armed on mount too, not just cleared on unmount —
   // otherwise that first synthetic cleanup leaves it permanently false.
   const mountedRef = useRef(true);
+  const probeControllerRef = useRef<AbortController | null>(null);
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      probeControllerRef.current?.abort();
     };
   }, []);
 
@@ -191,9 +193,20 @@ export function Connection({
 
     setProbeFailure(null);
     setPending(true);
-    const result = await onTestConnection(config);
+    const controller = new AbortController();
+    probeControllerRef.current = controller;
+    let result: ConnectionProbeResult;
+    try {
+      result = await onTestConnection(config, controller.signal);
+    } catch {
+      result = controller.signal.aborted
+        ? { ok: false, category: 'interrupted' }
+        : { ok: false, category: 'unexpected' };
+    } finally {
+      if (probeControllerRef.current === controller) probeControllerRef.current = null;
+      if (mountedRef.current) setPending(false);
+    }
     if (!mountedRef.current) return;
-    setPending(false);
     if (result.ok) {
       onConnect(config, remember);
     } else {

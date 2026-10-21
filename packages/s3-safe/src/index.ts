@@ -294,12 +294,15 @@ export async function testConnection(
   cfg: S3Config,
   opts: { signal?: AbortSignal } = {},
 ): Promise<ConnectionProbeResult> {
+  if (opts.signal?.aborted) return { ok: false, category: 'interrupted' };
   const client = new SafeS3Client(cfg, ['*']);
   const ctl = new AbortController();
   const onAbort = () => ctl.abort();
-  opts.signal?.addEventListener('abort', onAbort);
+  opts.signal?.addEventListener('abort', onAbort, { once: true });
+  if (opts.signal?.aborted) onAbort();
   const timer = setTimeout(() => ctl.abort(), CONNECTION_TEST_TIMEOUT_MS);
   try {
+    if (ctl.signal.aborted) return { ok: false, category: 'interrupted' };
     await client.listBuckets({ signal: ctl.signal });
     return { ok: true };
   } catch (err) {

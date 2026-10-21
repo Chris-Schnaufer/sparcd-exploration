@@ -154,7 +154,7 @@ export function App() {
         toolName="Uploader"
         initialConfig={connectPrefill}
         onConnect={connect}
-        onTestConnection={testConnection}
+        onTestConnection={(config, signal) => testConnection(config, { signal })}
         onSkip={() => setLoginDeferred(true)}
       />
     );

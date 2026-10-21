@@ -263,7 +263,7 @@ export function Assign() {
           toolName="Uploader"
           initialConfig={connectPrefill}
           onConnect={connect}
-          onTestConnection={testConnection}
+          onTestConnection={(config, signal) => testConnection(config, { signal })}
           embedded
         />
         <button
