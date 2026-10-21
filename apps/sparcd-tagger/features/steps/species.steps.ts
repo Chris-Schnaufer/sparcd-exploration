@@ -1140,6 +1140,14 @@ Then('the stored observations record no species for the image left behind', asyn
   expect(meta.imagesWithSpecies).toBe(1);
 });
 
+Then('the species panel explains the failed refresh without hiding cached species', async ({ page }) => {
+  const panel = page.getByTestId('species-panel');
+  await expect(panel.getByRole('alert')).toContainText("Couldn't refresh the species list. Your previously loaded species remain available.", { timeout: 20_000 });
+  await expect(panel.getByRole('button', { name: 'Retry loading species' })).toBeVisible();
+  await expect(speciesRow(page, 'Odocoileus hemionus')).toBeVisible();
+  await expect(panel).not.toContainText('No species in the vocabulary.');
+});
+
 When('the count preview layout is {string} at width {int}', async ({ page }, layout: string, width: number) => {
   await speciesApply(page, 'Canis latrans').click();
   await expect(appliedChip(page, 'Coyote').getByRole('spinbutton')).toHaveValue('1');
