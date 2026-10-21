@@ -408,7 +408,8 @@ function ListCell({
       onPointerUp={touchTap.onPointerUp}
       onPointerCancel={touchTap.onPointerCancel}
       onClick={(e) => {
-        if (touchTap.shouldSuppressClick() || e.detail > 1) return;
+        if (touchTap.shouldSuppressClick()) return;
+        if (e.detail > 1 && !e.shiftKey && !e.metaKey && !e.ctrlKey) return;
         if (onDrill && e.detail === 0) {
           onDrill(index, e.currentTarget);
           return;
@@ -543,7 +544,8 @@ function GridCell({
       onPointerUp={touchTap.onPointerUp}
       onPointerCancel={touchTap.onPointerCancel}
       onClick={(e) => {
-        if (touchTap.shouldSuppressClick() || e.detail > 1) return;
+        if (touchTap.shouldSuppressClick()) return;
+        if (e.detail > 1 && !e.shiftKey && !e.metaKey && !e.ctrlKey) return;
         if (onDrill && e.detail === 0) {
           onDrill(index, e.currentTarget);
           return;

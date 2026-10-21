@@ -81,13 +81,26 @@ Feature: Enter Focus from Overview images
       | list   |
 
   @unmapped
-  Scenario Outline: Enter opens the focused image from either layout
+  Scenario Outline: Native keyboard activation opens the focused image from either layout
     Given the Overview is set to the "<layout>" layout
-    When IMG003.JPG receives keyboard focus and Enter is pressed
+    When IMG003.JPG receives keyboard focus and "<key>" is pressed
     Then Focus shows IMG003.JPG
     When Focus is closed with Escape
     Then the Overview is shown
     And the image opener has focus again
+
+    Examples:
+      | layout | key   |
+      | grid   | Enter |
+      | grid   | Space |
+      | list   | Enter |
+      | list   | Space |
+
+  @unmapped
+  Scenario Outline: Quick modified clicks preserve both selection changes
+    Given the Overview is set to the "<layout>" layout
+    When IMG003.JPG is control-clicked twice
+    Then IMG003.JPG is deselected and Focus stays closed
 
     Examples:
       | layout |
@@ -110,7 +123,7 @@ Feature: Enter Focus from Overview images
   Scenario: Focus return preserves the Overview filter and layout
     Given the Overview is set to the "list" layout
     When the image filter matches IMG003.JPG
-    And IMG003.JPG receives keyboard focus and Enter is pressed
+    And IMG003.JPG receives keyboard focus and "Enter" is pressed
     Then Focus shows IMG003.JPG
     When Focus is closed with Escape
     Then the Overview is shown

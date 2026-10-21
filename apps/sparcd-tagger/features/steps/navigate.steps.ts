@@ -525,11 +525,24 @@ Then('the Grid and List controls are available', async ({ page }) => {
   await expect(page.getByRole('button', { name: '☰ List' })).toBeVisible();
 });
 
-When('IMG003.JPG receives keyboard focus and Enter is pressed', async ({ page }) => {
-  await overviewImage(page, 'IMG003.JPG').click();
+When('IMG003.JPG receives keyboard focus and {string} is pressed', async ({ page }, key: string) => {
   const target = overviewImage(page, 'IMG003.JPG');
   await target.focus();
-  await page.keyboard.press('Enter');
+  await page.keyboard.press(key);
+});
+
+When('IMG003.JPG is control-clicked twice', async ({ page }) => {
+  await overviewImage(page, 'IMG001.JPG').click();
+  const target = overviewImage(page, 'IMG003.JPG');
+  await target.dblclick({ modifiers: ['ControlOrMeta'] });
+});
+
+Then('IMG003.JPG is deselected and Focus stays closed', async ({ page }) => {
+  await expectOverviewView(page);
+  await expect(selectedOverviewImages(page)).toHaveCount(1);
+  await expect(overviewImage(page, 'IMG001.JPG')).toHaveAttribute('aria-pressed', 'true');
+  await expect(overviewImage(page, 'IMG003.JPG')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.getByRole('dialog', { name: 'Focus image viewer' })).toHaveCount(0);
 });
 
 When('the image filter matches IMG003.JPG', async ({ page }) => {
@@ -590,14 +603,24 @@ When('Focus is closed with Escape', async ({ page }) => {
 When('a touch starts on IMG003.JPG and moves before release', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 300 });
   const target = overviewImage(page, 'IMG003.JPG');
-  await target.scrollIntoViewIfNeeded();
   const scrollArea = page.getByTestId('overview-scroll');
   await scrollArea.evaluate((element) => { element.style.height = '100px'; });
-  const scrollable = await scrollArea.evaluate((element) => element.scrollHeight > element.clientHeight);
-  expect(scrollable).toBe(true);
+  await target.scrollIntoViewIfNeeded();
+  const startingScroll = await scrollArea.evaluate((element) => {
+    const max = element.scrollHeight - element.clientHeight;
+    if (max < 3) return null;
+    element.scrollTop = Math.floor(max / 2);
+    return { top: element.scrollTop, max };
+  });
+  expect(startingScroll).not.toBeNull();
+  const { top, max } = startingScroll!;
+  expect(top).toBeGreaterThan(0);
+  expect(top).toBeLessThan(max);
   const box = (await target.boundingBox())!;
   const x = box.x + box.width / 2;
   const y = box.y + box.height / 2;
+  expect((await scrollArea.boundingBox())!.y).toBeLessThan(y);
+  expect(y).toBeLessThan((await scrollArea.boundingBox())!.y + (await scrollArea.boundingBox())!.height);
   const cdp = await page.context().newCDPSession(page);
   try {
     await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
@@ -607,13 +630,14 @@ When('a touch starts on IMG003.JPG and moves before release', async ({ page }) =
     });
     await cdp.send('Input.dispatchTouchEvent', {
       type: 'touchMove',
-      touchPoints: [{ id: 1, x, y: y - 100, radiusX: 2, radiusY: 2, force: 1 }],
+      touchPoints: [{ id: 1, x, y: y - 50, radiusX: 2, radiusY: 2, force: 1 }],
     });
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   } finally {
     await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
     await cdp.detach();
   }
+  await expect.poll(() => scrollArea.evaluate((element) => element.scrollTop)).toBeGreaterThan(top);
 });
 
 When('IMG003.JPG is held by touch before release', async ({ page }) => {

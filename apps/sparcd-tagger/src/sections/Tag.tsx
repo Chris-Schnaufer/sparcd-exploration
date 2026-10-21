@@ -2290,6 +2290,15 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
   // mid-sync would create a draft edit the sync then silently clears.
   if (s.isModalOpen()) return;
 
+  // Image tiles are native buttons: let Enter and Space produce their native
+  // click so the handler opens the image the user actually focused. The
+  // workspace-level Enter/Space shortcuts below are for the Overview itself.
+  if (
+    (e.key === 'Enter' || e.key === ' ') &&
+    e.target instanceof HTMLButtonElement &&
+    e.target.matches('[data-testid="overview-image"]')
+  ) return;
+
   // Cheatsheet modal swallows everything but its own toggle / dismiss.
   if (s.showCheatsheet) {
     if (e.key === '?' || e.key === 'Escape') {
