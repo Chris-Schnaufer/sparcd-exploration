@@ -91,4 +91,22 @@ describe('revision-safe sync cleanup across reload', () => {
     await useDraftStore.getState().markUploadSynced(ctx, undefined);
     expect((await reloadDraft()).dirty).toBe(true);
   });
+
+  it.each(['species', 'time'])('inherits saved expert status after retry with a newer %s edit', async (edit) => {
+    // Older clients omitted the canonical status when seeding these drafts.
+    useDraftStore.setState({ drafts: {} });
+    const omitted = { ...target, base: { observations: [] } };
+    useDraftStore.getState().addSpecies(ctx, [omitted], { scientificName: 'Canis latrans', commonName: 'Coyote', count: 1 });
+    const written = receipt(useDraftStore.getState().drafts[path]);
+    await useDraftStore.getState().markUploadPendingSync(ctx, written.draftRevisions);
+    if (edit === 'time') useDraftStore.getState().setTimeOverride(ctx, path, target.deploymentId, omitted.base, '2024-01-01T11:00:00');
+    else useDraftStore.getState().addSpecies(ctx, [omitted], { scientificName: 'Canis lupus', commonName: 'Wolf', count: 1 });
+    await reloadDraft();
+    await useDraftStore.getState().markUploadSynced(ctx, written);
+    const restored = await reloadDraft();
+    expect(restored.questionable).toBe(true);
+    expect(restored.baseQuestionable).toBe(true);
+    expect(restored.dirty).toBe(true);
+    expect(buildSyncPlan([image], { [path]: restored }, null).statusEdits).toEqual([]);
+  });
 });

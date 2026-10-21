@@ -1,14 +1,14 @@
 import { parseMedia, parseObservations } from '@sparcd/camtrap';
-import { When, Then, expect, focusFrame, gridCell, openWorkspace, speciesApply } from './support/world';
+import { When, Then, expect, focusFrame, gridCell, openWorkspace, speciesApply, speciesRow } from './support/world';
 import { BUCKET, PREFIX_A } from './support/data';
-import { openSyncDialog, readStore, setSyncDryRun, waitForSyncDialogClosed } from './support/flows';
+import { openSyncDialog, readStore, setSyncDryRun, waitForSyncDialogClosed, runLiveSync } from './support/flows';
 
 const path = `${PREFIX_A}IMG002.JPG`;
 const expertName = "Toggle needing an expert's opinion";
 type RetryDraft = { mediaPath: string; dirty: boolean; questionable: boolean; timeOverride: string | null; observations: { scientificName: string }[] };
 
-When('a Need expert sync fails after publishing media', async ({ page, s3 }) => {
-  await page.getByRole('button', { name: expertName }).click();
+When('a Need expert sync fails after publishing media', async ({ page, s3, scratch }) => {
+  if (!scratch.savedExpert) await page.getByRole('button', { name: expertName }).click();
   let failed = false;
   await page.route('**/*', async (route) => {
     const request = route.request();
@@ -101,4 +101,37 @@ Then('the retained edit can be saved separately', async ({ page, s3, scratch }) 
   if (scratch.retryEdit === 'time') expect(media.timestamp).toBe('2024-01-10T09:00:30.000-07:00');
   const drafts = await readStore(page, 'drafts') as RetryDraft[];
   expect(drafts.find((draft) => draft.mediaPath === path)?.dirty).toBe(false);
+});
+
+When('a saved expert image receives a {string} draft', async ({ page, scratch }, edit: string) => {
+  await page.getByRole('button', { name: expertName }).click();
+  await runLiveSync(page);
+  await page.reload();
+  await openWorkspace(page);
+  await focusFrame(page, 'IMG002.JPG');
+  scratch.savedExpert = true;
+  if (edit === 'drop') await speciesRow(page, 'Canis latrans').dragTo(gridCell(page, 'IMG002.JPG'));
+  else {
+    await gridCell(page, 'IMG001.JPG').click();
+    await gridCell(page, 'IMG002.JPG').click({ modifiers: ['ControlOrMeta'] });
+    await gridCell(page, 'IMG001.JPG').click({ modifiers: ['ControlOrMeta'] });
+    await page.getByRole('button', { name: 'Time shift selection', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Time shift · selection' });
+    await dialog.getByRole('button', { name: 'Increase Hour', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Apply to 1 selected frame →', exact: true }).click();
+  }
+  await page.keyboard.press('Control+s');
+  const draft = (await readStore(page, 'drafts') as (RetryDraft & { baseQuestionable: boolean })[]).find(entry => entry.mediaPath === path)!;
+  expect(draft.questionable).toBe(true);
+  expect(draft.baseQuestionable).toBe(true);
+});
+
+Then('the saved expert marker survives retry and the subsequent sync', async ({ page, s3 }) => {
+  await expect(page.getByRole('button', { name: expertName })).toHaveAttribute('aria-pressed', 'true');
+  await runLiveSync(page);
+  await page.reload();
+  await openWorkspace(page);
+  await focusFrame(page, 'IMG002.JPG');
+  await expect(page.getByRole('button', { name: expertName })).toHaveAttribute('aria-pressed', 'true');
+  expect(parseMedia(s3.text(BUCKET, `${PREFIX_A}media.csv`)).find(media => media.mediaId === path)?.comments).toContain('[NEED_EXPERT:true]');
 });

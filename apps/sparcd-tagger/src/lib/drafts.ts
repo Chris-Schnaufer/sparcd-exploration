@@ -471,6 +471,7 @@ export const useDraftStore = create<DraftState>((set, get) => {
     setQuestionableMany: (ctx, targets, value) =>
       mutateMany(ctx, targets, (prev, base) => ({
         questionable: value,
+        questionableEdited: true,
         baseQuestionable: base?.questionable ?? prev.baseQuestionable,
       }), (next, base) => !base ||
         !!next.pendingSync ||
@@ -598,6 +599,7 @@ export const useDraftStore = create<DraftState>((set, get) => {
           dirty: false,
           pendingSync: undefined,
           baseQuestionable: rec.questionable,
+          questionableEdited: undefined,
           confirmedSpecies: undefined,
           removedSpecies: undefined,
           // Review events are now in the canonical observations.csv. Remove
@@ -609,9 +611,10 @@ export const useDraftStore = create<DraftState>((set, get) => {
         } : {
           ...rec,
           pendingSync: undefined,
-          // The old operation completed, but a newer draft still owns its
-          // intended status/species/time. Rebase only the published status so
-          // a reversal before retry remains a pending clear after reload.
+          // Unrelated edits inherit the published status. Explicit toggles,
+          // including a reversal to the original value, retain their intent.
+          questionable: rec.questionableEdited || rec.questionable !== !!rec.baseQuestionable
+            ? rec.questionable : !!publishedStatus,
           baseQuestionable: publishedStatus,
           dirty: rec.dirty || rec.questionable !== publishedStatus,
         };

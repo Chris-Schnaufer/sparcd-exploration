@@ -6,5 +6,7 @@ export function draftRevisionOf(draft: DraftRecord): string {
     draft.id, draft.bucket, draft.uploadPrefix, draft.mediaPath, draft.deploymentId,
     draft.observations, draft.questionable, !!draft.baseQuestionable, draft.timeOverride,
     draft.confirmedSpecies ?? [], draft.removedSpecies ?? [], draft.lastEdited,
+    // Keep existing journal signatures valid when no explicit status intent exists.
+    ...(draft.questionableEdited ? [true] : []),
   ]);
 }

@@ -18,3 +18,15 @@ Feature: Retrying Need expert publication preserves newer local edits
       | species   |
       | status    |
       | time      |
+
+  Scenario Outline: Unrelated edits preserve a previously saved expert marker
+    When a saved expert image receives a "<seed>" draft
+    And a Need expert sync fails after publishing media
+    And the interrupted image receives a "species" edit
+    And the interrupted sync is resumed after a browser reload
+    Then the saved expert marker survives retry and the subsequent sync
+
+    Examples:
+      | seed |
+      | drop |
+      | time |
