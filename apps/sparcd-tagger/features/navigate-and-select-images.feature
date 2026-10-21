@@ -79,7 +79,7 @@ Feature: Move through an upload and choose which images an action applies to
     When the Overview is switched to the list view
     Then its list row shows Has species and Questionable badges
     When the Overview is resized to a narrow screen
-    Then the list thumbnail badges still fit inside their image
+    Then the list badges follow the filename and fit inside their row
 
   @unmapped
   Scenario: Filtering clears a selection with no visible images

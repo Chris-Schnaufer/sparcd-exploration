@@ -53,9 +53,9 @@ When('the Overview is switched to the list view', async ({ page }) => {
 
 Then('its list row shows Has species and Questionable badges', async ({ page }) => {
   const row = listRow(page, 'IMG001.JPG');
-  const thumbnail = row.getByTestId('image-thumbnail');
-  await expect(thumbnail.locator('[title^="Has species"]')).toBeVisible();
-  await expect(thumbnail.locator('[title="questionable"]')).toBeVisible();
+  const filename = row.locator('[data-column="filename"]');
+  await expect(filename.locator('[title^="Has species"]')).toBeVisible();
+  await expect(filename.locator('[title="questionable"]')).toBeVisible();
   await expect(row).toHaveAccessibleName(/Has species.*Questionable/);
 });
 
@@ -63,17 +63,16 @@ When('the Overview is resized to a narrow screen', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
 });
 
-Then('the list thumbnail badges still fit inside their image', async ({ page }) => {
-  const thumbnail = listRow(page, 'IMG001.JPG').getByTestId('image-thumbnail');
-  const imageBox = await thumbnail.boundingBox();
-  const badges = await thumbnail.locator('span.inline-flex').first().boundingBox();
-  expect(imageBox).not.toBeNull();
-  expect(badges).not.toBeNull();
-  expect(badges!.width).toBeGreaterThanOrEqual(36);
-  expect(badges!.x).toBeGreaterThanOrEqual(imageBox!.x);
-  expect(badges!.y).toBeGreaterThanOrEqual(imageBox!.y);
-  expect(badges!.x + badges!.width).toBeLessThanOrEqual(imageBox!.x + imageBox!.width);
-  expect(badges!.y + badges!.height).toBeLessThanOrEqual(imageBox!.y + imageBox!.height);
+Then('the list badges follow the filename and fit inside their row', async ({ page }) => {
+  const row = listRow(page, 'IMG001.JPG');
+  const filename = row.locator('[data-column="filename"]');
+  await expect(filename.locator('[title^="Has species"]')).toBeVisible();
+  await expect.poll(async () => (await filename.boundingBox())?.width ?? 0).toBeGreaterThan(80);
+  const column = await filename.boundingBox();
+  const badge = await filename.getByTestId('classification-checkmark').boundingBox();
+  expect(badge!.x).toBeGreaterThan(column!.x);
+  expect(badge!.x + badge!.width).toBeLessThanOrEqual(column!.x + column!.width);
+  await expect(row.getByTestId('image-thumbnail').locator('[role="img"]')).toHaveCount(0);
 });
 
 Given('image {string} is focused', async ({ page }, fileName: string) => {
