@@ -17,6 +17,7 @@ import { correctedTimestamp, shiftTimestamp } from '@sparcd/camtrap';
 import tzlookup from 'tz-lookup';
 import { SpeciesPanel } from '../components/SpeciesPanel';
 import { AppliedSpecies } from '../components/AppliedSpecies';
+import { NeedExpertToggle } from '../components/NeedExpertToggle';
 import { Cheatsheet } from '../components/Cheatsheet';
 import { SyncDialog } from '../components/SyncDialog';
 import { SnapshotsDialog } from '../components/SnapshotsDialog';
@@ -631,7 +632,7 @@ export function Tag() {
         deploymentId: img.deploymentId,
         // Seed a fresh draft from the FULL canonical base set so a partial edit
         // (adding one species, toggling questionable) keeps every existing one.
-        base: { observations: img.baseObservations },
+        base: { observations: img.baseObservations, questionable: img.baseQuestionable },
       }));
   };
 
@@ -794,8 +795,27 @@ export function Tag() {
     ? nextVisibleIndex(visibleIndices, nextIndex, 1) != null
     : nextIndex < list.length - 1);
 
-  // On-screen questionable toggle mirrors Shift+Space: act on the selection
-  // (or the focused image), flipping off the focused image's current state.
+  // The compact controls and Shift+Space share the same selection semantics.
+  const toggleNeedExpert = () => {
+    if (!current) return;
+    const targets = targetsOf();
+    if (targets.length) setQuestionableManyFn(ctx, targets, !effectiveOf(current, drafts[current.key]).questionable);
+  };
+  const selectedExpertStates = selectedForActions
+    .map((index) => list[index]).filter((image): image is TagImage => !!image)
+    .map((image) => effectiveOf(image, drafts[image.key]).questionable);
+  const expertPressed: boolean | 'mixed' = selectedExpertStates.length &&
+    selectedExpertStates.some((value) => value !== selectedExpertStates[0])
+    ? 'mixed'
+    : selectedExpertStates[0] ?? (current ? effectiveOf(current, drafts[current.key]).questionable : false);
+  const expertToggle = (align: 'left' | 'right') => <NeedExpertToggle
+    pressed={expertPressed}
+    disabled={!current}
+    onClick={toggleNeedExpert}
+    selectionCount={selectedExpertStates.length}
+    nextState={current ? !effectiveOf(current, drafts[current.key]).questionable : undefined}
+    align={align}
+  />;
   // --- Global key handler: attached once, reads the latest state via a ref so
   // it never re-binds per render (plan perf requirement). ----------------------
   const stateRef = useRef<HandlerState>(null!);
@@ -887,7 +907,7 @@ export function Tag() {
 
   const draft = current ? drafts[current.key] : undefined;
   const eff = current ? effectiveOf(current, draft) : null;
-  const currentBase = current ? { observations: current.baseObservations } : undefined;
+  const currentBase = current ? { observations: current.baseObservations, questionable: current.baseQuestionable } : undefined;
   const nDirty = dirtyCount(drafts);
   const discardDetails = discardSummaries.map(
     (summary) =>
@@ -925,6 +945,7 @@ export function Tag() {
             ]}
           />
         )}
+        {view === 'overview' && expertToggle('left')}
 
         <span className="text-[12px] font-mono text-inkSoft">
           {selected.size > 0 ? (
@@ -1340,6 +1361,7 @@ export function Tag() {
                 EXIF Modified
               </span>
             )}
+            {expertToggle('right')}
             <button
               ref={focusCloseRef}
               type="button"
@@ -1446,9 +1468,7 @@ export function Tag() {
       hasFocus: !!current,
       selectionCount: selected.size,
       disabled: !current,
-      // The compact applied-species strip edits the focused image only. Mounted
-      // in the panel header so it covers both Overview and Focus layouts (the
-      // same panel renders in both) with one site.
+      // The applied-species strip edits the focused image only.
       headerSlot: (
         <div className="flex flex-wrap items-center gap-1.5">
           {speciesCountPrefix && selected.size <= 1 && (
@@ -1488,23 +1508,6 @@ export function Tag() {
               ])
             }
           />
-          {current && (
-            <button
-              type="button"
-              aria-pressed={!!eff?.questionable}
-              aria-label={eff?.questionable ? 'Clear questionable flag' : 'Mark image questionable'}
-              title={eff?.questionable ? 'Clear questionable flag' : 'Mark image questionable'}
-              onClick={() => {
-                const targets = targetsOf();
-                if (targets.length) setQuestionableManyFn(ctx, targets, !eff?.questionable);
-              }}
-              className={`min-h-11 border px-2 text-[11px] font-mono focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
-                eff?.questionable ? 'border-warn text-warn' : 'border-rule text-inkMute hover:text-ink'
-              }`}
-            >
-              {eff?.questionable ? 'Questionable' : 'Mark questionable'}
-            </button>
-          )}
         </div>
       ),
     };
@@ -1910,11 +1913,17 @@ function FittedStatusOverlay({ fitted, children }: {
   children: React.ReactNode;
 }) {
   if (!fitted || !children) return null;
+  // On very short panoramas, keep the expert badge left of the 44px Next
+  // target while retaining its upper-right position within the picture.
+  const statusStyle = {
+    ...fitted,
+    '--expert-badge-inset': fitted.height < 88 ? '3rem' : '0.25rem',
+  } as React.CSSProperties;
   return (
     <div
       data-testid="focus-image-status-badges"
       className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10"
-      style={fitted}
+      style={statusStyle}
     >
       {children}
     </div>
@@ -2326,6 +2335,9 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
   // A focused video/audio control handles its own keys natively; don't let any
   // tagger hotkey fire while the user is scrubbing or playing.
   if (isMediaTarget(e.target)) return;
+  // Native activation owns Enter/Space while this compact button has focus.
+  if (e.target instanceof HTMLElement && e.target.matches('[data-need-expert-toggle]') &&
+      (e.key === 'Enter' || e.key === ' ')) return;
 
   // A focused range slider only needs arrow keys for its own navigation —
   // every other key, including species hotkeys, falls through below instead
@@ -2469,8 +2481,7 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
       if (e.shiftKey) {
         const targets = s.targetsOf();
         if (!targets.length || !current) return;
-        const anchorDraft = s.drafts[current.key];
-        s.setQuestionableMany(s.ctx, targets, !anchorDraft?.questionable);
+        s.setQuestionableMany(s.ctx, targets, !effectiveOf(current, s.drafts[current.key]).questionable);
         return;
       }
       s.filterRef.current?.focus();

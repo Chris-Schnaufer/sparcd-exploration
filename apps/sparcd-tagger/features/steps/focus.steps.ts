@@ -375,7 +375,7 @@ Then(
   async ({ page }) => {
     const pane = page.getByTestId('focus-drop-zone');
     await expect(pane.getByLabel('Has species', { exact: false })).toBeVisible();
-    await expect(pane.getByLabel('Questionable', { exact: true })).toBeVisible();
+    await expect(pane.getByLabel('Needs expert opinion', { exact: true })).toBeVisible();
   },
 );
 
@@ -399,7 +399,7 @@ Then('the status badges do not overlap the Adjust or image-navigation controls',
 
 Then('no status badges are shown in the fullscreen viewer', async ({ page }) => {
   await expect(lightbox(page).getByLabel('Has species', { exact: false })).toHaveCount(0);
-  await expect(lightbox(page).getByLabel('Questionable', { exact: true })).toHaveCount(0);
+  await expect(lightbox(page).getByLabel('Needs expert opinion', { exact: true })).toHaveCount(0);
 });
 
 Then('it fills the window over a dimmed background', async ({ page }) => {
@@ -863,7 +863,7 @@ Then('Tab wraps between the Focus viewer and the adjustment panel', async ({ pag
   await page.keyboard.press('Shift+Tab');
   await expect(saturation).toBeFocused();
   await page.keyboard.press('Tab');
-  await expect(page.getByRole('button', { name: 'Close Focus' })).toBeFocused();
+  await expect(focusDialog.getByRole('button', { name: "Toggle needing an expert's opinion" })).toBeFocused();
   await adjustToggle(page).click();
   await expect(brightness).toBeFocused();
   await expect(focusDialog).toBeVisible();

@@ -18,6 +18,7 @@ that map to an agreed story carry its ID; the rest carry `@unmapped`.
 | `H1-examine-images-closely.feature` | Zoom, pan, fullscreen, per-image reset, video, display adjustments | `@H1` |
 | `H2-assign-species-to-images.feature` | Species panel, multi-species, Ghost, key bindings, bulk apply | `@H2` |
 | `H3-review-existing-identifications.feature` | Existing identifications shown, corrected, removed; attribution | `@H3` |
+| `need-expert-badge.feature` | Transparent goldenrod Need expert badges, coexistence with classification, shared status through fresh sessions, clearing, targeting, touch, and fullscreen exclusion (#555) | `@unmapped` |
 | `classification-checkmark.feature` | Classification checkmark appearance and placement in Grid/List/Focus; Ghost/Test, removal, sync/reload, letterboxing, themes, touch and fullscreen exclusion (#554) | `@unmapped` |
 | `navigate-and-select-images.feature` | Keyboard navigation, sort, find, selection, bursts, cheatsheet | `@unmapped` |
 | `local-drafts-and-recovery.feature` | Local drafts, unsaved counts, History recovery, discard | `@unmapped` |
@@ -77,12 +78,9 @@ that map to an agreed story carry its ID; the rest carry `@unmapped`.
 
 ## Ambiguities and things a reviewer should decide
 
-1. **The questionable flag never leaves the browser.** It is stored in local
-   drafts, shown as a marker, and toggled per image or across a selection —
-   but the sync writes only observations and capture times, so it is never
-   published. Its drafts also stay listed as "unsaved" after a sync, because
-   only the drafts actually written are cleared. Is a local-only flag the
-   intent, or should it become part of the canonical record?
+1. **Need expert is shared after Sync.** The local draft previews a per-image
+   change; Sync writes `[NEED_EXPERT:true]` in `media.csv` comments, and clearing
+   removes that marker. Status-only edits leave observations unchanged.
 2. **Review provenance is separate from original attribution.** H3-6 covers
    repeatable review markers and their preservation through sync and local
    handoff; the canonical contract is documented in issue #371.
