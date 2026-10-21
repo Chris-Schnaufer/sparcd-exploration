@@ -811,7 +811,7 @@ Then('the header sync explanation is available on hover and keyboard focus', asy
 Given('a different image has only a questionable edit', async ({ page }) => {
   await focusFrame(page, 'IMG005.JPG');
   await page.keyboard.press('Shift+Space');
-  await expect(gridCell(page, 'IMG005.JPG').locator('[title="questionable"]')).toBeVisible();
+  await expect(gridCell(page, 'IMG005.JPG').locator('[title="Needs expert opinion"]')).toBeVisible();
   await waitForDirtyDrafts(page, 2);
 });
 
@@ -830,7 +830,7 @@ Then('the completed-sync explanation acknowledges the saved Need expert edit', a
   expect(parseMedia(s3.text(BUCKET, `${PREFIX_A}media.csv`)).find(
     row => row.fileName === 'IMG005.JPG',
   )?.comments).toContain('[NEED_EXPERT:true]');
-  await expect(gridCell(page, 'IMG005.JPG').locator('[title="questionable"]')).toBeVisible();
+  await expect(gridCell(page, 'IMG005.JPG').locator('[title="Needs expert opinion"]')).toBeVisible();
   expect(parseObservations(s3.text(BUCKET, `${PREFIX_A}observations.csv`)).some(
     (observation) => observation.mediaId.endsWith('IMG002.JPG') && observation.scientificName === 'Canis latrans',
   )).toBe(true);
