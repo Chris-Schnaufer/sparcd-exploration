@@ -977,6 +977,41 @@ Then('Escape, the close control or a click outside dismisses it', async ({ page 
   await expect(loupe(page)).toHaveCount(0);
 });
 
+// --- Focus species list (#559) ----------------------------------------------
+
+When('Focus is entered', async ({ page }) => {
+  await enterFocusView(page);
+});
+
+Given('the focused image carries four species', async ({ page }) => {
+  // IMG001.JPG already carries Mule Deer (Odocoileus hemionus) from the
+  // fixture; apply the rest of the vocabulary to reach all four.
+  await focusFrame(page, 'IMG001.JPG');
+  await expect(appliedChip(page, 'Mule Deer')).toBeVisible();
+  await speciesApply(page, 'Canis latrans').click();
+  await speciesApply(page, 'Pecari tajacu').click();
+  await speciesApply(page, 'Puma concolor').click();
+});
+
+Then(
+  'every applied species is listed in Focus with no summary control to expand',
+  async ({ page }) => {
+    await expect(page.locator('button[title="Show all applied species"]')).toHaveCount(0);
+    await expect(appliedChip(page, 'Mountain Lion')).toBeVisible();
+    await expect(appliedChip(page, 'Coyote')).toBeVisible();
+  },
+);
+
+Then('the applied species list in Focus scrolls within a fixed height', async ({ page }) => {
+  const list = page.getByTestId('applied-species-list');
+  await expect(list).toBeVisible();
+  for (const name of ['Mule Deer', 'Coyote', 'Javelina', 'Mountain Lion']) {
+    await expect(appliedChip(page, name)).toBeVisible();
+  }
+  const [scrollHeight, clientHeight] = await list.evaluate((el) => [el.scrollHeight, el.clientHeight]);
+  expect(scrollHeight).toBeGreaterThan(clientHeight);
+});
+
 // --- Empty upload (corrected scenario) --------------------------------------
 
 Given('an upload whose canonical media list has no images is opened', async ({ page, s3 }) => {
