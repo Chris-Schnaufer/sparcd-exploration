@@ -12,6 +12,7 @@ export function Settings() {
   const setSection = useStore((s) => s.setSection);
   const uploaderUser = useStore((s) => s.uploaderUser);
   const setUploaderUser = useStore((s) => s.setUploaderUser);
+  const beginUploaderIdentityEdit = useStore((s) => s.beginUploaderIdentityEdit);
   const ensureUploaderIdentity = useStore((s) => s.ensureUploaderIdentity);
   const identityPersistenceError = useStore((s) => s.identityPersistenceError);
   const identityResolutionStatus = useStore((s) => s.identityResolutionStatus);
@@ -93,6 +94,7 @@ export function Settings() {
               id="uploader-identity"
               value={uploaderUser}
               onChange={(e) => setUploaderUser(e.target.value)}
+              onFocus={beginUploaderIdentityEdit}
               onBlur={ensureUploaderIdentity}
               aria-describedby={[
                 'uploader-identity-help',

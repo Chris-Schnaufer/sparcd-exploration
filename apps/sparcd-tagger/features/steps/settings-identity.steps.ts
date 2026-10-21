@@ -106,6 +106,8 @@ Then('the real Uploader Settings and Tagger share edits in both directions', asy
   const sibling = await context.newPage(); await installS3Mock(sibling, s3);
   await sibling.route('**/-/whoami', route => route.fulfill({ json: { id: 'alice', name: 'Alice Researcher' } }));
   await sibling.goto(APP_URL); await expect(sectionTab(sibling, 'Browse')).toBeVisible();
+  let reloads = 0;
+  sibling.on('framenavigated', frame => { if (frame === sibling.mainFrame()) reloads++; });
   // Mount the production Uploader Settings with its real store in this same-origin
   // sibling. The Tagger Vite harness serves both workspace source modules.
   await sibling.evaluate(async ({ settings, uploader, react, dom }) => {
@@ -122,6 +124,16 @@ Then('the real Uploader Settings and Tagger share edits in both directions', asy
   }, { settings: source('../../../sparcd-uploader/src/sections/Settings.tsx'), uploader: source('../../../sparcd-uploader/src/store.ts'), react: `${base}node_modules/.vite/deps/react.js`, dom: `${base}node_modules/.vite/deps/react-dom_client.js` });
   await sibling.getByText('Defaults', { exact: true }).click();
   const uploader = sibling.locator('#uploader-identity'); await expect(uploader).toHaveValue('Alice Researcher');
+  expect(reloads).toBe(0);
+  await uploader.fill('   ');
+  // A shared default update and a successful lookup must not replace active input.
+  await page.evaluate(async url => {
+    const { saveLoginIdentityDefault } = await import(/* @vite-ignore */ url);
+    saveLoginIdentityDefault('testkey', 'Alice Updated In Tagger', 'whoami');
+  }, identityUrl);
+  await sibling.evaluate(async url => { const { useStore } = await import(/* @vite-ignore */ url); await useStore.getState().refreshUploaderIdentity(); }, source('../../../sparcd-uploader/src/store.ts'));
+  await expect(uploader).toHaveValue('   '); await uploader.blur();
+  await expect(uploader).toHaveValue('Alice Researcher');
   await sibling.route('**/-/whoami', route => route.fulfill({ json: { id: 'alice', name: 'Renamed Alice' } }));
   await sibling.evaluate(async url => {
     const { useStore } = await import(/* @vite-ignore */ url);
@@ -150,6 +162,7 @@ Then('the real Uploader Settings and Tagger share edits in both directions', asy
   await expect(page.locator('#user')).toHaveValue('Tagger Custom');
   await expect(uploader).toHaveValue('Tagger Custom');
   await page.reload(); await openSettings(page); await expect(page.locator('#user')).toHaveValue('Tagger Custom');
+  expect(reloads).toBe(0);
   await sibling.close();
 });
 Then('actions under successive custom identities retain their attribution after sync', async ({ page, s3 }) => {
