@@ -328,21 +328,17 @@ function ListCell({
           alt={img.fileName}
           isVideo={isVideo}
         />
-        <ImageStatusBadges
-          hasSpecies={hasSpecies(eff)}
-          questionable={eff.questionable}
-          size="sm"
-          ariaHidden
-          className="absolute bottom-0 left-0 z-10"
-        />
       </span>
       <span
         data-column="filename"
         aria-label={`Filename: ${img.fileName}`}
-        className="min-w-0 flex-1 font-mono text-[12px] text-inkSoft truncate"
         title={img.fileName}
+        className="min-w-0 flex-1 flex items-center gap-1"
       >
-        {img.fileName}
+        <span className="min-w-0 font-mono text-[12px] text-inkSoft truncate">
+          {img.fileName}
+        </span>
+        <ImageStatusBadges hasSpecies={hasSpecies(eff)} questionable={eff.questionable} presentation="list" ariaHidden />
       </span>
       {!narrow && (
         <span
@@ -462,14 +458,14 @@ function GridCell({
             : 'border-rule hover:bg-panelHover'
       } focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent -outline-offset-2`}
     >
-      <span className="relative block flex-1 min-h-0">
+      <span data-testid="grid-image" className="relative block flex-1 min-h-0">
         <Thumb
           objectKey={img.key}
           alt={img.fileName}
           isVideo={isVideoImage(img)}
         />
         {isVideoImage(img) && (
-          <span className="absolute top-1 left-1 bg-paperHover border border-rule text-inkSoft font-mono text-[10px] px-1 leading-tight">
+          <span className="absolute bottom-1 left-1 bg-paperHover border border-rule text-inkSoft font-mono text-[10px] px-1 leading-tight">
             VIDEO
           </span>
         )}
@@ -482,12 +478,12 @@ function GridCell({
               e.stopPropagation();
               onDrill(index);
             }}
-            className="hidden [@media(hover:none)]:flex absolute top-1 right-1 items-center justify-center min-h-11 min-w-11 bg-panel/80 border border-rule text-inkMute text-base"
+            className="hidden [@media(hover:none)]:flex absolute bottom-1 right-1 items-center justify-center min-h-11 min-w-11 bg-panel/80 border border-rule text-inkMute text-base"
           >
             ›
           </span>
         )}
-        <span className="absolute bottom-1 left-1">
+        <span className="pointer-events-none absolute top-0 left-0 w-full aspect-[4/3]">
           <ImageStatusBadges hasSpecies={hasSpecies(eff)} questionable={eff.questionable} ariaHidden />
         </span>
       </span>

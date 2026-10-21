@@ -1604,14 +1604,14 @@ function FocusPane({
             isVideo={isVideo}
             filter={filter}
             adjust={adjustPanel}
+            statusBadges={(
+              <ImageStatusBadges
+                hasSpecies={hasSpecies}
+                questionable={questionable}
+                presentation="focus"
+              />
+            )}
           />
-        )}
-        {current && (questionable || hasSpecies) && (
-          // Outside FocusImage/ZoomableImage's tree, so it never reaches the
-          // Lightbox portal — regular Focus only, per the issue's scope.
-          <div data-testid="focus-image-status-badges" className="absolute top-4 right-4 z-10">
-            <ImageStatusBadges hasSpecies={hasSpecies} questionable={questionable} />
-          </div>
         )}
         {current && canPrev && (
           <button
@@ -1721,12 +1721,14 @@ function FocusImage({
   isVideo,
   filter,
   adjust,
+  statusBadges,
 }: {
   objectKey: string;
   alt: string;
   isVideo: boolean;
   filter?: string;
   adjust?: React.ReactNode;
+  statusBadges?: React.ReactNode;
 }) {
   const { url, isError, markLoaded } = useMediaUrl(objectKey, 'high');
   const [loadedToken, setLoadedToken] = useState<string>();
@@ -1761,6 +1763,7 @@ function FocusImage({
             src={url}
             alt={alt}
             resetKey={objectKey}
+            statusBadges={statusBadges}
             onLoaded={onLoaded}
             onError={onMediaError}
           />
@@ -1770,6 +1773,7 @@ function FocusImage({
             alt={alt}
             resetKey={objectKey}
             filter={filter}
+            statusBadges={statusBadges}
             onLoaded={onLoaded}
             adjust={adjust}
           />
@@ -1795,27 +1799,34 @@ function FocusVideo({
   src,
   alt,
   resetKey,
+  statusBadges,
   onLoaded,
   onError,
 }: {
   src: string;
   alt: string;
   resetKey: string;
+  statusBadges?: React.ReactNode;
   onLoaded: () => void;
   onError: () => void;
 }) {
+  const { paneRef, fitted, onImageLoad } = useFittedZoom(src);
   return (
-    <video
-      key={resetKey}
-      src={src}
-      aria-label={alt}
-      controls
-      playsInline
-      preload="metadata"
-      onLoadedData={onLoaded}
-      onError={onError}
-      className="w-full h-full object-contain"
-    />
+    <div ref={paneRef} className="relative w-full h-full min-w-0 min-h-0">
+      <video
+        key={resetKey}
+        src={src}
+        aria-label={alt}
+        controls
+        playsInline
+        preload="metadata"
+        onLoadedMetadata={onImageLoad}
+        onLoadedData={onLoaded}
+        onError={onError}
+        className="w-full h-full object-contain"
+      />
+      <FittedStatusOverlay fitted={fitted}>{statusBadges}</FittedStatusOverlay>
+    </div>
   );
 }
 
@@ -1858,11 +1869,33 @@ function useFittedZoom(src: string) {
     const zoom = zoomRef.current;
     if (fitted && zoom) zoom.centerView(1, 0);
   }, [pane?.w, pane?.h, fitted?.width, fitted?.height]);
-  const onImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
-    const img = e.currentTarget;
-    setLoaded({ src, w: img.naturalWidth, h: img.naturalHeight });
+  const onImageLoad = (e: React.SyntheticEvent<HTMLImageElement | HTMLVideoElement>) => {
+    const media = e.currentTarget;
+    setLoaded({
+      src,
+      w: 'naturalWidth' in media ? media.naturalWidth : media.videoWidth,
+      h: 'naturalHeight' in media ? media.naturalHeight : media.videoHeight,
+    });
   };
   return { paneRef, zoomRef, fitted, onImageLoad };
+}
+
+// Keep badges at the fitted picture's corners, including letterboxed media,
+// without scaling them with zoom or copying them into the image-only Lightbox.
+function FittedStatusOverlay({ fitted, children }: {
+  fitted: { width: number; height: number } | undefined;
+  children: React.ReactNode;
+}) {
+  if (!fitted || !children) return null;
+  return (
+    <div
+      data-testid="focus-image-status-badges"
+      className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10"
+      style={fitted}
+    >
+      {children}
+    </div>
+  );
 }
 
 function ZoomableImage({
@@ -1870,6 +1903,7 @@ function ZoomableImage({
   alt,
   resetKey,
   filter,
+  statusBadges,
   onLoaded,
   adjust,
 }: {
@@ -1877,6 +1911,7 @@ function ZoomableImage({
   alt: string;
   resetKey: string;
   filter?: string;
+  statusBadges?: React.ReactNode;
   onLoaded: () => void;
   adjust?: React.ReactNode;
 }) {
@@ -1926,6 +1961,7 @@ function ZoomableImage({
           </>
         )}
       </TransformWrapper>
+      <FittedStatusOverlay fitted={fitted}>{statusBadges}</FittedStatusOverlay>
       {expanded && <Lightbox src={src} alt={alt} filter={filter} onClose={() => setExpanded(false)} />}
     </div>
   );
