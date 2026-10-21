@@ -16,8 +16,8 @@ Given('the account-name service returns Alice Researcher', async ({ page }) => {
 Given('the account-name service fails with {string}', async ({ page }, failure: string) => {
   await page.route('**/-/whoami', async route => {
     if (failure === 'network') { await route.abort(); return; }
-    const status = ({ forbidden: 403, signature: 403, malformed: 200, rate: 429, server: 503 } as Record<string, number>)[failure];
-    await route.fulfill({ status, body: failure === 'signature' ? '<Error><Code>SignatureDoesNotMatch</Code></Error>' : 'unexpected response' });
+    const status = ({ forbidden: 403, signature: 403, malformed: 200, rate: 429, server: 503, 'rate-absence': 429, 'server-absence': 503 } as Record<string, number>)[failure];
+    await route.fulfill({ status, body: failure.endsWith('-absence') ? '<Error><Code>NoSuchKey</Code></Error>' : failure === 'signature' ? '<Error><Code>SignatureDoesNotMatch</Code></Error>' : 'unexpected response' });
   });
 });
 Then('Settings has the required section order and disconnect guidance', async ({ page }) => {
@@ -59,6 +59,16 @@ Then('clearing the identity preserves blank input until blur and restores the ac
 Then('missing attribution prevents mouse keyboard drag and write actions', async ({ page, s3 }) => {
   await expect(page.getByRole('button', { name: 'Set Tagger identity', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Apply Coyote', exact: true })).toBeDisabled();
+  await focusFrame(page, 'IMG001.JPG');
+  await expect(gridCell(page, 'IMG001.JPG')).toContainText('Mule Deer ×2');
+  // Unresolved attribution removes the count/removal editors and disables
+  // re-applying the canonical species (the review/confirmation entry point).
+  await expect(page.getByRole('spinbutton', { name: 'Count for Mule Deer', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Remove Mule Deer', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Clear Species', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^Mule Deer Odocoileus hemionus/ })).toBeDisabled();
+  await page.keyboard.press('d');
+  await expect(gridCell(page, 'IMG001.JPG')).toContainText('Mule Deer ×2');
   await focusFrame(page, 'IMG002.JPG'); await page.keyboard.press('d'); await page.keyboard.press('p');
   const drag = await page.evaluateHandle(() => new DataTransfer());
   await drag.evaluate(data => data.setData('application/x-sparcd-species', JSON.stringify({ scientificName: 'Canis latrans', commonName: 'Coyote', count: 1 })));
@@ -79,7 +89,16 @@ Then('entering a custom identity enables tagging despite the lookup error', asyn
   await page.getByRole('button', { name: 'Set Tagger identity', exact: true }).click();
   await expect(page.locator('#user')).toHaveValue(''); await page.locator('#user').fill('Explicit Identifier'); await page.locator('#user').blur();
   await expect(page.getByRole('button', { name: 'Retry account-name lookup', exact: true })).toBeVisible();
-  await sectionTab(page, 'Tag').click(); await focusFrame(page, 'IMG002.JPG');
+  await page.getByLabel('Move to the next image after assigning a species').uncheck();
+  await sectionTab(page, 'Tag').click();
+  await focusFrame(page, 'IMG001.JPG');
+  const count = page.getByRole('spinbutton', { name: 'Count for Mule Deer', exact: true });
+  await expect(count).toHaveValue('2');
+  await count.fill('3'); await expect(count).toHaveValue('3');
+  await expect(page.getByLabel(/^Reviewed by Explicit Identifier at/)).toBeVisible();
+  await page.getByRole('button', { name: 'Remove Mule Deer', exact: true }).click();
+  await expect(count).toHaveCount(0);
+  await focusFrame(page, 'IMG002.JPG');
   await speciesApply(page, 'Canis latrans').click(); await expect(gridCell(page, 'IMG002.JPG')).toContainText('Coyote');
 });
 Then('the real Uploader Settings and Tagger share edits in both directions', async ({ page, context, s3 }) => {

@@ -53,6 +53,12 @@ describe('Tagger connected attribution', () => {
     useStore.getState().connect(config(), false); await settled();
     expect(useStore.getState().taggerUser).toBe(''); expect(useStore.getState().identityResolutionStatus).toBe('error');
   });
+  it.each([408, 429, 500, 503])('keeps attribution unresolved for HTTP %s even with a route-absence body', async status => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('<Error><Code>NoSuchKey</Code></Error>', { status })));
+    useStore.getState().connect(config(), false); await settled();
+    expect(useStore.getState().taggerUser).toBe('');
+    expect(useStore.getState().identityResolutionStatus).toBe('error');
+  });
   it('uses an Access-key marker only for protocol-specific route absence', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('<Error><Code>NoSuchKey</Code></Error>', { status: 404 })));
     useStore.getState().connect(config(), false); await settled();
