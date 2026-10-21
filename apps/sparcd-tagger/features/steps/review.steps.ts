@@ -207,6 +207,32 @@ When('the same species controls are shown in Focus', async ({ page }) => {
   await enterFocusView(page);
 });
 
+Then('Focus lists each applied species without original attribution or negative review text', async ({ page }) => {
+  await expect(page.getByRole('button', { name: 'Collapse applied species' })).toHaveCount(0);
+  await expect(page.locator('[data-testid="applied-species-summary"]')).toHaveCount(0);
+  for (const label of ['Mountain Lion', 'Coyote']) {
+    await expect(appliedChip(page, label)).toBeVisible();
+    await expectNoRemovedSpeciesReviewText(page, label);
+  }
+});
+
+Then('Focus lists each applied species with positive review information and no original attribution', async ({ page }) => {
+  await expect(page.getByRole('button', { name: 'Collapse applied species' })).toHaveCount(0);
+  await expect(page.locator('[data-testid="applied-species-summary"]')).toHaveCount(0);
+  for (const label of ['Mountain Lion', 'Coyote']) {
+    await expect(appliedChip(page, label).getByText(/Reviewed by fielduser at 2024-01-12T09:30:00\.000Z/)).toBeVisible();
+    await expect(appliedChip(page, label)).not.toContainText(/Originally identified by|Originally classified by/i);
+  }
+});
+
+Then('Focus lists each applied species with positive review information and no negative labels', async ({ page }) => {
+  await expect(page.getByRole('button', { name: 'Collapse applied species' })).toHaveCount(0);
+  await expect(page.locator('[data-testid="applied-species-summary"]')).toHaveCount(0);
+  await expect(appliedChip(page, 'Coyote').getByText(/Reviewed by fielduser/)).toBeVisible();
+  await expectNoRemovedSpeciesReviewText(page, 'Mountain Lion');
+  await expect(appliedChip(page, 'Coyote')).not.toContainText(/Originally identified by|Originally classified by/i);
+});
+
 When('the species control is shown in Focus', async ({ page }) => {
   await enterFocusView(page);
 });
