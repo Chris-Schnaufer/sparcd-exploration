@@ -431,6 +431,7 @@ function GridCell({
 }) {
   const draft = useDraftStore((s) => s.drafts[img.key]);
   const eff = effectiveOf(img, draft);
+  const isVideo = isVideoImage(img);
   const reviewLabel = reviewSummaryLabel(eff.observations);
   const statusLabels = [
     ...(hasSpecies(eff) ? ['Has species — one or more species, or an explicit no-species classification'] : []),
@@ -438,6 +439,7 @@ function GridCell({
   ];
   const tileLabel = [
     `Filename: ${img.fileName}`,
+    `Media type: ${isVideo ? 'video' : 'image'}`,
     `Species: ${summarize(eff.observations) || 'untagged'}`,
     ...(reviewLabel ? [`Review status: ${reviewLabel}`] : []),
     ...statusLabels,
@@ -462,9 +464,9 @@ function GridCell({
         <Thumb
           objectKey={img.key}
           alt={img.fileName}
-          isVideo={isVideoImage(img)}
+          isVideo={isVideo}
         />
-        {isVideoImage(img) && (
+        {isVideo && (
           <span className="absolute bottom-1 left-1 bg-paperHover border border-rule text-inkSoft font-mono text-[10px] px-1 leading-tight">
             VIDEO
           </span>

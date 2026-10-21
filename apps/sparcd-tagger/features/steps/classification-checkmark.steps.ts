@@ -44,6 +44,10 @@ Then('the classified grid image has a transparent green checkmark one third of i
   await expect(check(gridCell(page, 'IMG003.JPG'))).toBeVisible();
   await page.screenshot({ path: `/tmp/554-grid-${page.viewportSize()!.width}-${await page.locator('html').getAttribute('class')}.png` });
 });
+Then('grid image and video tile names include their media type', async ({ page }) => {
+  await expect(gridCell(page, 'IMG001.JPG')).toHaveAccessibleName(/Filename: IMG001\.JPG; Media type: image;/);
+  await expect(gridCell(page, 'VID001.MP4')).toHaveAccessibleName(/Filename: VID001\.MP4; Media type: video;/);
+});
 Then('badges preserve image selection and double-click opening', async ({ page }) => {
   const tile = gridCell(page, 'IMG001.JPG');
   await tile.scrollIntoViewIfNeeded();

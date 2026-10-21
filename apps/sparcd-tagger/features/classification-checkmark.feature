@@ -3,6 +3,9 @@ Feature: Classification checkmarks are prominent without blocking images
   Background:
     Given an upload is open in the tagging workspace
 
+  Scenario: Grid tile accessible names identify images and videos
+    Then grid image and video tile names include their media type
+
   Scenario Outline: Checkmarks use the image corners and follow list filenames
     Given the checkmark layout uses width <width> and theme "<theme>"
     Then the classified grid image has a transparent green checkmark one third of its short side
