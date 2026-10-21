@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useState, useId, useEffect, useRef } from 'react';
+import { useStore } from '../store';
+import { unfinishedEditor } from '../lib/editorState';
 import type { DraftObservation } from '../lib/db';
 import { isGhostObs, reviewStatus, reviewSummary } from '../lib/effective';
 
@@ -22,13 +24,13 @@ function labelOf(o: DraftObservation): string {
 }
 
 function reviewLabel(o: DraftObservation): string | null {
-  const reviewEvents = o.reviewEvents ?? [];
+  const reviewEvents = (o.reviewEvents ?? []).filter(event => !event.reversedAt);
   const review = reviewEvents[reviewEvents.length - 1];
   return review ? `Reviewed by ${review.reviewedBy} at ${review.reviewedAt}` : null;
 }
 
 function reviewStateLabel(o: DraftObservation): string {
-  const reviewEvents = o.reviewEvents ?? [];
+  const reviewEvents = (o.reviewEvents ?? []).filter(event => !event.reversedAt);
   if (!reviewEvents.length) return 'Not reviewed';
   return reviewLabel(o) ?? 'Reviewed';
 }
@@ -103,6 +105,19 @@ function Chip({
   onRemove: () => void;
 }) {
   const ghost = isGhostObs(obs);
+  const automatic = useStore(s => !!s.s3Config);
+  const id = useId();
+  const [text, setText] = useState(String(obs.count));
+  const textRef = useRef(text); textRef.current = text;
+  const focused = useRef(false);
+  useEffect(() => { if (!focused.current) setText(String(obs.count)); }, [obs.count]);
+  useEffect(() => () => unfinishedEditor(id, false), [id]);
+  const finish = (input: HTMLInputElement) => {
+    if (!input.reportValidity()) { queueMicrotask(() => input.focus()); return; }
+    const count = Number(textRef.current);
+    unfinishedEditor(id, false);
+    if (count !== obs.count) onSetCount(count);
+  };
   return (
     <span
       className={`inline-flex items-center gap-1.5 pl-2.5 pr-1 py-1 text-[13px] border ${
@@ -131,12 +146,23 @@ function Chip({
         <input
           type="number"
           min={1}
-          value={obs.count}
-          onChange={(e) => onSetCount(Math.max(1, Number(e.target.value) || 1))}
+          required
+          step={1}
+          value={automatic ? text : obs.count}
+          onFocus={() => { focused.current = true; }}
+          onChange={(e) => {
+            if (!automatic) { onSetCount(Math.max(1, Number(e.target.value) || 1)); return; }
+            textRef.current = e.target.value; setText(e.target.value);
+            unfinishedEditor(id, e.target.value !== String(obs.count));
+          }}
+          onBlur={(e) => { focused.current = false; if (automatic) finish(e.currentTarget); }}
+          onKeyDown={(e) => { if (automatic && e.key === 'Enter') { e.preventDefault(); if (e.currentTarget.reportValidity()) e.currentTarget.blur(); } }}
+          aria-describedby={automatic ? `${id}-help` : undefined}
           className="w-10 bg-paper border border-rule px-1 py-0.5 text-[12px] font-mono text-ink focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
           aria-label={`Count for ${labelOf(obs)}`}
         />
       )}
+      {automatic && <span id={`${id}-help`} className="sr-only">Enter a whole number of at least one. Finish with Enter or leave this field to save.</span>}
       <button
         onClick={onRemove}
         className="min-w-11 min-h-11 md:min-w-0 md:min-h-0 md:w-5 md:h-5 grid place-items-center text-inkMute hover:text-warn focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"

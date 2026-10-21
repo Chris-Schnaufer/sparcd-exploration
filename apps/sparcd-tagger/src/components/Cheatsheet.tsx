@@ -34,7 +34,8 @@ const GROUPS: { title: string; rows: Shortcut[] }[] = [
     rows: [
       { keys: ['⌘A', '^A'], action: 'Select the current burst' },
       { keys: ['Esc'], action: 'Clear selection / blur filter' },
-      { keys: ['⌘S', '^S'], action: 'Save draft now' },
+      { keys: ['⌘S', '^S'], action: 'Finish valid input and flush or retry automatic saving' },
+      { keys: ['⌘Z', '^Z'], action: 'Undo the latest completed action outside text editors' },
       { keys: ['?'], action: 'Toggle this cheatsheet' },
     ],
   },

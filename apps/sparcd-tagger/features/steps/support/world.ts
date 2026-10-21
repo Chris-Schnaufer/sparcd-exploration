@@ -146,7 +146,7 @@ export async function selectCollection(page: Page, name = COLLECTION_NAME): Prom
 
 export async function openUpload(page: Page, user = 'priortagger'): Promise<void> {
   await uploadRow(page, user).click();
-  await expect(page.getByRole('button', { name: 'Sync…' })).toBeVisible();
+  await expect(page.getByTestId('automatic-save')).toBeVisible();
   // Wait for media.csv to resolve into tiles.
   await expect(page.locator('button[title$=".JPG"], button[title$=".MP4"]').first()).toBeVisible();
 }

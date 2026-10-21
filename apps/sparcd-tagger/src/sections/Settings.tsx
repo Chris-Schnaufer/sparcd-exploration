@@ -1,3 +1,4 @@
+import { useAutomaticSave } from '../components/AutomaticSave';
 import { useState } from 'react';
 import { useStore } from '../store';
 import { listDirtyDrafts } from '../lib/db';
@@ -16,8 +17,6 @@ export function Settings() {
   const refreshTaggerIdentity = useStore((s) => s.refreshTaggerIdentity);
   const taggerUser = useStore((s) => s.taggerUser);
   const setTaggerUser = useStore((s) => s.setTaggerUser);
-  const dryRun = useStore((s) => s.dryRun);
-  const setDryRun = useStore((s) => s.setDryRun);
   const burstOn = useStore((s) => s.burstGroupingEnabled);
   const setBurstOn = useStore((s) => s.setBurstGrouping);
   const burst = useStore((s) => s.burstThresholdSec);
@@ -38,7 +37,11 @@ export function Settings() {
   // if there are unsynced drafts, hold the count here and confirm before wiping.
   const [pendingDirty, setPendingDirty] = useState<number | null>(null);
 
+  const pendingSave = useAutomaticSave(s => s.view.pending);
+
   async function logout() {
+    if (pendingSave) return;
+    if (cfg) { disconnect(); return; }
     const dirty = await listDirtyDrafts();
     if (dirty.length > 0) {
       setPendingDirty(dirty.length);
@@ -48,6 +51,7 @@ export function Settings() {
   }
 
   async function wipeAndLogout() {
+    if (pendingSave) return;
     disconnect(); // nulls the (sessionStorage-persisted) connection first
     await resetLocalState(); // clears IndexedDB + keybindings, then reloads to the gate
   }
@@ -192,24 +196,7 @@ export function Settings() {
 
       </div>
 
-      <div role="group" aria-label="Sync and burst preferences" className="border-t border-ruleSoft pt-6 space-y-8">
-        <section>
-          <span className={kicker}>Sync default</span>
-          <label className="flex items-center gap-2.5 min-h-11 md:min-h-0 font-body text-[14px] text-ink">
-            <input
-              type="checkbox"
-              className="w-5 h-5 md:w-4 md:h-4 accent-accent"
-              checked={dryRun}
-              onChange={(e) => setDryRun(e.target.checked)}
-            />
-            Dry-run (log writes, change nothing)
-          </label>
-          <p className="mt-1.5 text-[13px] text-inkMute font-body">
-            Off by default. Turn it on to preview canonical writes without changing anything. This
-            preference applies to both syncs and snapshot restores.
-          </p>
-        </section>
-
+      <div role="group" aria-label="Burst preferences" className="border-t border-ruleSoft pt-6 space-y-8">
         <section>
           <span className={kicker}>Burst grouping</span>
           <label className="flex items-center gap-2.5 min-h-11 md:min-h-0 font-body text-[14px] text-ink">
@@ -258,6 +245,7 @@ export function Settings() {
             <p className="text-[13px] text-inkSoft">Access key: <span aria-label="Connected Access key" className="font-mono">{cfg.accessKey.length <= 6 ? '••••••' : `${cfg.accessKey.slice(0, 3)}…${cfg.accessKey.slice(-3)}`}</span></p>
             <button
               aria-describedby="disconnect-help"
+              disabled={pendingSave}
               onClick={() => void logout()}
               className="mt-3 inline-flex items-center min-h-11 md:min-h-0 text-[14px] border border-ink px-3 py-2.5 md:py-1.5 text-ink hover:bg-panelHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
             >
@@ -288,7 +276,7 @@ export function Settings() {
                 on this machine — those edits would be lost.
               </p>
               <p className="text-inkSoft text-[13px]">
-                Sync them to S3 first (open the upload from History), or discard them and disconnect.
+                Open the upload from Recovery and finish its pending save before disconnecting.
               </p>
             </div>
             <footer className="flex flex-col sm:flex-row sm:justify-end gap-2 border-t border-rule px-5 py-3">

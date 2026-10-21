@@ -1214,3 +1214,25 @@ describe('a one-for-one swap is recorded as a correction, not also as a removal'
     ]);
   });
 });
+
+describe('automatic-save preservation policy', () => {
+  it('retains the original baseline and recovery journal without creating per-edit snapshots', async () => {
+    const current = await canonical();
+    const { io, rec } = fakeIO(current);
+    io.createSnapshots = false;
+    io.ensureOriginalBaseline = async state => { rec.baselines.push(state); };
+    // The coordinator retains the completed journal until its durable action
+    // acknowledgement and Undo record commit together.
+    io.clearJournal = async () => {};
+    const action = { id: 'action-1', user: 'Alice', at: NOW.toISOString(), changes: [{ kind: 'species' }] };
+    const result = await runSync({ bucket: 'sparcd-x', uploadPrefix: PREFIX, user: 'Alice', base: baseFrom(current),
+      plan: buildSyncPlan(IMAGES, ADD_DRAFTS, null), dryRun: false, auditEvents: [action] }, io);
+    expect(result.status).toBe('synced');
+    expect(rec.snapshots).toEqual([]);
+    expect(rec.baselines).toHaveLength(1);
+    expect(rec.baselines[0].media.text).toBe(current.media.text);
+    expect(rec.journals.at(-1)?.objects.every(object => object.status === 'written')).toBe(true);
+    const meta = rec.replaces.find(write => write.key.endsWith('UploadMeta.json'))!;
+    expect(JSON.parse(meta.body).taggerActions).toEqual([action]);
+  });
+});

@@ -1,3 +1,4 @@
+import { connectionChangeAllowed, navigateAfterSave } from './lib/saveNavigation';
 import { create } from 'zustand';
 import type { S3Config } from '@sparcd/types';
 import {
@@ -274,6 +275,7 @@ export const useStore = create<TaggerState>()(
     autoAdvanceOnTag: loadAutoAdvance(),
 
     connect: (config, remember) => {
+      if (!connectionChangeAllowed(config)) return;
       const current = get();
       const sameLogin = current.s3Config?.accessKey.trim() === config.accessKey.trim();
       const transient = sameLogin ? current.identityUnsavedCustom : null;
@@ -295,6 +297,7 @@ export const useStore = create<TaggerState>()(
       void get().refreshTaggerIdentity();
     },
     disconnect: () => {
+      if (!connectionChangeAllowed(null)) return;
       clearClientCache();
       clearSharedConnection();
       clearAutoAdvance();
@@ -317,14 +320,14 @@ export const useStore = create<TaggerState>()(
         saveSharedTheme(theme);
         return { theme };
       }),
-    selectCollection: (key) =>
-      set({ selectedCollectionKey: key, selectedUploadPrefix: null, syncState: 'local-only' }),
-    selectUpload: (prefix) =>
+    selectCollection: (key) => navigateAfterSave(() =>
+      set({ selectedCollectionKey: key, selectedUploadPrefix: null, syncState: 'local-only' })),
+    selectUpload: (prefix) => navigateAfterSave(() =>
       set({
         selectedUploadPrefix: prefix,
         section: prefix ? 'tag' : 'browse',
         syncState: 'local-only',
-      }),
+      })),
     openUploadForSnapshots: (collectionKey, uploadPrefix) =>
       set({
         selectedCollectionKey: collectionKey,

@@ -35,6 +35,7 @@ export default defineConfig({
     env: { VITE_SPARCD_S3_ENDPOINT: '' },
   },
   use: {
+    ...(process.env.SPARCD_USE_SYSTEM_CHROME === '1' ? { channel: 'chrome' as const } : {}),
     baseURL: origin,
     headless: true,
     viewport: { width: 1440, height: 950 },

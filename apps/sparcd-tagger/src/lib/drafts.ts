@@ -8,6 +8,7 @@
 // editing one image never re-renders the whole strip.
 
 import { create } from 'zustand';
+import { acceptEdit, canAcceptEdit, expandUploadOffset, hasEditLifecycle } from './editLifecycle';
 import { attributionAvailable, connectedAttribution } from './attribution';
 import { shiftTimestamp, type Deployment } from '@sparcd/camtrap';
 import { draftRevisionOf } from './draftRevision';
@@ -318,9 +319,10 @@ export const useDraftStore = create<DraftState>((set, get) => {
     patch: Partial<DraftRecord> | ((prev: DraftRecord, base?: BaseSeed) => Partial<DraftRecord>),
     resolveDirty?: (next: DraftRecord, base?: BaseSeed) => boolean,
   ): void => {
-    if (!targets.length || !attributionAvailable()) return;
+    if (!targets.length || !attributionAvailable() || !canAcceptEdit()) return;
     const now = new Date().toISOString();
     const updates: Record<string, DraftRecord> = {};
+    const before: Record<string, DraftRecord> = {};
     const cur = get().drafts;
     for (const { mediaPath, deploymentId, base } of targets) {
       // A clean draft has no pending intent. Seed from the latest canonical
@@ -328,6 +330,7 @@ export const useDraftStore = create<DraftState>((set, get) => {
       const existing = cur[mediaPath];
       const prev = existing?.dirty || !base ? existing ?? blankDraft(ctx, mediaPath, deploymentId, base)
         : blankDraft(ctx, mediaPath, deploymentId, base);
+      before[mediaPath] = prev;
       const p = typeof patch === 'function' ? patch(prev, base) : patch;
       const next: DraftRecord = {
         ...prev,
@@ -338,9 +341,10 @@ export const useDraftStore = create<DraftState>((set, get) => {
       };
       if (resolveDirty) next.dirty = resolveDirty(next, base);
       updates[mediaPath] = next;
-      scheduleSave(next);
+      if (!hasEditLifecycle()) scheduleSave(next);
     }
     set((s) => ({ drafts: { ...s.drafts, ...updates } }));
+    acceptEdit({ ctx, before, after: updates });
   };
 
   return {
@@ -463,7 +467,14 @@ export const useDraftStore = create<DraftState>((set, get) => {
     }),
 
     setTimeOffset: (ctx, offset) => {
-      if (!attributionAvailable()) return;
+      if (!attributionAvailable() || !canAcceptEdit()) return;
+      const expanded = expandUploadOffset(ctx, offset);
+      if (expanded) {
+        // Absolute per-image values remain valid when an earlier upload shift
+        // finishes while a newer shift is already queued.
+        mutateMany(ctx, expanded, prev => ({ timeOverride: expanded.find(t => t.mediaPath === prev.mediaPath)!.currentCorrected }));
+        return;
+      }
       // Optimistic Zustand update (hot path) + durable Dexie mirror. Unlike a
       // draft, the offset lives on the `uploads` record, so it never shows in
       // `dirtyCount` — the active-offset indicator (ClockChip) is its signal.
@@ -472,8 +483,10 @@ export const useDraftStore = create<DraftState>((set, get) => {
     },
 
     setPendingLocation: async (ctx, location) => {
-      if (!attributionAvailable()) return;
+      if (!attributionAvailable() || !canAcceptEdit()) return;
+      const before = get().pendingLocation;
       set({ pendingLocation: location });
+      acceptEdit({ ctx, before: {}, after: {}, location: { before, after: location } });
       await setUploadPendingLocation(ctx.bucket, ctx.uploadPrefix, location);
     },
 

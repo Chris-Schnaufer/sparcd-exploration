@@ -26,6 +26,7 @@ import { fetchSpecies, type SpeciesResult } from './species';
 import { fetchLocations, type LocationsResult } from './locations';
 import { buildTagImages, type TagImage } from './workspace';
 import {
+  db,
   groundUpload,
   getUpload,
   hasDirtyDraftsForUpload,
@@ -150,7 +151,8 @@ export function useTagImages(
       const store = useDraftStore.getState();
       const memDirty = store.loadedKey === uploadId(bucket, uploadPrefix!)
         && (dirtyCount(store.drafts) > 0 || store.pendingLocation !== null);
-      if (shouldGroundUpload(existing, memDirty, await hasDirtyDraftsForUpload(bucket, uploadPrefix!))) {
+      const recovery = await db.automatic.where('[bucket+uploadPrefix]').equals([bucket, uploadPrefix!]).toArray();
+      if (shouldGroundUpload(existing, memDirty || recovery.some(r => r.actions.length || r.flight || r.adoptionRequired), await hasDirtyDraftsForUpload(bucket, uploadPrefix!))) {
         await groundUpload(bucket, uploadPrefix!, state);
       }
       return buildTagImages({

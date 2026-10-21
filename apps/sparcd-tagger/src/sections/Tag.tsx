@@ -1,3 +1,4 @@
+import { useAutomaticSave } from '../components/AutomaticSave';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { TransformWrapper, TransformComponent, type ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
@@ -8,7 +9,6 @@ import {
   useSpecies,
   useCollections,
   uploadNameOf,
-  useUploadSnapshots,
   useLocations,
   useCurrentDeployment,
 } from '../lib/queries';
@@ -22,8 +22,6 @@ import { ResizableSplit } from '../components/ResizableSplit';
 import { AppliedSpecies } from '../components/AppliedSpecies';
 import { NeedExpertToggle } from '../components/NeedExpertToggle';
 import { Cheatsheet } from '../components/Cheatsheet';
-import { SyncDialog } from '../components/SyncDialog';
-import { SnapshotsDialog } from '../components/SnapshotsDialog';
 import { DiscardConfirmDialog } from '../components/DiscardConfirmDialog';
 import { buildDiscardSummaries } from '../lib/discardSummary';
 import { TimeShiftModal } from '../components/TimeShiftModal';
@@ -97,15 +95,15 @@ type PendingKeyConflict = {
 export function Tag() {
   const cfg = useStore((s) => s.s3Config);
   const taggerUser = useStore((s) => s.taggerUser);
-  const identityReady = !cfg || !!taggerUser.trim();
   const connectionId = useStore((s) => s.connectionId);
   const collectionKey = useStore((s) => s.selectedCollectionKey);
   const uploadPrefix = useStore((s) => s.selectedUploadPrefix);
+  const canAutoEdit = useAutomaticSave(s => s.view.canEdit && s.saver?.record.uploadPrefix === uploadPrefix);
+  const editingUnavailable = useAutomaticSave(s => s.view.message);
+  const identityReady = !cfg || (!!taggerUser.trim() && canAutoEdit);
   const burstGroupingEnabled = useStore((s) => s.burstGroupingEnabled);
   const burstThreshold = useStore((s) => s.burstThresholdSec);
   const autoAdvanceOnTag = useStore((s) => s.autoAdvanceOnTag);
-  const pendingSnapshots = useStore((s) => s.pendingSnapshots);
-  const clearPendingSnapshots = useStore((s) => s.clearPendingSnapshots);
 
   // A local batch bypasses the connection entirely, so both S3 queries below
   // are disabled (`cfg` is null) and their data comes from the record instead.
@@ -123,8 +121,6 @@ export function Tag() {
     : undefined;
   const collections = useCollections(cfg, connectionId);
   const collection = collections.data?.find((c) => c.key === collectionKey);
-  const snapshots = useUploadSnapshots(cfg, connectionId, collectionKey, uploadPrefix);
-  const hasSnapshot = (snapshots.data?.length ?? 0) > 0;
 
   const localImages = useMemo(
     () => (localRecord ? localTagImages(localRecord) : EMPTY),
@@ -303,8 +299,6 @@ export function Tag() {
   const [pendingKeyConflict, setPendingKeyConflict] = useState<PendingKeyConflict | null>(null);
   const [recent, setRecent] = useState<string[]>([]);
   const [showCheatsheet, setShowCheatsheet] = useState(false);
-  const [showSync, setShowSync] = useState(false);
-  const [showSnapshots, setShowSnapshots] = useState(false);
   const [showDiscard, setShowDiscard] = useState(false);
   const [showTimeShift, setShowTimeShift] = useState(false);
   const [showChangeLocation, setShowChangeLocation] = useState(false);
@@ -381,13 +375,6 @@ export function Tag() {
   const [speciesCountPrefix, setSpeciesCountPrefix] = useState('');
   const [matchPos, setMatchPos] = useState(0);
   const imgSearchRef = useRef<HTMLInputElement>(null);
-  const syncButtonRef = useRef<HTMLButtonElement>(null);
-
-  const closeSync = () => {
-    setShowSync(false);
-    requestAnimationFrame(() => syncButtonRef.current?.focus());
-  };
-
   useEffect(() => {
     if (selected.size > 1) setSpeciesCountPrefix('');
   }, [selected.size]);
@@ -545,14 +532,7 @@ export function Tag() {
     setSelected((sel) => (sel.size ? new Set([...sel].map(remap)) : sel));
   }, [order]);
 
-  // History routes here with `pendingSnapshots` set to jump straight into the
-  // recovery dialog for the chosen upload; consume the flag once.
-  useEffect(() => {
-    if (pendingSnapshots) {
-      setShowSnapshots(true);
-      clearPendingSnapshots();
-    }
-  }, [pendingSnapshots, clearPendingSnapshots]);
+
 
   const overrides = useKeyBindings((state) => activeKeyProfile(state).overrides);
   const assignKey = useKeyBindings((state) => state.assignKey);
@@ -865,8 +845,6 @@ export function Tag() {
     isModalOpen: () =>
       modalOpenRef.current ||
       showDiscard ||
-      showSync ||
-      showSnapshots ||
       showTimeShift ||
       pendingKeyConflict !== null,
   };
@@ -1237,7 +1215,7 @@ export function Tag() {
           >
             ?
           </button>
-          {nDirty > 0 && (
+          {localRecord && nDirty > 0 && (
             <button
               onClick={() => setShowDiscard(true)}
               className="text-[11px] font-mono text-inkMute hover:text-warn underline decoration-dotted"
@@ -1246,32 +1224,7 @@ export function Tag() {
               {nDirty} unsaved · discard
             </button>
           )}
-          {!localRecord && (
-            <>
-              <button
-                onClick={() => setShowSnapshots(true)}
-                disabled={!hasSnapshot}
-                className="text-[12px] font-mono border border-rule px-2.5 py-1 text-inkSoft hover:text-ink hover:border-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-inkSoft disabled:hover:border-rule"
-                title={
-                  hasSnapshot
-                    ? 'Browse and restore prior canonical snapshots of this upload'
-                    : 'No snapshots yet — a snapshot is taken the first time this upload is synced'
-                }
-              >
-                Snapshots…
-              </button>
-              <button
-                disabled={!identityReady}
-                aria-describedby={!identityReady ? 'tagger-identity-required' : undefined}
-                onClick={() => setShowSync(true)}
-                ref={syncButtonRef}
-                className="text-[12px] font-mono border border-ink px-2.5 py-1 text-ink hover:bg-panelHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-                title="Review and sync local edits to the canonical S3 files"
-              >
-                Sync…
-              </button>
-            </>
-          )}
+
         </div>
       </div>
 
@@ -1395,10 +1348,6 @@ export function Tag() {
           onClose={() => setShowDiscard(false)}
         />
       )}
-      {showSync && (
-        <SyncDialog ctx={ctx} images={list} drafts={drafts} timeZone={captureTimeZone} onClose={closeSync} />
-      )}
-      {showSnapshots && <SnapshotsDialog ctx={ctx} onClose={() => setShowSnapshots(false)} />}
       {showTimeShift && (
         <TimeShiftModal
           offset={timeOffset}
@@ -1472,8 +1421,8 @@ export function Tag() {
       headerSlot: (
         <div className="flex flex-wrap items-center gap-1.5">
           {!identityReady && <div id="tagger-identity-required" role="status" className="w-full border border-warn p-2 text-[13px]">
-            <p>{IDENTITY_REQUIRED}</p>
-            <button type="button" className="min-h-11 underline" onClick={() => { closeFocus(); useStore.getState().setSection('settings'); }}>Set Tagger identity</button>
+            <p>{taggerUser.trim() ? editingUnavailable : IDENTITY_REQUIRED}</p>
+            {!taggerUser.trim() && <button type="button" className="min-h-11 underline" onClick={() => { closeFocus(); useStore.getState().setSection('settings'); }}>Set Tagger identity</button>}
           </div>}
           {speciesCountPrefix && selected.size <= 1 && (
             <span
