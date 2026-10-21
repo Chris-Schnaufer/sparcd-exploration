@@ -100,6 +100,18 @@ describe('Connection — remembered override vs. the current endpoint (#596)', (
 });
 
 describe('Connection — mixed-content warning (#596)', () => {
+  it.each([
+    ['http://storage.example.com', true, true],
+    ['https://storage.example.com', false, false],
+    ['  HTTP://storage.example.com  ', true, true],
+    ['  HTTPS://storage.example.com  ', false, false],
+    ['storage.example.com', false, true],
+    ['storage.example.com', true, false],
+  ])('uses the effective scheme for %s with secure=%s', (endpoint, secure, warns) => {
+    render(<Connection toolName="Uploader" initialConfig={{ endpoint, secure }} onConnect={vi.fn()} />);
+    expect(screen.queryByTestId('mixed-content-warning') !== null).toBe(warns);
+  });
+
   it('warns when the page is https and the resolved endpoint is insecure', () => {
     render(<Connection toolName="Uploader" initialConfig={REMEMBERED} onConnect={vi.fn()} />);
     expect(screen.getByTestId('mixed-content-warning')).not.toBeNull();

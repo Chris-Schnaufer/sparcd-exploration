@@ -82,7 +82,12 @@ export function Connection({
   // mixed content before any request leaves, with nothing for the app to
   // catch or translate into an error. Checked eagerly, not on failure.
   const pageIsSecure = typeof window !== 'undefined' && window.location.protocol === 'https:';
-  const showMixedContentWarning = online && pageIsSecure && !secure;
+  // Explicit schemes take precedence over the Secure setting in endpointUrl.
+  const trimmedEndpoint = endpoint.trim();
+  const endpointIsSecure = /^https?:\/\//i.test(trimmedEndpoint)
+    ? /^https:\/\//i.test(trimmedEndpoint)
+    : secure;
+  const showMixedContentWarning = online && pageIsSecure && !endpointIsSecure;
 
   // A remembered secure/path-style/region override only means anything for
   // the endpoint it was saved for (#596) — otherwise it silently outlives
