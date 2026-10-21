@@ -1239,8 +1239,30 @@ Then('the applied species list in Focus scrolls within a fixed height', async ({
   for (const name of ['Mule Deer', 'Coyote', 'Javelina', 'Mountain Lion']) {
     await expect(appliedChip(page, name)).toBeVisible();
   }
-  const [scrollHeight, clientHeight] = await list.evaluate((el) => [el.scrollHeight, el.clientHeight]);
+  const { scrollHeight, clientHeight, overflowY } = await list.evaluate((el) => ({
+    scrollHeight: el.scrollHeight,
+    clientHeight: el.clientHeight,
+    overflowY: getComputedStyle(el).overflowY,
+  }));
   expect(scrollHeight).toBeGreaterThan(clientHeight);
+  expect(clientHeight).toBeLessThanOrEqual(96);
+  expect(overflowY).toBe('auto');
+
+  const lastSpecies = appliedChip(page, 'Mountain Lion');
+  await list.hover();
+  await page.mouse.wheel(0, 500);
+  await expect.poll(() => list.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+
+  const [listBounds, speciesBounds] = await Promise.all([
+    list.boundingBox(),
+    lastSpecies.boundingBox(),
+  ]);
+  expect(listBounds).not.toBeNull();
+  expect(speciesBounds).not.toBeNull();
+  expect(speciesBounds!.y).toBeGreaterThanOrEqual(listBounds!.y);
+  expect(speciesBounds!.y + speciesBounds!.height).toBeLessThanOrEqual(
+    listBounds!.y + listBounds!.height,
+  );
 });
 
 // --- Empty upload (corrected scenario) --------------------------------------
