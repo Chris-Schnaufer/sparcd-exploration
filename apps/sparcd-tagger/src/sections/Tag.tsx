@@ -2484,7 +2484,11 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
         const targets = s.selected.size
           ? s.targetsOf()
           : focusedTileImage
-            ? [{ mediaPath: focusedTileImage.key, deploymentId: focusedTileImage.deploymentId }]
+            ? [{
+                mediaPath: focusedTileImage.key,
+                deploymentId: focusedTileImage.deploymentId,
+                base: { observations: focusedTileImage.baseObservations },
+              }]
             : s.targetsOf();
         const anchorImage = focusedTileImage ?? current;
         if (!targets.length || !anchorImage) return;

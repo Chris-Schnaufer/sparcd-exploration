@@ -547,7 +547,9 @@ Then('IMG003.JPG is deselected and Focus stays closed', async ({ page }) => {
 
 Then('the Overview remains open and IMG003.JPG is marked questionable', async ({ page }) => {
   await expectOverviewView(page);
-  await expect(overviewImage(page, 'IMG003.JPG').locator('[title="questionable"]')).toBeVisible();
+  const image = overviewImage(page, 'IMG003.JPG');
+  await expect(image.locator('[title="questionable"]')).toBeVisible();
+  await expect(image).toHaveAccessibleName(/Species: Ghost/);
   await expect(page.getByRole('dialog', { name: 'Focus image viewer' })).toHaveCount(0);
 });
 
