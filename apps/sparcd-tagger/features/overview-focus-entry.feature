@@ -97,6 +97,17 @@ Feature: Enter Focus from Overview images
       | list   | Space |
 
   @unmapped
+  Scenario Outline: Shift+Space still marks questionable images in Overview
+    Given the Overview is set to the "<layout>" layout
+    When IMG003.JPG receives keyboard focus and "Shift+Space" is pressed
+    Then the Overview remains open and IMG003.JPG is marked questionable
+
+    Examples:
+      | layout |
+      | grid   |
+      | list   |
+
+  @unmapped
   Scenario Outline: Quick modified clicks preserve both selection changes
     Given the Overview is set to the "<layout>" layout
     When IMG003.JPG is control-clicked twice

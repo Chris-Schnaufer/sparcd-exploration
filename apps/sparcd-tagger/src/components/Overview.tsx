@@ -402,6 +402,7 @@ function ListCell({
     <button
       {...speciesDropProps(index, onDropSpecies)}
       data-testid="overview-image"
+      data-image-index={index}
       data-image-name={img.fileName}
       onPointerDown={touchTap.onPointerDown}
       onPointerMove={touchTap.onPointerMove}
@@ -538,6 +539,7 @@ function GridCell({
     <button
       {...speciesDropProps(index, onDropSpecies)}
       data-testid="overview-image"
+      data-image-index={index}
       data-image-name={img.fileName}
       onPointerDown={touchTap.onPointerDown}
       onPointerMove={touchTap.onPointerMove}

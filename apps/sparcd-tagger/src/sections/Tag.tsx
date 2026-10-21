@@ -2292,9 +2292,10 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
 
   // Image tiles are native buttons: let Enter and Space produce their native
   // click so the handler opens the image the user actually focused. The
-  // workspace-level Enter/Space shortcuts below are for the Overview itself.
+  // workspace-level shortcuts below are for the Overview itself. Shift+Space
+  // remains the existing questionable-image shortcut.
   if (
-    (e.key === 'Enter' || e.key === ' ') &&
+    (e.key === 'Enter' || (e.key === ' ' && !e.shiftKey)) &&
     e.target instanceof HTMLButtonElement &&
     e.target.matches('[data-testid="overview-image"]')
   ) return;
@@ -2474,9 +2475,20 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
     case ' ':
       e.preventDefault();
       if (e.shiftKey) {
-        const targets = s.targetsOf();
-        if (!targets.length || !current) return;
-        const anchorDraft = s.drafts[current.key];
+        const focusedTile = e.target instanceof HTMLButtonElement &&
+          e.target.matches('[data-testid="overview-image"]');
+        const focusedTileIndex = focusedTile ? Number(e.target.dataset.imageIndex) : NaN;
+        const focusedTileImage = Number.isInteger(focusedTileIndex)
+          ? s.list[focusedTileIndex]
+          : undefined;
+        const targets = s.selected.size
+          ? s.targetsOf()
+          : focusedTileImage
+            ? [{ mediaPath: focusedTileImage.key, deploymentId: focusedTileImage.deploymentId }]
+            : s.targetsOf();
+        const anchorImage = focusedTileImage ?? current;
+        if (!targets.length || !anchorImage) return;
+        const anchorDraft = s.drafts[anchorImage.key];
         s.setQuestionableMany(s.ctx, targets, !anchorDraft?.questionable);
         return;
       }

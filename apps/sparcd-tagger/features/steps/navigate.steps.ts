@@ -545,6 +545,12 @@ Then('IMG003.JPG is deselected and Focus stays closed', async ({ page }) => {
   await expect(page.getByRole('dialog', { name: 'Focus image viewer' })).toHaveCount(0);
 });
 
+Then('the Overview remains open and IMG003.JPG is marked questionable', async ({ page }) => {
+  await expectOverviewView(page);
+  await expect(overviewImage(page, 'IMG003.JPG').locator('[title="questionable"]')).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Focus image viewer' })).toHaveCount(0);
+});
+
 When('the image filter matches IMG003.JPG', async ({ page }) => {
   await page.getByRole('button', { name: /^Filter/ }).click();
   await page.getByLabel('Match text').fill('IMG003.JPG');
