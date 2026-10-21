@@ -58,7 +58,7 @@ export function App() {
         toolName="Tagger"
         initialConfig={connectPrefill}
         onConnect={connect}
-        onTestConnection={testConnection}
+        onTestConnection={(config, signal) => testConnection(config, { signal })}
       />
     );
   }

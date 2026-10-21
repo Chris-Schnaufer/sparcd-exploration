@@ -95,4 +95,15 @@ describe('testConnection (#589)', () => {
     await vi.advanceTimersByTimeAsync(8_000);
     await expect(result).resolves.toEqual({ ok: false, category: 'interrupted' });
   });
+
+  it('does not start a request when the caller has already cancelled the probe', async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(testConnection(CFG, { signal: controller.signal })).resolves.toEqual({
+      ok: false,
+      category: 'interrupted',
+    });
+    expect(sendMock).not.toHaveBeenCalled();
+  });
 });
