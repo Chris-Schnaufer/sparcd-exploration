@@ -63,7 +63,8 @@ async function signedHeaders(url: URL, config: S3Config, date = new Date()): Pro
 }
 
 function unsupportedResponse(status: number, body: string): boolean {
-  if (status === 401 || status === 403) return false;
+  // Failure statuses take precedence over any misleading route-absence body.
+  if (status === 401 || status === 403 || status === 408 || status === 429 || status >= 500) return false;
   // Route absence must be established by a protocol-specific response, never
   // by an HTTP status alone. The access proxy uses a structured API error;
   // S3-compatible endpoints use their XML error code.

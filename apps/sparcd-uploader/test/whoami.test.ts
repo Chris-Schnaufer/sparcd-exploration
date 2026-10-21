@@ -63,6 +63,10 @@ describe('signed account-name lookup', () => {
     [403, '<Error><Code>NoSuchKey</Code></Error>'],
     [403, '<Error><Code>InvalidAccessKeyId</Code></Error>'],
     [429, 'rate limited'],
+    ...[408, 429, 500, 503].flatMap<[number, string]>(status => [
+      [status, '<Error><Code>NoSuchKey</Code></Error>'],
+      [status, JSON.stringify({ error: { code: 'not_found', message: 'no such endpoint' } })],
+    ]),
     [500, 'server error'],
   ])('does not use Access-key fallback for HTTP %s', async (status, body) => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(body, { status })));

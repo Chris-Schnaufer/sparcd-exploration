@@ -23,13 +23,15 @@ Feature: Settings and attribution belong to the active login
     Then missing attribution prevents mouse keyboard drag and write actions
     And entering a custom identity enables tagging despite the lookup error
     Examples:
-      | failure   |
-      | forbidden |
-      | signature |
-      | malformed |
-      | rate      |
-      | server    |
-      | network   |
+      | failure        |
+      | forbidden      |
+      | signature      |
+      | malformed      |
+      | rate           |
+      | server         |
+      | network        |
+      | rate-absence   |
+      | server-absence |
 
   Scenario: Uploader and Tagger share live per-login identity preferences
     Given the account-name service returns Alice Researcher
