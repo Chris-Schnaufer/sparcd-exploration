@@ -125,7 +125,9 @@ function observationsEqual(a: DraftObservation[], b: DraftObservation[]): boolea
 function mergeReviewEvents(base: ReviewEvent[] = [], draft: ReviewEvent[] = []): ReviewEvent[] | undefined {
   const out = [...base];
   for (const e of draft) {
-    if (!out.some((b) => b.reviewedBy === e.reviewedBy && b.reviewedAt === e.reviewedAt)) out.push(e);
+    const index = out.findIndex(b => b.reviewedBy === e.reviewedBy && b.reviewedAt === e.reviewedAt);
+    if (index < 0) out.push(e);
+    else if (e.reversedBy && e.reversedAt) out[index] = { ...out[index], reversedBy: e.reversedBy, reversedAt: e.reversedAt };
   }
   return out.length ? out : undefined;
 }
@@ -367,6 +369,8 @@ export const originalBaselinePrefixOf = (uploadPrefix: string): string =>
 
 /** Every S3/Dexie effect the sync performs, injected so it is fully testable. */
 export type SyncIO = {
+  /** Automatic saving retains journals and the original baseline, without per-edit snapshots. */
+  createSnapshots?: boolean;
   /** Re-HEAD/GET the three canonical files with current ETag + SHA-256. */
   loadCanonical: () => Promise<CanonicalState>;
   /** Conditional `writeImmutable` of one snapshot object; rejects with a 412-typed error if the key exists. */
@@ -412,6 +416,7 @@ export type SyncResult =
   | { status: 'unsupported'; message: string };
 
 export type SyncParams = {
+  auditEvents?: { id: string; user: string; at: string; undoOf?: string; changes: unknown[] }[];
   bucket: string;
   uploadPrefix: string;
   user: string;
@@ -736,7 +741,7 @@ async function commitWrites(io: SyncIO, c: CommitCtx, summary: DiffSummary): Pro
   // 2. Immutable pre-change snapshot, with a single +1s re-stamp on collision.
   let activePrefix = c.snapshotPrefix;
   try {
-    await writeSnapshotSet(io, activePrefix, c.current, c.user, c.editStamp);
+    if (io.createSnapshots !== false) await writeSnapshotSet(io, activePrefix, c.current, c.user, c.editStamp);
   } catch (err) {
     if (!isPrecondition(err)) throw err;
     const bumped = snapshotStamp(new Date(io.now().getTime() + 1000));
@@ -778,7 +783,7 @@ export async function runSync(params: SyncParams, io: SyncIO): Promise<SyncResul
   const resumed = await tryResume(io, params.resumeJournal, dryRun);
   if (resumed) return resumed;
 
-  if (planIsEmpty(plan)) return { status: 'noop' };
+  if (planIsEmpty(plan) && !params.auditEvents?.length) return { status: 'noop' };
 
   const current = await io.loadCanonical();
 
@@ -796,6 +801,15 @@ export async function runSync(params: SyncParams, io: SyncIO): Promise<SyncResul
 
   const editStamp = javaEditStamp(io.now());
   const writes = await buildWrites(current, plan, user, editStamp, uploadPrefix);
+  if (params.auditEvents?.length) {
+    const meta = writes.find(w => w.role === 'uploadMeta');
+    const body = JSON.parse(meta?.body ?? current.uploadMeta.text);
+    const history = (body.taggerActions ?? []) as { id: string }[];
+    body.taggerActions = [...history, ...params.auditEvents.filter(event => !history.some(old => old.id === event.id))];
+    const text = JSON.stringify(body, null, 2);
+    const write: PreparedWrite = { role: 'uploadMeta', body: text, hash: await sha256Hex(text) };
+    if (meta) Object.assign(meta, write); else writes.push(write);
+  }
   const syncedMediaIds = [...new Set([...plan.tagEdits, ...plan.timeEdits, ...plan.statusEdits].map((edit) => edit.mediaId))];
   const syncedIds = new Set(syncedMediaIds);
   const mediaRows = parseCsvRows(writes.find((write) => write.role === 'media')?.body ?? current.media.text)

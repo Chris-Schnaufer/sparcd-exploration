@@ -482,7 +482,7 @@ export function parseObservations(csv: string): Observation[] {
 // --- Tag marker grammar ----------------------------------------------------
 
 export type TagMarker = { prefix: string; value: string };
-export type ReviewEvent = { reviewedBy: string; reviewedAt: string };
+export type ReviewEvent = { reviewedBy: string; reviewedAt: string; reversedBy?: string; reversedAt?: string };
 
 /** Reserved prefixes for v0. Unknown prefixes are tolerated and preserved. */
 export const TIMESTAMP_PREFIX = 'TIMESTAMP';
@@ -556,7 +556,9 @@ export function reviewEventsFromComments(comments: string): ReviewEvent[] {
     const reviewer = markers[i];
     const timestamp = markers[i + 1];
     if (reviewer.prefix === REVIEWED_BY_PREFIX && timestamp.prefix === REVIEWED_AT_PREFIX && reviewer.value && timestamp.value) {
-      events.push({ reviewedBy: reviewer.value, reviewedAt: timestamp.value });
+      const reversal = markers[i + 2]?.prefix === 'REVIEW_REVERSED_BY' && markers[i + 3]?.prefix === 'REVIEW_REVERSED_AT'
+        ? { reversedBy: markers[i + 2].value, reversedAt: markers[i + 3].value } : {};
+      events.push({ reviewedBy: reviewer.value, reviewedAt: timestamp.value, ...reversal });
       i++;
     }
   }
@@ -588,6 +590,10 @@ export function buildObservationComments(input: {
     if (event.reviewedBy && event.reviewedAt) {
       markers.push({ prefix: REVIEWED_BY_PREFIX, value: event.reviewedBy });
       markers.push({ prefix: REVIEWED_AT_PREFIX, value: event.reviewedAt });
+      if (event.reversedBy && event.reversedAt) {
+        markers.push({ prefix: 'REVIEW_REVERSED_BY', value: event.reversedBy });
+        markers.push({ prefix: 'REVIEW_REVERSED_AT', value: event.reversedAt });
+      }
     }
   }
   if (input.extra) markers.push(...input.extra);
@@ -655,7 +661,7 @@ function buildObservationRow(
   row[OBS_COL.scientificName] = o.scientificName;
   row[OBS_COL.count] = String(o.count);
   row[OBS_COL.countNew] = '0';
-  const knownPrefixes = new Set(['COMMONNAME', 'REQUESTED_SPECIES', 'CORRECTED_FROM', 'REMOVED', 'REVIEWED_BY', 'REVIEWED_AT']);
+  const knownPrefixes = new Set(['COMMONNAME', 'REQUESTED_SPECIES', 'CORRECTED_FROM', 'REMOVED', 'REVIEWED_BY', 'REVIEWED_AT', 'REVIEW_REVERSED_BY', 'REVIEW_REVERSED_AT']);
   const preservedMarkers = parseTagMarkers(existingRow?.[OBS_COL.comments] ?? '').filter(
     (marker) => !knownPrefixes.has(marker.prefix),
   );

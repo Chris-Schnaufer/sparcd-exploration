@@ -9,6 +9,7 @@
 // edit fields. They live in the v1 shape now so P4 adds no schema bump.
 
 import Dexie, { type Table } from 'dexie';
+import type { AutomaticRecord } from './automaticModel';
 import type { Deployment } from '@sparcd/camtrap';
 import type { CanonicalState } from './sync';
 import type { SyncJournal } from './syncJournal';
@@ -106,6 +107,7 @@ export interface SessionRecord {
 }
 
 class TaggerDb extends Dexie {
+  automatic!: Table<AutomaticRecord, string>;
   drafts!: Table<DraftRecord, string>;
   uploads!: Table<UploadRecord, string>;
   sessions!: Table<SessionRecord, string>;
@@ -154,6 +156,7 @@ class TaggerDb extends Dexie {
             delete d.freeTags;
           });
       });
+    this.version(4).stores({ automatic: 'id, scope, [bucket+uploadPrefix]' });
   }
 }
 
@@ -244,23 +247,25 @@ export async function groundUpload(
   uploadPrefix: string,
   base: CanonicalState,
 ): Promise<void> {
-  const id = uploadId(bucket, uploadPrefix);
-  const existing = await db.uploads.get(id);
-  await db.uploads.put({
-    id,
-    bucket,
-    uploadPrefix,
-    loadedAt: new Date().toISOString(),
-    timeOffset: existing?.timeOffset ?? null,
-    pendingLocation: existing?.pendingLocation ?? null,
-    mediaETag: base.media.etag,
-    mediaHash: base.media.hash,
-    observationsETag: base.observations.etag,
-    observationsHash: base.observations.hash,
-    deploymentsETag: base.deployments.etag,
-    deploymentsHash: base.deployments.hash,
-    uploadMetaETag: base.uploadMeta.etag,
-    uploadMetaHash: base.uploadMeta.hash,
+  await db.transaction('rw', db.uploads, async () => {
+    const id = uploadId(bucket, uploadPrefix);
+    const existing = await db.uploads.get(id);
+    await db.uploads.put({
+      id,
+      bucket,
+      uploadPrefix,
+      loadedAt: new Date().toISOString(),
+      timeOffset: existing?.timeOffset ?? null,
+      pendingLocation: existing?.pendingLocation ?? null,
+      mediaETag: base.media.etag,
+      mediaHash: base.media.hash,
+      observationsETag: base.observations.etag,
+      observationsHash: base.observations.hash,
+      deploymentsETag: base.deployments.etag,
+      deploymentsHash: base.deployments.hash,
+      uploadMetaETag: base.uploadMeta.etag,
+      uploadMetaHash: base.uploadMeta.hash,
+    });
   });
 }
 
@@ -281,11 +286,13 @@ export async function setUploadTimeOffset(
   uploadPrefix: string,
   offset: TimeOffsetRecord | null,
 ): Promise<void> {
-  const id = uploadId(bucket, uploadPrefix);
-  const existing = await db.uploads.get(id);
-  await db.uploads.put({
-    ...(existing ?? { id, bucket, uploadPrefix, loadedAt: new Date().toISOString(), pendingLocation: null }),
-    timeOffset: offset,
+  await db.transaction('rw', db.uploads, async () => {
+    const id = uploadId(bucket, uploadPrefix);
+    const existing = await db.uploads.get(id);
+    await db.uploads.put({
+      ...(existing ?? { id, bucket, uploadPrefix, loadedAt: new Date().toISOString(), pendingLocation: null }),
+      timeOffset: offset,
+    });
   });
 }
 
@@ -296,11 +303,13 @@ export async function setUploadPendingLocation(
   uploadPrefix: string,
   location: Deployment | null,
 ): Promise<void> {
-  const id = uploadId(bucket, uploadPrefix);
-  const existing = await db.uploads.get(id);
-  await db.uploads.put({
-    ...(existing ?? { id, bucket, uploadPrefix, loadedAt: new Date().toISOString(), timeOffset: null }),
-    pendingLocation: location,
+  await db.transaction('rw', db.uploads, async () => {
+    const id = uploadId(bucket, uploadPrefix);
+    const existing = await db.uploads.get(id);
+    await db.uploads.put({
+      ...(existing ?? { id, bucket, uploadPrefix, loadedAt: new Date().toISOString(), timeOffset: null }),
+      pendingLocation: location,
+    });
   });
 }
 
