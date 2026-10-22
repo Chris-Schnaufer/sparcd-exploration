@@ -604,6 +604,7 @@ export function buildObservationComments(input: {
 
 /** One species/label applied to an image (a SPARC'd observation is species + count only). */
 export type ObservationInput = {
+  restorationRow?: string[]; // Undo may restore columns lost when the species was removed
   scientificName: string; // col 8 (e.g. "Canis latrans", "Casper" for Ghost)
   count: number; // col 9
   commonName?: string; // → [COMMONNAME:…] in col 19
@@ -631,7 +632,7 @@ export type MediaEdit = {
   mediaTimestamp?: string; // if set, overwrite media.csv col 4 for this image
   needExpert?: boolean; // when set, update the per-image marker in media.csv col 10
   /** When a flagged capture time is corrected, replace its source marker in col 10. */
-  timestampSource?: TimestampSource;
+  timestampSource?: TimestampSource | null;
   /** Species explicitly removed in this edit; written once on the replacement row. */
   removedSpecies?: string[];
   observations: ObservationInput[];
@@ -651,7 +652,8 @@ function buildObservationRow(
   observationId: string,
   existingRow?: string[],
 ): string[] {
-  const row = existingRow ? [...existingRow] : new Array<string>(OBS_COLUMN_COUNT).fill('');
+  const template = existingRow ?? o.restorationRow;
+  const row = template ? [...template] : new Array<string>(OBS_COLUMN_COUNT).fill('');
   row[OBS_COL.observationId] = existingRow?.[OBS_COL.observationId] || observationId;
   row[OBS_COL.deploymentId] = edit.deploymentId;
   row[OBS_COL.mediaId] = edit.mediaId;
@@ -662,7 +664,7 @@ function buildObservationRow(
   row[OBS_COL.count] = String(o.count);
   row[OBS_COL.countNew] = '0';
   const knownPrefixes = new Set(['COMMONNAME', 'REQUESTED_SPECIES', 'CORRECTED_FROM', 'REMOVED', 'REVIEWED_BY', 'REVIEWED_AT', 'REVIEW_REVERSED_BY', 'REVIEW_REVERSED_AT']);
-  const preservedMarkers = parseTagMarkers(existingRow?.[OBS_COL.comments] ?? '').filter(
+  const preservedMarkers = parseTagMarkers(template?.[OBS_COL.comments] ?? '').filter(
     (marker) => !knownPrefixes.has(marker.prefix),
   );
   row[OBS_COL.comments] = buildObservationComments({
@@ -697,12 +699,13 @@ function buildBlankObservationRow(edit: MediaEdit, observationId: string): strin
  * text or markers; every un-edited row is preserved.
  */
 export function mergeMedia(canonicalMediaCsv: string, edits: MediaEdit[]): string {
-  const changes = new Map<string, { timestamp?: string; source?: TimestampSource; needExpert?: boolean }>();
+  const changes = new Map<string, { timestamp?: string; source?: TimestampSource | null; needExpert?: boolean }>();
   for (const e of edits) {
-    if (e.mediaTimestamp !== undefined || e.needExpert !== undefined)
+    if (e.mediaTimestamp !== undefined || e.needExpert !== undefined || e.timestampSource !== undefined)
       changes.set(e.mediaId, {
         ...changes.get(e.mediaId),
         ...(e.mediaTimestamp !== undefined ? { timestamp: e.mediaTimestamp, source: e.timestampSource } : {}),
+        ...(e.timestampSource !== undefined ? { source: e.timestampSource } : {}),
         ...(e.needExpert !== undefined ? { needExpert: e.needExpert } : {}),
       });
   }
@@ -712,11 +715,10 @@ export function mergeMedia(canonicalMediaCsv: string, edits: MediaEdit[]): strin
     const change = changes.get(row[MEDIA_COL.mediaId]);
     if (!change) continue;
     if (change.timestamp !== undefined) row[MEDIA_COL.timestamp] = change.timestamp;
-    if (change.source) {
-      row[MEDIA_COL.comments] = (row[MEDIA_COL.comments] ?? '').replace(
-        /\[TIMESTAMP:[^\]]*\]/g,
-        `[TIMESTAMP:${change.source}]`,
-      );
+    if (change.source !== undefined) {
+      const comments = row[MEDIA_COL.comments] ?? '';
+      const source = change.source ? `[TIMESTAMP:${change.source}]` : '';
+      row[MEDIA_COL.comments] = /\[TIMESTAMP:[^\]]*\]/.test(comments) ? comments.replace(/\[TIMESTAMP:[^\]]*\]/g, source) : `${comments}${source}`;
     }
     if (change.needExpert !== undefined) {
       const withoutStatus = (row[MEDIA_COL.comments] ?? '').replace(/\[NEED_EXPERT:[^\]]*\]/g, '');

@@ -23,6 +23,9 @@ import { useDraftStore } from './drafts';
 
 export type SyncArgs = {
   automatic?: boolean;
+  canonicalBodies?: import('./sync').SyncParams['canonicalBodies'];
+  submittedRevisions?: Record<string, string>;
+  canonicalPatches?: import('./canonicalPatch').CanonicalPatch[];
   auditEvents?: import('./sync').SyncParams['auditEvents'];
   cfg: S3Config;
   bucket: string;
@@ -57,7 +60,8 @@ export async function performSync(args: SyncArgs): Promise<SyncResult> {
     base = await getUpload(bucket, uploadPrefix);
   }
 
-  const plan = buildSyncPlan(images, drafts, base?.timeOffset ?? null, base?.pendingLocation ?? null, user, timeZone);
+  const plan = buildSyncPlan(images, drafts, base?.timeOffset ?? null, args.canonicalPatches?.length ? null : base?.pendingLocation ?? null, user, timeZone);
+  if (args.submittedRevisions) plan.draftRevisions = args.submittedRevisions;
   const resumeJournal = await loadSyncJournal(bucket, uploadPrefix);
 
   const io = makeSyncIO(cfg, bucket, uploadPrefix, {
@@ -86,6 +90,8 @@ export async function performSync(args: SyncArgs): Promise<SyncResult> {
       dryRun,
       resumeJournal,
       auditEvents: args.auditEvents,
+      canonicalPatches: args.canonicalPatches,
+      canonicalBodies: args.canonicalBodies,
     },
     io,
   );

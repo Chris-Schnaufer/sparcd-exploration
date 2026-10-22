@@ -1,4 +1,4 @@
-import { useAutomaticSave } from '../components/AutomaticSave';
+import { useAutomaticSave, FocusSaveControls } from '../components/AutomaticSave';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { TransformWrapper, TransformComponent, type ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
@@ -989,7 +989,7 @@ export function Tag() {
   const hasUploadShift = offsetActive(timeOffset);
 
   return (
-    <div className="h-[100dvh] lg:h-full flex flex-col min-h-0" aria-hidden={view === 'focus'}>
+    <div data-testid="tag-workspace" data-upload-prefix={uploadPrefix ?? ''} className="h-[100dvh] lg:h-full flex flex-col min-h-0" aria-hidden={view === 'focus'}>
       {/* Reminds the user which collection and upload they're tagging — lost
           otherwise once Browse's own "Uploads in X" heading is left behind. */}
       {!localRecord && (
@@ -1243,6 +1243,7 @@ export function Tag() {
                 aria-label="Close Focus" title="Close Focus (Escape)">×</button>
             </div>
           </div>
+          {cfg && <div className="shrink-0 border-t border-rule bg-panel px-3 py-1"><FocusSaveControls onReview={() => { closeFocus(); requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('[data-testid="automatic-save"] button:not([disabled])')?.focus()); }} /></div>}
           <div className="flex-1 min-h-0">
             <ResizableSplit
               storageKey="sparcd-tagger:focus-split"
@@ -1390,6 +1391,7 @@ export function Tag() {
             <span className="text-[11px] font-mono text-inkMute">Drop species here</span>
           )}
           <AppliedSpecies
+            key={current?.key}
             observations={observations}
             disabled={!current || !identityReady}
             // Focus has its own dedicated species column with room to spare, so
