@@ -8,5 +8,6 @@ export function draftRevisionOf(draft: DraftRecord): string {
     draft.confirmedSpecies ?? [], draft.removedSpecies ?? [], draft.lastEdited,
     // Keep existing journal signatures valid when no explicit status intent exists.
     ...(draft.questionableEdited ? [true] : []),
+    ...(draft.timeSourceOverride !== undefined ? [{ timeSource: draft.timeSourceOverride }] : []),
   ]);
 }

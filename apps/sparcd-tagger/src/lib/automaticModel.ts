@@ -6,7 +6,7 @@ import type { S3Config } from '@sparcd/types';
 
 export type ValueChange = {
   path: string;
-  field: 'species' | 'time' | 'expert' | 'location';
+  field: 'species' | 'time' | 'expert' | 'location' | 'timestampSource';
   species?: string;
   before: DraftObservation | string | boolean | Deployment | null;
   after: DraftObservation | string | boolean | Deployment | null;
@@ -17,6 +17,10 @@ export type EditAction = {
   at: string;
   changes: ValueChange[];
   undoOf?: string;
+  records?: Record<string, DraftRecord>;
+  timeZone?: string;
+  locationPatch?: import('./canonicalPatch').CanonicalPatch[];
+  locationBefore?: { canonical: import('./sync').CanonicalState; drafts: Record<string, DraftRecord>; location: Deployment | null; offset: import('./db').TimeOffsetRecord | null };
 };
 export type AutomaticRecord = {
   id: string;
@@ -31,13 +35,15 @@ export type AutomaticRecord = {
   flight?: { ids: string[]; user: string; undoOf?: string };
   /** Explicit migration/adoption is required for unscoped legacy state. */
   adoptionRequired?: boolean;
+  reviewLegacyAfterFlight?: boolean;
   version?: number;
   archivedJournals?: import('./syncJournal').SyncJournal[];
+  recoveryBranches?: AutomaticRecord[];
 };
 export function accountScope(cfg: S3Config): string {
   const raw = cfg.endpoint.trim();
   const url = new URL(/^https?:\/\//i.test(raw) ? raw : `${cfg.secure === false ? 'http' : 'https'}://${raw}`);
-  return JSON.stringify([url.href.replace(/\/+$/, ''), cfg.accessKey, cfg.region, cfg.forcePathStyle]);
+  return JSON.stringify([url.href.replace(/\/+$/, ''), cfg.accessKey.trim(), cfg.region, cfg.forcePathStyle]);
 }
 export const automaticId = (scope: string, bucket: string, prefix: string) => JSON.stringify([scope, bucket, prefix]);
 export const equalValue = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
@@ -54,7 +60,11 @@ export function actionChanges(change: EditChange, images: TagImage[], location: 
     }
     const a = before.timeOverride ?? image?.baseTimestamp ?? '';
     const b = after.timeOverride ?? image?.baseTimestamp ?? '';
-    if (a !== b) out.push({ path, field: 'time', before: a, after: b });
+    if (a !== b) {
+      out.push({ path, field: 'time', before: a, after: b });
+      const source = before.timeSourceOverride ?? (before.timeOverride !== null && image?.timestampSource ? 'manual' : image?.timestampSource);
+      if (source && source !== 'manual') out.push({ path, field: 'timestampSource', before: source, after: 'manual' });
+    }
     if (before.questionable !== after.questionable) out.push({ path, field: 'expert', before: before.questionable, after: after.questionable });
   }
   if (change.location && !equalValue(change.location.before ?? location, change.location.after ?? location)) {
@@ -67,7 +77,7 @@ export function canonicalValue(field: ValueChange, images: TagImage[], location:
   const image = images.find(i => i.key === field.path);
   if (!image) throw new Error('An affected image no longer exists. Review the current remote upload.');
   if (field.field === 'species') return image.baseObservations.find(o => o.scientificName === field.species) ?? null;
-  return field.field === 'time' ? image.baseTimestamp : !!image.baseQuestionable;
+  return field.field === 'time' ? image.baseTimestamp : field.field === 'timestampSource' ? image.timestampSource ?? null : !!image.baseQuestionable;
 }
 export function undoMatches(action: EditAction, images: TagImage[], location: Deployment | null): boolean {
   return action.changes.every(field => equalValue(canonicalValue(field, images, location), field.after));

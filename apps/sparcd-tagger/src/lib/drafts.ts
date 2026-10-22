@@ -8,7 +8,7 @@
 // editing one image never re-renders the whole strip.
 
 import { create } from 'zustand';
-import { acceptEdit, canAcceptEdit, expandUploadOffset, hasEditLifecycle } from './editLifecycle';
+import { acceptEdit, canAcceptEdit, expandUploadOffset, hasEditLifecycle, normalizeEditLocation } from './editLifecycle';
 import { attributionAvailable, connectedAttribution } from './attribution';
 import { shiftTimestamp, type Deployment } from '@sparcd/camtrap';
 import { draftRevisionOf } from './draftRevision';
@@ -332,6 +332,10 @@ export const useDraftStore = create<DraftState>((set, get) => {
         : blankDraft(ctx, mediaPath, deploymentId, base);
       before[mediaPath] = prev;
       const p = typeof patch === 'function' ? patch(prev, base) : patch;
+      const changed = Object.keys(p).some(key =>
+        JSON.stringify((p as Record<string, unknown>)[key]) !==
+        JSON.stringify((prev as unknown as Record<string, unknown>)[key]));
+      if (!changed) continue;
       const next: DraftRecord = {
         ...prev,
         deploymentId: deploymentId || prev.deploymentId,
@@ -485,6 +489,7 @@ export const useDraftStore = create<DraftState>((set, get) => {
     setPendingLocation: async (ctx, location) => {
       if (!attributionAvailable() || !canAcceptEdit()) return;
       const before = get().pendingLocation;
+      location = normalizeEditLocation(location);
       set({ pendingLocation: location });
       acceptEdit({ ctx, before: {}, after: {}, location: { before, after: location } });
       await setUploadPendingLocation(ctx.bucket, ctx.uploadPrefix, location);

@@ -18,7 +18,11 @@ async function settle() { await new Promise<void>(resolve => setTimeout(resolve,
 
 beforeEach(async () => {
   await db.open(); await db.automatic.clear(); await db.syncJournals.clear(); savers = [];
-  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { locks: { request: async (_name: string, task: () => Promise<unknown>) => task() } } });
+  const locks = new Map<string, Promise<unknown>>();
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { locks: { request: (name: string, task: () => Promise<unknown>) => {
+    const result = (locks.get(name) ?? Promise.resolve()).catch(() => {}).then(task);
+    locks.set(name, result); return result;
+  } } } });
 });
 afterEach(() => { savers.forEach(s => s.dispose()); vi.useRealTimers(); });
 
@@ -36,11 +40,15 @@ describe('durable automatic saving', () => {
   it('starts after 250ms idle and bounds a continuous queue at one second', async () => {
     const s = services(), saver = await start(s);
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const flush = vi.spyOn(saver, 'flush');
     saver.accept(action('a'));
-    await vi.advanceTimersByTimeAsync(249); expect(s.save).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(249); expect(flush).not.toHaveBeenCalled(); expect(s.save).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
+    expect(flush).toHaveBeenCalledTimes(1);
     await saver.flush(); expect(s.save).toHaveBeenCalledTimes(1);
+    flush.mockClear();
     for (let i = 0; i < 5; i++) { saver.accept(action(`b${i}`)); await vi.advanceTimersByTimeAsync(200); }
+    expect(flush).toHaveBeenCalledTimes(1);
     await saver.flush(); expect(s.save).toHaveBeenCalledTimes(2);
   });
   it('retains newer edits and serializes a second save behind an in-flight save', async () => {
@@ -87,6 +95,32 @@ describe('durable automatic saving', () => {
     const saver = await start(); saver.accept(action('a')); await saver.flush();
     const other = await start(); other.accept(action('b')); await other.flush();
     expect(await saver.undo()).toBe(false); expect((await db.automatic.get('auto'))?.undo?.id).toBe('b');
+  });
+  it('retains a stale tab’s newly accepted action durably without overwriting recovery', async () => {
+    const first = await start(), stale = await start();
+    first.accept(action('a')); await first.flush();
+    stale.accept(action('b')); await settle();
+    const stored = await db.automatic.get('auto');
+    expect(stored?.undo?.id).toBe('a');
+    expect(stored?.recoveryBranches?.flatMap(branch => branch.actions.map(a => a.id))).toContain('b');
+    expect(stale.view.phase).toBe('conflict');
+    const reopened = await start(); expect(reopened.view.phase).toBe('conflict');
+    expect(await reopened.flush()).toBe(false);
+  });
+  it('cannot consume the same Undo concurrently in two tabs', async () => {
+    const first = await start(); first.accept(action('a')); await first.flush();
+    const second = await start();
+    const results = await Promise.all([first.undo(), second.undo()]);
+    expect(results.filter(Boolean)).toHaveLength(1);
+    expect((await db.automatic.get('auto'))?.undo).toBeNull();
+  });
+  it('retains a failed Undo claim and consumes it only after reload recovery commits', async () => {
+    const s = services(), first = await start(s); first.accept(action('a')); await first.flush();
+    s.save = vi.fn(async () => { throw new Error('Denied'); });
+    expect(await first.undo()).toBe(false);
+    expect(first.record.undo?.id).toBe('a'); expect(first.record.flight?.undoOf).toBe('a');
+    first.dispose(); const resumed = await start();
+    expect(await resumed.flush()).toBe(true); expect(resumed.record.undo).toBeNull();
   });
   it('isolates account/destination scopes while permitting secret-key repair', () => {
     const cfg = { endpoint: 'https://example.com', accessKey: 'alice', secretKey: 'old', region: 'x', forcePathStyle: true };

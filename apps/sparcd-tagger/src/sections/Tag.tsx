@@ -1,4 +1,4 @@
-import { useAutomaticSave } from '../components/AutomaticSave';
+import { useAutomaticSave, FocusSaveControls } from '../components/AutomaticSave';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { TransformWrapper, TransformComponent, type ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
@@ -904,7 +904,7 @@ export function Tag() {
   const hasUploadShift = offsetActive(timeOffset);
 
   return (
-    <div className="h-[100dvh] lg:h-full flex flex-col min-h-0" aria-hidden={view === 'focus'}>
+    <div data-testid="tag-workspace" data-upload-prefix={uploadPrefix ?? ''} className="h-[100dvh] lg:h-full flex flex-col min-h-0" aria-hidden={view === 'focus'}>
       {/* Reminds the user which collection and upload they're tagging — lost
           otherwise once Browse's own "Uploads in X" heading is left behind. */}
       {!localRecord && (
@@ -1304,6 +1304,7 @@ export function Tag() {
               </span>
             )}
             {expertToggle('right')}
+            {cfg && <FocusSaveControls onReview={() => { closeFocus(); requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('[data-testid="automatic-save"] button:not([disabled])')?.focus()); }} />}
             <button
               ref={focusCloseRef}
               type="button"
@@ -1433,6 +1434,7 @@ export function Tag() {
             </span>
           )}
           <AppliedSpecies
+            key={current?.key}
             observations={observations}
             disabled={!current || !identityReady}
             onSetCount={(sci, n) =>

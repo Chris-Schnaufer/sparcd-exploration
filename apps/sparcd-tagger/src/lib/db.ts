@@ -24,6 +24,7 @@ export type DraftObservation = {
   count: number; // ≥1 always
   requestedSpecies: string; // free-text request → [REQUESTED_SPECIES:…]; '' otherwise
   freeTags: string; // extra raw markers, preserved verbatim (per-observation)
+  restorationRow?: string[]; // original row retained only for targeted species Undo
   classifiedBy?: string; // canonical attribution, preserved when rows are replaced
   classificationTimestamp?: string; // ISO; when the original identification was made
   reviewEvents?: ReviewEvent[];
@@ -53,6 +54,7 @@ export interface DraftRecord {
   questionableEdited?: boolean;
   /** A journal may still publish this image's submitted state; reversals remain pending. */
   pendingSync?: boolean;
+  timeSourceOverride?: import('@sparcd/camtrap').TimestampSource | null;
   timeOverride: string | null; // per-image corrected ISO timestamp; null when unset
 
   lastEdited: string; // ISO
@@ -215,7 +217,7 @@ export type UploadDraftState = 'unsynced' | 'synced';
  * A full scan of each table (no `bucket` index), but both are bounded by local
  * tagging work.
  */
-export async function uploadDraftStates(bucket: string): Promise<Map<string, UploadDraftState>> {
+export async function uploadDraftStates(bucket: string, scope?: string): Promise<Map<string, UploadDraftState>> {
   const out = new Map<string, UploadDraftState>();
   await db.drafts
     .filter((d) => d.bucket === bucket)
@@ -228,6 +230,8 @@ export async function uploadDraftStates(bucket: string): Promise<Map<string, Upl
     // property. Treat both that legacy `undefined` and null as no correction.
     .filter((u) => u.bucket === bucket && u.pendingLocation != null)
     .each((u) => out.set(u.uploadPrefix, 'unsynced'));
+  await db.automatic.filter(r => r.bucket === bucket && (!scope || r.scope === scope))
+    .each(r => { if (r.actions.length || r.flight || r.adoptionRequired || r.recoveryBranches?.length) out.set(r.uploadPrefix, 'unsynced'); });
   return out;
 }
 

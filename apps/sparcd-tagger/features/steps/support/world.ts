@@ -135,6 +135,7 @@ export async function openAppConnected(page: Page): Promise<void> {
     await openApp(page);
     await connect(page);
   }
+  if (!await collectionButton(page, COLLECTION_NAME).count()) await sectionTab(page, 'Browse').click();
   // The collection rail settles before anything else is meaningful.
   await expect(collectionButton(page, COLLECTION_NAME)).toBeVisible();
 }
@@ -153,6 +154,8 @@ export async function openUpload(page: Page, user = 'priortagger'): Promise<void
 
 /** The default entry point for every tagging scenario. */
 export async function openWorkspace(page: Page, user = 'priortagger'): Promise<void> {
+  const workspace = page.getByTestId('tag-workspace');
+  if (await workspace.count() && (await workspace.getAttribute('data-upload-prefix'))?.endsWith(`_${user}/`)) return;
   await openAppConnected(page);
   await selectCollection(page);
   await openUpload(page, user);

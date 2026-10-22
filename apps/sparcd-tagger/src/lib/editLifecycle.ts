@@ -11,6 +11,7 @@ export type EditChange = {
 export type EditLifecycle = {
   canEdit: () => boolean;
   accept: (change: EditChange) => void;
+  normalizeLocation?: (location: Deployment | null) => Deployment | null;
   expandOffset: (ctx: UploadCtx, offset: TimeOffsetRecord | null) => BulkTimeTarget[] | null;
 };
 let lifecycle: EditLifecycle | undefined;
@@ -23,3 +24,5 @@ export const acceptEdit = (change: EditChange) => lifecycle?.accept(change);
 export const expandUploadOffset = (ctx: UploadCtx, offset: TimeOffsetRecord | null) => lifecycle?.expandOffset(ctx, offset) ?? null;
 
 export const hasEditLifecycle = () => !!lifecycle;
+
+export const normalizeEditLocation = (location: Deployment | null) => lifecycle?.normalizeLocation?.(location) ?? location;

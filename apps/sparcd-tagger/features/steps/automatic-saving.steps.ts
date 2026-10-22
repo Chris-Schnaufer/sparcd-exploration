@@ -1,6 +1,6 @@
-import { parseObservations } from '@sparcd/camtrap';
+import { parseMedia, MEDIA_COL, parseObservations, parseCsvRows, serializeCsvRows, OBS_COL } from '@sparcd/camtrap';
 import { When, Then, expect, focusFrame, speciesApply, openWorkspace } from './support/world';
-import { BUCKET, PREFIX_A } from './support/data';
+import { BUCKET, PREFIX_A, observationsCsv } from './support/data';
 const path = `${PREFIX_A}IMG002.JPG`;
 const status = (page: import('@playwright/test').Page) => page.getByTestId('automatic-save');
 async function saved(page: import('@playwright/test').Page) { await expect(status(page).getByRole('status')).toHaveText('Saved'); }
@@ -26,6 +26,7 @@ When('the latest automatic action is undone', async ({ page }) => {
   await saved(page);
 });
 Then('the Coyote addition is reversed and its audit history remains', async ({ page, s3 }) => {
+  await saved(page);
   expect(parseObservations(s3.text(BUCKET, `${PREFIX_A}observations.csv`)).filter(o => o.mediaId === path && o.scientificName)).toEqual([]);
   const meta = JSON.parse(s3.text(BUCKET, `${PREFIX_A}UploadMeta.json`));
   expect(meta.taggerActions).toHaveLength(2); expect(meta.taggerActions[1].undoOf).toBe(meta.taggerActions[0].id);
@@ -70,4 +71,136 @@ Then('its review is reversed with the original event and identifier retained', a
   const observation = parseObservations(s3.text(BUCKET, `${PREFIX_A}observations.csv`)).find(o => o.mediaId === `${PREFIX_A}IMG001.JPG`)!;
   expect(observation.reviewEvents).toHaveLength(1);
   expect(observation.reviewEvents![0].reviewedBy).toBeTruthy(); expect(observation.reviewEvents![0].reversedBy).toBeTruthy();
+});
+
+When('the original canonical values are recorded for Undo verification', async ({ s3, scratch }) => {
+  scratch.locationOriginal = Object.fromEntries(['media.csv', 'observations.csv', 'deployments.csv'].map(name => [name, s3.text(BUCKET, `${PREFIX_A}${name}`)]));
+});
+When('the location change finishes automatic saving', async ({ page }) => { await saved(page); });
+When('the original deployment metadata is absent', async ({ page, s3 }) => {
+  s3.put(BUCKET, `${PREFIX_A}deployments.csv`, '', 'text/csv');
+  await page.reload(); await openWorkspace(page); await saved(page);
+});
+Then('the original location and capture values are restored without replacing audit history', async ({ s3, scratch }) => {
+  for (const [name, value] of Object.entries(scratch.locationOriginal as Record<string, string>)) expect(parseCsvRows(s3.text(BUCKET, `${PREFIX_A}${name}`))).toEqual(parseCsvRows(value));
+  const events = JSON.parse(s3.text(BUCKET, `${PREFIX_A}UploadMeta.json`)).taggerActions;
+  expect(events.at(-1).undoOf).toBe(events.at(-2).id);
+});
+When('a count is edited without finishing the field', async ({ page }) => {
+  await focusFrame(page, 'IMG001.JPG');
+  await page.getByRole('spinbutton', { name: 'Count for Mule Deer' }).fill('12');
+});
+Then('its unfinished value is not published or presented as Saved', async ({ page, s3 }) => {
+  await expect(status(page)).toContainText('Uncommitted input');
+  // Flush accepted work without finishing the active editor; this must remain
+  // a local text draft, regardless of network debounce timers.
+  expect(parseObservations(s3.text(BUCKET, `${PREFIX_A}observations.csv`)).find(o => o.mediaId === `${PREFIX_A}IMG001.JPG`)!.count).toBe(2);
+});
+When('the count is finished with the save shortcut', async ({ page }) => { await page.keyboard.press('Control+s'); await saved(page); });
+Then('its completed count is saved and can be undone', async ({ page, s3 }) => {
+  expect(parseObservations(s3.text(BUCKET, `${PREFIX_A}observations.csv`)).find(o => o.mediaId === `${PREFIX_A}IMG001.JPG`)!.count).toBe(12);
+  await page.getByRole('button', { name: 'Undo latest action', exact: true }).click(); await saved(page);
+  expect(parseObservations(s3.text(BUCKET, `${PREFIX_A}observations.csv`)).find(o => o.mediaId === `${PREFIX_A}IMG001.JPG`)!.count).toBe(2);
+});
+When('Coyote and deer are automatically saved on one image', async ({ page }) => {
+  await focusFrame(page, 'IMG002.JPG'); await speciesApply(page, 'Canis latrans').click();
+  await focusFrame(page, 'IMG002.JPG'); await speciesApply(page, 'Odocoileus hemionus').click(); await saved(page);
+});
+When("another writer replaces them with bobcat and this client refreshes", async ({ page, s3 }) => {
+  const rows = parseCsvRows(s3.text(BUCKET, `${PREFIX_A}observations.csv`)).filter(row => row[OBS_COL.mediaId] !== path);
+  const bobcat = parseCsvRows(observationsCsv(PREFIX_A, [{ id: 'remote-bobcat', file: 'IMG002.JPG', timestamp: '2024-01-10T08:00:30', scientificName: 'Lynx rufus', count: 1, comments: '[COMMONNAME:Bobcat]' }]))[0];
+  rows.push(bobcat); s3.put(BUCKET, `${PREFIX_A}observations.csv`, serializeCsvRows(rows), 'text/csv');
+  await page.reload(); await openWorkspace(page); await saved(page);
+});
+When('Puma is added to the refreshed image', async ({ page }) => {
+  await focusFrame(page, 'IMG002.JPG'); await speciesApply(page, 'Puma concolor').click(); await saved(page);
+});
+Then('bobcat and Puma are stored without resurrecting Coyote or deer', async ({ s3 }) => {
+  expect(parseObservations(s3.text(BUCKET, `${PREFIX_A}observations.csv`)).filter(o => o.mediaId === path).map(o => o.scientificName).sort()).toEqual(['Lynx rufus', 'Puma concolor'].sort());
+});
+
+When('the automatic save completes', async ({ page }) => { await saved(page); });
+When('an invalid count is submitted with the save shortcut', async ({ page }) => {
+  await focusFrame(page, 'IMG001.JPG');
+  await page.getByRole('spinbutton', { name: 'Count for Mule Deer' }).fill('0');
+  await page.keyboard.press('Control+s');
+});
+Then('the invalid count stays focused and shared storage is unchanged', async ({ page, s3 }) => {
+  const input = page.getByRole('spinbutton', { name: 'Count for Mule Deer' });
+  await expect(input).toBeFocused(); expect(await input.evaluate(el => (el as HTMLInputElement).validity.valid)).toBe(false);
+  await expect(status(page)).toContainText('Uncommitted input');
+  expect(parseObservations(s3.text(BUCKET, `${PREFIX_A}observations.csv`)).find(o => o.mediaId === `${PREFIX_A}IMG001.JPG`)!.count).toBe(2);
+});
+async function denyNextMetadata(page: import('@playwright/test').Page) {
+  let denied = false;
+  await page.route('**/*', async route => {
+    if (!denied && route.request().method() === 'PUT' && route.request().headers()['if-match'] && decodeURIComponent(new URL(route.request().url()).pathname).endsWith(`/${PREFIX_A}UploadMeta.json`)) {
+      denied = true;
+      await route.fulfill({ status: 403, contentType: 'application/xml', body: '<Error><Code>AccessDenied</Code><Message>Permission denied by regression fixture</Message></Error>' });
+    } else await route.fallback();
+  });
+}
+When('an automatic save fails after publishing observations', async ({ page }) => {
+  await denyNextMetadata(page); await focusFrame(page, 'IMG002.JPG'); await speciesApply(page, 'Canis latrans').click();
+});
+When('the Undo fails after publishing its observations', async ({ page }) => {
+  await denyNextMetadata(page); await status(page).getByRole('button', { name: 'Undo latest action', exact: true }).click();
+});
+Then('pending work and its journal remain available with retry announced', async ({ page }) => {
+  await expect(status(page).getByRole('status')).toContainText('Save failed');
+  await expect(status(page).getByRole('button', { name: 'Retry save' })).toBeEnabled();
+  await expect(status(page).getByRole('button', { name: 'Undo latest action' })).toBeDisabled();
+  const { readStore } = await import('./support/flows');
+  expect(await readStore(page, 'syncJournals')).toHaveLength(1);
+  const records = await readStore(page, 'automatic') as { actions: unknown[] }[];
+  expect(records[0].actions.length).toBeGreaterThan(0);
+});
+Then('the Coyote is saved exactly once and its journal is cleared', async ({ page, s3 }) => {
+  const { readStore } = await import('./support/flows');
+  expect(parseObservations(s3.text(BUCKET, `${PREFIX_A}observations.csv`)).filter(o => o.mediaId === path && o.scientificName === 'Canis latrans')).toHaveLength(1);
+  expect(JSON.parse(s3.text(BUCKET, `${PREFIX_A}UploadMeta.json`)).taggerActions).toHaveLength(1);
+  expect(await readStore(page, 'syncJournals')).toEqual([]);
+});
+When('another writer replaces Coyote without refreshing this client', async ({ s3 }) => {
+  const rows = parseCsvRows(s3.text(BUCKET, `${PREFIX_A}observations.csv`)).filter(row => row[OBS_COL.mediaId] !== path);
+  rows.push(parseCsvRows(observationsCsv(PREFIX_A, [{ id: 'remote-bobcat', file: 'IMG002.JPG', timestamp: '2024-01-10T08:00:30', scientificName: 'Lynx rufus', count: 1, comments: '[COMMONNAME:Bobcat]' }]))[0]);
+  s3.put(BUCKET, `${PREFIX_A}observations.csv`, serializeCsvRows(rows), 'text/csv');
+});
+When('Puma is applied against the stale workspace', async ({ page }) => {
+  await focusFrame(page, 'IMG002.JPG'); await speciesApply(page, 'Puma concolor').click();
+});
+Then('the conflicting remote edit survives and local work is retained', async ({ page, s3 }) => {
+  await expect(status(page)).toContainText('Save conflict');
+  expect(parseObservations(s3.text(BUCKET, `${PREFIX_A}observations.csv`)).filter(o => o.mediaId === path).map(o => o.scientificName)).toEqual(['Lynx rufus']);
+  await status(page).getByText('Compare local changes with storage', { exact: true }).click();
+  await expect(status(page)).toContainText('Retained change:');
+  await expect(status(page)).toContainText('Puma');
+  await expect(status(page)).toContainText('Currently stored:');
+});
+When('current storage is explicitly chosen', async ({ page }) => { await status(page).getByRole('button', { name: 'Discard local changes and use current storage' }).click(); await expect(status(page)).toContainText('Using current stored data'); });
+When('the pending values are explicitly reapplied', async ({ page }) => { await status(page).getByRole('button', { name: 'Reapply my affected values to current storage' }).click(); await saved(page); });
+Then('the remote bobcat remains and discarded edits do not return after reload', async ({ page, s3 }) => {
+  await page.reload(); await openWorkspace(page); await saved(page);
+  expect(parseObservations(s3.text(BUCKET, `${PREFIX_A}observations.csv`)).filter(o => o.mediaId === path).map(o => o.scientificName)).toEqual(['Lynx rufus']);
+  const { readStore } = await import('./support/flows');
+  const records = await readStore(page, 'automatic') as { actions: unknown[]; pendingDrafts: object }[];
+  expect(records[0].actions).toEqual([]); expect(records[0].pendingDrafts).toEqual({});
+});
+Then('only the remote bobcat remains', async ({ s3 }) => { expect(parseObservations(s3.text(BUCKET, `${PREFIX_A}observations.csv`)).filter(o => o.mediaId === path).map(o => o.scientificName)).toEqual(['Lynx rufus']); });
+When('Undo is requested with the keyboard', async ({ page }) => { await page.locator('body').click({ position: { x: 1, y: 1 } }); await page.keyboard.press('Control+z'); });
+Then('Undo explains the changed stored data and preserves bobcat', async ({ page, s3 }) => {
+  await expect(status(page)).toContainText('affected data changed'); await expect(status(page).getByRole('button', { name: 'Undo latest action' })).toBeDisabled();
+  expect(parseObservations(s3.text(BUCKET, `${PREFIX_A}observations.csv`)).filter(o => o.mediaId === path).map(o => o.scientificName)).toEqual(['Lynx rufus']);
+});
+When('another writer marks this image as needing an expert', async ({ s3 }) => {
+  const rows = parseCsvRows(s3.text(BUCKET, `${PREFIX_A}media.csv`));
+  const row = rows.find(row => row[MEDIA_COL.mediaId] === path)!;
+  row[MEDIA_COL.comments] = `${row[MEDIA_COL.comments] || ''}[NEED_EXPERT:true]`;
+  s3.put(BUCKET, `${PREFIX_A}media.csv`, serializeCsvRows(rows), 'text/csv');
+});
+Then('the unrelated remote expert marker remains', async ({ s3 }) => { expect(parseMedia(s3.text(BUCKET, `${PREFIX_A}media.csv`)).find(row => row.mediaId === path)!.comments).toContain('[NEED_EXPERT:true]'); });
+When('application Redo shortcuts are pressed', async ({ page }) => { await page.locator('body').click({ position: { x: 1, y: 1 } }); await page.keyboard.press('Control+Shift+z'); await page.keyboard.press('Control+y'); });
+Then('the Coyote is still saved and Undo is available', async ({ page, s3 }) => {
+  await saved(page); await expect(status(page).getByRole('button', { name: 'Undo latest action' })).toBeEnabled();
+  expect(parseObservations(s3.text(BUCKET, `${PREFIX_A}observations.csv`)).find(o => o.mediaId === path)!.scientificName).toBe('Canis latrans');
 });
