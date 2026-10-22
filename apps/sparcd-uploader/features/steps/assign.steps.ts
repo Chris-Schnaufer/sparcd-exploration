@@ -1,4 +1,5 @@
 import { Given, When, Then, expect } from './fixtures';
+import { loginIdentityPreferenceKey } from '../../../../packages/auth-ui/src/loginIdentity';
 import { ACCESS_KEY, type App } from './app';
 import { clipVideo, jpegAt, jpegNoTime, standardBatch } from './batches';
 import { expectStoredAtLocation, publishedUploads, reconnectAndReturnToAssign, rescanFromAssign } from './helpers';
@@ -90,6 +91,33 @@ Then('Assign restores the confirmed connected account default', async ({ app }) 
   await expect(app.page.getByPlaceholder('e.g. John Doe').first()).toHaveValue(ACCESS_KEY);
   expect(app.s3.whoamiRequests).toBeGreaterThan(0);
   expect(app.s3.whoamiResponse.body).toContain('<Code>NoSuchKey</Code>');
+});
+
+When('the account-name lookup completes while the Assign identity is blank and focused', async ({ app }) => {
+  let release!: () => void, entered!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const reached = new Promise<void>(resolve => { entered = resolve; });
+  await app.page.route('**/-/whoami', async route => {
+    entered(); await gate;
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: 'person', name: 'Resolved Researcher' }) });
+  });
+  await app.page.getByRole('button', { name: 'Retry account-name lookup' }).click(); await reached;
+  const input = app.page.locator('#uploaderUser'); await input.fill('');
+  release();
+  await expect.poll(() => app.page.evaluate(key => JSON.parse(localStorage.getItem(key) ?? 'null')?.defaultIdentity, loginIdentityPreferenceKey(ACCESS_KEY))).toBe('Resolved Researcher');
+  await expect(input).toBeFocused(); await expect(input).toHaveValue('');
+});
+Then('the Assign identity remains blank until blur after a shared preference update', async ({ app }) => {
+  await app.page.evaluate(key => {
+    const preference = JSON.parse(localStorage.getItem(key)!);
+    const oldValue = JSON.stringify(preference);
+    const newValue = JSON.stringify({ ...preference, identity: 'Shared Researcher' });
+    localStorage.setItem(key, newValue);
+    window.dispatchEvent(new StorageEvent('storage', { key, oldValue, newValue, storageArea: localStorage }));
+  }, loginIdentityPreferenceKey(ACCESS_KEY));
+  const input = app.page.locator('#uploaderUser');
+  await expect(input).toBeFocused(); await expect(input).toHaveValue('');
+  await input.press('Tab'); await expect(input).toHaveValue('Shared Researcher');
 });
 
 // --- the collection list ---------------------------------------------------

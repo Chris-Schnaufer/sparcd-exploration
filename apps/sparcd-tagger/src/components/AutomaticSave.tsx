@@ -221,7 +221,11 @@ export function AutomaticSaveProvider({ children }: { children: ReactNode }) {
           const starting = await loadCanonicalState(configured(), bucket, prefix);
           const flightActions = record.actions.filter(action => record.flight!.ids.includes(action.id));
           const submitted = Object.assign({}, ...flightActions.map(action => action.records ?? {})) as ReturnType<typeof useDraftStore.getState>['drafts'];
-          const compiled = flightActions.length ? await compileActions(flightActions, starting, ctx) : undefined;
+          // A partial write's journal already contains the exact intended
+          // bodies. Recompiling against those partly written files can reject
+          // a location reversal before the journal has a chance to resume.
+          const journalToResume = await loadSyncJournal(bucket, prefix);
+          const compiled = flightActions.length && !journalToResume ? await compileActions(flightActions, starting, ctx) : undefined;
           const uploadBefore = await getUpload(bucket, prefix);
           const memoryOffset = useDraftStore.getState().timeOffset;
           const result = await performSync({ cfg: configured(), bucket, uploadPrefix: prefix, user: record.flight!.user,
