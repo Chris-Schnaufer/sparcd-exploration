@@ -12,7 +12,7 @@ const config: S3Config = {
   forcePathStyle: true,
 };
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe('signed account-name lookup', () => {
   it('uses a signed same-origin request and validates the returned person and name', async () => {
@@ -80,13 +80,31 @@ describe('signed account-name lookup', () => {
     }
   });
 
-  it('reports network failures and timeouts without treating them as unsupported', async () => {
+  it('reports network failures without treating them as unsupported', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('network'); }));
     await expect(fetchWhoAmI(config)).rejects.toThrow(/could not be reached/i);
+  });
 
+  it('reports timeouts without treating them as unsupported', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    let started!: () => void;
+    const fetching = new Promise<void>(resolve => { started = resolve; });
     vi.stubGlobal('fetch', vi.fn((_input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
-      init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+      const abort = () => reject(new DOMException('aborted', 'AbortError'));
+      if (init?.signal?.aborted) abort();
+      else init?.signal?.addEventListener('abort', abort, { once: true });
+      started();
     })));
-    await expect(fetchWhoAmI(config, 5)).rejects.toThrow(/timed out/i);
+    const request = fetchWhoAmI(config, 5000);
+    const timedOut = expect(request).rejects.toThrow(/timed out/i);
+    // Signing uses real Web Crypto. Start the clock only after the request's
+    // abort listener exists, independent of crypto scheduling on a busy runner.
+    await fetching;
+    await vi.advanceTimersByTimeAsync(4999);
+    expect(fetch).toHaveBeenCalledOnce();
+    expect((vi.mocked(fetch).mock.calls[0][1]?.signal as AbortSignal).aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await timedOut;
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
