@@ -73,3 +73,23 @@ serialization, recovery, offline state and cross-tab protection. The automatic
 saving Chrome feature covers real mutations, stored canonical results, Undo,
 partial-write recovery, conflict resolution and #463's stale-clean-draft path.
 The full Tagger suite and Uploader/cross-tool regressions remain release gates.
+
+### Completed verification (2026-10-21)
+
+| Gate | Result |
+| --- | --- |
+| Full configured Tagger BDD, installed Google Chrome | 386 passed, no retries |
+| Tagger unit tests | 421 passed |
+| Shared Camtrap unit tests and TypeScript | 77 passed; type check passed |
+| Uploader unit tests | 405 passed |
+| Uploader/Tagger shared-session and handoff Chrome scenarios | 5 passed |
+| Built Uploader offline Chrome scenario | 1 passed |
+| Tagger and Uploader TypeScript and production builds | Passed |
+
+All browser sessions were independent of the user's Chrome session. S3 writes
+were handled by local mock storage; production storage was not modified.
+
+Implementation stages are committed on `feature/tagger-automatic-save-518`:
+durable coordinator/Undo foundations; action-safe publication and targeted Undo;
+legacy/workflow migration; and reload, credential and workspace safeguards.
+No pull request was created.
