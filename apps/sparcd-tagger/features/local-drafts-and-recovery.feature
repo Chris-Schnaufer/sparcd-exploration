@@ -37,3 +37,19 @@ Feature: Durable automatic work survives navigation and credential repair
     Then pending work and its journal remain available with retry announced
     When the Recovery section is opened
     Then this account's pending upload is listed without a snapshot chooser
+
+  Scenario: A collection switch waits for saving even if the active view changes
+    When an automatic save is held before its observation write
+    And another collection is requested
+    Then the current upload remains active until saving succeeds
+    When the held save is released successfully
+    Then the requested collection opens in Browse after all writes commit
+
+  Scenario: Credential repair after reload does not require readable canonical files
+    When an automatic save fails after publishing observations
+    Then pending work and its journal remain available with retry announced
+    When the pending upload is reloaded while canonical reads are denied
+    Then credential repair stays available before canonical loading succeeds
+    When canonical access and this account's credentials are repaired
+    Then the Coyote is saved exactly once and its journal is cleared
+    And the repaired save retains the original actor and active upload

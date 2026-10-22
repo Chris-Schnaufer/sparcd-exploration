@@ -241,3 +241,34 @@ Then('credentials can be repaired without discarding pending work', async ({ pag
   await expect(status(page).getByRole('button', { name: 'Repair credentials for this account' })).toBeEnabled();
   const { readStore } = await import('./support/flows'); expect((await readStore(page, 'automatic') as { actions: unknown[] }[])[0].actions).toHaveLength(1);
 });
+
+When('Retry and the save shortcut are used while offline', async ({ page }) => {
+  await status(page).getByRole('button', { name: 'Retry save' }).click(); await page.keyboard.press('Control+s');
+});
+When('the conflict is reloaded and connectivity changes', async ({ page }) => {
+  await page.reload(); await openWorkspace(page); await expect(status(page)).toContainText('Save conflict');
+  await page.context().setOffline(true); await expect(status(page)).toContainText('Pending/reconnecting');
+  await page.context().setOffline(false); await page.keyboard.press('Control+s');
+});
+Then('the conflict remains paused with its retained local work', async ({ page, s3 }) => {
+  await expect(status(page)).toContainText('Save conflict');
+  await expect(page.getByRole('region', { name: 'Review save conflict' })).toBeVisible();
+  expect(parseObservations(s3.text(BUCKET, `${PREFIX_A}observations.csv`)).filter(row => row.mediaId === path).map(row => row.scientificName)).toEqual(['Lynx rufus']);
+  const { readStore } = await import('./support/flows'); expect((await readStore(page, 'automatic') as { actions: unknown[] }[])[0].actions).toHaveLength(1);
+});
+When('another writer removes this image from canonical media', async ({ s3, scratch }) => {
+  scratch.originalImage = s3.get(BUCKET, path)!.body.toString('base64');
+  const rows = parseCsvRows(s3.text(BUCKET, `${PREFIX_A}media.csv`)).filter(row => row[MEDIA_COL.mediaId] !== path);
+  s3.put(BUCKET, `${PREFIX_A}media.csv`, serializeCsvRows(rows), 'text/csv');
+});
+Then('the removed image is reported as a retained conflict', async ({ page }) => {
+  await expect(status(page)).toContainText('Save conflict'); await expect(status(page)).toContainText('removed from storage');
+  await page.getByText('Compare local changes with storage', { exact: true }).click();
+  await expect(status(page)).toContainText('Image removed from storage');
+  const { readStore } = await import('./support/flows'); expect((await readStore(page, 'automatic') as { actions: unknown[] }[])[0].actions).toHaveLength(1);
+});
+Then('the removed image stays absent and its original media object is untouched', async ({ s3, scratch }) => {
+  expect(parseMedia(s3.text(BUCKET, `${PREFIX_A}media.csv`)).some(row => row.mediaId === path)).toBe(false);
+  expect(s3.get(BUCKET, path)!.body.toString('base64')).toBe(scratch.originalImage);
+  expect(parseObservations(s3.text(BUCKET, `${PREFIX_A}observations.csv`)).some(row => row.mediaId === path && row.scientificName === 'Puma concolor')).toBe(false);
+});

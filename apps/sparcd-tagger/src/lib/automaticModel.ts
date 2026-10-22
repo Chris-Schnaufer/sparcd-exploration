@@ -35,6 +35,8 @@ export type AutomaticRecord = {
   flight?: { ids: string[]; user: string; undoOf?: string };
   /** Explicit migration/adoption is required for unscoped legacy state. */
   adoptionRequired?: boolean;
+  /** Conflict review remains required after reload or a network outage. */
+  conflictReason?: string;
   reviewLegacyAfterFlight?: boolean;
   version?: number;
   archivedJournals?: import('./syncJournal').SyncJournal[];

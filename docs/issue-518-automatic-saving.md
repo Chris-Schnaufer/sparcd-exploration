@@ -39,7 +39,7 @@ Saving appears when work is accepted. Saved means all required remote writes
 completed. Pending/reconnecting and Save failed take precedence. Retry resumes
 the retained flight. A conflict never blindly retries stale writes: compare the
 retained affected values with current storage, then explicitly discard or reapply.
-Reload retains this recovery choice. Partly written canonical files may appear
+The conflict reason is durable: reload and reconnect retain this recovery choice. Partly written canonical files may appear
 in storage during recovery; saving is not an atomic multi-object transaction.
 
 ## One-level Undo
@@ -64,7 +64,7 @@ review. This is a narrow safeguard, not editing ownership or a server lease;
 
 Pending work registers the browser's unload warning and is durably retained.
 Browsers may suppress the warning. Recovery does not depend on an unload network
-request. Active upload selection is remembered for same-tab reload recovery.
+request. Active upload selection is remembered for same-tab reload recovery. Save acknowledgements retain the active image, selection and open display controls. Credential repair is also available when a reload cannot read canonical files yet.
 
 ## Verification
 

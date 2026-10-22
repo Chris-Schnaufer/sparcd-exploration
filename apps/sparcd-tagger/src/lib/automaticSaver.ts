@@ -40,7 +40,8 @@ export class AutomaticSaver {
   async open(): Promise<void> {
     const stored = await db.automatic.get(this.record.id);
     if (stored) { this.record = stored; this.version = stored.version ?? 0; }
-    if (this.record.recoveryBranches?.length) this.publish('conflict', 'Pending edits from another tab were retained. Reload and review all retained changes before continuing.');
+    if (this.record.conflictReason) this.publish('conflict', `Save conflict — ${this.record.conflictReason}`);
+    else if (this.record.recoveryBranches?.length) this.publish('conflict', 'Pending edits from another tab were retained. Reload and review all retained changes before continuing.');
     else if (this.record.adoptionRequired) this.publish('recovery', 'Existing pending work needs recovery confirmation for this account and destination.');
     else if (this.record.actions.length || this.record.flight) { this.publish('saving', 'Saving…'); this.schedule(); }
     else this.publish('saved', 'Saved');
@@ -98,6 +99,9 @@ export class AutomaticSaver {
   setOnline(online: boolean): void {
     this.online = online;
     if (!online) this.publish('pending', 'Pending/reconnecting — editing is paused.');
+    else if (this.record.conflictReason) this.publish('conflict', `Save conflict — ${this.record.conflictReason}`);
+    else if (this.record.recoveryBranches?.length) this.publish('conflict', 'Pending edits from another tab were retained. Reload and review all retained changes before continuing.');
+    else if (this.record.adoptionRequired) this.publish('recovery', 'Existing pending work needs recovery confirmation for this account and destination.');
     else if (this.view.phase === 'pending') { this.publish('saving', 'Reconnected — saving pending work…'); void this.flush(); }
   }
   private async locked<T>(operation: () => Promise<T>): Promise<T> {
@@ -114,7 +118,7 @@ export class AutomaticSaver {
   flush(): Promise<boolean> {
     clearTimeout(this.idle); clearTimeout(this.maximum); this.maximum = undefined;
     if (this.running) return this.running;
-    if (!this.online || ['conflict', 'recovery', 'loading'].includes(this.view.phase)) return Promise.resolve(false);
+    if (!this.online || this.record.conflictReason || ['conflict', 'recovery', 'loading'].includes(this.view.phase)) return Promise.resolve(false);
     const operation = this.locked(async () => {
       if (this.persistenceError) await this.persist(false, Object.values(this.record.pendingDrafts ?? {}));
       await this.writes;
@@ -153,8 +157,12 @@ export class AutomaticSaver {
       this.retryDelay = 1000;
       this.publish('saved', 'Saved');
       return true;
-    }).catch(error => {
-      if (error instanceof SaveConflict) this.publish('conflict', `Save conflict — ${error.message}`);
+    }).catch(async error => {
+      if (error instanceof SaveConflict) {
+        this.record = { ...this.record, conflictReason: error.message };
+        if (!this.persistenceError) { try { await this.persist(); } catch { /* The original pending actions remain retained. */ } }
+        this.publish(this.online ? 'conflict' : 'pending', this.online ? `Save conflict — ${error.message}` : 'Pending/reconnecting — editing is paused.');
+      }
       else if (!this.online || retryableTransport(error)) {
         this.publish('pending', 'Pending/reconnecting — editing is paused.');
         clearTimeout(this.retryTimer);
@@ -167,7 +175,8 @@ export class AutomaticSaver {
     return operation;
   }
   retry(): Promise<boolean> {
-    if (this.view.phase === 'conflict' || this.record.adoptionRequired) return Promise.resolve(false);
+    if (!this.online) { this.publish('pending', 'Pending/reconnecting — editing is paused.'); return Promise.resolve(false); }
+    if (this.record.conflictReason || this.view.phase === 'conflict' || this.record.adoptionRequired) return Promise.resolve(false);
     this.publish('saving', 'Retrying save…');
     return this.flush();
   }
@@ -210,7 +219,7 @@ export class AutomaticSaver {
         if (reapply) throw new SaveConflict('Recover the pending operation for the other account or destination before reapplying these changes.');
         // Discard only this account's accepted intent. Its shared upload journal
         // and draft mirror may belong to the other account's interrupted flight.
-        this.record = { ...this.record, actions: [], undo: null, pendingDrafts: {}, recoveryBranches: undefined, undoReason: undefined };
+        this.record = { ...this.record, actions: [], undo: null, pendingDrafts: {}, recoveryBranches: undefined, undoReason: undefined, conflictReason: undefined };
         await this.persist();
         this.publish('recovery', 'Local changes for this account were discarded. Recovery for another account or destination is retained; reconnect with that account to continue.');
         return;
@@ -223,7 +232,7 @@ export class AutomaticSaver {
       const resolved = await this.services.resolve(this.record, current, reapply);
       const actionsToSave = resolved ?? this.record.actions;
       const latest = actionsToSave.filter(action => !action.undoOf && action.changes.length).at(-1);
-      this.record = { ...this.record, recoveryBranches: undefined, flight: undefined,
+      this.record = { ...this.record, recoveryBranches: undefined, flight: undefined, conflictReason: undefined,
         actions: reapply ? actionsToSave.filter(action => action.changes.length) : [],
         pendingDrafts: reapply ? this.record.pendingDrafts : {},
         undo: reapply ? latest ?? this.record.undo : null,

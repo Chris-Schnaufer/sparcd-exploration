@@ -20,8 +20,17 @@ import { AutomaticSaver, SaveConflict, type SaveView, type RemoteView } from '..
 import { hasUnfinishedEditor, useEditorState } from '../lib/editorState';
 import { draftRevisionOf } from '../lib/draftRevision';
 
-const initial: SaveView = { phase: 'loading', message: 'Opening automatic saving…', pending: false, undoReason: 'Open an upload first.', canEdit: false };
+const initial: SaveView = { phase: 'loading', message: 'Opening automatic saving…', pending: false, undoReason: 'Undo is unavailable while opening save recovery.', canEdit: false };
 export const useAutomaticSave = create<{ view: SaveView; saver: AutomaticSaver | null; repair: boolean; repairError?: string }>(() => ({ view: initial, saver: null, repair: false }));
+function retryAutomaticSave(): Promise<boolean> {
+  const saver = useAutomaticSave.getState().saver;
+  if (saver) return saver.retry();
+  // A read failure can precede coordinator creation after reload. Refresh only
+  // this connection's query generation; retain selection, identity and journals.
+  useStore.setState(state => ({ connectionId: state.connectionId + 1 }));
+  return Promise.resolve(false);
+}
+
 
 function sameLocation(a: Deployment | null | undefined, b: Deployment | null | undefined): boolean {
   return !a || !b ? a == null && b == null : serializeDeployments([a]) === serializeDeployments([b]);
@@ -33,7 +42,8 @@ function withFields(fields: ValueChange[], current: RemoteView, ctx: UploadCtx, 
   for (const field of fields) {
     const value = reverse ? field.before : field.after;
     if (field.field === 'location') { location = value as Deployment | null; continue; }
-    const image = current.images.find(i => i.key === field.path)!;
+    const image = current.images.find(i => i.key === field.path);
+    if (!image) throw new SaveConflict('An affected image was removed from storage. Review the retained changes before continuing.');
     const draft = drafts[field.path] ?? blankDraft(ctx, field.path, image.deploymentId, { observations: image.baseObservations, questionable: image.baseQuestionable });
     draft.dirty = true; draft.lastEdited = new Date().toISOString();
     if (field.field === 'time') draft.timeOverride = value as string;
@@ -112,10 +122,29 @@ export function AutomaticSaveProvider({ children }: { children: ReactNode }) {
   const client = useQueryClient();
   const live = useRef({ cfg, connectionId, collectionKey, prefix, images: images.data ?? [], location: deployment.data ?? null });
   live.current = { cfg, connectionId, collectionKey, prefix, images: images.data ?? [], location: deployment.data ?? null };
+  const queriesReady = images.data !== undefined && deployment.data !== undefined;
 
   useEffect(() => {
     if (!cfg || !collectionKey || !prefix) { useAutomaticSave.setState({ view: { ...initial, phase: 'saved', pending: false }, saver: null }); return; }
-    if (!images.isSuccess || !deployment.isSuccess) return;
+    if (!queriesReady) {
+      let cancelled = false;
+      useAutomaticSave.setState({ saver: null, view: { ...initial, pending: true } });
+      const removeEdits = installEditLifecycle({ canEdit: () => false, accept: () => {}, expandOffset: () => null });
+      const removeNavigation = installSaveNavigation({
+        pending: () => useAutomaticSave.getState().view.pending,
+        flush: () => Promise.resolve(false),
+        connectionAllowed: () => !useAutomaticSave.getState().view.pending,
+      });
+      const { bucket } = parseCollectionKey(collectionKey);
+      void db.automatic.get(automaticId(scope, bucket, prefix)).then(record => {
+        if (cancelled) return;
+        const pending = !!record && !!(record.actions.length || record.flight || record.adoptionRequired || record.recoveryBranches?.length);
+        const error = images.error || deployment.error;
+        useAutomaticSave.setState({ view: { ...initial, pending, phase: error ? 'failed' : 'loading',
+          message: error ? `${pending ? 'Save recovery blocked' : 'Upload data could not be read'} — ${String(error)}. Pending work is retained. Retry or repair credentials for this account.` : initial.message } });
+      }).catch(error => { if (!cancelled) useAutomaticSave.setState({ view: { ...initial, phase: 'failed', pending: true, message: `Could not read local recovery: ${String(error)}. Keep this tab open and retry.` } }); });
+      return () => { cancelled = true; removeEdits(); removeNavigation(); };
+    }
     let cancelled = false;
     let saver: AutomaticSaver | undefined;
     let removeEdits: (() => void) | undefined;
@@ -123,7 +152,8 @@ export function AutomaticSaveProvider({ children }: { children: ReactNode }) {
     const { bucket } = parseCollectionKey(collectionKey);
     const ctx = { bucket, uploadPrefix: prefix };
     const id = automaticId(scope, bucket, prefix);
-    useAutomaticSave.setState({ view: initial, saver: null });
+    useAutomaticSave.setState({ view: { ...initial, pending: true }, saver: null });
+    removeNavigation = installSaveNavigation({ pending: () => true, flush: () => Promise.resolve(false), connectionAllowed: () => false });
     removeEdits = installEditLifecycle({ canEdit: () => false, accept: () => {}, expandOffset: () => null });
     const configured = () => {
       const config = useStore.getState().s3Config;
@@ -166,6 +196,9 @@ export function AutomaticSaveProvider({ children }: { children: ReactNode }) {
         }
         const before = Object.fromEntries(baseImages.map(image => [image.key, blankDraft(ctx, image.key, image.deploymentId, { observations: image.baseObservations, questionable: image.baseQuestionable })]));
         const recovered = Object.fromEntries(Object.entries(state.drafts).filter(([, draft]) => draft.dirty));
+        // A legacy draft may outlive a remotely removed media row. Retain its
+        // intent for explicit conflict review instead of failing hydration.
+        for (const draft of Object.values(recovered)) before[draft.mediaPath] ??= blankDraft(ctx, draft.mediaPath, draft.deploymentId);
         if (state.timeOffset) for (const image of baseImages.filter(i => i.baseTimestamp)) {
           const draft = recovered[image.key] ?? before[image.key];
           recovered[image.key] = { ...draft, timeOverride: correctedTimestamp(image.baseTimestamp, state.timeOffset, draft.timeOverride,
@@ -319,7 +352,7 @@ export function AutomaticSaveProvider({ children }: { children: ReactNode }) {
     })().catch(error => { if (!cancelled) useAutomaticSave.setState({ view: { ...initial, phase: 'recovery', message: String(error), pending: false } }); });
     return () => { cancelled = true; removeEdits?.(); removeNavigation?.(); saver?.dispose(); };
   // Query data updates must not replace a coordinator with an in-flight write.
-  }, [scope, collectionKey, prefix, images.isSuccess, deployment.isSuccess, client]);
+  }, [scope, collectionKey, prefix, queriesReady, queriesReady ? false : images.isError, queriesReady ? false : deployment.isError, client]);
 
   useEffect(() => { useAutomaticSave.getState().saver?.setOnline(online); }, [online]);
   useEffect(() => {
@@ -339,11 +372,16 @@ export function AutomaticSaveProvider({ children }: { children: ReactNode }) {
       const saver = useAutomaticSave.getState().saver;
       if (event.key.toLowerCase() === 's') {
         event.preventDefault(); event.stopImmediatePropagation();
-        if (editor instanceof HTMLInputElement || editor instanceof HTMLTextAreaElement) {
+        const textEditor = editor instanceof HTMLTextAreaElement || editor instanceof HTMLInputElement && !['range', 'checkbox', 'radio', 'button', 'submit', 'reset', 'file', 'color', 'hidden', 'image'].includes(editor.type);
+        if (textEditor) {
           if (!editor.reportValidity()) return;
           editor.blur();
-        } else if (editor instanceof HTMLElement) editor.blur();
-        void Promise.resolve().then(() => hasUnfinishedEditor() ? false : saver?.view.phase === 'failed' || saver?.view.phase === 'pending' ? saver.retry() : saver?.flush());
+        } else if (editor instanceof HTMLElement && editor.isContentEditable) editor.blur();
+        void Promise.resolve().then(() => {
+          if (hasUnfinishedEditor()) return false;
+          const phase = useAutomaticSave.getState().view.phase;
+          return ['failed', 'pending'].includes(phase) ? retryAutomaticSave() : saver?.flush();
+        });
       } else if (event.key.toLowerCase() === 'z' && !event.shiftKey && !editor) {
         event.preventDefault(); event.stopImmediatePropagation(); if (useStore.getState().taggerUser.trim() && !hasUnfinishedEditor()) void saver?.undo();
       }
@@ -367,7 +405,7 @@ export function AutomaticSaveStatus() {
     <button type="button" onClick={() => void saver?.undo()} disabled={!!view.undoReason || unfinished || !actor.trim()} aria-describedby="automatic-undo-help" className="min-h-11 underline disabled:opacity-50">Undo latest action</button>
     <span id="automatic-undo-help">{!actor.trim() ? 'Set the Tagger identity before Undo.' : unfinished ? 'Finish the active input before Undo.' : view.undoReason}</span>
     {['failed', 'pending'].includes(view.phase) && <>
-      <button type="button" onClick={() => void saver?.retry()} className="min-h-11 underline">Retry save</button>
+      <button type="button" onClick={() => void retryAutomaticSave()} className="min-h-11 underline">Retry save</button>
       <button type="button" onClick={() => useAutomaticSave.setState({ repair: !repair })} className="min-h-11 underline">Repair credentials for this account</button>
     </>}
     {view.phase === 'recovery' && saver?.record.adoptionRequired && <button type="button" onClick={() => void saver.adopt()} className="min-h-11 underline">Recover pending work for this account and upload</button>}
@@ -383,7 +421,7 @@ export function AutomaticSaveStatus() {
       <Connection embedded toolName="Tagger" initialConfig={{ ...cfg, secretKey: '' }} onConnect={(next, remember) => {
         if (accountScope(next) !== accountScope(cfg)) { useAutomaticSave.setState({ repairError: 'Use the same connected account and destination to recover these pending saves.' }); return; }
         // Preserve the active upload and queue while replacing only credentials.
-        useStore.setState({ s3Config: next });
+        useStore.setState(state => ({ s3Config: next, ...(!saver ? { connectionId: state.connectionId + 1 } : {}) }));
         saveSharedConnection(next, remember);
         useAutomaticSave.setState({ repair: false, repairError: undefined }); void saver?.retry();
       }} />

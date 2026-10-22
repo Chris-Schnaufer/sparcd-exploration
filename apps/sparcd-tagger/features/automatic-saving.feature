@@ -17,6 +17,8 @@ Feature: Completed collection edits save automatically with one-level Undo
   Scenario: Offline standalone editing is paused and pending work recovers
     When a completed edit loses connectivity before automatic saving
     Then further collection edits and Undo are disabled
+    When Retry and the save shortcut are used while offline
+    Then further collection edits and Undo are disabled
     When the connection returns
     Then the Coyote is saved without manual controls or per-edit snapshots
 
@@ -124,3 +126,21 @@ Feature: Completed collection edits save automatically with one-level Undo
     Then both tabs' accepted actions remain available for explicit review
     When the pending values are explicitly reapplied
     Then Coyote and Puma are stored and the latest action alone can be undone
+
+  Scenario: Reload and reconnect retain a conflict until explicit review
+    When Coyote is applied for automatic saving
+    And the automatic save completes
+    And another writer replaces Coyote without refreshing this client
+    And Puma is applied against the stale workspace
+    Then the conflicting remote edit survives and local work is retained
+    When the conflict is reloaded and connectivity changes
+    Then the conflict remains paused with its retained local work
+    When current storage is explicitly chosen
+    Then the remote bobcat remains and discarded edits do not return after reload
+
+  Scenario: An image removed remotely blocks publication without an endless reconnect loop
+    When another writer removes this image from canonical media
+    And Puma is applied against the stale workspace
+    Then the removed image is reported as a retained conflict
+    When current storage is explicitly chosen
+    Then the removed image stays absent and its original media object is untouched

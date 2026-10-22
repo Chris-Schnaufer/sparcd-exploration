@@ -399,6 +399,7 @@ export function Tag() {
   // so ordering lives entirely here. Species count is draft-aware (effective), so
   // re-sorting by species stays live as tags change.
   const base = localRecord ? localImages : images.data ?? EMPTY;
+  const imageKeys = useMemo(() => base.map(image => image.key).join('\0'), [base]);
   const speciesCountOf = (img: TagImage) => effectiveOf(img, drafts[img.key]).observations.length;
   const order = useMemo(
     () => sortIndices(base, speciesCountOf, sortField, sortDir),
@@ -435,6 +436,7 @@ export function Tag() {
     setSpeciesCountPrefix('');
   }, [focusedImageKey, uploadPrefix]);
   const matches = useMemo(() => findFilenameMatches(list, imgQuery), [list, imgQuery]);
+  const matchPositions = matches.join(',');
   const [imageFilter, setImageFilter] = useState<ImageFilter>(EMPTY_IMAGE_FILTER);
   const exhaustedFocusRef = useRef<{ key: string; filter: ImageFilter } | null>(null);
   const [showImageFilter, setShowImageFilter] = useState(false);
@@ -553,7 +555,7 @@ export function Tag() {
     else setMatchPos(0);
     // jumpToMatch reads `matches`; depend on the query+matches, not the closure.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [imgQuery, matches]);
+  }, [imgQuery, matchPositions]);
 
   // An upload offset shifts every image equally, so it never changes a burst
   // gap — only the band labels. Feed the offset-corrected time so bands read the
@@ -578,7 +580,8 @@ export function Tag() {
     list,
   ]);
 
-  // Reset focus/selection when the upload changes / data arrives. Null the sort
+  // Reset focus/selection when the upload or its image identities change.
+  // Metadata acknowledgements from automatic saving retain the active workspace. Null the sort
   // permutation ref so the remap effect below treats the next `order` as a fresh
   // baseline rather than translating stale positions across a different upload.
   useEffect(() => {
@@ -589,7 +592,7 @@ export function Tag() {
     setImgQuery('');
     setMatchPos(0);
     prevOrderRef.current = null;
-  }, [uploadPrefix, images.data]);
+  }, [collectionKey, uploadPrefix, imageKeys]);
 
   // When only the sort order changes (a header click, or a draft edit while
   // sorting by species), the user's focus/anchor/selection are positions in the
@@ -931,6 +934,7 @@ export function Tag() {
       showSpeciesHelp ||
       showDiscard ||
       showTimeShift ||
+      showChangeLocation ||
       pendingKeyConflict !== null,
   };
 
@@ -2193,7 +2197,7 @@ type HandlerState = {
   setView: (v: View) => void;
   enterFocus: () => void;
   closeFocus: () => void;
-  isModalOpen: () => boolean; // an overlay (loupe, or the Sync/Snapshots/Time-shift dialogs) owns the keys
+  isModalOpen: () => boolean; // an overlay (loupe, time-shift or location dialog) owns the keys
 };
 
 function isTypingTarget(t: EventTarget | null): boolean {
@@ -2284,9 +2288,8 @@ function gotoBurst(s: HandlerState, dir: 1 | -1): void {
 
 function handleKey(e: KeyboardEvent, s: HandlerState): void {
   // An overlay owns the keyboard while open — the species loupe, or the
-  // Sync/Snapshots/Time-shift dialogs. Suppress all tagger hotkeys so nothing
-  // is tagged or navigated behind the modal; a keystroke landing on a frame
-  // mid-sync would create a draft edit the sync then silently clears.
+  // time-shift and location dialogs. Suppress tagging and navigation behind
+  // the topmost modal while it owns the keyboard.
   if (s.isModalOpen()) return;
 
   // Image tiles are native buttons: let Enter and Space produce their native

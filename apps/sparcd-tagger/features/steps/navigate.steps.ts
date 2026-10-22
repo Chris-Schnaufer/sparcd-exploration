@@ -24,7 +24,7 @@ import {
   openWorkspace,
 } from './support/world';
 import { COLLECTION_NAME, STAMP_A, BUCKET, PREFIX_A } from './support/data';
-import { readStore, runLiveSync } from './support/flows';
+import { readStore, runLiveSync, waitForAutomaticSave } from './support/flows';
 import { parseObservations } from '@sparcd/camtrap';
 
 const TOUCH = { width: 900, height: 860 };
@@ -1228,16 +1228,19 @@ Then(
 
 Then(
   'pressing Enter in the image search moves to the next match instead of tagging',
-  async ({ page }) => {
+  async ({ page, s3 }) => {
     await openFindFilter(page);
     await imageSearch(page).fill('IMG00');
     await expect(page.getByText('1/5')).toBeVisible();
-    const dirtyBefore = await page.getByText(/unsaved · discard/).textContent();
+    await waitForAutomaticSave(page);
+    const before = s3.text(BUCKET, `${PREFIX_A}observations.csv`);
     await imageSearch(page).press('Enter');
     await expect(page.getByText('2/5')).toBeVisible();
     await imageSearch(page).press('Shift+Enter');
     await expect(page.getByText('1/5')).toBeVisible();
-    await expect(page.getByText(/unsaved · discard/)).toHaveText(dirtyBefore!);
+    await expect(imageSearch(page)).toBeFocused();
+    await waitForAutomaticSave(page);
+    expect(s3.text(BUCKET, `${PREFIX_A}observations.csv`)).toBe(before);
   },
 );
 
@@ -1364,7 +1367,7 @@ Then('Home, End, Page Up, Page Down, and arrow keys adjust the slider rather tha
 
 Then('command- or control-S still saves while the slider is focused', async ({ page }) => {
   await page.keyboard.press('ControlOrMeta+s');
-  await expect(page.getByText('saved ✓').first()).toBeVisible();
+  await expect(page.getByTestId('automatic-save').getByRole('status')).toHaveText('Saved');
   await expect(page.getByLabel('Brightness')).toBeFocused();
 });
 

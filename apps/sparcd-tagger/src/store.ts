@@ -341,7 +341,7 @@ export const useStore = create<TaggerState>()(
         return { theme };
       }),
     selectCollection: (key) => key === get().selectedCollectionKey ? set({ section: 'browse' }) : navigateAfterSave(() =>
-      set({ selectedCollectionKey: key, selectedUploadPrefix: null, syncState: 'local-only' })),
+      set({ selectedCollectionKey: key, selectedUploadPrefix: null, section: 'browse', syncState: 'local-only' })),
     selectUpload: (prefix) => prefix === get().selectedUploadPrefix ? set({ section: prefix ? 'tag' : 'browse' }) : navigateAfterSave(() =>
       set({
         selectedUploadPrefix: prefix,
