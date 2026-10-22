@@ -9,6 +9,8 @@ Feature: Upgrade recovery retains old Sync and snapshot-restore journals
     When existing pending work is adopted for this account
     Then the old journal completes without repeating an applied write
     And retained legacy intent requires explicit review
+    When the conflict is reloaded and connectivity changes
+    Then retained legacy intent requires explicit review
     When current storage is explicitly chosen
     Then the recovered legacy bytes and historical snapshots survive reload
 

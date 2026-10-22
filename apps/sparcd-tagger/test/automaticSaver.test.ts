@@ -174,6 +174,32 @@ describe('the shared journal boundary across accounts', () => {
 });
 
 describe('reconnection does not bypass paused recovery', () => {
+  it.each([
+    ['reload', false], ['reload', true], ['reconnect', false], ['reconnect', true],
+  ] as const)('retains legacy review across %s until explicit reapply=%s', async (transition, reapply) => {
+    await db.automatic.put({ ...record(), actions: [action('retained')],
+      flight: { ids: [], user: 'legacy' }, reviewLegacyAfterFlight: true });
+    await db.syncJournals.put({ id: 'bucket::upload/', bucket: 'bucket', uploadPrefix: 'upload/',
+      user: 'legacy', snapshotPrefix: '', startedAt: '', objects: [] });
+    const originalServices = services();
+    let saver = await start(originalServices);
+    expect(await saver.flush()).toBe(false);
+    expect(originalServices.save).toHaveBeenCalledTimes(1);
+    expect(saver.view.phase).toBe('conflict');
+    const retained = await db.automatic.get('auto');
+    expect(retained?.conflictReason).toContain('interrupted legacy write is recovered');
+    expect(retained?.flight).toBeUndefined();
+    expect(await db.syncJournals.get('bucket::upload/')).toBeUndefined();
+    if (transition === 'reload') { saver.dispose(); saver = await start(); }
+    else { saver.setOnline(false); saver.setOnline(true); }
+    expect(saver.view.phase).toBe('conflict'); expect(saver.view.canEdit).toBe(false);
+    expect(await saver.retry()).toBe(false); expect(await saver.flush()).toBe(false);
+    expect(originalServices.save).toHaveBeenCalledTimes(1);
+    expect(saver.record.actions.map(a => a.id)).toEqual(['retained']);
+    await saver.resolve(reapply);
+    expect(saver.view.phase).toBe('saved'); expect(saver.record.actions).toEqual([]);
+    expect((await db.automatic.get('auto'))?.conflictReason).toBeUndefined();
+  });
   it('keeps offline Retry pending so reconnection still resumes accepted work', async () => {
     const s = services(), saver = await start(s); saver.accept(action('a')); saver.setOnline(false);
     expect(await saver.retry()).toBe(false); expect(saver.view.phase).toBe('pending');
