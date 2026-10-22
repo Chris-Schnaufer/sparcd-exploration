@@ -90,12 +90,18 @@ describe('durable automatic saving', () => {
     s.current = vi.fn(async () => ({ ...remote, images: [{ ...image, baseQuestionable: false }] }));
     expect(await saver.undo()).toBe(false); expect(s.reverse).not.toHaveBeenCalled();
     expect(saver.view.undoReason).toContain('affected data changed'); expect(saver.record.undo).not.toBeNull();
+    expect(saver.view.canEdit).toBe(true);
+    expect(s.changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'saved', canEdit: true }));
+    saver.accept(action('next')); expect(await saver.flush()).toBe(true);
+    expect(saver.record.undo?.id).toBe('next');
   });
   it('disables Undo with an explanation when an affected image was removed remotely', async () => {
     const s = services(), saver = await start(s); saver.accept(action('a')); await saver.flush();
     s.current = vi.fn(async () => ({ images: [], location: null }));
     expect(await saver.undo()).toBe(false); expect(s.reverse).not.toHaveBeenCalled();
     expect(saver.view.undoReason).toContain('affected data changed'); expect(saver.view.phase).toBe('saved');
+    expect(saver.view.canEdit).toBe(true);
+    expect(s.changed).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'saved', canEdit: true }));
   });
   it('refuses a stale cross-tab Undo and preserves the newer durable record', async () => {
     const saver = await start(); saver.accept(action('a')); await saver.flush();
