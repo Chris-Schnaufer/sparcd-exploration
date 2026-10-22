@@ -146,11 +146,15 @@ export class AutomaticSaver {
           if (this.record.undo?.id !== undo.id) undo = this.record.undo;
         }
         this.record = { ...this.record, actions: this.record.actions.filter(a => !flight.ids.includes(a.id)), flight: undefined, undo, pendingDrafts: this.record.actions.some(a => !flight.ids.includes(a.id)) ? this.record.pendingDrafts : {} };
-        const reviewLegacy = this.record.reviewLegacyAfterFlight;
-        this.record = { ...this.record, reviewLegacyAfterFlight: false };
+        const reviewLegacy = this.record.reviewLegacyAfterFlight && this.record.actions.length > 0;
+        const legacyReviewReason = 'The interrupted legacy write is recovered. Review the retained pending changes before reapplying or discarding them.';
+        // Commit the review requirement with the flight acknowledgement, so
+        // reload/reconnect cannot publish retained legacy intent implicitly.
+        this.record = { ...this.record, reviewLegacyAfterFlight: false,
+          ...(reviewLegacy ? { conflictReason: legacyReviewReason } : {}) };
         await this.persist(true);
-        if (reviewLegacy && this.record.actions.length) {
-          this.publish('conflict', 'The interrupted legacy write is recovered. Review the retained pending changes before reapplying or discarding them.');
+        if (reviewLegacy) {
+          this.publish('conflict', legacyReviewReason);
           return false;
         }
       }
