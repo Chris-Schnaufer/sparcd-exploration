@@ -37,12 +37,12 @@ describe('durable automatic saving', () => {
     expect(saved?.undo?.id).toBe('second');
     expect(s.save).not.toHaveBeenCalled();
   });
-  it('starts after 250ms idle and bounds a continuous queue at one second', async () => {
+  it('starts after 500ms idle and bounds a continuous queue at one second', async () => {
     const s = services(), saver = await start(s);
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const flush = vi.spyOn(saver, 'flush');
     saver.accept(action('a'));
-    await vi.advanceTimersByTimeAsync(249); expect(flush).not.toHaveBeenCalled(); expect(s.save).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(499); expect(flush).not.toHaveBeenCalled(); expect(s.save).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
     expect(flush).toHaveBeenCalledTimes(1);
     await saver.flush(); expect(s.save).toHaveBeenCalledTimes(1);

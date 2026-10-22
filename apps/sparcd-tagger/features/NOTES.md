@@ -31,7 +31,7 @@ completes. Undo changes affected values, retains audit history, is scoped to the
 account/upload/browser, and has no application Redo. See
 [the policy and implementation notes](../../../docs/issue-518-automatic-saving.md).
 
-Focused unit coverage includes deterministic 250 ms idle/one-second maximum
+Focused unit coverage includes deterministic 500 ms idle/one-second maximum
 queueing, action/Undo boundaries, serialization, stale-tab CAS protection,
 conditional-write races, preservation of unknown columns, time-source reversal,
 legacy journal planning, original baseline guarantees, attribution and #463.
