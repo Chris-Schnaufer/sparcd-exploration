@@ -60,11 +60,12 @@ Then('missing attribution prevents mouse keyboard drag and write actions', async
   await expect(page.getByRole('button', { name: 'Apply Coyote', exact: true })).toBeDisabled();
   await focusFrame(page, 'IMG001.JPG');
   await expect(gridCell(page, 'IMG001.JPG')).toContainText('Mule Deer ×2');
-  // Unresolved attribution removes the count/removal editors and disables
-  // re-applying the canonical species (the review/confirmation entry point).
-  await expect(page.getByRole('spinbutton', { name: 'Count for Mule Deer', exact: true })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Remove Mule Deer', exact: true })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Clear Species', exact: true })).toHaveCount(0);
+  // Pausing attribution retains mounted editors so unfinished text survives.
+  // Counts, removal, clearing and review must still be unavailable.
+  const count = page.getByRole('spinbutton', { name: 'Count for Mule Deer', exact: true });
+  await expect(count).toBeVisible(); await expect(count).toHaveValue('2'); await expect(count).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Remove Mule Deer', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Clear Species', exact: true })).toBeDisabled();
   await expect(page.getByRole('button', { name: /^Mule Deer Odocoileus hemionus/ })).toBeDisabled();
   await page.keyboard.press('d');
   await expect(gridCell(page, 'IMG001.JPG')).toContainText('Mule Deer ×2');
