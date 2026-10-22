@@ -178,6 +178,22 @@ Then('the conflicting remote edit survives and local work is retained', async ({
   await expect(status(page)).toContainText('Currently stored:');
 });
 When('current storage is explicitly chosen', async ({ page }) => { await status(page).getByRole('button', { name: 'Discard local changes and use current storage' }).click(); await expect(status(page)).toContainText('Using current stored data'); });
+When('another writer moves the camera to New York without refreshing this client', async ({ s3 }) => {
+  const rows = parseCsvRows(s3.text(BUCKET, `${PREFIX_A}deployments.csv`));
+  rows[0][2] = 'Remote New York camera';
+  rows[0][3] = '-74.006000'; rows[0][4] = '40.712800';
+  s3.put(BUCKET, `${PREFIX_A}deployments.csv`, serializeCsvRows(rows), 'text/csv');
+});
+Then('the refreshed camera location and editing time zone are used without reloading', async ({ page }) => {
+  await page.getByRole('button', { name: 'Change location', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Change location', exact: true });
+  await expect(dialog).toContainText('Remote New York camera (SAN15)');
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await focusFrame(page, 'IMG002.JPG'); await speciesApply(page, 'Puma concolor').click(); await saved(page);
+  const { readStore } = await import('./support/flows');
+  const records = await readStore(page, 'automatic') as { undo?: { timeZone?: string } }[];
+  expect(records[0].undo?.timeZone).toBe('America/New_York');
+});
 When('the pending values are explicitly reapplied', async ({ page }) => { await status(page).getByRole('button', { name: 'Reapply my affected values to current storage' }).click(); await saved(page); });
 Then('the remote bobcat remains and discarded edits do not return after reload', async ({ page, s3 }) => {
   await page.reload(); await openWorkspace(page); await saved(page);

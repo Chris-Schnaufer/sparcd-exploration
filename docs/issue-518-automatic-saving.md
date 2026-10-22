@@ -1,7 +1,7 @@
 # Tagger automatic saving (#518)
 
 Standalone collection Tagger queues completed stored-data actions immediately in
-IndexedDB. Network saving starts after 250 ms idle, with a one-second maximum
+IndexedDB. Network saving starts after 500 ms idle, with a one-second maximum
 queueing delay. One coordinator serializes each upload's writes. New actions
 accepted during a write retain their own target sets and Undo boundaries.
 

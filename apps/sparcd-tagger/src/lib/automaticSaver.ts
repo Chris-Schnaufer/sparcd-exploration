@@ -93,7 +93,7 @@ export class AutomaticSaver {
   }
   private schedule(): void {
     clearTimeout(this.idle);
-    this.idle = setTimeout(() => void this.flush(), 250);
+    this.idle = setTimeout(() => void this.flush(), 500);
     this.maximum ??= setTimeout(() => { this.maximum = undefined; void this.flush(); }, 1000);
   }
   setOnline(online: boolean): void {

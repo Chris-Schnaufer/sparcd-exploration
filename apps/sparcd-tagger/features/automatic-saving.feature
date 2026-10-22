@@ -94,6 +94,16 @@ Feature: Completed collection edits save automatically with one-level Undo
     When the latest automatic action is undone
     Then only the remote bobcat remains
 
+  Scenario: Discarding a conflict refreshes the stored location and editing time zone
+    When Coyote is applied for automatic saving
+    And the automatic save completes
+    And another writer replaces Coyote without refreshing this client
+    And another writer moves the camera to New York without refreshing this client
+    And Puma is applied against the stale workspace
+    Then the conflicting remote edit survives and local work is retained
+    When current storage is explicitly chosen
+    Then the refreshed camera location and editing time zone are used without reloading
+
   Scenario: A remote edit to the affected field prevents Undo
     When Coyote is applied for automatic saving
     And the automatic save completes

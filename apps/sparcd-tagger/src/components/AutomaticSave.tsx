@@ -315,7 +315,8 @@ export function AutomaticSaveProvider({ children }: { children: ReactNode }) {
           await db.uploads.update(uploadId(bucket, prefix), { pendingLocation: null, timeOffset: null });
           await groundUpload(bucket, prefix, current.canonical);
           client.setQueryData(['tagImages', live.current.connectionId, collectionKey, prefix], current.images);
-          live.current.images = current.images;
+          client.setQueryData(['currentDeployment', live.current.connectionId, collectionKey, prefix], current.location);
+          live.current.images = current.images; live.current.location = current.location;
           rememberCanonical(live.current.connectionId, collectionKey, prefix, current.canonical);
           if (reapply) await commitFields(resolved.flatMap(a => a.changes), current, false, useStore.getState().taggerUser);
           return resolved;
