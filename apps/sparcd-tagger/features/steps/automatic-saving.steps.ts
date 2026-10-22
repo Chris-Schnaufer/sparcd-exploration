@@ -146,6 +146,69 @@ When('an automatic save fails after publishing observations', async ({ page }) =
 When('the Undo fails after publishing its observations', async ({ page }) => {
   await denyNextMetadata(page); await status(page).getByRole('button', { name: 'Undo latest action', exact: true }).click();
 });
+When('the location Undo fails after publishing media', async ({ page, s3, scratch }) => {
+  let denied = false;
+  scratch.locationUndoPuts = s3.puts.length;
+  await page.route('**/*', async route => {
+    if (!denied && route.request().method() === 'PUT' && route.request().headers()['if-match'] && decodeURIComponent(new URL(route.request().url()).pathname).endsWith(`/${PREFIX_A}observations.csv`)) {
+      denied = true;
+      await route.fulfill({ status: 403, contentType: 'application/xml', body: '<Error><Code>AccessDenied</Code></Error>' });
+    } else await route.fallback();
+  });
+  await status(page).getByRole('button', { name: 'Undo latest action', exact: true }).click();
+});
+When('the interrupted location Undo is recovered by {string}', async ({ page }, recovery: string) => {
+  if (recovery === 'reload') { await page.reload(); await openWorkspace(page); }
+  else await status(page).getByRole('button', { name: 'Retry save', exact: true }).click();
+  await saved(page);
+});
+Then('the location Undo journal is cleared without repeating media', async ({ page, s3, scratch }) => {
+  const { readStore } = await import('./support/flows');
+  expect(await readStore(page, 'syncJournals')).toEqual([]);
+  expect(s3.puts.slice(scratch.locationUndoPuts as number).filter(write => write.key === `${PREFIX_A}media.csv`)).toHaveLength(1);
+  await expect(status(page).getByRole('button', { name: 'Undo latest action', exact: true })).toBeDisabled();
+});
+When('an unfinished count is paused by {string}', async ({ page }, pause: string) => {
+  await focusFrame(page, 'IMG001.JPG');
+  const count = page.getByRole('spinbutton', { name: 'Count for Mule Deer' });
+  if (pause === 'connectivity') {
+    await count.fill('12'); await page.context().setOffline(true);
+    await expect(status(page)).toContainText('Pending/reconnecting');
+  } else {
+    let release!: () => void, entered!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const reached = new Promise<void>(resolve => { entered = resolve; });
+    let denied = false;
+    await page.route('**/*', async route => {
+      if (!denied && route.request().method() === 'PUT' && route.request().headers()['if-match'] && decodeURIComponent(new URL(route.request().url()).pathname).endsWith(`/${PREFIX_A}UploadMeta.json`)) {
+        denied = true; entered(); await gate;
+        await route.fulfill({ status: 403, contentType: 'application/xml', body: '<Error><Code>AccessDenied</Code></Error>' });
+      } else await route.fallback();
+    });
+    await count.fill('3'); await count.press('Enter'); await reached;
+    await count.fill('12'); release();
+    await expect(status(page)).toContainText('Save failed');
+  }
+});
+Then('the unfinished count remains visible with editing disabled', async ({ page }) => {
+  const count = page.getByRole('spinbutton', { name: 'Count for Mule Deer' });
+  await expect(count).toBeVisible(); await expect(count).toBeDisabled(); await expect(count).toHaveValue('12');
+  await expect(status(page)).toContainText('Finish the active input before Undo.');
+  await expect(page.getByRole('button', { name: 'Remove Mule Deer', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Clear Species', exact: true })).toBeDisabled();
+});
+When('editing resumes after {string}', async ({ page }, pause: string) => {
+  if (pause === 'connectivity') await page.context().setOffline(false);
+  else await status(page).getByRole('button', { name: 'Retry save', exact: true }).click();
+  await expect(page.getByRole('spinbutton', { name: 'Count for Mule Deer' })).toBeEnabled();
+});
+Then('the unfinished count can be finished and saved', async ({ page, s3 }) => {
+  const count = page.getByRole('spinbutton', { name: 'Count for Mule Deer' });
+  await expect(count).toHaveValue('12');
+  expect(parseObservations(s3.text(BUCKET, `${PREFIX_A}observations.csv`)).find(o => o.mediaId === `${PREFIX_A}IMG001.JPG`)!.count).not.toBe(12);
+  await count.focus(); await page.keyboard.press('Control+s'); await saved(page);
+  expect(parseObservations(s3.text(BUCKET, `${PREFIX_A}observations.csv`)).find(o => o.mediaId === `${PREFIX_A}IMG001.JPG`)!.count).toBe(12);
+});
 Then('pending work and its journal remain available with retry announced', async ({ page }) => {
   await expect(status(page).getByRole('status')).toContainText('Save failed');
   await expect(status(page).getByRole('button', { name: 'Retry save' })).toBeEnabled();

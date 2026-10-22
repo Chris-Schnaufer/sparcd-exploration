@@ -44,6 +44,33 @@ Feature: Completed collection edits save automatically with one-level Undo
     And the latest automatic action is undone
     Then the original location and capture values are restored without replacing audit history
 
+  Scenario Outline: Interrupted location Undo resumes its journal without recompiling reversed values
+    When the original canonical values are recorded for Undo verification
+    And the change-location dialog is opened
+    And a different location is picked and applied
+    And the location change finishes automatic saving
+    And the location Undo fails after publishing media
+    Then pending work and its journal remain available with retry announced
+    When the interrupted location Undo is recovered by "<recovery>"
+    Then the original location and capture values are restored without replacing audit history
+    And the location Undo journal is cleared without repeating media
+
+    Examples:
+      | recovery |
+      | retry    |
+      | reload   |
+
+  Scenario Outline: Pausing collection editing retains an unfinished count
+    When an unfinished count is paused by "<pause>"
+    Then the unfinished count remains visible with editing disabled
+    When editing resumes after "<pause>"
+    Then the unfinished count can be finished and saved
+
+    Examples:
+      | pause        |
+      | connectivity |
+      | save failure |
+
   Scenario: Finished count input saves and incomplete input is not published
     When a count is edited without finishing the field
     Then its unfinished value is not published or presented as Saved
