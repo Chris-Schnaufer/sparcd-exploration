@@ -201,7 +201,12 @@ export class AutomaticSaver {
         await this.writes;
       });
     } catch (error) { this.publish('failed', error instanceof Error ? error.message : String(error)); return false; }
-    finally { this.undoing = false; }
+    finally {
+      this.undoing = false;
+      // Recompute edit eligibility after the Undo guard is released, including
+      // when changed remote data prevents a reversal from being queued.
+      this.publish(this.view.phase, this.view.message);
+    }
     return this.record.actions.length ? this.flush() : false;
   }
   async adopt(): Promise<void> {
