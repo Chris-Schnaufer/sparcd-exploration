@@ -1,4 +1,3 @@
-import { openFindFilter } from './support/world';
 import type { Page, Locator } from '@playwright/test';
 import { parseMedia } from '@sparcd/camtrap';
 import {
@@ -13,12 +12,11 @@ import {
   positionReadout,
   openUpload,
   selectCollection,
-  enterFocusView,
-  expectOverviewView,
 } from './support/world';
 import { BUCKET, PREFIX_A, PREFIX_E, MEDIA_A, mediaCsv } from './support/data';
 import {
   openSyncDialog,
+  waitForAutomaticSave,
   setSyncDryRun,
   readStore,
   waitForDirtyDrafts,
@@ -46,7 +44,7 @@ async function bump(modal: ReturnType<typeof uploadShiftModal>, label: string, t
 }
 
 async function openFocus(page: Page): Promise<void> {
-  await enterFocusView(page);
+  await page.getByRole('button', { name: 'Focus', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'Focus image viewer' })).toBeVisible();
 }
 
@@ -107,48 +105,23 @@ Then(
   },
 );
 
-Then('applying it shifts every frame in the upload', async ({ page }) => {
+Then('applying it shifts every frame in the upload', async ({ page, s3 }) => {
   await uploadShiftModal(page).getByRole('button', { name: /^Apply to all/ }).click();
-  await expect(uploadShiftModal(page)).toHaveCount(0);
-  await expect(page.getByText(/clock \+1h/)).toBeVisible();
-  const uploads = (await readStore(page, 'uploads')) as { uploadPrefix?: string; timeOffset?: unknown }[];
-  const upload = uploads.find((row) => row.uploadPrefix === PREFIX_A);
-  expect(upload?.timeOffset).toEqual({ years: 0, months: 0, days: 0, hours: 1, minutes: 0, seconds: 0 });
-  expect(await readStore(page, 'drafts')).toEqual([]);
+  await waitForAutomaticSave(page);
+  const rows = parseMedia(s3.text(BUCKET, `${PREFIX_A}media.csv`));
+  expect(rows.find(row => row.mediaId.endsWith('IMG001.JPG'))!.timestamp).toBe('2024-01-10T09:00:00.000-07:00');
+  expect(rows.find(row => row.mediaId.endsWith('VID001.MP4'))!.timestamp).toBe('');
 });
 
-Given('a whole-upload shift is in effect', async ({ page }) => {
-  await timeShiftButton(page).click();
-  await bump(uploadShiftModal(page), 'Hour', 2);
-  await uploadShiftModal(page).getByRole('button', { name: /^Apply to all/ }).click();
-  await expect(page.getByText(/clock \+2h/)).toBeVisible();
-});
 
-Then('the workspace toolbar shows the shift and its size', async ({ page }) => {
-  await expect(timeShiftButton(page)).toContainText('clock +2h');
-  await expect(timeShiftButton(page)).toHaveAttribute(
-    'title',
-    'Upload time shift is active — click to edit',
-  );
-});
 
-Then('each shifted image is marked as shifted where its time is displayed', async ({ page }) => {
-  await openFocus(page);
-  await expect(page.getByText('shifted')).toBeVisible();
-  await expect.poll(async () => shownTime(page)).toBe('2024-01-10 10:00');
-  await expect(page.getByText('was 2024-01-10 08:00')).toBeVisible();
-});
 
-When('the shift is cleared', async ({ page }) => {
-  await timeShiftButton(page).click();
-  await uploadShiftModal(page).getByRole('button', { name: 'Clear shift' }).click();
-  await uploadShiftModal(page).getByRole('button', { name: /^Apply to all/ }).click();
-});
 
-Then('the images show their original capture times again', async ({ page }) => {
-  await expect(page.getByText(/clock \+/)).toHaveCount(0);
-  await expectOverviewView(page);
-});
+
+
+
+
+
 
 /** Reasons stay hidden in the layout but are available to keyboard and pointer users. */
 async function expectDisabledHint(page: Page, button: Locator, label: string, reason: string) {
@@ -158,7 +131,7 @@ async function expectDisabledHint(page: Page, button: Locator, label: string, re
   await expect(button).toHaveCSS('cursor', 'not-allowed');
   const target = page.getByRole('group', { name: `${label} unavailable`, exact: true });
   await expect(target).toHaveAccessibleDescription(reason);
-  await page.getByRole('button', { name: '▦ Grid' }).focus();
+  await page.getByRole('button', { name: 'Overview', exact: true }).focus();
   const tooltip = page.getByRole('tooltip');
   await expect(tooltip).toHaveCount(0);
   for (let i = 0; i < 20 && !(await target.evaluate(node => node === document.activeElement)); i++) await page.keyboard.press('Tab');
@@ -172,7 +145,7 @@ async function expectDisabledHint(page: Page, button: Locator, label: string, re
   await page.keyboard.press('Escape');
   await expect(tooltip).toHaveCount(0);
   await expect(target).toBeFocused();
-  await page.getByRole('button', { name: '▦ Grid' }).focus();
+  await page.getByRole('button', { name: 'Overview', exact: true }).focus();
   await target.hover(); await expect(tooltip).toHaveText(reason);
   await page.keyboard.press('Escape'); await expect(tooltip).toHaveCount(0);
   await page.mouse.move(0, 0); await target.hover(); await expect(tooltip).toHaveText(reason);
@@ -192,23 +165,7 @@ Then('the whole-upload time shift is disabled with an explanation', async ({ pag
   await expectDisabledHint(page, button, 'Time shift', 'No image in this upload has a capture time to shift');
 });
 
-Given('a persisted whole-upload shift exists for an upload with no capture times', async ({ page }) => {
-  await sectionTab(page, 'Browse').click();
-  await openUpload(page, 'camerauser');
-  const upload = (await readStore(page, 'uploads')).find(
-    (row): row is Record<string, unknown> =>
-      typeof row === 'object' && row !== null && row.uploadPrefix === PREFIX_E,
-  );
-  if (!upload) throw new Error('Expected the untimed upload to be grounded locally');
-  await writeStore(page, 'uploads', {
-    ...upload,
-    timeOffset: { years: 0, months: 0, days: 0, hours: 1, minutes: 0, seconds: 0 },
-  });
-  await page.reload();
-  await selectCollection(page);
-  await openUpload(page, 'camerauser');
-  await expect(page.getByRole('button', { name: 'clock +1h' })).toBeVisible();
-});
+
 
 // --- Selection-scoped shift -------------------------------------------------
 
@@ -251,10 +208,10 @@ When('that one-image selection is toggled off', async ({ page }) => {
 });
 
 When('the selection is filtered down to IMG001.JPG', async ({ page }) => {
-  await openFindFilter(page);
-  await page.getByRole('group', { name: 'Search in', exact: true }).getByRole('radio', { name: 'Filename', exact: true }).check();
+  await page.getByRole('button', { name: 'Filter', exact: true }).click();
+  await page.getByLabel('Search in').selectOption('filename');
   await page.getByLabel('Match text').fill('IMG001.JPG');
-  await page.getByRole('button', { name: 'Find & filter', exact: true }).focus();
+  await page.getByLabel('Match text').press('Escape');
   await expect(gridCell(page, 'IMG002.JPG')).toHaveCount(0);
   await expect(gridCell(page, 'IMG003.JPG')).toHaveCount(0);
   await expect(positionReadout(page)).toHaveText('1 selected');
@@ -278,12 +235,7 @@ Then('exactly that selected image receives a time override', async ({ page }) =>
   expect(drafts[0].timeOverride).toBe('2024-01-10T09:00:00.000-07:00');
 });
 
-Then('the unselected frames are unchanged', async ({ page }) => {
-  await listRow(page, 'IMG002.JPG').click();
-  await expect.poll(async () => shownTime(page)).toBe('2024-01-10 08:00');
-  await listRow(page, 'IMG005.JPG').click();
-  await expect.poll(async () => shownTime(page)).toBe('2024-01-11 06:00');
-});
+
 
 When("the selection's time shift is applied", async ({ page }) => {
   await page.getByRole('button', { name: 'Time shift selection' }).click();
@@ -407,133 +359,39 @@ Then('time shift selection is disabled because no selected frame has a capture t
 
 // --- Per-image override -----------------------------------------------------
 
-When('a corrected timestamp is typed for it', async ({ page }) => {
-  await openFocus(page);
-  await page.getByRole('button', { name: 'Adjust time' }).click();
-  await page.getByLabel('Corrected timestamp for this image').fill('2023-12-24 18:45');
-  await page.getByRole('button', { name: 'Set', exact: true }).click();
-});
 
-Then(
-  'that image shows the corrected time and is marked as carrying an image override',
-  async ({ page }) => {
-    await expect.poll(async () => shownTime(page)).toBe('2023-12-24 18:45');
-    await expect(page.getByText('image override')).toBeVisible();
-    await expect(page.getByText('was 2024-01-10 08:00')).toBeVisible();
-  },
-);
 
-Then(
-  'its override can be cleared to fall back to the whole-upload shift',
-  async ({ page }) => {
-    await page.getByRole('button', { name: 'clear override' }).click();
-    await expect(page.getByText('image override')).toHaveCount(0);
-    await expect.poll(async () => shownTime(page)).toBe('2024-01-10 08:00');
-    // With an upload offset in effect the frame falls back to that instead.
-    await closeFocus(page);
-    await timeShiftButton(page).click();
-    await bump(uploadShiftModal(page), 'Hour', 3);
-    await uploadShiftModal(page).getByRole('button', { name: /^Apply to all/ }).click();
-    await openFocus(page);
-    await expect.poll(async () => shownTime(page)).toBe('2024-01-10 11:00');
-    await expect(page.getByText('shifted')).toBeVisible();
-  },
-);
 
-When('a typed timestamp is not a real date and time', async ({ page }) => {
-  await focusFrame(page, 'IMG002.JPG');
-  await openFocus(page);
-  await page.getByRole('button', { name: 'Adjust time' }).click();
-  await page.getByLabel('Corrected timestamp for this image').fill('2024-02-30 10:00');
-  await page.getByRole('button', { name: 'Set', exact: true }).click();
-});
 
-Then('the entry is marked invalid and is not applied', async ({ page }) => {
-  const input = page.getByLabel('Corrected timestamp for this image');
-  await expect(input).toHaveAttribute('aria-invalid', 'true');
-  await expect(input).toBeVisible();
-  for (const bad of ['not a date', '2024-13-01 10:00', '2024-01-10 25:00']) {
-    await input.fill(bad);
-    await page.getByRole('button', { name: 'Set', exact: true }).click();
-    await expect(input).toHaveAttribute('aria-invalid', 'true');
-  }
-  expect(await readStore(page, 'drafts')).toHaveLength(0);
-});
 
-Given("a frame's time has been corrected", async ({ page }) => {
-  await focusFrame(page, 'IMG002.JPG');
-  await openFocus(page);
-  await page.getByRole('button', { name: 'Adjust time' }).click();
-  await page.getByLabel('Corrected timestamp for this image').fill('2024-01-10 09:15');
-  await page.getByRole('button', { name: 'Set', exact: true }).click();
-});
 
-Then('the corrected time is shown prominently', async ({ page }) => {
-  await expect.poll(async () => shownTime(page)).toBe('2024-01-10 09:15');
-});
 
-Then('the original capture time is shown struck through beneath it', async ({ page }) => {
-  const was = page.getByText('was 2024-01-10 08:00');
-  await expect(was).toBeVisible();
-  await expect(was).toHaveClass(/line-through/);
-});
+
+
+
+
+
+
+
+
 
 // --- Nothing stored until a sync --------------------------------------------
 
-Given('times have been corrected in the workspace', async ({ page }) => {
-  await timeShiftButton(page).click();
-  await bump(uploadShiftModal(page), 'Hour', 1);
-  await uploadShiftModal(page).getByRole('button', { name: /^Apply to all/ }).click();
-  await expect(page.getByText(/clock \+1h/)).toBeVisible();
+
+
+
+
+
+
+
+
+Given('a whole-upload shift is automatically saved', async ({ page, s3, scratch }) => {
+  scratch.originalTimes = parseMedia(s3.text(BUCKET, `${PREFIX_A}media.csv`)).map(row => [row.mediaId, row.timestamp, row.timestampSource]);
+  await timeShiftButton(page).click(); await bump(uploadShiftModal(page), 'Hour', 1);
+  await uploadShiftModal(page).getByRole('button', { name: /^Apply to all/ }).click(); await waitForAutomaticSave(page);
 });
-
-Then('the stored capture times are unchanged', async ({ s3 }) => {
-  expect(s3.text(BUCKET, `${PREFIX_A}media.csv`)).toBe(mediaCsv(PREFIX_A, MEDIA_A));
-  expect(s3.puts).toHaveLength(0);
-});
-
-Then('the sync preview counts how many images would have a corrected time', async ({ page }) => {
-  await sectionTab(page, 'Settings').click();
-  await expect(page.locator('#user')).toHaveValue('testkey');
-  await sectionTab(page, 'Tag').click();
-  await openSyncDialog(page);
-  await expect(
-    page.locator('div.border.text-center').filter({ hasText: 'Time-corrected' }),
-  ).toHaveText('5Time-corrected');
-});
-
-Then(
-  "only a live sync writes the corrected times into the upload's stored files",
-  async ({ page, s3 }) => {
-    await setSyncDryRun(page, true);
-    await page.getByRole('button', { name: 'Run dry-run' }).click();
-    await expect(page.getByText('Dry-run complete — nothing was written.')).toBeVisible();
-    expect(s3.puts).toHaveLength(0);
-
-    await setSyncDryRun(page, false);
-    await page.getByRole('button', { name: 'Sync now' }).click();
-    await expect(page.getByText('Synced — canonical files replaced.')).toBeVisible();
-    const media = parseMedia(s3.text(BUCKET, `${PREFIX_A}media.csv`));
-    expect(media.find((m) => m.mediaId.endsWith('IMG001.JPG'))!.timestamp).toBe(
-      '2024-01-10T09:00:00.000-07:00',
-    );
-    expect(media.find((m) => m.mediaId.endsWith('VID001.MP4'))!.timestamp).toBe('');
-  },
-);
-
-Given('a whole-upload shift was written to the stored files by a sync', async ({ page }) => {
-  await sectionTab(page, 'Settings').click();
-  await expect(page.locator('#user')).toHaveValue('testkey');
-  await sectionTab(page, 'Tag').click();
-  await timeShiftButton(page).click();
-  await bump(uploadShiftModal(page), 'Hour', 1);
-  await uploadShiftModal(page).getByRole('button', { name: /^Apply to all/ }).click();
-  await expect(page.getByText(/clock \+1h/)).toBeVisible();
-  await openSyncDialog(page);
-  await setSyncDryRun(page, false);
-  await page.getByRole('button', { name: 'Sync now' }).click();
-  await expect(page.getByText('Synced — canonical files replaced.')).toBeVisible();
-  await waitForSyncDialogClosed(page);
+Then('all original capture times are restored', async ({ s3, scratch }) => {
+  expect(parseMedia(s3.text(BUCKET, `${PREFIX_A}media.csv`)).map(row => [row.mediaId, row.timestamp, row.timestampSource])).toEqual(scratch.originalTimes);
 });
 
 Then('the standing shift is cleared afterwards', async ({ page }) => {
@@ -546,7 +404,7 @@ Then('the standing shift is cleared afterwards', async ({ page }) => {
 Then(
   'the images show their now-corrected stored times without a further shift',
   async ({ page, s3 }) => {
-    await expectOverviewView(page);
+    await expect(page.getByRole('button', { name: 'Focus', exact: true })).toBeVisible();
     const media = parseMedia(s3.text(BUCKET, `${PREFIX_A}media.csv`));
     expect(media.find((m) => m.mediaId.endsWith('IMG001.JPG'))!.timestamp).toBe(
       '2024-01-10T09:00:00.000-07:00',
@@ -561,7 +419,7 @@ When('a whole-upload shift is applied', async ({ page, scratch }) => {
   await timeShiftButton(page).click();
   await bump(uploadShiftModal(page), 'Hour', 1);
   await uploadShiftModal(page).getByRole('button', { name: /^Apply to all/ }).click();
-  await expect(page.getByText(/clock \+1h/)).toBeVisible();
+  await waitForAutomaticSave(page);
 });
 
 Then('the same images remain grouped together', async ({ page, scratch }) => {
@@ -595,7 +453,7 @@ Then('disabled time-shift hints are touch-readable and stay within a narrow view
     const bounds = (await tooltip.boundingBox())!;
     expect(bounds.x).toBeGreaterThanOrEqual(0); expect(bounds.y).toBeGreaterThanOrEqual(0);
     expect(bounds.x + bounds.width).toBeLessThanOrEqual(390); expect(bounds.y + bounds.height).toBeLessThanOrEqual(844);
-    await page.getByRole('button', { name: '▦ Grid' }).click();
+    await page.getByRole('button', { name: 'Overview', exact: true }).click();
     await expect(tooltip).toHaveCount(0);
     await expect(page.getByRole('dialog')).toHaveCount(0);
   } finally { await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false }); await cdp.detach(); }

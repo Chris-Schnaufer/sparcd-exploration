@@ -46,7 +46,7 @@ export class AutomaticSaver {
     else this.publish('saved', 'Saved');
   }
   private publish(phase: SavePhase, message: string): void {
-    const pending = !!this.record.actions.length || !!this.record.flight || !!this.record.adoptionRequired || !!this.persistenceError;
+    const pending = !!this.record.actions.length || !!this.record.flight || !!this.record.adoptionRequired || !!this.record.recoveryBranches?.length || !!this.persistenceError;
     const reason = !this.online ? 'Undo requires an online connection.' : phase !== 'saved' || pending
       ? 'Undo is unavailable while saving or recovering pending work.' : this.record.undoReason ?? (!this.record.undo ? 'No completed action to undo for this account and upload.' : '');
     this.view = { phase, message, pending, undoReason: reason, canEdit: this.online && !['loading', 'pending', 'conflict', 'recovery', 'failed'].includes(phase) && !this.persistenceError && !this.undoing };
@@ -103,7 +103,13 @@ export class AutomaticSaver {
   private async locked<T>(operation: () => Promise<T>): Promise<T> {
     const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined;
     if (!locks) throw new Error('This browser cannot protect save recovery across tabs. Use a browser with Web Locks support.');
-    return locks.request(`sparcd-save:${this.record.id}`, operation);
+    // The recovery journal is keyed by bucket/upload, independent of account.
+    // Use that same lock boundary so another account cannot replace its journal.
+    return locks.request(`sparcd-save:${uploadId(this.record.bucket, this.record.uploadPrefix)}`, operation);
+  }
+  private async otherPending(): Promise<boolean> {
+    const rows = await db.automatic.where('[bucket+uploadPrefix]').equals([this.record.bucket, this.record.uploadPrefix]).toArray();
+    return rows.some(row => row.id !== this.record.id && !!(row.actions.length || row.flight || row.adoptionRequired || row.recoveryBranches?.length));
   }
   flush(): Promise<boolean> {
     clearTimeout(this.idle); clearTimeout(this.maximum); this.maximum = undefined;
@@ -118,6 +124,7 @@ export class AutomaticSaver {
         if (!this.online) return false;
         this.publish('saving', 'Saving…');
         if (!this.record.flight) {
+          if (await this.otherPending()) throw new SaveConflict('Pending recovery for this upload belongs to another account or destination. Recover it before publishing this account’s retained changes.');
           const undoIndex = this.record.actions.findIndex(action => action.undoOf);
           const actions = undoIndex < 0 ? this.record.actions : this.record.actions.slice(0, undoIndex + 1);
           this.record = { ...this.record, flight: { ids: actions.map(a => a.id), user: actions[0].user, undoOf: actions.find(a => a.undoOf)?.undoOf } };
@@ -171,7 +178,8 @@ export class AutomaticSaver {
     try {
       await this.locked(async () => {
         const persisted = await db.automatic.get(this.record.id);
-        if (!persisted?.undo || persisted.undo.id !== this.record.undo?.id || persisted.actions.length || persisted.flight) throw new Error('Undo changed in another tab. Reload to use the current Undo record.');
+        if (!persisted?.undo || persisted.undo.id !== this.record.undo?.id || persisted.actions.length || persisted.flight || persisted.recoveryBranches?.length) throw new Error('Undo changed in another tab. Reload to use the current Undo record.');
+        if (await this.otherPending()) throw new Error('Undo is unavailable until pending recovery for the other account or destination completes.');
         const current = await this.services.current();
         if (!undoMatches(persisted.undo, current.images, current.location) || this.services.validateUndo && !this.services.validateUndo(persisted.undo, current)) {
           this.record = { ...this.record, undoReason: 'Undo is unavailable because the affected data changed in storage.' };
@@ -198,6 +206,15 @@ export class AutomaticSaver {
     await this.locked(async () => {
       const stored = await db.automatic.get(this.record.id);
       if ((stored?.version ?? 0) !== this.version) throw new SaveConflict('Reload first to review the pending work retained by both tabs.');
+      if (!this.record.flight && await this.otherPending()) {
+        if (reapply) throw new SaveConflict('Recover the pending operation for the other account or destination before reapplying these changes.');
+        // Discard only this account's accepted intent. Its shared upload journal
+        // and draft mirror may belong to the other account's interrupted flight.
+        this.record = { ...this.record, actions: [], undo: null, pendingDrafts: {}, recoveryBranches: undefined, undoReason: undefined };
+        await this.persist();
+        this.publish('recovery', 'Local changes for this account were discarded. Recovery for another account or destination is retained; reconnect with that account to continue.');
+        return;
+      }
       const actions = [...this.record.actions, ...(this.record.recoveryBranches ?? []).flatMap(branch => branch.actions)]
         .sort((a, b) => a.at.localeCompare(b.at));
       this.record = { ...this.record, actions };
@@ -224,7 +241,9 @@ export class AutomaticSaver {
  * authentication/permission failures actionable instead of retrying them. */
 function retryableTransport(error: unknown): boolean {
   if (error instanceof TypeError) return true;
+  if (!error || typeof error !== 'object') return false;
   const details = error instanceof S3ReadError ? error : readErrorDetails(error);
+  if (['TimeoutError', 'NetworkError', 'NetworkingError', 'RequestTimeout', 'SlowDown'].includes(details.code ?? '')) return true;
   if (details.status === 429 || details.status && details.status >= 500) return true;
   if (['AccessDenied', 'InvalidAccessKeyId', 'SignatureDoesNotMatch'].includes(details.code ?? '')) return false;
   const cause = error instanceof Error ? error.cause : undefined;

@@ -204,3 +204,40 @@ Then('the Coyote is still saved and Undo is available', async ({ page, s3 }) => 
   await saved(page); await expect(status(page).getByRole('button', { name: 'Undo latest action' })).toBeEnabled();
   expect(parseObservations(s3.text(BUCKET, `${PREFIX_A}observations.csv`)).find(o => o.mediaId === path)!.scientificName).toBe('Canis latrans');
 });
+When('two tabs request the same persisted Undo', async ({ page, context, s3 }) => {
+  const { installS3Mock } = await import('./support/s3mock');
+  const second = await context.newPage(); await installS3Mock(second, s3); await openWorkspace(second); await saved(second);
+  await Promise.all([status(page).getByRole('button', { name: 'Undo latest action' }).click(), status(second).getByRole('button', { name: 'Undo latest action' }).click()]);
+  await expect.poll(() => JSON.parse(s3.text(BUCKET, `${PREFIX_A}UploadMeta.json`)).taggerActions.length).toBe(2);
+  const { readStore } = await import('./support/flows');
+  await expect.poll(async () => (await readStore(page, 'automatic') as { undo: unknown }[])[0].undo).toBeNull();
+  await second.close(); await page.reload(); await openWorkspace(page); await saved(page);
+});
+When('two tabs edit from different recovery versions', async ({ page, context, s3 }) => {
+  const { installS3Mock } = await import('./support/s3mock');
+  const second = await context.newPage(); await installS3Mock(second, s3); await openWorkspace(second); await saved(second);
+  await focusFrame(page, 'IMG002.JPG'); await speciesApply(page, 'Canis latrans').click(); await saved(page);
+  await focusFrame(second, 'IMG002.JPG'); await speciesApply(second, 'Puma concolor').click();
+  await expect(status(second)).toContainText(/another tab|Another tab/);
+  await second.close(); await page.reload(); await openWorkspace(page);
+});
+Then("both tabs' accepted actions remain available for explicit review", async ({ page, s3 }) => {
+  await expect(status(page)).toContainText('another tab');
+  const { readStore } = await import('./support/flows');
+  const record = (await readStore(page, 'automatic') as { recoveryBranches: { actions: { changes: { species?: string }[] }[] }[]; undo: unknown }[])[0];
+  expect(record.recoveryBranches[0].actions[0].changes.some(change => change.species === 'Puma concolor')).toBe(true);
+  expect(record.undo).not.toBeNull();
+  expect(parseObservations(s3.text(BUCKET, `${PREFIX_A}observations.csv`)).find(row => row.mediaId === path)!.scientificName).toBe('Canis latrans');
+  await expect(page.getByRole('button', { name: 'Logout', exact: true })).toBeDisabled();
+});
+Then('Coyote and Puma are stored and the latest action alone can be undone', async ({ page, s3 }) => {
+  expect(parseObservations(s3.text(BUCKET, `${PREFIX_A}observations.csv`)).filter(row => row.mediaId === path).map(row => row.scientificName).sort()).toEqual(['Canis latrans', 'Puma concolor']);
+  await status(page).getByRole('button', { name: 'Undo latest action' }).click(); await saved(page);
+  expect(parseObservations(s3.text(BUCKET, `${PREFIX_A}observations.csv`)).filter(row => row.mediaId === path).map(row => row.scientificName)).toEqual(['Canis latrans']);
+});
+Then('automatic saving does not show an access-denied error', async ({ page }) => { await expect(status(page)).not.toContainText('Access denied'); });
+Then('automatic saving shows the confirmed media access-denied error', async ({ page }) => { await expect(status(page)).toContainText(/Save failed.*Access denied reading media.csv/); });
+Then('credentials can be repaired without discarding pending work', async ({ page }) => {
+  await expect(status(page).getByRole('button', { name: 'Repair credentials for this account' })).toBeEnabled();
+  const { readStore } = await import('./support/flows'); expect((await readStore(page, 'automatic') as { actions: unknown[] }[])[0].actions).toHaveLength(1);
+});

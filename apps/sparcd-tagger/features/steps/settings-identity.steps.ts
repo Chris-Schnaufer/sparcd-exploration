@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { parseObservations } from '@sparcd/camtrap';
 import { Given, Then, expect, sectionTab, openSettings, gridCell, speciesApply, focusFrame, APP_URL } from './support/world';
-import { runLiveSync, readStore } from './support/flows';
+import { waitForAutomaticSave, readStore } from './support/flows';
 import { installS3Mock } from './support/s3mock';
 import { BUCKET, PREFIX_A } from './support/data';
 
@@ -75,7 +75,8 @@ Then('missing attribution prevents mouse keyboard drag and write actions', async
   await gridCell(page, 'IMG002.JPG').dispatchEvent('drop', { dataTransfer: drag });
   await page.keyboard.press('ArrowDown'); await expect(gridCell(page, 'IMG003.JPG')).toHaveAttribute('aria-current', 'true');
   expect((await readStore(page, 'drafts')).filter((draft: any) => draft.dirty)).toHaveLength(0);
-  await expect(page.getByRole('button', { name: 'Sync…', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Sync…', exact: true })).toHaveCount(0);
+  await expect(page.getByTestId('automatic-save').getByRole('button', { name: 'Undo latest action' })).toBeDisabled();
   const errors = await page.evaluate(async url => {
     const { performSync, performRestore } = await import(/* @vite-ignore */ url);
     return Promise.all([performSync, performRestore].map(async fn => {
@@ -172,7 +173,7 @@ Then('actions under successive custom identities retain their attribution after 
   await openSettings(page); await page.locator('#user').fill('Actor B'); await page.locator('#user').blur(); await sectionTab(page, 'Tag').click();
   await focusFrame(page, 'IMG005.JPG'); await speciesApply(page, 'Puma concolor').click();
   await focusFrame(page, 'IMG004.JPG'); await speciesApply(page, 'Puma concolor').click();
-  await runLiveSync(page);
+  await waitForAutomaticSave(page);
   const observations = parseObservations(s3.text(BUCKET, `${PREFIX_A}observations.csv`));
   expect(observations.find(o => o.mediaId.endsWith('IMG002.JPG') && o.scientificName === 'Canis latrans')?.classifiedBy).toBe('Actor A');
   expect(observations.find(o => o.mediaId.endsWith('IMG005.JPG') && o.scientificName === 'Puma concolor')?.classifiedBy).toBe('Actor B');

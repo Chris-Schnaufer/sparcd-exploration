@@ -12,11 +12,11 @@ export function Recovery() {
   useEffect(() => {
     let live = true;
     if (cfg) void db.automatic.where('scope').equals(accountScope(cfg)).toArray().then(rows => {
-      if (live) setRecords(rows.filter(row => row.actions.length || row.flight || row.adoptionRequired));
+      if (live) setRecords(rows.filter(row => row.actions.length || row.flight || row.adoptionRequired || row.recoveryBranches?.length));
     }).catch(error => { if (live) setError(String(error)); });
     return () => { live = false; };
   }, [cfg]);
-  return <main className="p-8 space-y-4">
+  return <section aria-label="Save recovery" className="p-8 space-y-4">
     <h1 className="font-display text-[22px]">Save recovery</h1>
     <p>Pending changes stay in this browser until every required storage write succeeds. Open an upload to resume recovery.</p>
     <p>Older pending Sync or restore work is recovered when you open its upload from Browse and confirm its account and destination.</p>
@@ -28,5 +28,5 @@ export function Recovery() {
         const store = useStore.getState(); store.selectCollection(record.collectionKey); store.selectUpload(record.uploadPrefix);
       }}>Open pending upload</button>
     </div>)}
-  </main>;
+  </section>;
 }

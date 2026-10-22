@@ -1251,3 +1251,21 @@ describe('automatic-save preservation policy', () => {
     expect(JSON.parse(meta.body).taggerActions).toEqual([action]);
   });
 });
+
+describe('an interrupted PUT before its local acknowledgement', () => {
+  it('recognizes exact intended canonical bytes and recovers its missing receipt without another PUT', async () => {
+    const base = await canonical();
+    const body = mergeMedia(base.media.text, [{ mediaId: K1, deploymentId: DEP, timestamp: IMAGES[0].baseTimestamp, observations: [], needExpert: true }]);
+    const current = await canonical({ media: body });
+    const journal: SyncJournal = {
+      id: `sparcd-x::${PREFIX}`, bucket: 'sparcd-x', uploadPrefix: PREFIX, user: 'original actor',
+      startedAt: NOW.toISOString(), snapshotPrefix: `${PREFIX}.sparcd-tagger-snapshots/old/stamp/`,
+      objects: [{ role: 'media', key: `${PREFIX}media.csv`, baseETag: base.media.etag, baseHash: base.media.hash, body, intendedHash: await sha256Hex(body), status: 'pending' }],
+    };
+    const { io, rec } = fakeIO(current);
+    const result = await runSync({ bucket: 'sparcd-x', uploadPrefix: PREFIX, user: 'original actor', base: baseFrom(base), plan: emptyPlan(), dryRun: false, resumeJournal: journal }, io);
+    expect(result.status).toBe('synced'); expect(rec.replaces).toHaveLength(0); expect(rec.cleared).toBe(1);
+    expect(rec.journals.at(-1)?.objects[0].status).toBe('written');
+    expect(rec.journals.at(-1)?.objects[0].newETag).toBe(current.media.etag);
+  });
+});

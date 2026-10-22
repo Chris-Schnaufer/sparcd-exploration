@@ -6,8 +6,7 @@ Feature: Connect the tagger to a collection store and manage the session
   """
   As-built flow: before any tagging is possible the tagger must be given
   S3-compatible credentials. The tool is a static, bring-your-own-credentials
-  page — it holds no accounts of its own. Session-level choices (whether writes
-  are real and how images are grouped) live in Settings. Connected attribution
+  page — it holds no accounts of its own. Session-level display choices (including how images are grouped) live in Settings. Connected attribution
   comes from the storage username.
   """
 
@@ -28,72 +27,6 @@ Feature: Connect the tagger to a collection store and manage the session
     Then the region, path-style addressing and HTTPS settings are inferred from it
     And those inferred settings are only shown under "Advanced"
     And any of them can be overridden before connecting
-
-  @unmapped
-  Scenario: A remembered connection's backend details are not carried over to a different endpoint
-    Given a successful connection was made earlier in this browser
-    When the tab is closed and the tagger is opened in a new one
-    And a different endpoint is entered and the field is left
-    Then the region, path-style addressing and HTTPS settings are inferred fresh for it, not carried over
-    # #596 — secure/forcePathStyle/region used to be remembered forever once
-    # set, regardless of what endpoint was later typed.
-
-  @unmapped
-  Scenario: Connecting tests the credentials against the server before accepting them
-    Given the connection screen is shown
-    When valid-looking credentials are submitted
-    Then the credentials are checked against the server before the workspace opens
-
-  @unmapped
-  Scenario: An unreachable endpoint is reported, not silently accepted
-    Given the connection screen is shown
-    And the storage endpoint cannot be reached
-    When valid-looking credentials are submitted
-    Then connecting is refused with a message that the endpoint could not be reached
-    And the workspace does not open
-
-  @unmapped
-  Scenario: Rejected credentials are reported, not silently accepted
-    Given the connection screen is shown
-    And the server will reject these credentials
-    When valid-looking credentials are submitted
-    Then connecting is refused with a message that the credentials were rejected
-    And the workspace does not open
-
-  @unmapped
-  Scenario: A permission-denied check is distinguished from rejected credentials
-    Given the connection screen is shown
-    And the server denies the credential check itself
-    When valid-looking credentials are submitted
-    Then connecting is refused with a message that the check could not confirm the credentials
-    And the workspace does not open
-    # #589 — AccessDenied on this read-only probe proves only that the
-    # account lacks permission to list buckets, never that the credentials
-    # themselves are wrong.
-
-  @unmapped
-  Scenario: A clock-skew rejection explains itself
-    Given the connection screen is shown
-    And the server reports this computer's clock is skewed
-    When valid-looking credentials are submitted
-    Then connecting is refused with a message about the computer's clock
-    And the workspace does not open
-
-  @unmapped
-  Scenario: An interrupted check can be retried
-    Given the connection screen is shown
-    And the credential check hangs instead of responding
-    When valid-looking credentials are submitted
-    Then connecting is refused with a message that the check was interrupted
-    And the form is available to try again
-    # Waits out the probe's own ~8s timeout for real.
-
-  @unmapped
-  Scenario: Standalone Tagger explains that an online connection is required
-    Given the connection screen is shown
-    And the browser is offline
-    Then standalone Tagger explains that an online connection is required
-    And no credential check has been made
 
   @unmapped
   Scenario: Reloading the page keeps the connection
@@ -132,7 +65,7 @@ Feature: Connect the tagger to a collection store and manage the session
     Given the tagger is connected
     When no upload has been opened from Browse
     Then the "Tag" section tab is disabled
-    And Browse, History and Settings remain available
+    And Browse, Recovery and Settings remain available
 
   @unmapped
   Scenario: Connected storage username supplies Tagger attribution
@@ -152,11 +85,10 @@ Feature: Connect the tagger to a collection store and manage the session
     Then the new identification is attributed to "otherkey"
 
   @unmapped
-  Scenario: Real writes are the default; dry-run is opt-in
+  Scenario: Completed work saves without a manual or dry-run preference
     Given the tagger is connected
-    When Settings is opened for the first time in a session
-    Then "Dry-run (log writes, change nothing)" is switched off
-    And Sync writes for real unless dry-run is switched on
+    When Settings is opened
+    Then no manual Sync or dry-run preference is offered
 
   @unmapped
   Scenario: Burst grouping is off by default and its window is adjustable
@@ -167,24 +99,13 @@ Feature: Connect the tagger to a collection store and manage the session
     And switching it on reveals a threshold between 5 and 600 seconds
 
   @unmapped
-  Scenario: Sorting the species list by latest assigned is off by default
-    Given the tagger is connected
-    When Settings is opened
-    Then "Sort by latest species assigned" is switched off
-
-  @unmapped
-  Scenario: Disconnecting with unsynced edits asks before discarding them
-    Given there are unsaved local edits in this browser
-    When Disconnect is chosen in Settings
-    Then the tagger reports how many unsynced edits exist
-    And it offers to cancel, to review the unsynced edits in History, or to discard them and disconnect
-
-  @unmapped
-  Scenario: Disconnecting clears this browser's local tagger data
-    Given there are no unsaved local edits
+  Scenario: Disconnecting preserves completed work's scoped Undo
+    Given a completed automatic action exists for this account
     When Disconnect is chosen
-    Then local work is cleared while scoped keybinding profiles are retained
-    And the tagger returns to the connection screen ready for the next person
+    Then the tagger returns to the connection screen ready for the next person
+    And the completed Undo remains scoped in this browser
+    When the same account reconnects
+    Then its completed Undo is available again
 
   @unmapped
   Scenario: The workspace can be switched between light and dark

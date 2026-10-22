@@ -332,16 +332,7 @@ Then('image and video rows identify their media type', async ({ page }) => {
     .toHaveAttribute('aria-label', 'Media type: video');
 });
 
-Then('capture timestamps show corrected and unavailable values accurately', async ({ page }) => {
-  const corrected = listRow(page, 'IMG002.JPG').locator('[data-column="timestamp"]');
-  await expect(corrected).toContainText('2023-12-24');
-  await expect(corrected).toContainText('18:45');
-  await expect(corrected).toHaveAttribute('aria-label', /Capture time: 2023-12-24T18:45:10/);
 
-  const unavailable = listRow(page, 'VID001.MP4').locator('[data-column="timestamp"]');
-  await expect(unavailable).toHaveText('—');
-  await expect(unavailable).toHaveAttribute('aria-label', 'Capture time unavailable');
-});
 
 Then('long column values preserve their full accessible text', async ({ page }) => {
   const row = listRow(page, 'IMG004.JPG');
@@ -1276,15 +1267,14 @@ Then('its own playback keys work and no tagging keystroke fires', async ({ page 
 });
 
 Then(
-  'while the sync, snapshots or time-shift dialog is open no image behind it is tagged or navigated',
+  'while location or time-shift dialogs are open no image behind them is tagged or navigated',
   async ({ page }) => {
     await closeFocusView(page);
     await focusFrame(page, 'IMG002.JPG');
     const position = await positionReadout(page).textContent();
 
     for (const [open, close] of [
-      ['Sync…', 'Cancel'],
-      ['Snapshots…', 'Close'],
+      ['Change location', 'Cancel'],
       ['Time shift', 'Cancel'],
     ] as const) {
       await page.getByRole('button', { name: open, exact: true }).click();

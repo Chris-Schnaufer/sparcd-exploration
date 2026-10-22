@@ -1375,7 +1375,7 @@ export function Tag() {
             applyIncrement(tag);
           }}
         >
-          {!identityReady && <div id="tagger-identity-required" role="status" className="w-full border border-warn p-2 text-[13px]">
+          {!identityReady && <div id="tagger-identity-required" role={taggerUser.trim() ? "note" : "status"} className="w-full border border-warn p-2 text-[13px]">
             <p>{taggerUser.trim() ? editingUnavailable : IDENTITY_REQUIRED}</p>
             {!taggerUser.trim() && <button type="button" className="min-h-11 underline" onClick={() => { closeFocus(); useStore.getState().setSection('settings'); }}>Set Tagger identity</button>}
           </div>}

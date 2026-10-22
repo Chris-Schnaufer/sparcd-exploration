@@ -210,7 +210,7 @@ export function buildSyncPlan(
     const removedSpecies = [...new Set([
       ...(img.baseRemovedSpecies ?? []),
       ...(d?.removedSpecies ?? []).filter((name) => img.baseObservations.some((o) => o.scientificName === name)),
-    ])].filter((name) => !obs.some((o) => o.scientificName === name));
+    ])].filter((name) => !obs.some((o) => o.scientificName === name || o.correctedFrom === name));
 
     if (timeChanged) summary.timeCorrections++;
 
@@ -262,7 +262,7 @@ export function buildSyncPlan(
           // Drafts written before classifiedBy/classificationTimestamp were
           // modeled can omit them. Preserve the canonical values rather than
           // blanking them when another observation on the image is edited.
-          const classifiedBy = base
+          const classifiedBy = o.restorationRow ? o.classifiedBy : base
             ? base.classifiedBy ?? o.classifiedBy ?? (touched ? user.trim() || undefined : undefined)
             : o.classifiedBy ?? (user.trim() || undefined);
           const classificationTimestamp = base
@@ -310,9 +310,9 @@ export function buildSyncPlan(
             // Only the explicitly re-applied species receives the current
             // reviewer identity. Other legacy rows keep their canonical
             // attribution (or remain unattributed).
-            classifiedBy: base?.classifiedBy ?? o.classifiedBy ??
+            classifiedBy: o.restorationRow ? o.classifiedBy : base?.classifiedBy ?? o.classifiedBy ??
               (explicitlyConfirmed ? user.trim() || undefined : undefined),
-            classificationTimestamp: base?.classificationTimestamp ?? o.classificationTimestamp ??
+            classificationTimestamp: o.restorationRow ? o.classificationTimestamp : base?.classificationTimestamp ?? o.classificationTimestamp ??
               (explicitlyConfirmed ? new Date().toISOString() : undefined),
             reviewEvents: mergeReviewEvents(base?.reviewEvents, o.reviewEvents),
             correctedFrom: base?.correctedFrom ?? o.correctedFrom,
@@ -691,6 +691,17 @@ async function tryResume(
   if (!resumeJournal) return null;
   const journal = resumeJournal;
   const cur = await io.loadCanonical();
+  // A tab can close after a successful PUT but before its local receipt is
+  // committed. Exact intended bytes prove this object already reached storage;
+  // retain the current ETag and do not repeat the canonical write.
+  let receiptsRecovered = false;
+  for (const object of journal.objects) {
+    if (object.status === 'pending' && cur[object.role].hash === object.intendedHash) {
+      object.status = 'written'; object.newETag = cur[object.role].etag;
+      receiptsRecovered = true;
+    }
+  }
+  if (receiptsRecovered && !dryRun) await io.saveJournal(journal);
   const decision = planResume(journal, remoteStates(cur));
   if (decision.kind === 'conflict')
     return { status: 'conflict', role: decision.role, reason: decision.reason };

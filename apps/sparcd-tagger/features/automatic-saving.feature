@@ -112,3 +112,15 @@ Feature: Completed collection edits save automatically with one-level Undo
     And the automatic save completes
     And application Redo shortcuts are pressed
     Then the Coyote is still saved and Undo is available
+
+  Scenario: Two browser tabs cannot consume the same Undo twice
+    When Coyote is applied for automatic saving
+    And the automatic save completes
+    And two tabs request the same persisted Undo
+    Then the Coyote addition is reversed and its audit history remains
+
+  Scenario: A stale tab retains accepted changes without corrupting the other tab's recovery
+    When two tabs edit from different recovery versions
+    Then both tabs' accepted actions remain available for explicit review
+    When the pending values are explicitly reapplied
+    Then Coyote and Puma are stored and the latest action alone can be undone
