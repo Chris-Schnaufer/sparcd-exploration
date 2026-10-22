@@ -1,5 +1,5 @@
 import { Given, Then, expect, gridCell, listRow, focusFrame, enterFocusView, openSettings, sectionTab, openWorkspace, speciesApply, speciesFilter, selectedTiles, ENDPOINT } from './support/world';
-import { runLiveSync } from './support/flows';
+import { waitForAutomaticSave } from './support/flows';
 import { BUCKET, PREFIX_A, mediaKey } from './support/data';
 import { makePng } from './support/png';
 import { installS3Mock } from './support/s3mock';
@@ -114,10 +114,10 @@ Then('classification checkmarks follow species edits Ghost Test clearing sync an
   await page.getByRole('button', { name: 'Remove Ghost', exact: true }).click(); await expect(check(tile)).toHaveCount(0);
   await speciesFilter(page).fill('Test'); await page.getByTitle('Apply Tag as requested species', { exact: true }).click();
   await expect(check(tile)).toBeVisible();
-  await runLiveSync(page); await page.reload(); await openWorkspace(page); await focusFrame(page, 'IMG002.JPG');
+  await waitForAutomaticSave(page); await page.reload(); await openWorkspace(page); await focusFrame(page, 'IMG002.JPG');
   await expect(check(tile)).toBeVisible();
   await page.getByRole('button', { name: 'Clear Species', exact: true }).click(); await expect(check(tile)).toHaveCount(0);
-  await runLiveSync(page); await page.reload(); await openWorkspace(page); await expect(check(tile)).toHaveCount(0);
+  await waitForAutomaticSave(page); await page.reload(); await openWorkspace(page); await expect(check(tile)).toHaveCount(0);
 });
 Given('the checkmark image is {int} by {int} at viewport width {int}', async ({ page, s3 }, width: number, height: number, viewport: number) => {
   s3.put(BUCKET, mediaKey(PREFIX_A, 'IMG001.JPG'), makePng(width, height, 180), 'image/png');

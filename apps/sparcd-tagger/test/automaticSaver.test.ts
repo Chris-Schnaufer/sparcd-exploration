@@ -91,6 +91,12 @@ describe('durable automatic saving', () => {
     expect(await saver.undo()).toBe(false); expect(s.reverse).not.toHaveBeenCalled();
     expect(saver.view.undoReason).toContain('affected data changed'); expect(saver.record.undo).not.toBeNull();
   });
+  it('disables Undo with an explanation when an affected image was removed remotely', async () => {
+    const s = services(), saver = await start(s); saver.accept(action('a')); await saver.flush();
+    s.current = vi.fn(async () => ({ images: [], location: null }));
+    expect(await saver.undo()).toBe(false); expect(s.reverse).not.toHaveBeenCalled();
+    expect(saver.view.undoReason).toContain('affected data changed'); expect(saver.view.phase).toBe('saved');
+  });
   it('refuses a stale cross-tab Undo and preserves the newer durable record', async () => {
     const saver = await start(); saver.accept(action('a')); await saver.flush();
     const other = await start(); other.accept(action('b')); await other.flush();
@@ -127,5 +133,36 @@ describe('durable automatic saving', () => {
     expect(accountScope(cfg)).toBe(accountScope({ ...cfg, secretKey: 'new' }));
     expect(accountScope(cfg)).not.toBe(accountScope({ ...cfg, accessKey: 'bob' }));
     expect(accountScope(cfg)).not.toBe(accountScope({ ...cfg, endpoint: 'https://other.example.com' }));
+  });
+});
+
+
+describe('the shared journal boundary across accounts', () => {
+  it('serializes different account records for the same upload', async () => {
+    let release!: () => void;
+    const firstServices = services();
+    firstServices.save = vi.fn(async () => { await new Promise<void>(resolve => { release = resolve; }); return remote; });
+    const first = await start(firstServices); first.accept(action('first')); const saving = first.flush(); await settle();
+    const secondServices = services();
+    const second = new AutomaticSaver({ ...record(), id: 'other-account', scope: 'other-account' }, secondServices); savers.push(second); await second.open();
+    second.accept(action('second')); const following = second.flush(); await settle();
+    expect(secondServices.save).not.toHaveBeenCalled(); release();
+    expect(await saving).toBe(true); expect(await following).toBe(true);
+    expect(firstServices.save).toHaveBeenCalledTimes(1); expect(secondServices.save).toHaveBeenCalledTimes(1);
+  });
+  it('can discard this account’s blocked intent without deleting another account’s recovery journal', async () => {
+    const firstServices = services(); firstServices.save = vi.fn().mockRejectedValue(new Error('Expired credentials'));
+    const first = await start(firstServices); first.accept(action('first')); await first.flush();
+    const journal = { id: 'bucket::upload/', bucket: 'bucket', uploadPrefix: 'upload/', user: 'Alice', snapshotPrefix: '', startedAt: '', objects: [] };
+    await db.syncJournals.put(journal);
+    const secondServices = services();
+    const second = new AutomaticSaver({ ...record(), id: 'other-account', scope: 'other-account' }, secondServices); savers.push(second); await second.open();
+    second.accept(action('second')); expect(await second.flush()).toBe(false);
+    expect(second.view.phase).toBe('conflict'); expect(secondServices.save).not.toHaveBeenCalled();
+    await second.resolve(false);
+    expect(second.record.actions).toEqual([]); expect(second.view.pending).toBe(false); expect(second.view.canEdit).toBe(false);
+    expect(secondServices.resolve).not.toHaveBeenCalled(); expect(await db.syncJournals.get(journal.id)).toEqual(journal);
+    expect((await db.automatic.get('auto'))?.flight?.ids).toEqual(['first']);
+    firstServices.save = vi.fn(async () => remote); expect(await first.retry()).toBe(true);
   });
 });

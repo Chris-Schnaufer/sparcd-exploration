@@ -63,6 +63,7 @@ export type AppliedTag = {
   count: number; // floored to ≥1
   requestedSpecies?: string;
   freeTags?: string;
+  correctedFrom?: string;
   /** Identity captured when the edit is made, before a later account switch. */
   classifiedBy?: string;
   /** ISO timestamp paired with classifiedBy — when that attribution was made. */
@@ -105,6 +106,7 @@ export function addObservation(obs: DraftObservation[], tag: AppliedTag): DraftO
     count: Math.max(1, tag.count),
     requestedSpecies: tag.requestedSpecies ?? '',
     freeTags: tag.freeTags ?? '',
+    ...(tag.correctedFrom ? { correctedFrom: tag.correctedFrom } : {}),
     classifiedBy: tag.classifiedBy?.trim() || undefined,
     classificationTimestamp: tag.classificationTimestamp,
   };
@@ -395,7 +397,10 @@ export const useDraftStore = create<DraftState>((set, get) => {
         const confirmedSpecies = confirmed
           ? [...new Set([...(prev.confirmedSpecies ?? []), tag.scientificName])]
           : prev.confirmedSpecies;
-        const observations = addObservation(prev.observations, tag);
+        const correctedFrom = !alreadyPresent && prev.removedSpecies?.length === 1 && targets.some(target =>
+          target.mediaPath === prev.mediaPath && target.base?.observations.some(o => o.scientificName === prev.removedSpecies![0]))
+          ? prev.removedSpecies[0] : undefined;
+        const observations = addObservation(prev.observations, correctedFrom ? { ...tag, correctedFrom } : tag);
         const removedSpecies = (prev.removedSpecies ?? []).filter((name) => name !== tag.scientificName);
         return {
           observations: confirmed

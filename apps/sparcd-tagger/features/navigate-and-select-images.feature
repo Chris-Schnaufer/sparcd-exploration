@@ -264,7 +264,7 @@ Feature: Move through an upload and choose which images an action applies to
   Scenario: Accelerators stand down while a video or a dialog has the keyboard
     Given a video is being played or scrubbed
     Then its own playback keys work and no tagging keystroke fires
-    And while the sync, snapshots or time-shift dialog is open no image behind it is tagged or navigated
+    And while location or time-shift dialogs are open no image behind them is tagged or navigated
 
   @unmapped
   Scenario: The Adjust popup reserves native range keys while Tagger shortcuts still work

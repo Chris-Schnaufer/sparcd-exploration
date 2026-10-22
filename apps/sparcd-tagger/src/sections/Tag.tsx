@@ -1303,8 +1303,10 @@ export function Tag() {
                 EXIF Modified
               </span>
             )}
+            <div className="col-start-2 row-start-2 flex items-center gap-2">
             {expertToggle('right')}
             {cfg && <FocusSaveControls onReview={() => { closeFocus(); requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('[data-testid="automatic-save"] button:not([disabled])')?.focus()); }} />}
+            </div>
             <button
               ref={focusCloseRef}
               type="button"
@@ -1421,7 +1423,7 @@ export function Tag() {
       // same panel renders in both) with one site.
       headerSlot: (
         <div className="flex flex-wrap items-center gap-1.5">
-          {!identityReady && <div id="tagger-identity-required" role="status" className="w-full border border-warn p-2 text-[13px]">
+          {!identityReady && <div id="tagger-identity-required" role={taggerUser.trim() ? "note" : "status"} className="w-full border border-warn p-2 text-[13px]">
             <p>{taggerUser.trim() ? editingUnavailable : IDENTITY_REQUIRED}</p>
             {!taggerUser.trim() && <button type="button" className="min-h-11 underline" onClick={() => { closeFocus(); useStore.getState().setSection('settings'); }}>Set Tagger identity</button>}
           </div>}

@@ -1,3 +1,4 @@
+import { localBatchId } from '../lib/localBatch';
 import { useEffect, useRef } from 'react';
 
 // The `?` keyboard cheatsheet. Mirrors the plan's "Keyboard shortcuts (initial
@@ -42,6 +43,8 @@ const GROUPS: { title: string; rows: Shortcut[] }[] = [
 ];
 
 export function Cheatsheet({ onClose }: { onClose: () => void }) {
+  const automatic = !localBatchId;
+  const groups = automatic ? GROUPS : GROUPS.map(group => ({ ...group, rows: group.rows.filter(row => !row.keys.includes('⌘Z')).map(row => row.keys.includes('⌘S') ? { ...row, action: 'Save local work in this browser' } : row) }));
   const closeRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
@@ -95,7 +98,7 @@ export function Cheatsheet({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-1 p-5">
-          {GROUPS.map((g) => (
+          {groups.map((g) => (
             <section key={g.title} className="min-w-0">
               <h3 className="font-body text-[11px] font-[600] tracking-[0.16em] uppercase text-inkSoft mb-2">
                 {g.title}

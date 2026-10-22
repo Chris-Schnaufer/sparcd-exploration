@@ -1,6 +1,6 @@
 import type { Page, Locator } from '@playwright/test';
 import { Given, When, Then, expect, gridCell, listRow, focusFrame, openWorkspace, ENDPOINT } from './support/world';
-import { runLiveSync } from './support/flows';
+import { waitForAutomaticSave } from './support/flows';
 import { BUCKET, PREFIX_A } from './support/data';
 import { installS3Mock } from './support/s3mock';
 
@@ -98,7 +98,7 @@ Then('an image without species shares its expert badge through sync fresh sessio
   const original = s3.text(BUCKET, `${PREFIX_A}observations.csv`);
   await focusFrame(page, 'IMG002.JPG'); await toggle(page).click();
   await expect(badge(gridCell(page, 'IMG002.JPG'))).toBeVisible(); await expect(check(gridCell(page, 'IMG002.JPG'))).toHaveCount(0);
-  await runLiveSync(page); await page.reload(); await openWorkspace(page);
+  await waitForAutomaticSave(page); await page.reload(); await openWorkspace(page);
   await expect(badge(gridCell(page, 'IMG002.JPG'))).toBeVisible();
   const context = await browser.newContext({ baseURL: ENDPOINT });
   try {
@@ -108,7 +108,7 @@ Then('an image without species shares its expert badge through sync fresh sessio
     await sibling.getByRole('button', { name: 'Focus', exact: true }).click();
     await expect(badge(focus(sibling))).toBeVisible(); await expect(check(focus(sibling))).toHaveCount(0);
     await toggle(sibling).click(); await expect(badge(focus(sibling))).toHaveCount(0);
-    await expect(toggle(sibling)).toHaveAttribute('aria-pressed', 'false'); await runLiveSync(sibling);
+    await expect(toggle(sibling)).toHaveAttribute('aria-pressed', 'false'); await waitForAutomaticSave(sibling);
   } finally { await context.close(); }
   await page.reload(); await openWorkspace(page);
   await expect(badge(gridCell(page, 'IMG002.JPG'))).toHaveCount(0);

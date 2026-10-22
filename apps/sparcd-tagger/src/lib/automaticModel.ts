@@ -80,7 +80,7 @@ export function canonicalValue(field: ValueChange, images: TagImage[], location:
   return field.field === 'time' ? image.baseTimestamp : field.field === 'timestampSource' ? image.timestampSource ?? null : !!image.baseQuestionable;
 }
 export function undoMatches(action: EditAction, images: TagImage[], location: Deployment | null): boolean {
-  return action.changes.every(field => equalValue(canonicalValue(field, images, location), field.after));
+  return action.changes.every(field => (field.field === 'location' || images.some(image => image.key === field.path)) && equalValue(canonicalValue(field, images, location), field.after));
 }
 
 /** Remove only events already submitted, retaining events made during a save. */

@@ -148,7 +148,7 @@ export function AutomaticSaveProvider({ children }: { children: ReactNode }) {
       if (cancelled) return;
       const existing = await db.automatic.get(id);
       const others = await db.automatic.where('[bucket+uploadPrefix]').equals([bucket, prefix]).toArray();
-      if (others.some(r => r.id !== id && (r.actions.length || r.flight || r.adoptionRequired))) throw new Error('Pending recovery for this upload belongs to another account or destination. Reconnect with that account to recover it.');
+      if (!existing?.flight && others.some(r => r.id !== id && (r.actions.length || r.flight || r.adoptionRequired || r.recoveryBranches?.length))) throw new Error('Pending recovery for this upload belongs to another account or destination. Reconnect with that account to recover it.');
       const legacyJournal = await loadSyncJournal(bucket, prefix);
       const state = useDraftStore.getState();
       if (existing?.pendingDrafts) {
@@ -172,7 +172,8 @@ export function AutomaticSaveProvider({ children }: { children: ReactNode }) {
             live.current.location ? tzlookup(live.current.location.latitude, live.current.location.longitude) : undefined), dirty: true };
         }
         const changes = actionChanges({ ctx, before, after: recovered, ...(state.pendingLocation ? { location: { before: null, after: state.pendingLocation } } : {}) }, baseImages, live.current.location);
-        record.actions = [{ id: crypto.randomUUID(), user: legacyJournal?.user || useStore.getState().taggerUser, at: new Date().toISOString(), changes, records: recovered }];
+        record.actions = changes.length || Object.keys(recovered).length || state.timeOffset || state.pendingLocation
+          ? [{ id: crypto.randomUUID(), user: legacyJournal?.user || useStore.getState().taggerUser, at: new Date().toISOString(), changes, records: recovered }] : [];
         record.pendingDrafts = recovered;
         record.undoReason = 'Recovered legacy work has no reliable pre-action Undo record.';
         record.flight = legacyJournal ? { ids: [], user: legacyJournal.user } : undefined;
@@ -197,6 +198,7 @@ export function AutomaticSaveProvider({ children }: { children: ReactNode }) {
             submittedRevisions: flightActions.length ? Object.fromEntries(Object.entries(submitted).map(([path, draft]) => [path, draftRevisionOf(draft)])) : undefined,
             auditEvents: record.actions.filter(a => record.flight!.ids.includes(a.id)).map(({ id, user, at, undoOf, changes }) => ({ id, user, at, undoOf, changes })) });
           if (result.status === 'conflict') throw new SaveConflict(`${result.role}: ${result.reason}. Review current stored data before choosing how to proceed.`);
+          if (result.status === 'unsupported') throw new Error('This destination does not enforce safe conditional replacement (IfMatch). Pending work is retained.');
           if (!['synced', 'noop'].includes(result.status)) throw new Error('This upload could not be saved automatically.');
           const journal = await loadSyncJournal(bucket, prefix);
           const written = (role: string) => journal?.objects.find(o => o.role === role)?.body;
@@ -264,7 +266,7 @@ export function AutomaticSaveProvider({ children }: { children: ReactNode }) {
           for (const original of reapply ? record.actions : []) {
             const beforeImages = buildTagImages({ mediaCsv: projected.media.text, observationsCsv: projected.observations.text });
             const beforeLocation = parseDeployments(projected.deployments.text)[0] ?? null;
-            let action: EditAction = { ...original, changes: original.changes.map(field => ({ ...field, before: canonicalValue(field, beforeImages, beforeLocation) })) };
+            let action: EditAction = { ...original, changes: original.changes.map(field => ({ ...field, before: canonicalValue(field, beforeImages, beforeLocation) })).filter(field => !equalValue(field.before, field.after)) };
             if (original.locationBefore && !original.undoOf) {
               const before = original.locationBefore;
               const oldImages = buildTagImages({ mediaCsv: before.canonical.media.text, observationsCsv: before.canonical.observations.text });
@@ -427,10 +429,10 @@ export function FocusSaveControls({ onReview }: { onReview: () => void }) {
   const id = useId();
   const unfinished = useEditorState(s => Object.keys(s.unfinished).length > 0);
   const reason = !actor.trim() ? 'Set the Tagger identity before Undo.' : unfinished ? 'Finish the active input before Undo.' : view.undoReason;
-  return <div className="col-span-3 flex flex-wrap items-center gap-3 text-[12px]">
-    <span role="status" aria-live="polite">{unfinished && view.phase === 'saved' ? 'Uncommitted input — finish editing to save.' : view.message}</span>
-    <button type="button" disabled={!!reason} aria-describedby={id} title={reason || 'Undo the latest completed action'} className="min-h-11 underline disabled:opacity-40" onClick={() => void saver?.undo()}>Undo latest action</button>
+  return <div className="flex items-center gap-1 text-[12px] min-w-0">
+    <span role="status" aria-live="polite" className="max-w-24 truncate" title={view.message}>{unfinished && view.phase === 'saved' ? 'Uncommitted input — finish editing to save.' : view.message}</span>
+    <button type="button" disabled={!!reason} aria-describedby={id} title={reason || 'Undo the latest completed action'} aria-label="Undo latest action" className="min-h-11 min-w-11 underline disabled:opacity-40" onClick={() => void saver?.undo()}>Undo</button>
     <span id={id} className="sr-only">{reason}</span>
-    {['failed', 'conflict', 'pending', 'recovery'].includes(view.phase) && <button type="button" className="min-h-11 underline" onClick={onReview}>Review save problem</button>}
+    {['failed', 'conflict', 'pending', 'recovery'].includes(view.phase) && <button type="button" aria-label="Review save problem" className="min-h-11 min-w-11 underline" onClick={onReview}>!</button>}
   </div>;
 }

@@ -132,8 +132,9 @@ export async function openAppConnected(page: Page): Promise<void> {
   // Idempotent: several Givens reach for "connected" after a Background has
   // already got there, and re-navigating would throw the session away.
   if (!(await sectionTab(page, 'Browse').count())) {
-    await openApp(page);
-    await connect(page);
+    await page.goto(APP_URL);
+    await expect(sectionTab(page, 'Browse').or(page.getByRole('button', { name: 'Connect', exact: true }))).toBeVisible();
+    if (!await sectionTab(page, 'Browse').isVisible()) await connect(page);
   }
   if (!await collectionButton(page, COLLECTION_NAME).count()) await sectionTab(page, 'Browse').click();
   // The collection rail settles before anything else is meaningful.
@@ -150,12 +151,13 @@ export async function openUpload(page: Page, user = 'priortagger'): Promise<void
   await expect(page.getByTestId('automatic-save')).toBeVisible();
   // Wait for media.csv to resolve into tiles.
   await expect(page.locator('button[title$=".JPG"], button[title$=".MP4"]').first()).toBeVisible();
+  await expect(page.getByTestId('automatic-save').getByRole('status')).not.toContainText('Opening');
 }
 
 /** The default entry point for every tagging scenario. */
 export async function openWorkspace(page: Page, user = 'priortagger'): Promise<void> {
   const workspace = page.getByTestId('tag-workspace');
-  if (await workspace.count() && (await workspace.getAttribute('data-upload-prefix'))?.endsWith(`_${user}/`)) return;
+  if (await workspace.count() && (await workspace.getAttribute('data-upload-prefix'))?.endsWith(`_${user}/`)) { await expect(page.getByTestId('automatic-save').getByRole('status')).not.toContainText('Opening'); return; }
   await openAppConnected(page);
   await selectCollection(page);
   await openUpload(page, user);
