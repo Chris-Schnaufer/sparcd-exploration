@@ -1,5 +1,5 @@
-import { When, Then, expect, sectionTab, focusFrame, speciesApply, uploadRow, gridCell } from './support/world';
-import { BUCKET, PREFIX_A } from './support/data';
+import { When, Then, expect, sectionTab, focusFrame, speciesApply, uploadRow, gridCell, collectionButton } from './support/world';
+import { BUCKET, PREFIX_A, COLLECTION_B_NAME } from './support/data';
 import { readStore, waitForAutomaticSave } from './support/flows';
 const status = (page: import('@playwright/test').Page) => page.getByTestId('automatic-save');
 When('an automatic save is held before its observation write', async ({ page, scratch }) => {
@@ -67,4 +67,27 @@ Then('the repaired save retains the original actor and active upload', async ({ 
 Then("this account's pending upload is listed without a snapshot chooser", async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Save recovery' })).toBeVisible(); await expect(page.locator('main')).toContainText(PREFIX_A);
   await expect(page.getByRole('button', { name: 'Open pending upload' })).toBeEnabled(); await expect(page.getByRole('button', { name: /Snapshots|Restore/ })).toHaveCount(0);
+});
+
+When('another collection is requested', async ({ page }) => {
+  await sectionTab(page, 'Browse').click(); await collectionButton(page, COLLECTION_B_NAME).click();
+});
+Then('the requested collection opens in Browse after all writes commit', async ({ page }) => {
+  await expect(page.getByRole('heading', { name: `Uploads in ${COLLECTION_B_NAME}`, exact: true })).toBeVisible();
+  await expect(sectionTab(page, 'Tag')).toBeDisabled();
+});
+When('the pending upload is reloaded while canonical reads are denied', async ({ page, s3 }) => {
+  s3.failGetsWith(`${PREFIX_A}media.csv`, 0, 403, 'AccessDenied'); await page.reload();
+});
+Then('credential repair stays available before canonical loading succeeds', async ({ page }) => {
+  await expect(status(page).getByRole('button', { name: 'Repair credentials for this account' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Logout', exact: true })).toBeDisabled();
+  await expect(status(page).getByRole('button', { name: 'Undo latest action' })).toBeDisabled();
+});
+When("canonical access and this account's credentials are repaired", async ({ page, s3 }) => {
+  s3.getFailures.delete(`${PREFIX_A}media.csv`); s3.getFailureResponses.delete(`${PREFIX_A}media.csv`);
+  await status(page).getByRole('button', { name: 'Repair credentials for this account' }).click();
+  const region = page.getByRole('region', { name: 'Repair credentials', exact: true });
+  await region.getByLabel('Secret key', { exact: true }).fill('renewed-secret');
+  await region.getByRole('button', { name: 'Connect', exact: true }).click(); await waitForAutomaticSave(page);
 });

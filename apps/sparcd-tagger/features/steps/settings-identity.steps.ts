@@ -22,13 +22,12 @@ Given('the account-name service fails with {string}', async ({ page }, failure: 
 });
 Then('Settings has the required section order and disconnect guidance', async ({ page }) => {
   const labels = await page.locator('main section > label:first-child, main section > span:first-child').allTextContents();
-  expect(labels.map(label => label.trim())).toEqual(['Tagger Identity', 'Auto-advance', 'Date format', 'Time format', 'Distance units', 'Sync default', 'Burst grouping', 'Connection']);
-  const preferences = page.getByRole('group', { name: 'Sync and burst preferences', exact: true });
+  expect(labels.map(label => label.trim())).toEqual(['Tagger Identity', 'Auto-advance', 'Date format', 'Time format', 'Distance units', 'Burst grouping', 'Connection']);
+  const preferences = page.getByRole('group', { name: 'Burst preferences', exact: true });
   await expect(preferences).toHaveClass(/border-t/);
-  await expect(preferences.getByText('Sync default', { exact: true })).toBeVisible();
   await preferences.getByLabel('Group rapid sequences into bursts').check();
   await expect(preferences.locator('#burst')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Disconnect', exact: true })).toHaveAccessibleDescription("Clears this browser's local Tagger data and logs you out. Remembered connection details remain. Disconnect before leaving a shared or public computer.");
+  await expect(page.getByRole('button', { name: 'Disconnect', exact: true })).toHaveAccessibleDescription("Logs you out after pending saves finish. Your saved Undo remains scoped to this account in this browser. Disconnect before leaving a shared or public computer.");
 });
 Then('the reordered Settings controls remain usable on a phone', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 860 });
@@ -95,7 +94,7 @@ Then('entering a custom identity enables tagging despite the lookup error', asyn
   await focusFrame(page, 'IMG001.JPG');
   const count = page.getByRole('spinbutton', { name: 'Count for Mule Deer', exact: true });
   await expect(count).toHaveValue('2');
-  await count.fill('3'); await expect(count).toHaveValue('3');
+  await count.fill('3'); await count.press('Enter'); await expect(count).toHaveValue('3');
   await expect(page.getByLabel(/^Reviewed by Explicit Identifier at/)).toBeVisible();
   await page.getByRole('button', { name: 'Remove Mule Deer', exact: true }).click();
   await expect(count).toHaveCount(0);

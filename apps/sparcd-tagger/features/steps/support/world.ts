@@ -142,6 +142,7 @@ export async function openAppConnected(page: Page): Promise<void> {
 }
 
 export async function selectCollection(page: Page, name = COLLECTION_NAME): Promise<void> {
+  if (!await collectionButton(page, name).count()) await sectionTab(page, 'Browse').click();
   await collectionButton(page, name).click();
   await expect(page.getByRole('heading', { name: new RegExp(`Uploads in ${name}`) })).toBeVisible();
 }

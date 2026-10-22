@@ -166,3 +166,20 @@ describe('the shared journal boundary across accounts', () => {
     firstServices.save = vi.fn(async () => remote); expect(await first.retry()).toBe(true);
   });
 });
+
+describe('reconnection does not bypass paused recovery', () => {
+  it('keeps offline Retry pending so reconnection still resumes accepted work', async () => {
+    const s = services(), saver = await start(s); saver.accept(action('a')); saver.setOnline(false);
+    expect(await saver.retry()).toBe(false); expect(saver.view.phase).toBe('pending');
+    expect(saver.view.canEdit).toBe(false); saver.setOnline(true); expect(await saver.flush()).toBe(true);
+    expect(s.save).toHaveBeenCalledTimes(1);
+  });
+  it('retains a conflict across reload and reconnection until explicit review', async () => {
+    const failing = services(); failing.save = vi.fn().mockRejectedValue(new SaveConflict('changed remotely'));
+    const first = await start(failing); first.accept(action('a')); await first.flush(); first.dispose();
+    const s = services(), resumed = await start(s);
+    expect(resumed.view.phase).toBe('conflict'); resumed.setOnline(false); resumed.setOnline(true);
+    expect(await resumed.retry()).toBe(false); expect(await resumed.flush()).toBe(false); expect(s.save).not.toHaveBeenCalled();
+    await resumed.resolve(false); expect(resumed.view.phase).toBe('saved'); expect(resumed.record.actions).toEqual([]);
+  });
+});

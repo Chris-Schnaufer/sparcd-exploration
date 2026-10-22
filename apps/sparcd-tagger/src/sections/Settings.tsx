@@ -252,7 +252,7 @@ export function Settings() {
               Disconnect
             </button>
             <p id="disconnect-help" className="mt-2 text-[13px] text-inkMute font-body">
-              Clears this browser's local Tagger data and logs you out. Remembered connection details remain. Disconnect before leaving a shared or public computer.
+              Logs you out after pending saves finish. Your saved Undo remains scoped to this account in this browser. Disconnect before leaving a shared or public computer.
             </p>
           </>
         ) : (
