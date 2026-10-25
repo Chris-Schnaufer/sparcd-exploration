@@ -49,10 +49,10 @@ function UploadConnectivityStatus({
   onAllowOfflineUpload: () => void;
 }) {
   const message = online
-    ? 'Online — network detected; real uploads can be attempted'
+    ? 'Online — uploads to the server can proceed'
     : offlineOverride
-      ? 'Offline — trying a real upload; the browser signal may be stale'
-      : 'Offline — real uploads paused; dry runs remain available';
+      ? 'Offline — you can try an upload; the browser’s offline signal may be stale'
+      : 'Offline — uploads are paused; dry runs remain available';
 
   return (
     <div
@@ -72,7 +72,7 @@ function UploadConnectivityStatus({
           aria-describedby={uploadConnectivityStatusId}
           className="ml-auto shrink-0 border border-warn px-2 py-1 font-[600] text-[12px] text-warn hover:bg-paperHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
         >
-          Try real upload anyway
+          Try upload anyway
         </button>
       )}
     </div>
@@ -630,7 +630,7 @@ export function Upload() {
             <button
               onClick={retryFailed}
               disabled={!realUploadAllowed}
-              title={!realUploadAllowed ? "You're offline — reconnect or choose Try real upload anyway" : undefined}
+              title={!realUploadAllowed ? "You're offline — reconnect or choose Try upload anyway" : undefined}
               aria-describedby={!realUploadAllowed ? uploadConnectivityStatusId : undefined}
               className={`bg-ink text-paper border border-ink px-3.5 py-2.5 sm:py-1.5 min-h-[44px] sm:min-h-0 text-[14px] font-body font-[600] hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 ${!realUploadAllowed ? 'cursor-not-allowed opacity-40' : ''}`}
             >
@@ -640,7 +640,7 @@ export function Upload() {
             <button
               onClick={start}
               disabled={!effectiveDryRun && !realUploadAllowed}
-              title={!effectiveDryRun && !realUploadAllowed ? "You're offline — reconnect or choose Try real upload anyway" : undefined}
+              title={!effectiveDryRun && !realUploadAllowed ? "You're offline — reconnect or choose Try upload anyway" : undefined}
               aria-describedby={!effectiveDryRun && !realUploadAllowed ? uploadConnectivityStatusId : undefined}
               className={`bg-ink text-paper border border-ink px-3.5 py-2.5 sm:py-1.5 min-h-[44px] sm:min-h-0 text-[14px] font-body font-[600] hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 ${!effectiveDryRun && !realUploadAllowed ? 'cursor-not-allowed opacity-40' : ''}`}
             >

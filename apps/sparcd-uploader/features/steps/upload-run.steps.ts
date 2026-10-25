@@ -180,25 +180,29 @@ When('the browser reports offline before upload', async ({ app }) => {
   });
 });
 
-Then('the upload status says it is offline and real upload is disabled', async ({ app }) => {
-  await expect(app.page.locator('#upload-connectivity-status')).toContainText(
-    'Offline — real uploads paused; dry runs remain available',
-  );
+Then('the paused offline status message is shown and real upload is disabled', async ({ app }) => {
+  const status = app.page.locator('#upload-connectivity-status');
+  await expect(
+    status.getByText('Offline — uploads are paused; dry runs remain available', { exact: true }),
+  ).toBeVisible();
   const start = app.page.getByRole('button', { name: 'Start upload' });
   await expect(start).toBeDisabled();
   await expect(start).toHaveAttribute('aria-describedby', 'upload-connectivity-status');
-  await expect(app.page.getByRole('button', { name: 'Try real upload anyway' })).toBeVisible();
+  await expect(start).toHaveAttribute('title', "You're offline — reconnect or choose Try upload anyway");
+  await expect(app.page.getByRole('button', { name: 'Try upload anyway', exact: true })).toBeVisible();
 });
 
 When('the operator allows a real upload while offline', async ({ app }) => {
-  await app.page.getByRole('button', { name: 'Try real upload anyway' }).click();
+  await app.page.getByRole('button', { name: 'Try upload anyway', exact: true }).click();
 });
 
-Then('the real upload action is available despite the offline signal', async ({ app }) => {
+Then('real upload is enabled with the offline opt-in status message', async ({ app }) => {
   await expect(app.page.getByRole('button', { name: 'Start upload' })).toBeEnabled();
-  await expect(app.page.locator('#upload-connectivity-status')).toContainText(
-    'Offline — trying a real upload; the browser signal may be stale',
-  );
+  await expect(
+    app.page
+      .locator('#upload-connectivity-status')
+      .getByText('Offline — you can try an upload; the browser’s offline signal may be stale', { exact: true }),
+  ).toBeVisible();
 });
 
 Then('dry run remains available while offline', async ({ app }) => {
@@ -210,7 +214,7 @@ Then('dry run remains available while offline', async ({ app }) => {
 
 Then('the retry action is disabled while offline', async ({ app }) => {
   await expect(app.page.getByRole('button', { name: 'Retry failed files' })).toBeDisabled();
-  await expect(app.page.getByRole('button', { name: 'Try real upload anyway' })).toBeVisible();
+  await expect(app.page.getByRole('button', { name: 'Try upload anyway', exact: true })).toBeVisible();
 });
 
 Then('History Resume is disabled while offline', async ({ app }) => {
@@ -229,10 +233,12 @@ When('the browser reports online again', async ({ app }) => {
   });
 });
 
-Then('the upload status says it is online and real upload is enabled', async ({ app }) => {
-  await expect(app.page.locator('#upload-connectivity-status')).toHaveText(
-    'Online — network detected; real uploads can be attempted',
-  );
+Then('the online status message is shown and real upload is enabled', async ({ app }) => {
+  await expect(
+    app.page
+      .locator('#upload-connectivity-status')
+      .getByText('Online — uploads to the server can proceed', { exact: true }),
+  ).toBeVisible();
   await expect(app.page.getByRole('button', { name: 'Start upload' })).toBeEnabled();
   await expect(app.page.getByRole('button', { name: 'Start upload' })).not.toHaveAttribute('aria-describedby', 'upload-connectivity-status');
 });
