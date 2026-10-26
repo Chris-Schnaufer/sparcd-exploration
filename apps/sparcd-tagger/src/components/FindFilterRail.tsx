@@ -27,9 +27,10 @@ export function FindFilterRail({ open, docked, onClose, findRef, query, setQuery
     const focused = dialog.contains(document.activeElement) ? document.activeElement as HTMLElement : null;
     dialog.close();
     if (open) {
-      if (docked) dialog.show();
+      // show() would pull focus into a docked rail restored after another dialog.
+      if (docked) dialog.setAttribute('open', '');
       else dialog.showModal();
-      (focused ?? findRef.current)?.focus();
+      (focused ?? (docked ? null : findRef.current))?.focus();
     }
   }, [open, docked, findRef]);
 
@@ -44,6 +45,7 @@ export function FindFilterRail({ open, docked, onClose, findRef, query, setQuery
       if (event.key === 'Escape') {
         event.preventDefault();
         if (!docked) onClose();
+        else (document.activeElement as HTMLElement | null)?.blur();
       }
       if (!docked && event.key === 'Tab') {
         const controls = Array.from(dialogRef.current!.querySelectorAll<HTMLElement>(
@@ -139,7 +141,7 @@ export function FindFilterRail({ open, docked, onClose, findRef, query, setQuery
           <legend className="text-[12px] font-mono">{group === 'scope' ? 'Search in' : 'Tag state'}</legend>
           {(group === 'scope'
             ? [['all', 'All fields'], ['filename', 'Filename'], ['species', 'Species'], ['date', 'Date']]
-            : [['all', 'All images'], ['tagged', 'Tagged only'], ['untagged', 'Untagged only']]
+            : [['all', 'All images'], ['tagged', 'Tagged only'], ['untagged', 'Untagged only'], ['questionable', 'Questionable only'], ['not-questionable', 'Not questionable only']]
           ).map(([value, label]) => (
             <label key={value} className="flex min-h-9 items-center gap-2 text-[13px]">
               <input type="radio" name={`image-filter-${group}`} value={value}

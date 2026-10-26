@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { createPortal, flushSync } from 'react-dom';
 import { TransformWrapper, TransformComponent, type ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
 import { useStore } from '../store';
 import {
@@ -425,7 +425,7 @@ export function Tag() {
   // behavior. Restore the remembered rail in the current layout on dismissal.
   const overviewDialogOpen = showSync || showSnapshots || showDiscard || showTimeShift ||
     showChangeLocation || bulkTime !== null || zoomSpecies !== null ||
-    pendingKeyConflict !== null || showCheatsheet;
+    pendingKeyConflict !== null || showCheatsheet || showSpeciesHelp || speciesHelpOpenRef.current;
   const railVisible = showImageFilter && !overviewDialogOpen;
   useLayoutEffect(() => {
     if (view !== 'overview' || !overviewAreaRef.current) return;
@@ -469,7 +469,7 @@ export function Tag() {
   const imageFilterSummary = [
     imageFilter.text && `“${imageFilter.text}”`,
     imageFilter.scope !== 'all' && { filename: 'Filename', species: 'Species', date: 'Date' }[imageFilter.scope],
-    imageFilter.tagged !== 'all' && (imageFilter.tagged === 'tagged' ? 'Tagged only' : 'Untagged only'),
+    imageFilter.tagged !== 'all' && ({ tagged: 'Tagged only', untagged: 'Untagged only', questionable: 'Questionable only', 'not-questionable': 'Not questionable only' }[imageFilter.tagged]),
     ...(['year', 'month', 'day', 'hour', 'minute'] as const).map((part) =>
       imageFilter[part] && `${part}: ${imageFilter[part]}`),
   ].filter(Boolean).join(' · ');
@@ -480,8 +480,8 @@ export function Tag() {
   );
 
   const openImageFind = () => {
-    if (showImageFilter) imgSearchRef.current?.focus();
-    else setShowImageFilter(true);
+    flushSync(() => setShowImageFilter(true));
+    imgSearchRef.current?.focus();
   };
 
   const closeImageFilter = () => {
@@ -1104,7 +1104,8 @@ export function Tag() {
             className={`min-h-11 border px-2 ${imageFilterActive ? 'border-ink bg-mark' : 'border-rule'}`}>
             Find &amp; filter
           </button>
-          {imageFilterActive && <span aria-label="Active image filter" title={imageFilterSummary} className="max-w-[20rem] truncate">Filter active · {imageFilterSummary} · {visibleIndices.length}/{list.length}</span>}
+          {imageFilterActive && !showImageFilter && <span aria-label="Active image filter" title={imageFilterSummary} className="max-w-[20rem] truncate">Filter active · {imageFilterSummary} · {visibleIndices.length}/{list.length}</span>}
+        </div>}
 
         <div className="ml-auto flex flex-wrap items-center gap-3">
           {savedAt > 0 && <span className="text-[12px] font-mono text-accent">saved ✓</span>}
