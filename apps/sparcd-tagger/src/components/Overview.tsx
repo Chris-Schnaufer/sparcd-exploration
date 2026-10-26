@@ -249,7 +249,6 @@ let previousTouchTap: (TouchTap & { imageKey: string }) | null = null;
  *  pinch, pointer cancellation, or tap on another cell cannot complete a pair. */
 function useTouchDoubleTap(
   onDrill: ((index: number, opener?: HTMLElement) => void) | undefined,
-  index: number,
   imageKey: string,
 ) {
   const activeTap = useRef<{ pointerId: number; x: number; y: number; at: number } | null>(null);
@@ -391,7 +390,7 @@ function ListCell({
   const timestampDisplay = timestamp ? formatDateTime(timestamp, dateFormat, timeFormat) : null;
   const edited = isEditedFromBase(eff);
   const reviewLabel = reviewSummaryLabel(eff.observations);
-  const touchTap = useTouchDoubleTap(onDrill, index, img.key);
+  const touchTap = useTouchDoubleTap(onDrill, img.key);
   const rowLabel = [
     `Filename: ${img.fileName}`,
     ...(!narrow
@@ -535,7 +534,7 @@ function GridCell({
   const eff = effectiveOf(img, draft);
   const reviewLabel = reviewSummaryLabel(eff.observations);
   const species = summarize(eff.observations) || 'untagged';
-  const touchTap = useTouchDoubleTap(onDrill, index, img.key);
+  const touchTap = useTouchDoubleTap(onDrill, img.key);
   const imageLabel = [
     `Filename: ${img.fileName}`,
     `Species: ${species}`,
