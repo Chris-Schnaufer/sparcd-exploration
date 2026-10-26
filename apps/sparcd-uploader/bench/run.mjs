@@ -9,11 +9,10 @@ const appDir = fileURLToPath(new URL('../', import.meta.url));
 const benchDir = fileURLToPath(new URL('./', import.meta.url));
 const resultsDir = path.join(benchDir, 'results');
 const containerName = `sparcd-uploader-bench-${process.pid}`;
-// The former official MinIO tags are no longer anonymously pullable from
-// Docker Hub or Quay. Bitnami Legacy remains publicly available; pin the
-// amd64 digest used by GitHub-hosted runners and allow local overrides.
+// Pin the MinIO-compatible image already exercised by the main-branch
+// performance guard, while allowing local runners to override the registry.
 const minioImage = process.env.MINIO_IMAGE
-  || 'docker.io/bitnamilegacy/minio@sha256:a340369228a43597f0540c3f5f7b76ed3324bb38c1d0ecf272f96fc7bf193753';
+  || 'docker.io/pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372';
 const minioOrigin = 'http://127.0.0.1:19000';
 const appPort = Number(process.env.BENCH_APP_PORT ?? '5316');
 const appOrigin = `http://localhost:${appPort}`;
