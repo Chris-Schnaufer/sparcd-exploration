@@ -32,6 +32,7 @@ import {
   completeDeploymentsCoordinates,
   isCoordinateFreeDeployments,
   redactCoordinateBody,
+  sameUploadCompletePublicFields,
   shouldRedactCoordinates,
 } from './redact.mjs';
 
@@ -653,16 +654,18 @@ export async function createAccessProxy(input) {
 
     // An immutable publication can succeed upstream while its response is
     // lost. On retry, the create-only PUT receives 412; treat it as success
-    // only when the protected object's exact stored bytes match this request.
-    // The browser never has to compare its original digest with the redacted
-    // digest returned by GET.
+    // when the public completion fields match. Do not use the hidden metadata
+    // digest in this decision: otherwise 200 versus 412 becomes a digest oracle.
     if (redactCoordinates && coordinateKind === 'upload-complete'
       && req.method === 'PUT' && headers.get('if-none-match') === '*'
       && signedHeaders.has('if-none-match') && upstreamRes.status === 412 && forwardedBody) {
       try {
         const existing = await upstream.get(upstreamBucket, key);
         if (existing.status === 200 && existing.etag
-          && Buffer.from(existing.text, 'utf8').equals(Buffer.from(forwardedBody))) {
+          && sameUploadCompletePublicFields(
+            existing.text,
+            Buffer.from(forwardedBody).toString('utf8'),
+          )) {
           await upstreamRes.body?.cancel().catch(() => {});
           upstreamRes = new Response(null, { status: 200, headers: { etag: existing.etag } });
         }

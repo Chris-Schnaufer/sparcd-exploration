@@ -97,8 +97,10 @@ read headers are verified as part of the caller signature but are not sent
 upstream, so raw storage validators cannot reveal whether a private byte version
 matches. The exact-data `metadataBundleSha256` in `UploadComplete.json` is also
 replaced with a keyed value. A create-only retry of `UploadComplete.json` after a
-lost response is accepted only when the proxy's internal read confirms the exact
-stored bytes match the retry body; a different body remains a 412 conflict.
+lost response is accepted when its public completion fields match the stored
+object. The hidden metadata digest is excluded from that decision, so retry
+status cannot be used to test digest guesses; a change to public fields remains
+a 412 conflict.
 
 An upload-only member may create or replace a canonical `deployments.csv` only
 when both coordinate columns are blank and the write carries a signed S3

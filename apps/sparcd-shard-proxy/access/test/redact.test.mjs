@@ -5,6 +5,7 @@ import {
   coordinateObjectKind,
   isCoordinateFreeDeployments,
   redactCoordinateBody,
+  sameUploadCompletePublicFields,
   shouldRedactCoordinates,
 } from '../redact.mjs';
 
@@ -102,5 +103,25 @@ describe('coordinate response redaction', () => {
     ));
     assert.equal(transformed.metadataBundleSha256, 'opaque-64');
     assert.equal(JSON.parse(raw).metadataBundleSha256, '1'.repeat(64));
+  });
+
+  test('UploadComplete retry matching ignores the private digest but checks public fields', () => {
+    const completion = {
+      schemaVersion: 1,
+      uploadPath: 'Collections/u/Uploads/run',
+      fileCount: 1,
+      metadataBundleSha256: 'a'.repeat(64),
+      files: [{ media_path: 'image.jpg', size: 12, sha256: 'b'.repeat(64) }],
+      completedAt: '2026-10-26T10:00:00.000Z',
+    };
+    const samePublicFields = JSON.stringify({
+      ...completion,
+      metadataBundleSha256: 'c'.repeat(64),
+    });
+    const differentPublicFields = JSON.stringify({ ...completion, fileCount: 2 });
+    assert.equal(sameUploadCompletePublicFields(JSON.stringify(completion), samePublicFields), true);
+    assert.equal(sameUploadCompletePublicFields(JSON.stringify(completion), differentPublicFields), false);
+    assert.equal(sameUploadCompletePublicFields('{}', '{}'), false);
+    assert.equal(sameUploadCompletePublicFields('{', JSON.stringify(completion)), false);
   });
 });

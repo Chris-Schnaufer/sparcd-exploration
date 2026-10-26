@@ -75,6 +75,34 @@ export function redactUploadComplete(text, opaqueValue) {
   return JSON.stringify(value);
 }
 
+/** Compare the fields a coordinate-restricted reader can see on UploadComplete.
+ * The private metadata digest must never decide a response status because that
+ * would turn a create retry into an oracle for guessed digest values.
+ */
+export function sameUploadCompletePublicFields(leftText, rightText) {
+  const comparable = (text) => {
+    const value = JSON.parse(text);
+    if (!value || typeof value !== 'object' || Array.isArray(value)
+      || typeof value.metadataBundleSha256 !== 'string') return null;
+    delete value.metadataBundleSha256;
+    const sortKeys = (item) => {
+      if (Array.isArray(item)) return item.map(sortKeys);
+      if (item && typeof item === 'object') {
+        return Object.fromEntries(Object.keys(item).sort().map((name) => [name, sortKeys(item[name])]));
+      }
+      return item;
+    };
+    return JSON.stringify(sortKeys(value));
+  };
+
+  try {
+    const left = comparable(leftText);
+    return left !== null && left === comparable(rightText);
+  } catch {
+    return false;
+  }
+}
+
 /** Refill a restricted member's coordinate-free deployments write from the
  * exact shared location registry. A row must resolve to exactly one current
  * entry by ID, name, and elevation; ambiguous or stale assignments fail shut.

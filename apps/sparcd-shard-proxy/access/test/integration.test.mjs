@@ -328,14 +328,19 @@ describe('coordinate permission redaction', () => {
     const first = await people.bob.raw('PUT', `/${BUCKET_A}/${key}`, options);
     assert.equal(first.status, 200, first.text);
 
-    // Simulate a lost successful response: the retry is create-only at S3, but
-    // the proxy verifies the raw stored bytes before converting that 412 to
-    // success. A different completion at the same key remains a conflict.
+    // Simulate a lost successful response. The restricted response hides the
+    // metadata digest, so neither exact nor incorrect digest guesses may
+    // change the retry status; only public fields participate in the check.
     const retry = await people.bob.raw('PUT', `/${BUCKET_A}/${key}`, options);
     assert.equal(retry.status, 200, retry.text);
-    const conflict = await people.bob.raw('PUT', `/${BUCKET_A}/${key}`, {
+    const digestGuess = await people.bob.raw('PUT', `/${BUCKET_A}/${key}`, {
       ...options,
       body: body.replace('b'.repeat(64), 'c'.repeat(64)),
+    });
+    assert.equal(digestGuess.status, 200, digestGuess.text);
+    const conflict = await people.bob.raw('PUT', `/${BUCKET_A}/${key}`, {
+      ...options,
+      body: body.replace('"fileCount":0', '"fileCount":1'),
     });
     assert.equal(conflict.status, 412, conflict.text);
     assert.equal((await root.get(`${NAMESPACE}${BUCKET_A}`, key)).text, body);
