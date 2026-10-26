@@ -20,8 +20,7 @@ import {
   PREFIX_A,
   PREFIX_B,
   SETTINGS_BUCKET,
-  LOCATIONS_JSON,
-  deploymentsCsv,
+  UUID,
 } from './support/data';
 import { MEDIA_COL, parseCsvRows, serializeCsvRows } from '@sparcd/camtrap';
 import { runLiveSync } from './support/flows';
@@ -39,6 +38,10 @@ Given('the connected account cannot read exact coordinates', async ({ s3 }) => {
 
 Given('the connected account can read exact coordinates', async ({ s3 }) => {
   s3.exactLocations = true;
+  // Exercise the shared-settings fallback here: this object remains redacted
+  // for non-admin users even when their collection membership grants the
+  // exactLocations permission.
+  s3.delete(BUCKET, `Collections/${UUID}/locations.json`);
 });
 
 Then(
@@ -58,7 +61,7 @@ Then('the location identity remains visible but precise coordinates and location
   await expect(page.locator('body')).toContainText('SAN15');
   const body = await page.locator('body').innerText();
   expect(body).not.toMatch(/31\.500000|-110\.200000/);
-  expect(s3.servedBody(SETTINGS_BUCKET, 'Settings/locations.json') ?? '').not.toMatch(/31\.5|-110\.2/);
+  expect(s3.servedBody(BUCKET, `Collections/${UUID}/locations.json`) ?? '').not.toMatch(/31\.5|-110\.2/);
   expect(s3.servedBody(BUCKET, `${PREFIX_A}deployments.csv`) ?? '').not.toMatch(/31\.500000|-110\.200000/);
 });
 
@@ -73,9 +76,9 @@ Then('the identification is saved', async ({ s3 }) => {
 });
 
 Then('the saved identification does not disclose precise coordinates', async ({ page, s3 }) => {
+  expect(s3.servedBody(BUCKET, `Collections/${UUID}/locations.json`) ?? '').not.toMatch(/31\.5|-110\.2/);
   expect(s3.servedBody(BUCKET, `${PREFIX_A}deployments.csv`) ?? '').not.toMatch(/31\.500000|-110\.200000/);
   expect(await page.locator('body').innerText()).not.toMatch(/31\.500000|-110\.200000/);
-});
 });
 
 Then('no location is withheld on the grounds of the species in the images', async ({ page }) => {
@@ -239,11 +242,10 @@ Then(
 Then('the exact coordinates remain available to the authorized account', async ({ s3 }) => {
   // exactLocations grants access to this collection's deployments, while the
   // shared settings registry remains coordinate-redacted for non-admin users.
-  const settingsLocations = s3.servedBody(SETTINGS_BUCKET, 'Settings/locations.json') ?? '';
-  expect(settingsLocations).not.toMatch(/31\.5|-110\.2/);
-  const deployments = s3.servedBody(BUCKET, `${PREFIX_A}deployments.csv`) ?? '';
-  expect(deployments).toMatch(/31\.500000/);
-  expect(deployments).toMatch(/-110\.200000/);
+  await expect.poll(() => s3.servedBody(SETTINGS_BUCKET, 'Settings/locations.json') ?? '').toContain('"latProperty":null');
+  await expect.poll(() => s3.servedBody(SETTINGS_BUCKET, 'Settings/locations.json') ?? '').not.toMatch(/31\.5|-110\.2/);
+  await expect.poll(() => s3.servedBody(BUCKET, `${PREFIX_A}deployments.csv`) ?? '').toMatch(/31\.500000/);
+  await expect.poll(() => s3.servedBody(BUCKET, `${PREFIX_A}deployments.csv`) ?? '').toMatch(/-110\.200000/);
 });
 
 When('an image is displayed', async ({ page }) => {

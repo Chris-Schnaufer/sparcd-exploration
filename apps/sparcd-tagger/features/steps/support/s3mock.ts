@@ -268,7 +268,12 @@ function responseBody(
   body: Buffer,
 ): { body: Buffer; text: string } {
   const text = body.toString('utf8');
-  if (s3.exactLocations) return { body, text };
+  // Match the access proxy: non-admins never get coordinates from the shared
+  // Settings registry, even when their collection membership grants
+  // exactLocations. Collection-scoped coordinate objects still honor the
+  // permission below.
+  const settingsLocations = bucket.startsWith('sparcd-settings-') && key === 'Settings/locations.json';
+  if (s3.exactLocations && !settingsLocations) return { body, text };
 
   if (key.endsWith('locations.json')) {
     try {

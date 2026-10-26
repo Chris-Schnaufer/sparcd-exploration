@@ -10,7 +10,6 @@ Feature: Identify new uploads without exposing protected coordinates
     Given the tagger is connected with credentials that can read a collection
     And the connected account cannot read exact coordinates
     And an upload is open in the tagging workspace
-    And a tagger identity has been set in Settings
     When the user identifies the focused image and syncs it
     Then the identification is saved
     And the saved identification does not disclose precise coordinates

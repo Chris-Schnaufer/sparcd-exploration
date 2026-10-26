@@ -1637,7 +1637,11 @@ def _(deployments, locations, observations_filtered, pl):
     # Each site counts once, with swapped coordinates corrected as the locations
     # cell does.
     _anchor = (
-        deployments.filter(pl.col("location_id") != "0000")
+        deployments.filter(
+            (pl.col("location_id") != "0000")
+            & pl.col("latitude").is_not_null()
+            & pl.col("longitude").is_not_null()
+        )
         .unique(["location_id", "latitude", "longitude"])
         .select(
             pl.when(pl.col("latitude").abs() > 90).then(pl.col("longitude")).otherwise(pl.col("latitude"))
@@ -1726,7 +1730,7 @@ def _(deployments, locations, observations_filtered, pl):
                 _upload_to_hex[_u] = _row["h3_id"]
 
         _obs_with_hex = observations_filtered.with_columns(
-            pl.col("upload").replace_strict(_upload_to_hex, default=None).alias("h3_id")
+            pl.col("upload").replace_strict(_upload_to_hex, default=None, return_dtype=pl.Utf8).alias("h3_id")
         ).filter(pl.col("h3_id").is_not_null())
 
         # Distinct common names, the same count as the map panel and stat card, and
