@@ -78,7 +78,8 @@ function unsupportedResponse(status: number, body: string): boolean {
   } catch {
     // Check the S3 XML response below.
   }
-  const code = body.match(/<Code>\s*(NoSuchKey|NotFound)\s*<\/Code>/i)?.[1];
+  // MinIO parses /-/whoami as bucket "-" and answers 400 InvalidBucketName.
+  const code = body.match(/<Code>\s*(NoSuchKey|NotFound|NoSuchBucket|InvalidBucketName)\s*<\/Code>/i)?.[1];
   return !!code && status >= 400;
 }
 
