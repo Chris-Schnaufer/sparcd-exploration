@@ -5,6 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   parseLocations,
+  locationIdentityKey,
   locationToDeployment,
   LocationsShapeError,
   type RawLocation,
@@ -74,6 +75,19 @@ describe('id-is-not-unique contract', () => {
     expect(skipped).toHaveLength(0);
     expect(locations[0]).toMatchObject({ id: 'SAN15', latitude: null, longitude: null });
     expect(locationToDeployment(locations[0], '8dbd9c43-5c3d-411d-8778-617d4693c69b').latitude).toBeNull();
+  });
+
+  it('keeps same-id redacted locations distinct by their visible name and elevation', () => {
+    const { locations, skipped } = parseLocations(doc([
+      raw({ idProperty: 'SAN19', nameProperty: 'North site', latProperty: null, lngProperty: null, elevationProperty: 1100 }),
+      raw({ idProperty: 'SAN19', nameProperty: 'South site', latProperty: null, lngProperty: null, elevationProperty: 1300 }),
+    ]));
+    expect(skipped).toEqual([]);
+    expect(locations).toHaveLength(2);
+    expect(locations[0].key).not.toBe(locations[1].key);
+    expect(locationIdentityKey('SAN19', 'North site', null, null, 1100)).toBe(
+      locations.find((location) => location.name === 'North site')?.key,
+    );
   });
 
   it('collapses exact duplicates (same id AND coordinates)', () => {

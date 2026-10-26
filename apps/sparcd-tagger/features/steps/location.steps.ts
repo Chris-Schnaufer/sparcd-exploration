@@ -39,20 +39,16 @@ Then(
   },
 );
 
-Then('the location identity and elevation remain visible but its precise coordinates do not', async ({ page }) => {
+Then('the location identity remains visible but precise coordinates and location editing do not', async ({ page }) => {
   await expect(uploadRow(page, 'priortagger')).toContainText(LOCATION_NAME);
   await selectCollection(page);
   await openUpload(page);
   await enterFocusView(page);
-  await page.getByRole('button', { name: 'Change location' }).click();
-  await expect(page.getByRole('heading', { name: /Change location/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Change location' })).toHaveCount(0);
+  await expect(page.locator('body')).toContainText(LOCATION_NAME);
   await expect(page.locator('body')).toContainText('SAN15');
-  await page.getByRole('button', { name: 'Select a location…' }).click();
-  await expect(page.locator('body')).toContainText('1200 m');
   const body = await page.locator('body').innerText();
   expect(body).not.toMatch(/31\.500000|-110\.200000/);
-  await page.keyboard.press('Escape');
-  await page.keyboard.press('Escape');
 });
 
 Then('no location is withheld on the grounds of the species in the images', async ({ page }) => {

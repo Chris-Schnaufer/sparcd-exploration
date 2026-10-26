@@ -61,6 +61,22 @@ export class LocationsShapeError extends Error {
 
 const ELEVATION_UNSET = -20000;
 
+/** Stable key shared by parsed registries and deployment rows. Redacted
+ * entries have no coordinates to disambiguate duplicate IDs, so retain their
+ * visible name/elevation identity instead of collapsing them to one key.
+ */
+export function locationIdentityKey(
+  id: string,
+  name: string,
+  latitude: number | null,
+  longitude: number | null,
+  elevation: number,
+): string {
+  return latitude === null || longitude === null
+    ? id + '|' + name + '|' + elevation
+    : id + '|' + latitude + ',' + longitude;
+}
+
 // Returns null when valid, or a human reason when not. Mirrors Location.java.
 function invalidReason(o: Location): string | null {
   if (!o.name) return 'empty name';
@@ -122,10 +138,13 @@ export function parseLocations(text: string): LocationsParse {
       continue;
     }
     const id = c.value.idProperty.trim();
+    const name = c.value.nameProperty.trim();
     const loc: Location = {
-      key: `${id}|${c.value.latProperty ?? ''},${c.value.lngProperty ?? ''}`,
+      key: locationIdentityKey(
+        id, name, c.value.latProperty, c.value.lngProperty, c.value.elevationProperty,
+      ),
       id,
-      name: c.value.nameProperty.trim(),
+      name,
       latitude: c.value.latProperty,
       longitude: c.value.lngProperty,
       elevation: c.value.elevationProperty,

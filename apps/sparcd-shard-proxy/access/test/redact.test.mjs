@@ -1,6 +1,12 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { coordinateObjectKind, isCoordinateFreeDeployments, redactCoordinateBody, shouldRedactCoordinates } from '../redact.mjs';
+import {
+  completeDeploymentsCoordinates,
+  coordinateObjectKind,
+  isCoordinateFreeDeployments,
+  redactCoordinateBody,
+  shouldRedactCoordinates,
+} from '../redact.mjs';
 
 describe('coordinate response redaction', () => {
   test('recognizes settings and collection location registries', () => {
@@ -8,6 +14,8 @@ describe('coordinate response redaction', () => {
     assert.equal(coordinateObjectKind('Collections/abc/locations.json'), 'locations');
     assert.equal(coordinateObjectKind('Collections/abc/Uploads/run/deployments.csv'), 'deployments');
     assert.equal(coordinateObjectKind('Collections/abc/Uploads/run/.sparcd-tagger-snapshots/user/2026-01-01/deployments.csv'), 'deployments');
+    assert.equal(coordinateObjectKind('Collections/abc/Uploads/run/.sparcd-uploader-snapshots/user/2026-01-01/deployments.csv'), 'deployments');
+    assert.equal(coordinateObjectKind('Collections/abc/Uploads/run/.sparcd-uploader-snapshots/user/2026-01-01/UploadComplete.json'), 'upload-complete');
     assert.equal(coordinateObjectKind('Collections/abc/Uploads/run/media.csv'), null);
   });
 
@@ -57,5 +65,42 @@ describe('coordinate response redaction', () => {
   test('recognizes coordinate-free deployment creates but not exact rows', () => {
     assert.equal(isCoordinateFreeDeployments('"id","l","name","",""\n'), true);
     assert.equal(isCoordinateFreeDeployments('"id","l","name","-110","32"\n'), false);
+    assert.equal(isCoordinateFreeDeployments(''), false);
+  });
+
+  test('refills coordinate-free deployment rows from one exact registry match', () => {
+    const row = Array(13).fill('');
+    row[0] = 'uuid:SAN19';
+    row[1] = 'SAN19';
+    row[2] = 'North site';
+    row[12] = '1100.000000';
+    const output = completeDeploymentsCoordinates(row.map((cell) => '"' + cell + '"').join(',') + '\n', [
+      { idProperty: 'SAN19', nameProperty: 'North site', latProperty: 31.5, lngProperty: -110.2, elevationProperty: 1100 },
+      { idProperty: 'SAN19', nameProperty: 'South site', latProperty: 32, lngProperty: -111, elevationProperty: 1300 },
+    ]);
+    assert.match(output, /"-110\.200000","31\.500000"/);
+  });
+
+  test('refuses a missing or ambiguous registry match', () => {
+    const row = Array(13).fill('');
+    row[0] = 'uuid:SAN19';
+    row[1] = 'SAN19';
+    row[2] = 'North site';
+    row[12] = '1100';
+    const body = row.map((cell) => '"' + cell + '"').join(',') + '\n';
+    const match = { idProperty: 'SAN19', nameProperty: 'North site', latProperty: 31.5, lngProperty: -110.2, elevationProperty: 1100 };
+    assert.throws(() => completeDeploymentsCoordinates(body, []), /not uniquely defined/);
+    assert.throws(() => completeDeploymentsCoordinates(body, [match, match]), /not uniquely defined/);
+  });
+
+  test('replaces the exact metadata bundle digest for restricted readers', () => {
+    const raw = JSON.stringify({ metadataBundleSha256: '1'.repeat(64), files: [] });
+    const transformed = JSON.parse(redactCoordinateBody(
+      'Collections/u/Uploads/run/UploadComplete.json',
+      raw,
+      (value) => 'opaque-' + value.length,
+    ));
+    assert.equal(transformed.metadataBundleSha256, 'opaque-64');
+    assert.equal(JSON.parse(raw).metadataBundleSha256, '1'.repeat(64));
   });
 });

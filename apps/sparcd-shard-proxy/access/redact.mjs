@@ -3,12 +3,14 @@
 // relationships, but never the precise latitude/longitude values.
 
 const LOCATION_KEYS = new Set(['Settings/locations.json']);
-const COLLECTION_LOCATIONS = /^Collections\/[^/]+\/locations\.json$/;
-const DEPLOYMENTS = /^Collections\/[^/]+\/Uploads\/[^/]+\/(?:\.sparcd-tagger-snapshots\/[^/]+\/[^/]+\/)?deployments\.csv$/;
 
 export function coordinateObjectKind(key) {
-  if (LOCATION_KEYS.has(key) || COLLECTION_LOCATIONS.test(key)) return 'locations';
-  if (DEPLOYMENTS.test(key)) return 'deployments';
+  if (LOCATION_KEYS.has(key)) return 'locations';
+  if (!key?.startsWith('Collections/')) return null;
+  const name = key.split('/').at(-1);
+  if (name === 'locations.json') return 'locations';
+  if (name === 'deployments.csv') return 'deployments';
+  if (name === 'UploadComplete.json') return 'upload-complete';
   return null;
 }
 
@@ -62,16 +64,60 @@ export function redactDeploymentsCsv(text) {
   }).join('\n') + (text.length > 0 ? '\n' : '');
 }
 
-export function redactCoordinateBody(key, text) {
+export function redactUploadComplete(text, opaqueValue) {
+  const value = JSON.parse(text);
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('UploadComplete.json is not an object');
+  }
+  if (typeof value.metadataBundleSha256 === 'string') {
+    value.metadataBundleSha256 = opaqueValue(value.metadataBundleSha256);
+  }
+  return JSON.stringify(value);
+}
+
+/** Refill a restricted member's coordinate-free deployments write from the
+ * exact shared location registry. A row must resolve to exactly one current
+ * entry by ID, name, and elevation; ambiguous or stale assignments fail shut.
+ */
+export function completeDeploymentsCoordinates(text, locations) {
+  const rows = parseCsv(text);
+  if (rows.length === 0) throw new Error('deployments.csv has no rows');
+  return rows.map((row) => {
+    if (row.length < 13 || row[3] !== '' || row[4] !== '') {
+      throw new Error('deployments.csv must omit both coordinates');
+    }
+    const locationId = row[1]?.trim();
+    const locationName = row[2]?.trim();
+    const elevation = Number(row[12]);
+    if (!locationId || !locationName || !Number.isFinite(elevation)) {
+      throw new Error('deployment does not identify a location');
+    }
+    const matches = locations.filter((entry) =>
+      entry?.idProperty === locationId
+      && entry?.nameProperty === locationName
+      && Number(entry?.elevationProperty) === elevation
+      && Number.isFinite(entry?.lngProperty)
+      && Number.isFinite(entry?.latProperty));
+    if (matches.length !== 1) throw new Error('deployment location is not uniquely defined');
+    const complete = [...row];
+    complete[3] = Number(matches[0].lngProperty).toFixed(6);
+    complete[4] = Number(matches[0].latProperty).toFixed(6);
+    return complete.map(quote).join(',');
+  }).join('\n') + '\n';
+}
+
+export function redactCoordinateBody(key, text, opaqueValue = () => null) {
   const kind = coordinateObjectKind(key);
   if (kind === 'locations') return redactLocationJson(text);
   if (kind === 'deployments') return redactDeploymentsCsv(text);
+  if (kind === 'upload-complete') return redactUploadComplete(text, opaqueValue);
   return text;
 }
 
 export function isCoordinateFreeDeployments(text) {
   try {
-    return parseCsv(text).every((row) => row.length >= 5 && row[3] === '' && row[4] === '');
+    const rows = parseCsv(text);
+    return rows.length > 0 && rows.every((row) => row.length >= 5 && row[3] === '' && row[4] === '');
   } catch {
     return false;
   }

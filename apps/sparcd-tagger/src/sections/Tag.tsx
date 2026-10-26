@@ -112,9 +112,15 @@ export function Tag() {
   const images = useTagImages(cfg, connectionId, collectionKey, uploadPrefix);
   const species = useSpecies(cfg, connectionId, collectionKey);
   const locations = useLocations(cfg, connectionId, collectionKey);
+  const canChangeLocation = !localRecord
+    && !!locations.data?.locations.some(
+      (location) => location.latitude !== null && location.longitude !== null,
+    );
   const currentDeployment = useCurrentDeployment(cfg, connectionId, collectionKey, uploadPrefix);
   const locationLabel = focusLocationLabel(currentDeployment.data);
   const captureTimeZone = currentDeployment.data
+    && currentDeployment.data.latitude !== null
+    && currentDeployment.data.longitude !== null
     ? tzlookup(currentDeployment.data.latitude, currentDeployment.data.longitude)
     : undefined;
   const collections = useCollections(cfg, connectionId);
@@ -949,7 +955,7 @@ export function Tag() {
         {/* Change location entry (issue #279) — corrects the whole upload's
             recorded camera location. Not available for a local (offline) batch,
             which has no connection to fetch the shared location registry. */}
-        {!localRecord && (
+        {canChangeLocation && (
           <button
             onClick={() => setShowChangeLocation(true)}
             className={`inline-flex items-center gap-1.5 text-[11.5px] font-mono px-2 py-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${

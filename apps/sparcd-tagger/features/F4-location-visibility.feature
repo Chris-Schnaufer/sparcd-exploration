@@ -29,7 +29,7 @@ Feature: What the tagger reveals about where images were taken
   Scenario: Precise coordinates remain hidden without coordinate permission
     Given the connected account cannot read exact coordinates
     Given a collection's uploads are listed
-    Then the location identity and elevation remain visible but its precise coordinates do not
+    Then the location identity remains visible but precise coordinates and location editing do not
 
   @F4
   Scenario: The focused image shows the location name and ID of its deployment

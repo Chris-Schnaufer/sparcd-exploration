@@ -87,6 +87,25 @@ that collection's `deployments.csv` unless the caller's membership has
 `exactLocations: true`. Names, IDs, elevation, and deployment relationships remain
 available. A missing `members.json` means no membership and therefore no collection
 access for regular users. Admin callers retain exact-coordinate access.
+
+For coordinate-restricted responses, the proxy also replaces content-derived
+ETags and `x-amz-meta-sha256` values with stable keyed opaque validators, removes
+`Content-Length` from `HEAD`, removes `Content-Range` from redacted reads, and
+sets the `Size` of protected entries to zero in object listings. Conditional
+read headers are verified as part of the caller signature but are not sent
+upstream, so raw storage validators cannot reveal whether a private byte version
+matches. The exact-data `metadataBundleSha256` in `UploadComplete.json` is also
+replaced with a keyed value.
+
+An upload-only member may create or replace a canonical `deployments.csv` only
+when both coordinate columns are blank and the write carries a signed S3
+precondition. The proxy fills coordinates from the collection's non-empty
+`locations.json`, falling back to `Settings/locations.json` only when the
+collection registry is missing or empty. A deployment row must match exactly
+one current location by ID, name, and elevation; stale or ambiguous rows are
+refused. The legacy Cloudflare Worker and Caddy passthrough recipe have no
+per-person membership model and must not be used where exact-location access
+differs between users.
 CopyObject, ListMultipartUploads, bucket create/delete, ACL, policy, versioning and
 tagging calls are 403.
 
