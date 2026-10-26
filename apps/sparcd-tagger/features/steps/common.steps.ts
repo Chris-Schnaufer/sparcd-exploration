@@ -15,6 +15,10 @@ Given('an upload is open in the tagging workspace', async ({ page }) => {
   await openWorkspace(page);
 });
 
+Given('the fresh upload is open in the tagging workspace', async ({ page }) => {
+  await openWorkspace(page, 'newuploader');
+});
+
 Given('an image is focused', async ({ page }) => {
   await focusFrame(page, 'IMG002.JPG');
 });

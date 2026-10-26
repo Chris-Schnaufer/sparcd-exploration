@@ -527,7 +527,13 @@ export async function createAccessProxy(input) {
     let forwardedHeaders = headers;
     let forwardedSignedHeaders = signedHeaders;
     let forwardedBody = body;
-    if (redactCoordinates && coordinateKind) {
+    const canonicalDeploymentWrite = /^Collections\/([^/]+)\/Uploads\/[^/]+\/deployments\.csv$/.exec(key);
+    const coordinateFreeDeploymentWrite = req.method === 'PUT'
+      && coordinateKind === 'deployments'
+      && canonicalDeploymentWrite?.[1] === collection?.uuid
+      && body
+      && isCoordinateFreeDeployments(body.toString('utf8'));
+    if ((redactCoordinates && coordinateKind) || coordinateFreeDeploymentWrite) {
       if (req.method === 'GET' || req.method === 'HEAD') {
         // These compare against upstream validators, which encode the private
         // bytes. Always fetch and return the proxy's redacted representation.

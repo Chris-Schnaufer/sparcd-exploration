@@ -19,10 +19,11 @@ import {
   LOCATION_NAME,
   PREFIX_A,
   PREFIX_B,
+  PREFIX_C,
   SETTINGS_BUCKET,
   UUID,
 } from './support/data';
-import { MEDIA_COL, parseCsvRows, serializeCsvRows } from '@sparcd/camtrap';
+import { MEDIA_COL, parseCsvRows, parseObservations, serializeCsvRows } from '@sparcd/camtrap';
 import { runLiveSync } from './support/flows';
 
 const SENSITIVITY_WORDS =
@@ -71,6 +72,12 @@ When('the user identifies the focused image and syncs it', async ({ page }) => {
   await runLiveSync(page);
 });
 
+Then('the identification is saved to the fresh upload', async ({ s3 }) => {
+  const observations = parseObservations(s3.text(BUCKET, `${PREFIX_C}observations.csv`));
+  expect(observations.some((observation) =>
+    observation.mediaId.endsWith('/IMG002.JPG') && observation.scientificName === 'Canis latrans')).toBe(true);
+});
+
 Then('the identification is saved', async ({ s3 }) => {
   expect(s3.text(BUCKET, `${PREFIX_A}observations.csv`)).toContain('Canis latrans');
 });
@@ -78,6 +85,12 @@ Then('the identification is saved', async ({ s3 }) => {
 Then('the saved identification does not disclose precise coordinates', async ({ page, s3 }) => {
   expect(s3.servedBody(BUCKET, `Collections/${UUID}/locations.json`) ?? '').not.toMatch(/31\.5|-110\.2/);
   expect(s3.servedBody(BUCKET, `${PREFIX_A}deployments.csv`) ?? '').not.toMatch(/31\.500000|-110\.200000/);
+  expect(await page.locator('body').innerText()).not.toMatch(/31\.500000|-110\.200000/);
+});
+
+Then('the saved identification does not disclose precise coordinates for the fresh upload', async ({ page, s3 }) => {
+  expect(s3.servedBody(BUCKET, `Collections/${UUID}/locations.json`) ?? '').not.toMatch(/31\.5|-110\.2/);
+  expect(s3.servedBody(BUCKET, `${PREFIX_C}deployments.csv`) ?? '').not.toMatch(/31\.500000|-110\.200000/);
   expect(await page.locator('body').innerText()).not.toMatch(/31\.500000|-110\.200000/);
 });
 
