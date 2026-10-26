@@ -74,8 +74,8 @@ beforeEach(() => {
   window.localStorage.clear();
   window.sessionStorage.clear();
   vi.stubGlobal('fetch', vi.fn(async () => new Response(
-    '<Error><Code>NoSuchKey</Code><Message>The specified key does not exist.</Message></Error>',
-    { status: 404 },
+    '<Error><Code>InvalidBucketName</Code><Message>The specified bucket is not valid.</Message></Error>',
+    { status: 400 },
   )));
   useStore.setState({
     s3Config: null,

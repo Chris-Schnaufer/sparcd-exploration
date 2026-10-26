@@ -50,7 +50,7 @@ When('the Uploader switches to Login B', async ({ app }) => {
 
 Then("Login B's identity defaults to the confirmed endpoint fallback", async ({ app }) => {
   await expect(await identityInput(app)).toHaveValue(LOGIN_B);
-  expect(app.s3.whoamiResponse.body).toContain('<Code>NoSuchKey</Code>');
+  expect(app.s3.whoamiResponse.body).toContain('<Code>InvalidBucketName</Code>');
 });
 
 When('Login B saves custom identity {string}', async ({ app }, identity: string) => {
@@ -360,7 +360,7 @@ When('the blank identity session is restored and shared', async ({ app }) => {
 });
 Then('both sessions use the confirmed Access-key fallback', async ({ app }) => {
   expect(app.s3.whoamiRequests).toBeGreaterThan(0);
-  expect(app.s3.whoamiResponse.body).toContain('<Code>NoSuchKey</Code>');
+  expect(app.s3.whoamiResponse.body).toContain('<Code>InvalidBucketName</Code>');
   const second = app.notes.identityTab as import('@playwright/test').Page;
   for (const page of [app.page, second]) {
     await page.locator('nav[aria-label="Sections"]').getByRole('button', { name: 'Settings', exact: true }).click();

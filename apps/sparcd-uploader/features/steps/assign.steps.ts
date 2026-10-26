@@ -89,7 +89,7 @@ When('the blank Assign identity field loses focus', async ({ app }) => {
 Then('Assign restores the confirmed connected account default', async ({ app }) => {
   await expect(app.page.getByPlaceholder('e.g. John Doe').first()).toHaveValue(ACCESS_KEY);
   expect(app.s3.whoamiRequests).toBeGreaterThan(0);
-  expect(app.s3.whoamiResponse.body).toContain('<Code>NoSuchKey</Code>');
+  expect(app.s3.whoamiResponse.body).toContain('<Code>InvalidBucketName</Code>');
 });
 
 // --- the collection list ---------------------------------------------------
@@ -647,5 +647,5 @@ When('the blank Describe identity field loses focus', async ({ app }) => {
 Then('Describe restores the confirmed connected account default', async ({ app }) => {
   await expect(app.page.locator('#uploaderUser')).toHaveValue(ACCESS_KEY);
   expect(app.s3.whoamiRequests).toBeGreaterThan(0);
-  expect(app.s3.whoamiResponse.body).toContain('<Code>NoSuchKey</Code>');
+  expect(app.s3.whoamiResponse.body).toContain('<Code>InvalidBucketName</Code>');
 });

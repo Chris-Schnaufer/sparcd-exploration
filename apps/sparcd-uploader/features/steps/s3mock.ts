@@ -59,8 +59,8 @@ export class S3Mock {
   lists: string[] = [];
   whoamiRequests = 0;
   whoamiResponse: { status: number; body: string; contentType: string } = {
-    status: 404,
-    body: '<?xml version="1.0"?><Error><Code>NoSuchKey</Code><Message>The specified key does not exist.</Message></Error>',
+    status: 400,
+    body: errorBody('InvalidBucketName', 'The specified bucket is not valid.'),
     contentType: 'application/xml',
   };
   whoamiDelayMs = 0;

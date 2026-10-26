@@ -357,7 +357,7 @@ Then('the uploader identity defaults to the Access key after route absence is co
   await app.page.getByText('Defaults', { exact: true }).click();
   await expect(app.page.getByPlaceholder('e.g. John Doe')).toHaveValue(ACCESS_KEY);
   expect(app.s3.whoamiRequests).toBeGreaterThan(0);
-  expect(app.s3.whoamiResponse.body).toContain('<Code>NoSuchKey</Code>');
+  expect(app.s3.whoamiResponse.body).toContain('<Code>InvalidBucketName</Code>');
 });
 
 When('a legacy session-wide uploader identity is present and the page reloads', async ({ app }) => {
