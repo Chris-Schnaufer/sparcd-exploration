@@ -1809,6 +1809,7 @@ def _(
     locations,
     map_display_mode,
     mo,
+    pl,
 ):
     # Map. Hex cells for protected display, or exact site points for precise QA
     # (points only offered on the trusted wildcats endpoint). Basemap comes from a

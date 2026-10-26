@@ -1128,14 +1128,15 @@ describe('hardening', () => {
     assert.match(res.text, /<Name>sparcd-settings-test<\/Name>/);
   });
 
-  test('a settings listing hands back each ETag as the upstream wrote it', async () => {
+  test('a restricted settings listing uses the opaque ETag and hides object size', async () => {
     const key = 'Settings/locations.json';
     const listed = await people.alice.s3().send(
       new ListObjectsV2Command({ Bucket: SETTINGS, Prefix: 'Settings/' }));
     const head = await people.alice.s3().send(new HeadObjectCommand({ Bucket: SETTINGS, Key: key }));
     const entry = listed.Contents.find((c) => c.Key === key);
-    assert.match(entry.ETag, /^"[0-9a-f]+"$/);
+    assert.match(entry.ETag, /^"spcd-[0-9a-f]{64}"$/);
     assert.equal(entry.ETag, head.ETag);
+    assert.equal(entry.Size, 0);
   });
 
   // 8 — presigned writes
