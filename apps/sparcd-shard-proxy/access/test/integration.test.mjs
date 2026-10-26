@@ -4,6 +4,7 @@
 
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import {
   ListBucketsCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand,
   DeleteObjectCommand, ListObjectsV2Command, HeadBucketCommand,
@@ -193,6 +194,48 @@ describe('coordinate permission redaction', () => {
     }
   });
 
+  test('a restricted XML HEAD hides private hashes and checksums', async () => {
+    const key = `Collections/${UUID_A}/locations.json`;
+    const upstreamBucket = `${NAMESPACE}${BUCKET_A}`;
+    const original = await root.get(upstreamBucket, key);
+    const body = JSON.stringify([
+      { idProperty: 'HEAD-1', nameProperty: 'Head site', latProperty: 32.1, lngProperty: -111.1, elevationProperty: 1000 },
+    ]);
+    const digest = createHash('sha256').update(body).digest();
+    const digestHex = digest.toString('hex');
+    try {
+      await people.alice.s3().send(new PutObjectCommand({
+        Bucket: BUCKET_A,
+        Key: key,
+        Body: body,
+        ContentType: 'application/xml',
+        ChecksumSHA256: digest.toString('base64'),
+        Metadata: { sha256: digestHex },
+      }));
+      const exact = await people.alice.s3().send(new HeadObjectCommand({
+        Bucket: BUCKET_A, Key: key, ChecksumMode: 'ENABLED',
+      }));
+      assert.ok(exact.ChecksumSHA256);
+
+      const restricted = await people.bob.raw('HEAD', `/${BUCKET_A}/${key}`, {
+        headers: { 'x-amz-checksum-mode': 'ENABLED' },
+      });
+      assert.equal(restricted.status, 200);
+      assert.notEqual(restricted.headers.get('etag'), exact.ETag);
+      assert.notEqual(restricted.headers.get('x-amz-meta-sha256'), digestHex);
+      assert.equal(restricted.headers.get('x-amz-checksum-sha256'), null);
+      assert.equal(restricted.headers.get('content-length'), null);
+
+      const restrictedGet = await people.bob.raw('GET', `/${BUCKET_A}/${key}`, {
+        headers: { 'x-amz-checksum-mode': 'ENABLED' },
+      });
+      assert.equal(restrictedGet.status, 200);
+      assert.equal(restrictedGet.headers.get('x-amz-checksum-sha256'), null);
+    } finally {
+      await root.put(upstreamBucket, key, original.text);
+    }
+  });
+
   test('exactLocations membership receives precise collection locations and deployments', async () => {
     const locations = await body('alice', BUCKET_A, `Collections/${UUID_A}/locations.json`);
     assert.match(locations, /"latProperty":32.1/);
@@ -269,6 +312,33 @@ describe('coordinate permission redaction', () => {
     assert.equal(exact.metadataBundleSha256, rawDigest);
     assert.notEqual(restrictedResponse.headers.get('x-amz-meta-sha256'), rawDigest);
     assert.equal(exactResponse.headers.get('x-amz-meta-sha256'), rawDigest);
+  });
+
+  test('a restricted uploader can safely retry an identical UploadComplete create', async () => {
+    const key = `Collections/${UUID_A}/Uploads/2026.10.26.00.00.00_retry/UploadComplete.json`;
+    const body = JSON.stringify({
+      schemaVersion: 1,
+      uploadPath: key.slice(0, key.lastIndexOf('/')),
+      fileCount: 0,
+      metadataBundleSha256: 'b'.repeat(64),
+      files: [],
+      completedAt: '2026-10-26T10:00:00.000Z',
+    });
+    const options = { body, headers: { 'content-type': 'application/json', 'if-none-match': '*' } };
+    const first = await people.bob.raw('PUT', `/${BUCKET_A}/${key}`, options);
+    assert.equal(first.status, 200, first.text);
+
+    // Simulate a lost successful response: the retry is create-only at S3, but
+    // the proxy verifies the raw stored bytes before converting that 412 to
+    // success. A different completion at the same key remains a conflict.
+    const retry = await people.bob.raw('PUT', `/${BUCKET_A}/${key}`, options);
+    assert.equal(retry.status, 200, retry.text);
+    const conflict = await people.bob.raw('PUT', `/${BUCKET_A}/${key}`, {
+      ...options,
+      body: body.replace('b'.repeat(64), 'c'.repeat(64)),
+    });
+    assert.equal(conflict.status, 412, conflict.text);
+    assert.equal((await root.get(`${NAMESPACE}${BUCKET_A}`, key)).text, body);
   });
 
   test('restricted deployment writes refill exact coordinates from the current registry', async () => {

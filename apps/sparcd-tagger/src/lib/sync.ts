@@ -838,18 +838,21 @@ export async function runRestore(params: RestoreParams, io: SyncIO): Promise<Syn
       restoreBodies.deployments = current.deployments.text;
     }
   }
-  // Legacy snapshots predate deployments.csv. They are safe only when every
-  // deployment referenced by their media/observations still exists in the
-  // current deployment file; otherwise restoring them would create dangling
-  // references after a later location correction.
-  if (restoreBodies.deployments === undefined && current.deployments.text) {
+  // If the current deployment file will be retained (because the snapshot is
+  // legacy or its coordinate-redacted copy was replaced with the exact current
+  // file), every restored media/observation reference must still exist there.
+  // Otherwise the restore would leave dangling deployment IDs after a later
+  // location correction.
+  const currentDeploymentsWillRemain = current.deployments.text !== undefined
+    && (restoreBodies.deployments === undefined || restoreBodies.deployments === current.deployments.text);
+  if (currentDeploymentsWillRemain) {
     const available = new Set(parseDeployments(current.deployments.text).map((deployment) => deployment.deploymentId));
     const referenced = new Set([
       ...parseCsvRows(restoreBodies.media ?? '').map((row) => row[MEDIA_COL.deploymentId]),
       ...parseCsvRows(restoreBodies.observations ?? '').map((row) => row[OBS_COL.deploymentId]),
     ].filter(Boolean));
     if ([...referenced].some((deploymentId) => !available.has(deploymentId))) {
-      throw new Error('This snapshot predates deployment records and cannot be restored safely after a location change.');
+      throw new Error('This snapshot references a deployment that is no longer present and cannot be restored safely after a location change.');
     }
   }
   const writes = await prepareWrites(current, restoreBodies);

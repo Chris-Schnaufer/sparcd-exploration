@@ -73,7 +73,7 @@ try {
     '-e', 'MINIO_ROOT_USER=minioadmin',
     '-e', 'MINIO_ROOT_PASSWORD=minioadmin',
     '-e', `MINIO_API_CORS_ALLOW_ORIGIN=${appOrigin}`,
-    'docker.io/pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372', 'server', '/data',
+    minioImage, 'server', '/data',
   ]);
   containerStarted = true;
   await waitFor(`${minioOrigin}/minio/health/ready`, 'MinIO');

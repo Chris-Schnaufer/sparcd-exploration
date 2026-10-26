@@ -602,6 +602,13 @@ export async function createAccessProxy(input) {
         forwardedHeaders = new Headers(headers);
         forwardedSignedHeaders = new Set(signedHeaders);
         const rawMatch = headers.get('if-match');
+        const rawNoneMatch = headers.get('if-none-match');
+        if (rawNoneMatch && (rawNoneMatch !== '*' || !signedHeaders.has('if-none-match') || rawMatch)) {
+          return denied('the upload completion precondition is invalid');
+        }
+        if (!rawMatch && !rawNoneMatch) {
+          return denied('the upload completion precondition is required');
+        }
         if (rawMatch) {
           if (!signedHeaders.has('if-match') || headers.has('if-none-match')) {
             return denied('the upload completion precondition is invalid');
@@ -639,10 +646,30 @@ export async function createAccessProxy(input) {
     // path we are about to sign is not the path we just authorised.
     const rest = url.pathname.slice(1 + rawSegment.length);
     const upstreamPath = `/${upstreamBucket}${rest}`;
-    const upstreamRes = await proxyFetch(
+    let upstreamRes = await proxyFetch(
       req, url, forwardedHeaders, forwardedSignedHeaders, forwardedBody, upstreamPath,
     );
     if (upstreamRes === null) return denied('request path is not canonical');
+
+    // An immutable publication can succeed upstream while its response is
+    // lost. On retry, the create-only PUT receives 412; treat it as success
+    // only when the protected object's exact stored bytes match this request.
+    // The browser never has to compare its original digest with the redacted
+    // digest returned by GET.
+    if (redactCoordinates && coordinateKind === 'upload-complete'
+      && req.method === 'PUT' && headers.get('if-none-match') === '*'
+      && signedHeaders.has('if-none-match') && upstreamRes.status === 412 && forwardedBody) {
+      try {
+        const existing = await upstream.get(upstreamBucket, key);
+        if (existing.status === 200 && existing.etag
+          && Buffer.from(existing.text, 'utf8').equals(Buffer.from(forwardedBody))) {
+          await upstreamRes.body?.cancel().catch(() => {});
+          upstreamRes = new Response(null, { status: 200, headers: { etag: existing.etag } });
+        }
+      } catch (err) {
+        log('could not verify an existing upload completion retry', err);
+      }
+    }
 
     if (upstreamRes.ok || upstreamRes.status === 206) {
       const kind = eventKind(op, { isSettings, key });
@@ -681,6 +708,7 @@ export async function createAccessProxy(input) {
         );
         return sendText(res, upstreamRes, redacted, origin, {
           opaqueEtag: true, opaqueMetadataHash: true, dropContentRange: true,
+          dropChecksums: true,
         });
       } catch (err) {
         log('coordinate redaction failed', err);
@@ -699,13 +727,19 @@ export async function createAccessProxy(input) {
         log('upstream response named a bucket outside the caller\'s namespace', new Error(clientBucket));
         return respondXml(res, 502, 'InternalError', 'the upstream answer was unusable', origin);
       }
-      return sendText(res, upstreamRes, xml, origin);
+      return sendText(res, upstreamRes, xml, origin, {
+        opaqueEtag: redactCoordinates && !!coordinateKind,
+        opaqueMetadataHash: redactCoordinates && !!coordinateKind,
+        dropContentLength: req.method === 'HEAD' && redactCoordinates && !!coordinateKind,
+        dropChecksums: redactCoordinates && !!coordinateKind,
+      });
     }
     return streamBack(res, upstreamRes, origin, {
       opaqueEtag: redactCoordinates && !!coordinateKind,
       opaqueMetadataHash: redactCoordinates && !!coordinateKind,
       dropContentLength: req.method === 'HEAD' && redactCoordinates && !!coordinateKind,
       dropContentRange: req.method === 'GET' && redactCoordinates && !!coordinateKind,
+      dropChecksums: redactCoordinates && !!coordinateKind,
     });
   }
 
@@ -869,10 +903,13 @@ export async function createAccessProxy(input) {
   function sendText(res, upstreamRes, text, origin, {
     opaqueEtag: hideEtag = false,
     opaqueMetadataHash: hideMetadataHash = false,
+    dropContentLength = false,
     dropContentRange = false,
+    dropChecksums = false,
   } = {}) {
     const headers = baseHeaders(upstreamRes, origin);
-    headers['content-length'] = Buffer.byteLength(text);
+    if (dropContentLength) delete headers['content-length'];
+    else headers['content-length'] = Buffer.byteLength(text);
     if (hideEtag && upstreamRes.headers.get('etag')) {
       headers.etag = opaqueEtag(upstreamRes.headers.get('etag'));
     }
@@ -880,6 +917,11 @@ export async function createAccessProxy(input) {
       headers['x-amz-meta-sha256'] = opaqueValue('object-sha256', headers['x-amz-meta-sha256']);
     }
     if (dropContentRange) delete headers['content-range'];
+    if (dropChecksums) {
+      for (const name of Object.keys(headers)) {
+        if (name.startsWith('x-amz-checksum-')) delete headers[name];
+      }
+    }
     res.writeHead(upstreamRes.status, headers);
     res.end(text);
   }
@@ -889,6 +931,7 @@ export async function createAccessProxy(input) {
     opaqueMetadataHash: hideMetadataHash = false,
     dropContentLength = false,
     dropContentRange = false,
+    dropChecksums = false,
   } = {}) {
     const headers = baseHeaders(upstreamRes, origin);
     if (hideEtag && upstreamRes.headers.get('etag')) {
@@ -899,6 +942,11 @@ export async function createAccessProxy(input) {
     }
     if (dropContentLength) delete headers['content-length'];
     if (dropContentRange) delete headers['content-range'];
+    if (dropChecksums) {
+      for (const name of Object.keys(headers)) {
+        if (name.startsWith('x-amz-checksum-')) delete headers[name];
+      }
+    }
     const length = upstreamRes.headers.get('content-length');
     if (length && !dropContentLength) headers['content-length'] = length;
     res.writeHead(upstreamRes.status, headers);

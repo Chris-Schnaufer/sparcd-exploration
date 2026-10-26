@@ -91,11 +91,14 @@ access for regular users. Admin callers retain exact-coordinate access.
 For coordinate-restricted responses, the proxy also replaces content-derived
 ETags and `x-amz-meta-sha256` values with stable keyed opaque validators, removes
 `Content-Length` from `HEAD`, removes `Content-Range` from redacted reads, and
-sets the `Size` of protected entries to zero in object listings. Conditional
+removes `x-amz-checksum-*` response headers. It sets the `Size` of protected
+entries to zero in object listings. Conditional
 read headers are verified as part of the caller signature but are not sent
 upstream, so raw storage validators cannot reveal whether a private byte version
 matches. The exact-data `metadataBundleSha256` in `UploadComplete.json` is also
-replaced with a keyed value.
+replaced with a keyed value. A create-only retry of `UploadComplete.json` after a
+lost response is accepted only when the proxy's internal read confirms the exact
+stored bytes match the retry body; a different body remains a 412 conflict.
 
 An upload-only member may create or replace a canonical `deployments.csv` only
 when both coordinate columns are blank and the write carries a signed S3
@@ -127,8 +130,8 @@ object-lock family, `x-amz-trailer` — is refused.
 
 `If-Match` is forwarded with the quotes stripped from each tag, after the caller's
 signature has been verified against what they sent, because Ceph RGW answers 412 to a
-quoted tag on a PUT even when it is current; ETags come back to the client exactly as
-the upstream wrote them.
+quoted tag on a PUT even when it is current. Unrestricted ETags come back to the client
+as the upstream wrote them; validators for coordinate-protected objects are opaque.
 
 Object keys are refused when a decoded segment is `.` or `..`, or the key contains a
 backslash or a NUL, or starts with `/`.
