@@ -148,6 +148,10 @@ export function Overview({
   useEffect(() => {
     const row = rowOfImage[focus];
     if (row != null) virtualizer.scrollToIndex(row, { align: 'auto' });
+    // Once the active image moves off the tile that still holds DOM focus, that
+    // tile must stop owning Enter / Space / Shift+Space.
+    const held = document.activeElement;
+    if (held instanceof HTMLElement && held.dataset.imageIndex && Number(held.dataset.imageIndex) !== focus) held.blur();
   }, [focus, rowOfImage, virtualizer]);
 
   return (
@@ -249,9 +253,10 @@ function useTouchDoubleTap(
   imageKey: string,
 ) {
   const activeTap = useRef<{ pointerId: number; x: number; y: number; at: number } | null>(null);
-  const suppressClick = useRef(false);
+  const pendingDrill = useRef(false);
 
   const onPointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
+    pendingDrill.current = false;
     if (event.pointerType !== 'touch') {
       previousTouchTap = null;
       activeTap.current = null;
@@ -300,8 +305,7 @@ function useTouchDoubleTap(
       Math.hypot(event.clientX - prior.x, event.clientY - prior.y) <= TOUCH_DOUBLE_TAP_DISTANCE;
     if (onDrill && closeInTime && closeInSpace) {
       previousTouchTap = null;
-      suppressClick.current = true;
-      onDrill(index, event.currentTarget);
+      pendingDrill.current = true;
       return;
     }
     previousTouchTap = { x: event.clientX, y: event.clientY, at: now, imageKey };
@@ -313,13 +317,13 @@ function useTouchDoubleTap(
     previousTouchTap = null;
   };
 
-  const shouldSuppressClick = () => {
-    if (!suppressClick.current) return false;
-    suppressClick.current = false;
-    return true;
+  const takeDoubleTap = () => {
+    const pending = pendingDrill.current;
+    pendingDrill.current = false;
+    return pending;
   };
 
-  return { onPointerDown, onPointerMove, onPointerUp, onPointerCancel, shouldSuppressClick };
+  return { onPointerDown, onPointerMove, onPointerUp, onPointerCancel, takeDoubleTap };
 }
 
 function BurstBand({
@@ -409,7 +413,10 @@ function ListCell({
       onPointerUp={touchTap.onPointerUp}
       onPointerCancel={touchTap.onPointerCancel}
       onClick={(e) => {
-        if (touchTap.shouldSuppressClick()) return;
+        if (touchTap.takeDoubleTap()) {
+          onDrill?.(index, e.currentTarget);
+          return;
+        }
         if (e.detail > 1 && !e.shiftKey && !e.metaKey && !e.ctrlKey) return;
         if (onDrill && e.detail === 0) {
           onDrill(index, e.currentTarget);
@@ -546,7 +553,10 @@ function GridCell({
       onPointerUp={touchTap.onPointerUp}
       onPointerCancel={touchTap.onPointerCancel}
       onClick={(e) => {
-        if (touchTap.shouldSuppressClick()) return;
+        if (touchTap.takeDoubleTap()) {
+          onDrill?.(index, e.currentTarget);
+          return;
+        }
         if (e.detail > 1 && !e.shiftKey && !e.metaKey && !e.ctrlKey) return;
         if (onDrill && e.detail === 0) {
           onDrill(index, e.currentTarget);

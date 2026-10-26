@@ -263,6 +263,7 @@ export function Tag() {
       const findBy = (attribute: string, value: string | null) =>
         value ? buttons.find((button) => button.getAttribute(attribute) === value) : undefined;
       const replacement =
+        findBy('data-image-index', String(focus)) ??
         findBy('data-image-name', identity.imageName) ??
         findBy('title', identity.title) ??
         findBy('aria-label', identity.label) ??
