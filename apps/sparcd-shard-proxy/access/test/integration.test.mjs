@@ -177,6 +177,22 @@ describe('coordinate permission redaction', () => {
     assert.match(collection, /"lngProperty":null/);
   });
 
+  test('a misleading XML content type cannot bypass coordinate redaction', async () => {
+    const bucket = `${NAMESPACE}${BUCKET_A}`;
+    const key = `Collections/${UUID_A}/locations.json`;
+    const original = (await root.get(bucket, key)).text;
+    try {
+      await root.put(bucket, key, original, { contentType: 'application/xml' });
+      const response = await people.bob.raw('GET', `/${BUCKET_A}/${key}`);
+      assert.equal(response.status, 200);
+      assert.match(response.text, /"latProperty":null/);
+      assert.match(response.text, /"lngProperty":null/);
+      assert.doesNotMatch(response.text, /"latProperty":32\.1|"lngProperty":-111\.1/);
+    } finally {
+      await root.put(bucket, key, original);
+    }
+  });
+
   test('exactLocations membership receives precise collection locations and deployments', async () => {
     const locations = await body('alice', BUCKET_A, `Collections/${UUID_A}/locations.json`);
     assert.match(locations, /"latProperty":32.1/);

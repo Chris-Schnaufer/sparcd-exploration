@@ -669,19 +669,9 @@ export async function createAccessProxy(input) {
       return sendText(res, upstreamRes, safe, origin);
     }
 
-    // XML is the only body that can name a bucket, and it is always small.
-    // Everything else — object bytes above all — streams straight through.
-    const type = upstreamRes.headers.get('content-type') ?? '';
-    if (type.includes('xml')) {
-      const xml = scrubErrorDetail(
-        rewriteBucketName(await upstreamRes.text(), upstreamBucket, clientBucket),
-      );
-      if (leaksNamespace(xml, config.namespace)) {
-        log('upstream response named a bucket outside the caller\'s namespace', new Error(clientBucket));
-        return respondXml(res, 502, 'InternalError', 'the upstream answer was unusable', origin);
-      }
-      return sendText(res, upstreamRes, xml, origin);
-    }
+    // Coordinate protection is selected by object key, before content type.
+    // A mislabeled protected object must not escape through the generic XML
+    // response path below.
     if (redactCoordinates && req.method === 'GET' && upstreamRes.ok) {
       try {
         const redacted = redactCoordinateBody(
@@ -696,6 +686,20 @@ export async function createAccessProxy(input) {
         log('coordinate redaction failed', err);
         return respondXml(res, 502, 'InternalError', 'the upstream answer was unusable', origin);
       }
+    }
+
+    // XML is the only body that can name a bucket, and it is always small.
+    // Everything else — object bytes above all — streams straight through.
+    const type = upstreamRes.headers.get('content-type') ?? '';
+    if (type.includes('xml')) {
+      const xml = scrubErrorDetail(
+        rewriteBucketName(await upstreamRes.text(), upstreamBucket, clientBucket),
+      );
+      if (leaksNamespace(xml, config.namespace)) {
+        log('upstream response named a bucket outside the caller\'s namespace', new Error(clientBucket));
+        return respondXml(res, 502, 'InternalError', 'the upstream answer was unusable', origin);
+      }
+      return sendText(res, upstreamRes, xml, origin);
     }
     return streamBack(res, upstreamRes, origin, {
       opaqueEtag: redactCoordinates && !!coordinateKind,
