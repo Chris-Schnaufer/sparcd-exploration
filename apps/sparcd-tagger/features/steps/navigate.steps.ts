@@ -1,3 +1,4 @@
+import { openFindFilter } from './support/world';
 import type { Page } from '@playwright/test';
 import {
   Given,
@@ -95,13 +96,13 @@ Then('the focused tile announces its species and review status', async ({ page }
 });
 
 When('the image filter limits Tag state to Questionable only', async ({ page }) => {
-  if (!(await page.getByLabel('Tag state').isVisible())) await page.getByRole('button', { name: 'Filter' }).click();
-  await page.getByLabel('Tag state').selectOption('questionable');
+  await openFindFilter(page);
+  await page.getByRole('group', { name: 'Tag state', exact: true }).getByRole('radio', { name: 'Questionable only', exact: true }).check();
 });
 
 When('the image filter limits Tag state to Not questionable only', async ({ page }) => {
-  if (!(await page.getByLabel('Tag state').isVisible())) await page.getByRole('button', { name: 'Filter' }).click();
-  await page.getByLabel('Tag state').selectOption('not-questionable');
+  await openFindFilter(page);
+  await page.getByRole('group', { name: 'Tag state', exact: true }).getByRole('radio', { name: 'Not questionable only', exact: true }).check();
 });
 
 Then('IMG001.JPG is absent from the Overview', async ({ page }) => {
@@ -109,9 +110,9 @@ Then('IMG001.JPG is absent from the Overview', async ({ page }) => {
 });
 
 When('the image filter is opened and searches species for {string}', async ({ page }, query: string) => {
-  await page.getByRole('button', { name: 'Filter' }).click();
+  await openFindFilter(page);
   await page.getByLabel('Match text').fill(query);
-  await page.getByLabel('Search in').selectOption('species');
+  await page.getByRole('group', { name: 'Search in', exact: true }).getByRole('radio', { name: 'Species', exact: true }).check();
 });
 
 Then('only the matching image remains in the Overview', async ({ page }) => {
@@ -123,12 +124,12 @@ Then('only the matching image remains in the Overview', async ({ page }) => {
 When(
   'the image filter limits capture time to 2024-01-11 06 and untagged images',
   async ({ page }) => {
-    await page.getByRole('button', { name: 'Filter' }).click();
+    await openFindFilter(page);
     await page.getByLabel('Capture year').fill('2024');
     await page.getByLabel('Capture month').fill('01');
     await page.getByLabel('Capture day').fill('11');
     await page.getByLabel('Capture hour').fill('06');
-    await page.getByLabel('Tag state').selectOption('untagged');
+    await page.getByRole('group', { name: 'Tag state', exact: true }).getByRole('radio', { name: 'Untagged only', exact: true }).check();
   },
 );
 
@@ -145,7 +146,9 @@ Then('no hidden images remain selected for bulk actions', async ({ page }) => {
 
 When('the only visible image is tagged and drops out of the filter', async ({ page }) => {
   await expect.poll(() => tileOrder(page)).toEqual(['IMG005.JPG']);
-  await page.keyboard.press('Escape');
+  // Filtering reconciles image focus after rendering the remaining tiles.
+  await expect(focusedTile(page)).toHaveAttribute('title', 'IMG005.JPG');
+  await page.getByRole('button', { name: 'Find & filter', exact: true }).focus();
   await page.keyboard.press('d');
   await expect(page.getByText('No images match these filters.', { exact: true })).toBeVisible();
 });
@@ -157,8 +160,8 @@ When('another species key is pressed with nothing left visible', async ({ page }
 Then(
   'the image that dropped out carries only the species given while it was visible',
   async ({ page }) => {
-    await page.getByRole('button', { name: 'Filter' }).click();
-    await page.getByLabel('Tag state').selectOption('all');
+    await openFindFilter(page);
+    await page.getByRole('group', { name: 'Tag state', exact: true }).getByRole('radio', { name: 'All images', exact: true }).check();
     await expect(gridCell(page, 'IMG005.JPG')).toContainText('Mule Deer');
     // A tile carrying a second species reads "Mule Deer +1".
     await expect(gridCell(page, 'IMG005.JPG')).not.toContainText('+1');
@@ -167,13 +170,13 @@ Then(
 
 When('the image filter searches all fields for {string}', async ({ page }, query: string) => {
   if (!(await page.getByLabel('Match text').isVisible()))
-    await page.getByRole('button', { name: 'Filter' }).click();
+    await openFindFilter(page);
   await page.getByLabel('Match text').fill(query);
 });
 
 When('the image filter searches filenames only for {string}', async ({ page }, query: string) => {
   await page.getByLabel('Match text').fill(query);
-  await page.getByLabel('Search in').selectOption('filename');
+  await page.getByRole('group', { name: 'Search in', exact: true }).getByRole('radio', { name: 'Filename', exact: true }).check();
 });
 
 Then('only {string} remains in the Overview', async ({ page }, fileName: string) => {
@@ -185,18 +188,19 @@ Then('no images match the image filter', async ({ page }) => {
 });
 
 When('the image filter is opened and dismissed with Escape', async ({ page }) => {
-  await page.getByRole('button', { name: 'Filter', exact: true }).click();
+  await page.setViewportSize({ width: 600, height: 860 });
+  await openFindFilter(page);
   await page.getByLabel('Match text').press('Escape');
 });
 
 Then('the Filter control is collapsed and focused', async ({ page }) => {
-  const control = page.getByRole('button', { name: 'Filter', exact: true });
+  const control = page.getByRole('button', { name: 'Find & filter', exact: true });
   await expect(control).toHaveAttribute('aria-expanded', 'false');
   await expect(control).toBeFocused();
 });
 
 When('the image filter limits Focus to the 2024-01-11 06 images', async ({ page }) => {
-  await page.getByRole('button', { name: 'Filter', exact: true }).click();
+  await openFindFilter(page);
   await page.getByLabel('Capture year').fill('2024');
   await page.getByLabel('Capture month').fill('01');
   await page.getByLabel('Capture day').fill('11');
@@ -217,15 +221,15 @@ Then('IMG005.JPG is the focused filtered image', async ({ page }) => {
 // --- Filtered-Overview navigation skips hidden raw-list neighbors (#442) ----
 
 When('the image filter limits the Overview to untagged images', async ({ page }) => {
-  await page.getByRole('button', { name: 'Filter', exact: true }).click();
-  await page.getByLabel('Tag state').selectOption('untagged');
-  await page.keyboard.press('Escape');
+  await openFindFilter(page);
+  await page.getByRole('group', { name: 'Tag state', exact: true }).getByRole('radio', { name: 'Untagged only', exact: true }).check();
+  await page.getByRole('button', { name: 'Find & filter', exact: true }).focus();
 });
 
 When('the image filter limits the Overview to tagged images', async ({ page }) => {
-  await page.getByRole('button', { name: 'Filter', exact: true }).click();
-  await page.getByLabel('Tag state').selectOption('tagged');
-  await page.keyboard.press('Escape');
+  await openFindFilter(page);
+  await page.getByRole('group', { name: 'Tag state', exact: true }).getByRole('radio', { name: 'Tagged only', exact: true }).check();
+  await page.getByRole('button', { name: 'Find & filter', exact: true }).focus();
 });
 
 // Untagged matches, in list order: IMG002, IMG005, VID001 — IMG003/IMG004
@@ -255,11 +259,11 @@ Then('the next matching image is focused, skipping the one the filter hides', as
 
 When('the image filter is opened in a narrow viewport', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 860 });
-  await page.getByRole('button', { name: 'Filter', exact: true }).click();
+  await openFindFilter(page);
 });
 
 Then('the image filter panel stays within the viewport', async ({ page }) => {
-  const panel = page.getByRole('region', { name: 'Image filters' });
+  const panel = page.getByRole('dialog', { name: 'Find & filter', exact: true });
   await expect(panel).toBeVisible();
   const box = await panel.boundingBox();
   expect(box).not.toBeNull();
@@ -655,6 +659,7 @@ Then('the same image remains focused, at its new position', async ({ page, scrat
 // --- Find by file name ------------------------------------------------------
 
 When('part of a file name is typed into the image search', async ({ page }) => {
+  await openFindFilter(page);
   await imageSearch(page).fill('IMG00');
 });
 
@@ -904,11 +909,14 @@ Then(
 Then(
   'pressing Enter in the image search moves to the next match instead of tagging',
   async ({ page }) => {
+    await openFindFilter(page);
     await imageSearch(page).fill('IMG00');
     await expect(page.getByText('1/5')).toBeVisible();
     const dirtyBefore = await page.getByText(/unsaved · discard/).textContent();
     await imageSearch(page).press('Enter');
     await expect(page.getByText('2/5')).toBeVisible();
+    await imageSearch(page).press('Shift+Enter');
+    await expect(page.getByText('1/5')).toBeVisible();
     await expect(page.getByText(/unsaved · discard/)).toHaveText(dirtyBefore!);
   },
 );
@@ -1090,10 +1098,10 @@ Then('the identified image has disappeared from the filtered Overview', async ({
   await expect(gridCell(page, 'IMG002.JPG')).toHaveCount(0);
 });
 When('the image filter excludes the video', async ({ page }) => {
-  await page.locator('button[aria-controls="image-filter-panel"]').click();
+  await openFindFilter(page);
   await page.getByLabel('Match text').fill('IMG');
-  await page.getByLabel('Search in').selectOption('filename');
-  await page.keyboard.press('Escape');
+  await page.getByRole('group', { name: 'Search in', exact: true }).getByRole('radio', { name: 'Filename', exact: true }).check();
+  await page.getByRole('button', { name: 'Find & filter', exact: true }).focus();
   await expect.poll(() => tileOrder(page)).toEqual(['IMG002.JPG', 'IMG005.JPG']);
 });
 When('the final image match is opened in {string}', async ({ page }, view: string) => {
@@ -1131,9 +1139,9 @@ Then('the earlier matching image is reachable in {string}', async ({ page }, vie
 });
 
 When('the filter is narrowed to the earlier matching image', async ({ page }) => {
-  await page.locator('button[aria-controls="image-filter-panel"]').click();
+  await openFindFilter(page);
   await page.getByLabel('Match text').fill('IMG002');
-  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Find & filter', exact: true }).focus();
 });
 
 When('both image matches are selected with the earlier match focused', async ({ page }) => {

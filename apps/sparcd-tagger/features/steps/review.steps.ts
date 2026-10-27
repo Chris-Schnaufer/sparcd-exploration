@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import { parseObservations, parseMedia, parseCsvRows, serializeCsvRows, OBS_COL } from '@sparcd/camtrap';
+import { openFindFilter } from './support/world';
 import {
   Given,
   When,
@@ -493,18 +494,17 @@ Then('Clear Species is absent and no image has a new draft', async ({ page }) =>
 });
 
 When('the selection is filtered to IMG003.JPG and cleared in {string}', async ({ page }, view: string) => {
-  await page.getByRole('button', { name: 'Filter', exact: true }).click();
+  await openFindFilter(page);
   await page.getByLabel('Match text').fill('IMG003.JPG');
-  await page.getByLabel('Search in').selectOption('filename');
+  await page.getByRole('group', { name: 'Search in', exact: true }).getByRole('radio', { name: 'Filename', exact: true }).check();
   await page.keyboard.press('Escape');
   await expect(gridCell(page, 'IMG001.JPG')).toHaveCount(0);
   if (view === 'focus') await enterFocusView(page);
   await expect(focusClearSpecies(page)).toHaveAccessibleDescription('Remove all species from this selected image');
   await focusClearSpecies(page).click();
   await closeClearFocus(page);
-  await page.getByRole('button', { name: /^Filter/ }).click();
-  await page.getByRole('region', { name: 'Image filters' }).getByRole('button', { name: 'Clear', exact: true }).click();
-  await page.keyboard.press('Escape');
+  await openFindFilter(page);
+  await page.locator('#image-filter-panel').getByRole('button', { name: 'Close', exact: true }).click();
 });
 
 Then('the hidden selected images keep their original species', async ({ page }) => {
