@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { When, Then, expect, enterFocusView, focusFrame, openFindFilter, openUpload, sectionTab } from './support/world';
+import { When, Then, expect, enterFocusView, focusFrame, openFindFilter, openUpload, overviewImage, sectionTab } from './support/world';
 
 const viewer = (page: Page) => page.getByRole('dialog', { name: 'Focus image viewer' });
 const progress = (page: Page) => viewer(page).getByRole('progressbar', { name: 'Image position' });
@@ -39,7 +39,7 @@ When('Focus is closed with Escape after position coverage', async ({ page }) => 
 Then('the Focus position bar is gone and the opener is focused', async ({ page }) => {
   await expect(viewer(page)).toHaveCount(0);
   await expect(progress(page)).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Focus', exact: true })).toBeFocused();
+  await expect(overviewImage(page, 'IMG001.JPG')).toBeFocused();
 });
 
 Then('the focused media is the final video', async ({ page }) => {
@@ -85,7 +85,7 @@ When('Focus opens with an all-matching image filter', async ({ page }) => {
 When('Focus opens after sorting video first', async ({ page }) => {
   await page.getByRole('button', { name: /^Date/ }).click();
   await focusFrame(page, 'VID001.MP4');
-  await page.getByRole('button', { name: 'Focus', exact: true }).click();
+  await enterFocusView(page);
   await expect(viewer(page).locator('video')).toBeVisible();
 });
 When('Focus opens with a single-image filter', async ({ page }) => {

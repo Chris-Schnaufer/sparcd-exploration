@@ -1,4 +1,4 @@
-import { When, Then, expect, openFindFilter, gridCell, selectedTiles, focusedTile, sectionTab, openUpload } from './support/world';
+import { When, Then, expect, openFindFilter, gridCell, overviewImage, selectedTiles, focusedTile, sectionTab, openUpload } from './support/world';
 
 const panel = (page: import('@playwright/test').Page) => page.locator('#image-filter-panel');
 const find = (page: import('@playwright/test').Page) => page.getByLabel('Find image', { exact: true });
@@ -127,7 +127,7 @@ Then('the overlay traps focus and only explicit dismissal clears values', async 
   await expect(panel(page).getByRole('button', { name: 'Reset filter', exact: true })).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(close).toBeFocused();
-  await page.getByRole('button', { name: 'Focus', exact: true }).evaluate((node: HTMLElement) => node.focus());
+  await overviewImage(page, 'IMG001.JPG').evaluate((node: HTMLElement) => node.focus());
   await expect(close).toBeFocused();
   await page.mouse.click(1, 1);
   await expect(panel(page)).toBeVisible();
@@ -142,7 +142,7 @@ Then('the overlay traps focus and only explicit dismissal clears values', async 
 Then('Focus excludes the rail and returning closes it without clearing values', async ({ page }) => {
   await find(page).fill('IMG004');
   await page.getByLabel('Match text').fill('IMG');
-  await page.getByRole('button', { name: 'Focus', exact: true }).click();
+  await overviewImage(page, 'IMG004.JPG').dblclick();
   await expect(panel(page)).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Find & filter', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Close Focus', exact: true }).click();

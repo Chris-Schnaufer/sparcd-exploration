@@ -1,5 +1,5 @@
 import type { Page, Locator } from '@playwright/test';
-import { Given, When, Then, expect, gridCell, listRow, focusFrame, openWorkspace, ENDPOINT } from './support/world';
+import { Given, When, Then, expect, gridCell, listRow, focusFrame, enterFocusView, openWorkspace, ENDPOINT } from './support/world';
 import { runLiveSync } from './support/flows';
 import { BUCKET, PREFIX_A } from './support/data';
 import { installS3Mock } from './support/s3mock';
@@ -108,7 +108,7 @@ Then('an image without species shares its expert badge through sync fresh sessio
     const sibling = await context.newPage(); await installS3Mock(sibling, s3); await openWorkspace(sibling);
     await focusFrame(sibling, 'IMG002.JPG'); await expect(badge(gridCell(sibling, 'IMG002.JPG'))).toBeVisible();
     await expect(toggle(sibling)).toHaveAttribute('aria-pressed', 'true');
-    await sibling.getByRole('button', { name: 'Focus', exact: true }).click();
+    await enterFocusView(sibling);
     await expect(badge(focus(sibling))).toBeVisible(); await expect(check(focus(sibling))).toHaveCount(0);
     await toggle(sibling).click(); await expect(badge(focus(sibling))).toHaveCount(0);
     await expect(toggle(sibling)).toHaveAttribute('aria-pressed', 'false'); await runLiveSync(sibling);
@@ -137,7 +137,7 @@ Then('touching an expert badge leaves the expert toggle state unchanged', async 
     const b = (await badge(tile).boundingBox())!;
     await page.touchscreen.tap(b.x + b.width / 2, b.y + b.height / 2);
     await expect(tile).toHaveAttribute('aria-current', 'true'); await expect(toggle(page)).toHaveAttribute('aria-pressed', 'true');
-    await tile.getByRole('button', { name: 'Open in focus view', exact: true }).tap();
+    await page.touchscreen.tap(b.x + b.width / 2, b.y + b.height / 2);
     await expect(badge(focus(page))).toBeVisible(); await toggle(page).tap(); await expect(badge(focus(page))).toHaveCount(0);
     await expect(toggle(page)).toHaveAttribute('aria-pressed', 'false');
   } finally { await context.close(); }

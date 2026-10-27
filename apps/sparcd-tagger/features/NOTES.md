@@ -21,12 +21,17 @@ that map to an agreed story carry its ID; the rest carry `@unmapped`.
 | `need-expert-badge.feature` | Transparent goldenrod Need expert badges, coexistence with classification, shared status through fresh sessions, clearing, targeting, touch, and fullscreen exclusion (#555) | `@unmapped` |
 | `classification-checkmark.feature` | Classification checkmark appearance and placement in Grid/List/Focus; Ghost/Test, removal, sync/reload, letterboxing, themes, touch and fullscreen exclusion (#554) | `@unmapped` |
 | `navigate-and-select-images.feature` | Keyboard navigation, sort, find, selection, bursts, cheatsheet | `@unmapped` |
+| `overview-focus-entry.feature` | Issue #553: remove mode toggles; enter Focus from grid/list using mouse, touch, keyboard, and semantic activation while preserving selection and opener focus | `@unmapped` |
 | `local-drafts-and-recovery.feature` | Local drafts, unsaved counts, History recovery, discard | `@unmapped` |
 | `sync-identifications-to-the-collection.feature` | Preview, dry-run gate, conflict, snapshot, conditional write, resume | `@H2` `@H3` + `@unmapped` |
 | `restore-a-previous-snapshot.feature` | Snapshot listing and restore (supports the M2 constraint) | `@unmapped` |
 | `correct-capture-times.feature` | Whole-upload and selection time correction; direct single-image selection in grid/list and narrow touch controls, deselection, timestamp eligibility, and filtered targets (#521) | `@unmapped` |
 | `F4-location-visibility.feature` | What the tool actually reveals about camera locations | `@F4` |
 | `local-batch.feature` | Tagging a batch the Uploader handed over, with no connection | `@A1` `@unmapped` |
+
+Issue #553 semantic activation is automated as a native button click with
+`detail: 0` and an accessible role/name assertion. No physical screen reader or
+mobile assistive-technology session was run.
 
 ## Coverage against the agreed stories
 

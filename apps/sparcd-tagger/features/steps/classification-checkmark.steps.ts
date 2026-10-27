@@ -170,7 +170,7 @@ Then('touch input passes through classification checkmarks', async ({ browser, s
     const tile = gridCell(page, 'IMG003.JPG'); const b = (await check(tile).boundingBox())!;
     await page.touchscreen.tap(b.x + b.width / 2, b.y + b.height / 2);
     await expect(tile).toHaveAttribute('aria-current', 'true');
-    await tile.getByRole('button', { name: 'Open in focus view', exact: true }).tap();
+    await page.touchscreen.tap(b.x + b.width / 2, b.y + b.height / 2);
     await expect(check(focus(page))).toBeVisible();
   } finally { await context.close(); }
 });
