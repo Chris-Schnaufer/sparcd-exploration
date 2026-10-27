@@ -32,6 +32,30 @@ Feature: Assign species to images in an upload
     Then the species list is headed "Available species"
 
   @H2
+  Scenario: The species list's info control explains how to use it, and dismisses normally
+    Given an image is focused
+    And a species keyboard shortcut is configured
+    When the species list's info control is used
+    Then a popup explains how to use the species list
+    And clicking inside the popup does not dismiss it
+    And the popup blocks species and navigation shortcuts
+    And it can be dismissed with Escape, its close control, or a click outside
+
+  @H2
+  Scenario Outline: Species help keeps Focus keyboard ownership and returns focus
+    Given an image is focused
+    And a species keyboard shortcut is configured
+    And the help is opened from Focus at width <width>
+    Then the help owns focus and blocks Focus shortcuts
+    When help is dismissed back to Focus
+    Then the help trigger regains focus without closing Focus
+
+    Examples:
+      | width |
+      | 1440  |
+      | 390   |
+
+  @H2
   Scenario: Species Add controls stay aligned when rows have different key controls
     Given an image is focused
     Then the Add controls align in Overview, Focus and narrow layouts

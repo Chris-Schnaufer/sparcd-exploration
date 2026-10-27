@@ -306,6 +306,8 @@ export function Tag() {
   const [capturingFor, setCapturingFor] = useState<string | null>(null);
   const [pendingKeyConflict, setPendingKeyConflict] = useState<PendingKeyConflict | null>(null);
   const [recent, setRecent] = useState<string[]>([]);
+  const [showSpeciesHelp, setShowSpeciesHelp] = useState(false);
+  const speciesHelpOpenRef = useRef(false);
   const [showCheatsheet, setShowCheatsheet] = useState(false);
   const [showSync, setShowSync] = useState(false);
   const [showSnapshots, setShowSnapshots] = useState(false);
@@ -328,6 +330,14 @@ export function Tag() {
   const openLoupe = (sp: Species) => {
     modalOpenRef.current = true;
     setZoomSpecies(sp);
+  };
+  const openSpeciesHelp = () => {
+    speciesHelpOpenRef.current = true;
+    setShowSpeciesHelp(true);
+  };
+  const closeSpeciesHelp = () => {
+    speciesHelpOpenRef.current = false;
+    setShowSpeciesHelp(false);
   };
   const closeLoupe = () => {
     modalOpenRef.current = false;
@@ -868,6 +878,8 @@ export function Tag() {
     closeFocus,
     isModalOpen: () =>
       modalOpenRef.current ||
+      speciesHelpOpenRef.current ||
+      showSpeciesHelp ||
       showDiscard ||
       showSync ||
       showSnapshots ||
@@ -1452,6 +1464,9 @@ export function Tag() {
     const canDetag = detagTargets.length > 0;
     return {
       species: speciesList,
+      showHelp: showSpeciesHelp,
+      onHelpOpen: openSpeciesHelp,
+      onHelpClose: closeSpeciesHelp,
       speciesLoading: !localRecord && species.isLoading,
       speciesLoadError: !localRecord && species.isError,
       onRetrySpecies: async () => !(await species.refetch()).isError,
