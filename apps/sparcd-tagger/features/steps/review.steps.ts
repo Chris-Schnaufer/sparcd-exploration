@@ -8,6 +8,7 @@ import {
   openWorkspace,
   focusFrame,
   gridCell,
+  selectedTiles,
   listRow,
   speciesApply,
   sectionTab,
@@ -302,7 +303,10 @@ Given('a mixed selection with focus {string} the selection in {string}', async (
 });
 Given('a tagged image is focused without a selection in {string}', async ({ page }, view: string) => {
   await gridCell(page, 'IMG001.JPG').click();
-  await gridCell(page, 'IMG001.JPG').click({ modifiers: ['ControlOrMeta'] });
+  // Escape clears selection on every platform while retaining image focus.
+  await page.keyboard.press('Escape');
+  await expect(selectedTiles(page)).toHaveCount(0);
+  await expect(gridCell(page, 'IMG001.JPG')).toHaveAttribute('aria-current', 'true');
   if (view === 'focus') await enterFocusView(page);
   await expect(focusClearSpecies(page)).toHaveAccessibleDescription('Remove all species from this image');
 });
