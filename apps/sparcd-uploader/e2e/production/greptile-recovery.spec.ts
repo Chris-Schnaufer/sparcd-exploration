@@ -137,15 +137,13 @@ for (const source of ['saved handle', 'newly selected handle']) test(`recovery p
   await page.getByRole('button', { name: 'Tag species before upload', exact: true }).click();
   await page.waitForURL(/\/tagger\/\?batch=/);
   await expect(page.getByText('Showing saved thumbnails.', { exact: false })).toHaveCount(0);
-  await page.locator('button[title="SOURCE.JPG"]').click();
-  await page.getByRole('button', { name: 'Focus', exact: true }).click();
+  await page.locator('button[title="SOURCE.JPG"]').dblclick();
   const focus = page.getByRole('dialog', { name: 'Focus image viewer' });
   const img = focus.getByRole('img', { name: 'SOURCE.JPG', exact: true });
   await expect(img).toBeVisible();
   await expect.poll(() => img.evaluate(async node => (await (await fetch((node as HTMLImageElement).src)).arrayBuffer()).byteLength)).toBe(image.bytes!.length);
   await focus.getByRole('button', { name: 'Close Focus', exact: true }).click();
-  await page.locator('button[title="CLIP.MP4"]').click();
-  await page.getByRole('button', { name: 'Focus', exact: true }).click();
+  await page.locator('button[title="CLIP.MP4"]').dblclick();
   const player = focus.locator('video'); await expect(player).toBeVisible();
   await player.evaluate(async node => { node.muted = true; await node.play(); });
   await expect.poll(() => player.evaluate(node => node.currentTime)).toBeGreaterThan(0);
