@@ -26,7 +26,7 @@ export function ImageStatusBadges({
           role="img"
           aria-label="Has species — one or more species, or an explicit no-species classification"
           title="Has species — one or more species, or an explicit no-species classification"
-          className={`inline-flex items-center justify-center shrink-0 text-ok ${badgeSize} ${inline ? '' : 'absolute top-1 left-1'}`}
+          className={`inline-flex items-center justify-center shrink-0 text-ok ${badgeSize} ${inline ? '' : 'absolute top-1 left-[var(--focus-status-badge-edge-inset,0.25rem)]'}`}
         >
           <svg aria-hidden viewBox="0 0 32 32" fill="none" className="w-full h-full" strokeLinecap="round" strokeLinejoin="round">
             <path d="m6 16 7 7L26 8" stroke="#172018" strokeWidth="9" />
@@ -41,7 +41,7 @@ export function ImageStatusBadges({
           role="img"
           aria-label="Needs expert opinion"
           title="Needs expert opinion"
-          className={`inline-flex items-center justify-center shrink-0 text-[#b8860b] dark:text-[#e7b84a] ${badgeSize} ${inline ? '' : 'absolute top-1 right-[var(--expert-badge-inset,0.25rem)]'}`}
+          className={`inline-flex items-center justify-center shrink-0 text-[#b8860b] dark:text-[#e7b84a] ${badgeSize} ${inline ? '' : 'absolute top-1 right-[var(--focus-status-badge-edge-inset,0.25rem)]'}`}
         >
           <svg aria-hidden viewBox="0 0 32 32" fill="none" className="w-full h-full" strokeLinecap="round" strokeLinejoin="round">
             {[

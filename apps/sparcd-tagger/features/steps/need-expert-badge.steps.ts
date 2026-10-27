@@ -62,16 +62,19 @@ Then('clicking the expert badge selects and opens the image without toggling it'
   await expect(page.getByRole('dialog', { name: 'Focus image viewer' })).toBeVisible();
   await expect(toggle(page)).toHaveAttribute('aria-pressed', 'true');
 });
-Then('the regular Focus expert badge stays clear of viewer controls', async ({ page }) => {
+Then('the regular Focus status badges stay clear of viewer controls', async ({ page }) => {
   const mark = badge(focus(page)); await goldenrod(mark);
-  const b = (await mark.boundingBox())!;
-  expect(b.width).toBeLessThanOrEqual(56);
+  const marks = [mark, check(focus(page))];
   const image = (await focus(page).locator('img').boundingBox())!;
-  expect(b.width * b.height / (image.width * image.height)).toBeLessThan(0.04);
-  for (const controlName of [/^Adjust/, /^Previous image$/, /^Next image$/, /^Zoom in$/, /^Zoom out$/, /^Open fullscreen$/]) {
-    const control = page.getByRole('button', { name: controlName }); if (!await control.count()) continue;
-    const c = (await control.boundingBox())!;
-    expect(b.x < c.x + c.width && b.x + b.width > c.x && b.y < c.y + c.height && b.y + b.height > c.y).toBe(false);
+  for (const item of marks) {
+    const b = (await item.boundingBox())!;
+    expect(b.width).toBeLessThanOrEqual(56);
+    expect(b.width * b.height / (image.width * image.height)).toBeLessThan(0.04);
+    for (const controlName of [/^Adjust/, /^Previous image$/, /^Next image$/, /^Zoom in$/, /^Zoom out$/, /^Open fullscreen$/]) {
+      const control = page.getByRole('button', { name: controlName }); if (!await control.count()) continue;
+      const c = (await control.boundingBox())!;
+      expect(b.x < c.x + c.width && b.x + b.width > c.x && b.y < c.y + c.height && b.y + b.height > c.y).toBe(false);
+    }
   }
   await expect(toggle(page)).toBeVisible();
   await page.screenshot({ path: `/tmp/555-focus-${page.viewportSize()!.width}-${await page.locator('html').getAttribute('class')}.png` });

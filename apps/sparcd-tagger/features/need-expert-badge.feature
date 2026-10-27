@@ -9,7 +9,7 @@ Feature: Need expert badges show shared image status
     When the expert toggle marks the focused image
     Then a goldenrod circled question mark occupies the upper right of its grid image
     And clicking the expert badge selects and opens the image without toggling it
-    And the regular Focus expert badge stays clear of viewer controls
+    And the regular Focus status badges stay clear of viewer controls
     And the expert badge is absent from image-only fullscreen
     And expert badges follow filenames and classification badges in List
     Examples:
@@ -32,7 +32,7 @@ Feature: Need expert badges show shared image status
     Given the checkmark image is <width> by <height> at viewport width <viewport>
     When the expert toggle marks the focused image
     Then the expert badge stays in the fitted image upper right area
-    And the regular Focus expert badge stays clear of viewer controls
+    And the regular Focus status badges stay clear of viewer controls
     Examples:
       | width | height | viewport |
       | 600   | 1000   | 1440     |
