@@ -3,6 +3,7 @@ import Fuse from 'fuse.js';
 import type { Species } from '../lib/species';
 import type { AppliedTag } from '../lib/drafts';
 import { encodeSpeciesDrag, SPECIES_DRAG_TYPE } from '../lib/speciesDrag';
+import { SpeciesHelp } from './SpeciesHelp';
 
 // The species selector. Persistent, scrollable, browsable — not only a
 // type-to-filter popover — because volunteers scan to recognize a species.
@@ -12,6 +13,9 @@ import { encodeSpeciesDrag, SPECIES_DRAG_TYPE } from '../lib/speciesDrag';
 
 export type SpeciesPanelProps = {
   species: Species[];
+  showHelp: boolean;
+  onHelpOpen: () => void;
+  onHelpClose: () => void;
   speciesLoading?: boolean;
   speciesLoadError?: boolean;
   onRetrySpecies?: () => Promise<boolean>;
@@ -26,6 +30,7 @@ export type SpeciesPanelProps = {
   onClearKey: (scientificName: string) => void;
   keysUnsaved: boolean; // the last key-settings write to localStorage failed
   recent: string[]; // scientificNames, most-recent first
+  sortByRecent: boolean; // off → always alphabetical by common name; on → recent float to top
   appliedSet: Set<string>; // scientificNames applied on the focused image (✓ + add-only NO-OP)
   hasFocus: boolean; // an image is focused
   selectionCount: number; // >0 → applying a species hits the whole selection
@@ -62,8 +67,14 @@ export function SpeciesPanel(props: SpeciesPanelProps) {
   );
 
   const ordered = useMemo(() => {
-    const base = filter.trim() ? fuse.search(filter.trim()).map((r) => r.item) : species;
-    if (!props.recent.length) return base;
+    // An active search ranks by text relevance regardless of the setting below
+    // — overriding what someone's actively typing to find with alphabetical
+    // order would fight the search, not help it.
+    if (filter.trim()) return fuse.search(filter.trim()).map((r) => r.item);
+    const base = props.sortByRecent
+      ? species
+      : [...species].sort((a, b) => a.commonName.localeCompare(b.commonName));
+    if (!props.sortByRecent || !props.recent.length) return base;
     const rank = new Map(props.recent.map((s, i) => [s, i]));
     // Stable float: recents to the top in recency order, everything else as-is.
     return [...base].sort((a, b) => {
@@ -71,7 +82,7 @@ export function SpeciesPanel(props: SpeciesPanelProps) {
       const rb = rank.has(b.scientificName) ? rank.get(b.scientificName)! : Infinity;
       return ra - rb;
     });
-  }, [species, filter, fuse, props.recent]);
+  }, [species, filter, fuse, props.recent, props.sortByRecent]);
 
   const trimmed = filter.trim();
   const exact = species.some(
@@ -103,8 +114,20 @@ export function SpeciesPanel(props: SpeciesPanelProps) {
         />
         {props.headerSlot}
         {props.hasFocus && (
-          <p className="text-[11px] font-body tracking-[0.12em] uppercase text-inkSoft">Available species</p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[11px] font-body tracking-[0.12em] uppercase text-inkSoft">Available species</p>
+            <button
+              type="button"
+              onClick={props.onHelpOpen}
+              className="shrink-0 min-w-11 min-h-11 md:min-w-5 md:min-h-5 grid place-items-center text-[13px] text-inkSoft hover:text-ink focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+              title="About the species list"
+              aria-label="About the species list"
+            >
+              ⓘ
+            </button>
+          </div>
         )}
+        {props.showHelp && <SpeciesHelp onClose={props.onHelpClose} />}
       </div>
 
       {(props.speciesLoadError || retrying) && (
@@ -198,9 +221,11 @@ function Row(p: RowProps) {
       }
     >
       {/* Loupe: a sibling of the apply button (never nested — button-in-button is
-          invalid and would fire apply), overlaid on the thumbnail's top-left and
-          revealed on row hover/focus. stopPropagation keeps clicking it from
-          applying the species. */}
+          invalid and would fire apply), overlaid over the whole thumbnail.
+          Invisible — no icon or background — so hovering anywhere on the
+          thumbnail just shows the native "Enlarge reference" tooltip instead
+          of a separate overlay control. stopPropagation keeps clicking it
+          from applying the species. */}
       {p.iconUrl && p.onZoom && (
         <button
           type="button"
@@ -209,12 +234,10 @@ function Row(p: RowProps) {
             e.preventDefault();
             p.onZoom!();
           }}
-          className="absolute top-2 left-3 min-w-11 min-h-11 md:min-w-0 md:min-h-0 md:w-4 md:h-4 grid place-items-center bg-ink/55 text-paper text-[10px] font-mono opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 focus:opacity-100 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+          className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 cursor-zoom-in focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
           title="Enlarge reference"
           aria-label={`Enlarge ${p.common} reference image`}
-        >
-          ⊕
-        </button>
+        />
       )}
       <button
         onClick={p.onSelect ?? p.onApply}
@@ -246,25 +269,14 @@ function Row(p: RowProps) {
         )}
       </button>
 
-      {/* Actions sit before the key badge so the badge stays anchored to the
-          right edge — the hover-only buttons reserve space even when hidden, so
-          ordering them last would shove the badge left and break alignment. */}
+      {/* Keep the Add button and key badge in fixed trailing slots. The optional
+          key controls can grow to their left without shifting the Add button
+          from row to row. */}
       <div className="flex items-center gap-1.5 shrink-0">
         {p.capturing ? (
           <span className="text-[11px] font-mono text-accent animate-pulse">press a key…</span>
         ) : (
           <>
-            {p.onSelect && (
-              <button
-                onClick={p.onApply}
-                disabled={p.disabled}
-                className="inline-flex items-center justify-center min-w-11 min-h-11 md:min-w-7 md:min-h-7 text-base font-mono text-accent hover:bg-paperHover disabled:text-inkMute disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
-                title={p.applied ? `${p.common} already applied` : `Apply ${p.common}`}
-                aria-label={p.applied ? `${p.common} already applied` : `Apply ${p.common}`}
-              >
-                +
-              </button>
-            )}
             {p.onStartCapture && (
               <button
                 onClick={p.onStartCapture}
@@ -284,18 +296,31 @@ function Row(p: RowProps) {
                 ✕
               </button>
             )}
-            {p.badge && (
-              <kbd
-                className={`px-1.5 h-5 min-w-5 grid place-items-center border text-[11px] font-mono uppercase ${
-                  p.badgeConflict
-                    ? 'border-inkMute text-inkMute line-through'
-                    : 'border-ink text-ink'
-                }`}
-                title={p.badgeConflict ?? undefined}
+            {p.onSelect && (
+              <button
+                onClick={p.onApply}
+                disabled={p.disabled}
+                className="inline-flex w-11 h-11 md:w-7 md:h-7 shrink-0 items-center justify-center text-base font-mono text-accent hover:bg-paperHover disabled:text-inkMute disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+                title={p.applied ? `${p.common} already applied` : `Apply ${p.common}`}
+                aria-label={p.applied ? `${p.common} already applied` : `Apply ${p.common}`}
               >
-                {p.badge}
-              </kbd>
+                +
+              </button>
             )}
+            <span className="inline-flex w-8 shrink-0 justify-center">
+              {p.badge && (
+                <kbd
+                  className={`px-1.5 h-5 min-w-5 grid place-items-center border text-[11px] font-mono uppercase ${
+                    p.badgeConflict
+                      ? 'border-inkMute text-inkMute line-through'
+                      : 'border-ink text-ink'
+                  }`}
+                  title={p.badgeConflict ?? undefined}
+                >
+                  {p.badge}
+                </kbd>
+              )}
+            </span>
             {p.badge && p.badgeConflict && <span className="sr-only">{p.badgeConflict}</span>}
           </>
         )}

@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { When, Then, expect, enterFocusView, focusFrame, openUpload, overviewImage, sectionTab } from './support/world';
+import { When, Then, expect, enterFocusView, focusFrame, openFindFilter, openUpload, overviewImage, sectionTab } from './support/world';
 
 const viewer = (page: Page) => page.getByRole('dialog', { name: 'Focus image viewer' });
 const progress = (page: Page) => viewer(page).getByRole('progressbar', { name: 'Image position' });
@@ -58,12 +58,11 @@ Then('the Focus next control is absent at the boundary', async ({ page }) => {
 });
 
 When('Focus opens with a two-image date filter', async ({ page }) => {
-  await page.getByRole('button', { name: 'Filter', exact: true }).click();
+  await openFindFilter(page);
   await page.getByLabel('Capture year').fill('2024');
   await page.getByLabel('Capture month').fill('01');
   await page.getByLabel('Capture day').fill('11');
   await page.getByLabel('Capture hour').fill('06');
-  await page.keyboard.press('Escape');
   await enterFocusView(page);
 });
 When('Focus advances one filtered image', async ({ page }) => {
@@ -72,16 +71,14 @@ When('Focus advances one filtered image', async ({ page }) => {
 });
 When('the image filter is cleared after closing Focus', async ({ page }) => {
   await closeFocus(page);
-  await page.getByRole('button', { name: /^Filter/ }).click();
-  for (const field of ['Capture year', 'Capture month', 'Capture day', 'Capture hour']) await page.getByLabel(field).fill('');
-  await page.keyboard.press('Escape');
+  await openFindFilter(page);
+  await page.locator('#image-filter-panel').getByRole('button', { name: 'Close', exact: true }).click();
   await enterFocusView(page);
 });
 
 When('Focus opens with an all-matching image filter', async ({ page }) => {
-  await page.getByRole('button', { name: 'Filter', exact: true }).click();
-  await page.getByLabel('Search in').selectOption('filename');
-  await page.keyboard.press('Escape');
+  await openFindFilter(page);
+  await page.getByRole('group', { name: 'Search in', exact: true }).getByRole('radio', { name: 'Filename', exact: true }).check();
   await enterFocusView(page);
 });
 
@@ -93,9 +90,8 @@ When('Focus opens after sorting video first', async ({ page }) => {
 });
 When('Focus opens with a single-image filter', async ({ page }) => {
   await closeFocus(page);
-  await page.getByRole('button', { name: 'Filter', exact: true }).click();
+  await openFindFilter(page);
   await page.getByLabel('Match text').fill('IMG003');
-  await page.keyboard.press('Escape');
   await enterFocusView(page);
 });
 
@@ -152,9 +148,8 @@ When('the second upload is opened for position coverage', async ({ page }) => {
   await enterFocusView(page);
 });
 When('the image filter has no matches for position coverage', async ({ page }) => {
-  await page.getByRole('button', { name: 'Filter', exact: true }).click();
+  await openFindFilter(page);
   await page.getByLabel('Match text').fill('NO-MATCH-538');
-  await page.keyboard.press('Escape');
 });
 Then('the empty-results state has no position bar', async ({ page }) => {
   await expect(page.getByRole('status').filter({ hasText: 'No images match these filters.' })).toHaveText('No images match these filters.');

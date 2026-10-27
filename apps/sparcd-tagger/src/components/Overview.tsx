@@ -2,10 +2,11 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { correctedTimestamp } from '@sparcd/camtrap';
 import { Thumb } from './Thumb';
+import { ImageStatusBadges } from './ImageStatusBadges';
 import { useDraftStore } from '../lib/drafts';
 import { useStore } from '../store';
 import { formatDateTime, formatTime, type TimeFormat } from '../lib/formatting';
-import { effectiveOf, isEditedFromBase, isGhostObs, reviewSummary } from '../lib/effective';
+import { effectiveOf, hasSpecies, isEditedFromBase, isGhostObs, reviewSummary } from '../lib/effective';
 import { isRangeFullySelected } from '../lib/selection';
 import type { Burst, BurstGrouping } from '../lib/bursts';
 import { isVideoImage, type TagImage } from '../lib/workspace';
@@ -51,7 +52,7 @@ type OverviewProps = {
   onPick: (i: number, mods: PickMods) => void;
   onSelectBurst: (start: number) => void;
   /** Drill one image into the Focus view (Overview mode only; omit for the strip). */
-  onDrill?: (i: number) => void;
+  onDrill?: (i: number, opener?: HTMLElement) => void;
   /** A spatial drop affects this image only, regardless of selection. */
   onDropSpecies?: (i: number, tag: AppliedTag) => void;
   timeZone?: string;
@@ -391,6 +392,10 @@ function ListCell({
   const edited = isEditedFromBase(eff);
   const reviewLabel = reviewSummaryLabel(eff.observations);
   const touchTap = useTouchDoubleTap(onDrill, img.key);
+  const statusLabels = [
+    ...(hasSpecies(eff) ? ['Has species — one or more species, or an explicit no-species classification'] : []),
+    ...(eff.questionable ? ['Needs expert opinion'] : []),
+  ];
   const rowLabel = [
     `Filename: ${img.fileName}`,
     ...(!narrow
@@ -399,7 +404,7 @@ function ListCell({
     `Species: ${species}`,
     ...(reviewLabel ? [`Review status: ${reviewLabel}`] : []),
     ...(edited ? ['Unsaved edit'] : []),
-    ...(eff.questionable ? ['Questionable'] : []),
+    ...statusLabels,
   ].join('; ');
   return (
     <button
@@ -435,7 +440,7 @@ function ListCell({
             : 'border-l-transparent hover:bg-panelHover'
       }`}
     >
-      <span className="w-12 shrink-0">
+      <span data-testid="image-thumbnail" className="relative w-12 shrink-0">
         <Thumb
           objectKey={img.key}
           alt={img.fileName}
@@ -445,10 +450,13 @@ function ListCell({
       <span
         data-column="filename"
         aria-label={`Filename: ${img.fileName}`}
-        className="min-w-0 flex-1 font-mono text-[12px] text-inkSoft truncate"
         title={img.fileName}
+        className="min-w-0 flex-1 flex items-center gap-1"
       >
-        {img.fileName}
+        <span className="min-w-0 font-mono text-[12px] text-inkSoft truncate">
+          {img.fileName}
+        </span>
+        <ImageStatusBadges hasSpecies={hasSpecies(eff)} questionable={eff.questionable} presentation="list" ariaHidden />
       </span>
       {!narrow && (
         <span
@@ -495,18 +503,13 @@ function ListCell({
           {reviewLabel}
         </span>
       )}
-      <span data-column="markers" className="shrink-0 flex flex-col items-center gap-0.5 w-4">
+      <span data-column="markers" className="shrink-0 flex items-center gap-1">
         {edited && (
           <span
             className="w-1.5 h-1.5 rounded-full bg-accent"
             title="unsaved edit"
             aria-label="Unsaved edit"
           />
-        )}
-        {eff.questionable && (
-          <span className="text-[11px] text-warn" title="questionable" aria-label="Questionable">
-            ?
-          </span>
         )}
       </span>
     </button>
@@ -532,14 +535,20 @@ function GridCell({
 }) {
   const draft = useDraftStore((s) => s.drafts[img.key]);
   const eff = effectiveOf(img, draft);
+  const isVideo = isVideoImage(img);
   const reviewLabel = reviewSummaryLabel(eff.observations);
   const species = summarize(eff.observations) || 'untagged';
   const touchTap = useTouchDoubleTap(onDrill, img.key);
-  const imageLabel = [
+  const statusLabels = [
+    ...(hasSpecies(eff) ? ['Has species — one or more species, or an explicit no-species classification'] : []),
+    ...(eff.questionable ? ['Needs expert opinion'] : []),
+  ];
+  const tileLabel = [
     `Filename: ${img.fileName}`,
+    `Media type: ${isVideo ? 'video' : 'image'}`,
     `Species: ${species}`,
     ...(reviewLabel ? [`Review status: ${reviewLabel}`] : []),
-    ...(eff.questionable ? ['Questionable'] : []),
+    ...statusLabels,
   ].join('; ');
   return (
     <button
@@ -566,7 +575,7 @@ function GridCell({
       onDoubleClick={onDrill ? (e) => plainDrill(e, onDrill, index) : undefined}
       aria-current={active ? 'true' : undefined}
       aria-pressed={selected}
-      aria-label={imageLabel}
+      aria-label={tileLabel}
       title={img.fileName}
       className={`group relative flex flex-col text-left border p-1 touch-manipulation ${
         selected
@@ -576,26 +585,24 @@ function GridCell({
             : 'border-rule hover:bg-panelHover'
       } focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent -outline-offset-2`}
     >
-      <span className="relative block flex-1 min-h-0">
+      <span data-testid="grid-image" className="relative block flex-1 min-h-0">
         <Thumb
           objectKey={img.key}
           alt={img.fileName}
-          isVideo={isVideoImage(img)}
+          isVideo={isVideo}
         />
-        {isVideoImage(img) && (
-          <span className="absolute top-1 left-1 bg-paperHover border border-rule text-inkSoft font-mono text-[10px] px-1 leading-tight">
+        {isVideo && (
+          <span className="absolute bottom-1 left-1 bg-paperHover border border-rule text-inkSoft font-mono text-[10px] px-1 leading-tight">
             VIDEO
           </span>
         )}
+        <span className="pointer-events-none absolute top-0 left-0 w-full aspect-[4/3]">
+          <ImageStatusBadges hasSpecies={hasSpecies(eff)} questionable={eff.questionable} ariaHidden />
+        </span>
       </span>
       <span className="mt-1 flex items-center gap-1">
         {isEditedFromBase(eff) && (
           <span className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" title="unsaved edit" />
-        )}
-        {eff.questionable && (
-          <span className="text-[11px] text-warn shrink-0" title="questionable">
-            ?
-          </span>
         )}
         <span className="block text-[11px] truncate">
           {eff.observations.length ? (

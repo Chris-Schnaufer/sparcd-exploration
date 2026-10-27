@@ -20,6 +20,33 @@ Feature: Settings and the data the uploader keeps on this machine
     And each new batch starts with that identity already filled in on the Describe step
 
   @unmapped
+  Scenario: Custom uploader identities follow their connected login
+    When Login A saves custom identity "Ada Lovelace" and reloads
+    And the Uploader switches to Login B
+    Then Login B's identity defaults to the confirmed endpoint fallback
+    When Login B saves custom identity "Grace Hopper"
+    And the Uploader switches back to Login A
+    Then Login A's custom identity is restored
+    When the Uploader switches to Login B
+    Then Login B's custom identity is restored
+
+  @unmapped
+  Scenario: A same-login tab shares the custom identity preference
+    When Login A saves custom identity "Ada Lovelace" and reloads
+    And a second Uploader tab adopts the same login
+    Then the second tab shows Login A's custom identity
+    When the second tab changes Login A's identity to "Grace Hopper"
+    Then the first tab shows Login A's updated identity
+
+  @unmapped
+  Scenario: A blank custom identity remains editable until blur restores the account default
+    When the Uploader identity field is cleared
+    Then the field remains blank while it is being edited
+    When the blank Uploader identity field loses focus
+    Then the uploader identity defaults to the Access key after route absence is confirmed
+
+  @unmapped
+  @preparation-cleanup
   Scenario: Disconnecting from Settings clears this machine's upload records
     Given there are no unfinished uploads on this machine
     When Disconnect is chosen after reviewing its security explanation
@@ -29,6 +56,7 @@ Feature: Settings and the data the uploader keeps on this machine
     And remembered non-secret connection details remain with no live session
 
   @unmapped
+  @preparation-cleanup
   Scenario: Disconnecting is guarded when unfinished uploads exist
     Given there are unfinished uploads recorded on this machine
     When "Disconnect" is chosen
@@ -37,6 +65,7 @@ Feature: Settings and the data the uploader keeps on this machine
     And nothing is cleared unless discarding is explicitly chosen
 
   @unmapped
+  @preparation-cleanup
   Scenario: Disconnecting from the header ends the session without clearing records
     When the Disconnect button in the header is used
     Then the connection is ended and the in-progress batch is cleared
@@ -65,7 +94,7 @@ Feature: Settings and the data the uploader keeps on this machine
   @unmapped
   Scenario: Blank identity falls back on blur and custom identity survives reload
     When identity is cleared, typed, and left blank
-    Then the login default returns on blur
+    Then the account default returns on blur
     When an uploader identity is entered in Settings
     And the custom identity is reloaded
     Then the custom identity is preserved
@@ -73,4 +102,4 @@ Feature: Settings and the data the uploader keeps on this machine
   @unmapped
   Scenario: Restored and shared sessions supply a missing identity
     When the blank identity session is restored and shared
-    Then both sessions default identity from the connected access key
+    Then both sessions use the confirmed Access-key fallback

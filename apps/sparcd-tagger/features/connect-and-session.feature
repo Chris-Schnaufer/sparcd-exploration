@@ -73,7 +73,7 @@ Feature: Connect the tagger to a collection store and manage the session
     Given the tagger is connected
     When Settings is opened
     Then Settings shows the connected storage username
-    And the connected identity cannot be edited
+    And the connected identity can be edited independently of credentials
 
   @H2 @H2-3
   Scenario: A connected-account change updates future attribution
@@ -99,6 +99,12 @@ Feature: Connect the tagger to a collection store and manage the session
     Then "Group rapid sequences into bursts" is switched off
     And the Overview shows a flat strip of images with no burst bands
     And switching it on reveals a threshold between 5 and 600 seconds
+
+  @unmapped
+  Scenario: Sorting the species list by latest assigned is off by default
+    Given the tagger is connected
+    When Settings is opened
+    Then "Sort by latest species assigned" is switched off
 
   @unmapped
   Scenario: Disconnecting with unsynced edits asks before discarding them

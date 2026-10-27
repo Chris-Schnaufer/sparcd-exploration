@@ -6,7 +6,7 @@ story set in `docs/user-stories.md`.
 
 ## What these files are
 
-Twelve `.feature` files describing what `apps/sparcd-tagger` **does today**, not
+The `.feature` files describe what `apps/sparcd-tagger` **does today**, not
 what it should do. Every scenario is traceable to code that exists; nothing
 was written from the plan or the README where the code disagrees. Scenarios
 that map to an agreed story carry its ID; the rest carry `@unmapped`.
@@ -18,6 +18,8 @@ that map to an agreed story carry its ID; the rest carry `@unmapped`.
 | `H1-examine-images-closely.feature` | Zoom, pan, fullscreen, per-image reset, video, display adjustments | `@H1` |
 | `H2-assign-species-to-images.feature` | Species panel, multi-species, Ghost, key bindings, bulk apply | `@H2` |
 | `H3-review-existing-identifications.feature` | Existing identifications shown, corrected, removed; attribution | `@H3` |
+| `need-expert-badge.feature` | Transparent goldenrod Need expert badges, coexistence with classification, shared status through fresh sessions, clearing, targeting, touch, and fullscreen exclusion (#555) | `@unmapped` |
+| `classification-checkmark.feature` | Classification checkmark appearance and placement in Grid/List/Focus; Ghost/Test, removal, sync/reload, letterboxing, themes, touch and fullscreen exclusion (#554) | `@unmapped` |
 | `navigate-and-select-images.feature` | Keyboard navigation, sort, find, selection, bursts, cheatsheet | `@unmapped` |
 | `overview-focus-entry.feature` | Issue #553: remove mode toggles; enter Focus from grid/list using mouse, touch, keyboard, and semantic activation while preserving selection and opener focus | `@unmapped` |
 | `local-drafts-and-recovery.feature` | Local drafts, unsaved counts, History recovery, discard | `@unmapped` |
@@ -42,19 +44,27 @@ mobile assistive-technology session was run.
 - **H2 — met, with one caveat.** Multi-species per image, counts, Ghost for
   empty frames, requested-species free text, per-species keys (including keys
   inherited from `species.json`), and bulk apply across a selection. The
-  caveat is attribution: connected sessions derive the classifier from the
-  storage username (the access key) and stamp it into new observation rows,
-  the snapshot path and the `UploadMeta.json` edit comment. A disconnected
-  local Uploader handoff uses its session-scoped handoff identity instead.
+  attribution identity is an editable per-login preference shared with Uploader.
+  Access-service logins default to the signed account-name response; endpoints
+  without that route use the connected Access key only after route absence is
+  positively identified. Unresolved identity blocks attributed mutations, not
+  viewing. New identifications and reviews capture identity at edit time. A
+  disconnected local Uploader handoff keeps an optional session-scoped identity;
+  Done remains available when it is blank.
 - **H3 — met for review provenance.** Existing identifications from any source
   (Java desktop app, sparcd-web, an earlier tagger sync) are shown with counts,
   and can be corrected or removed. Re-applying an identical identification
   preserves the original `classified_by` and `classification_timestamp` and
   appends a separate repeatable `[REVIEWED_BY:…][REVIEWED_AT:…]` event. The
   review event survives sync and the Uploader-to-Tagger handoff.
-- **F4 — not addressed by this tool.** No sensitive-species concept exists
-  anywhere in the tagger. Locations are shown to any connected user. Captured
-  honestly in `F4-location-visibility.feature` so the gap is on the record.
+- **F4 — coordinate redaction is enforced by the access proxy.** The Tagger
+  has no sensitive-species concept and does not make the authorization decision;
+  the proxy removes exact coordinates for accounts without `exactLocations`.
+  `F4-location-visibility.feature` covers the Tagger's behavior with redacted
+  location data, including `@F4-4`, while
+  `H2-protected-location-identification.feature` covers `@H2-7`. The proxy
+  integration tests cover the authorization boundary and the Tagger BDD mock
+  applies the same response policy to its browser requests.
 - **M2 (constraint) — largely supported.** Original files are never destroyed:
   the first live edit also creates an immutable original-upload baseline. Every
   later write is preceded by an immutable snapshot, replacement is conditional
@@ -81,19 +91,18 @@ mobile assistive-technology session was run.
 
 ## Ambiguities and things a reviewer should decide
 
-1. **The questionable flag never leaves the browser.** It is stored in local
-   drafts, shown as a marker, and toggled per image or across a selection —
-   but the sync writes only observations and capture times, so it is never
-   published. Its drafts also stay listed as "unsaved" after a sync, because
-   only the drafts actually written are cleared. Is a local-only flag the
-   intent, or should it become part of the canonical record?
+1. **Need expert is shared after Sync.** The local draft previews a per-image
+   change; Sync writes `[NEED_EXPERT:true]` in `media.csv` comments, and clearing
+   removes that marker. Status-only edits leave observations unchanged.
 2. **Review provenance is separate from original attribution.** H3-6 covers
    repeatable review markers and their preservation through sync and local
    handoff; the canonical contract is documented in issue #371.
-3. **Connected identity follows credentials.** The connected storage username
-   becomes attribution and the snapshot folder name, and the Settings field is
-   read-only. Disconnected local Uploader handoffs retain a separate,
-   session-scoped handoff identity because no storage account is connected.
+3. **Connected identity belongs to the active login.** Settings edits the shared
+   per-login custom attribution name, independently of masked credentials.
+   Clearing removes the override and restores a resolved default on blur.
+   Lookup failures expose Retry and permit an explicit custom identity. Earlier
+   identifications and reviews retain their recorded attribution after a name
+   change or sync. Disconnected handoffs retain a separate optional identity.
 4. **Dry-run defaults to off, per session.** It is a shared preference for
    syncs and snapshot restores and is not persisted; a page reload restores
    the live-write default.

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { parseObservations } from '@sparcd/camtrap';
 import { PreconditionFailedError } from '@sparcd/s3-safe';
 import type { S3Config } from '@sparcd/types';
 import type { BatchRecord, BundleRecord, FileRecord, LoadedSession } from '../src/lib/db';
@@ -1274,6 +1275,22 @@ describe('upload runs continue past per-file blob failures', () => {
 });
 
 describe('streamed runs upload as files individually become ready', () => {
+  it('publishes unattributed local tags with the raw uploader identity', async () => {
+    const entry = { ...makeFileEntry(0), preTaggerUser: '', preTags: [{
+      scientificName: 'Canis latrans', commonName: 'Coyote', count: 1, requestedSpecies: '', freeTags: '',
+    }] };
+    mocks.client = makeStreamingClient();
+    let last: UploadSnapshot | null = null;
+    const run = runStreamingUpload({
+      config: CONFIG, dryRun: false, concurrency: manual(1), uploaderUser: 'Jane Doe',
+      build: { location: LOCATION, collectionUuid: 'collection', bucket: 'bucket',
+        uploaderSlug: 'jane_doe', description: '', timeZone: 'UTC', files: [entry] },
+    }, (snapshot) => { last = snapshot; });
+    run.close([entry]);
+    expect((await collect(run, () => last)).phase).toBe('done');
+    expect(parseObservations(mocks.attachBundle.mock.calls[0][0].observationsCsv)[0].classifiedBy).toBe('Jane Doe');
+  });
+
   it('publishes once a file that arrives after start() via notifyReady finishes too', async () => {
     const entries = [makeFileEntry(0), makeFileEntry(1)];
     const client = makeStreamingClient();
@@ -2010,5 +2027,25 @@ describe('endpoint sharding', () => {
     expect(shard.writeImmutableStream).toHaveBeenCalledTimes(2);
     expect(primary.writeImmutable).toHaveBeenCalledTimes(5);
     expect(shard.writeImmutable).not.toHaveBeenCalled();
+  });
+});
+
+describe('preparation ownership follows upload sessions', () => {
+  it('persists a fresh upload owner and includes it in completion snapshots', async () => {
+    const entries = [makeFileEntry(0)]; mocks.client = makeStreamingClient();
+    let last: UploadSnapshot | null = null;
+    const run = runStreamingUpload({ config: CONFIG, preparationId: 'preparation-B', dryRun: false, concurrency: manual(1), build: { location: LOCATION, collectionUuid: 'collection', bucket: 'bucket', uploaderSlug: 'user', description: '', timeZone: 'UTC', files: entries } }, snap => { last = snap; });
+    run.close(entries);
+    expect((await collect(run, () => last)).preparationId).toBe('preparation-B');
+    expect(mocks.openSession.mock.calls[0][0].preparationId).toBe('preparation-B');
+  });
+  it.each([undefined, 'preparation-A'])('uses only the resumed session owner %s', async owner => {
+    const session = makeSession(['done']); session.batch.preparationId = owner;
+    mocks.client = makeClient(session.files);
+    let last: UploadSnapshot | null = null;
+    const run = resumeUpload({ config: CONFIG, session, attached: new Map(), concurrency: manual(1) }, snap => { last = snap; });
+    const snap = await collect(run, () => last);
+    expect(snap.phase).toBe('done');
+    expect(snap.preparationId).toBe(owner);
   });
 });

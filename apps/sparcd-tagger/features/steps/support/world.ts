@@ -195,3 +195,8 @@ export async function expectOverviewView(page: Page): Promise<void> {
   await expect(page.getByTestId('overview-view')).toBeVisible();
   await expect(page.getByRole('dialog', { name: 'Focus image viewer' })).toHaveCount(0);
 }
+
+export async function openFindFilter(page: Page) {
+  const opener = page.getByRole('button', { name: 'Find & filter', exact: true });
+  if (await opener.getAttribute('aria-expanded') !== 'true') await opener.click();
+}

@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { createPortal, flushSync } from 'react-dom';
 import { TransformWrapper, TransformComponent, type ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
 import { useStore } from '../store';
+import { attributionAvailable, IDENTITY_REQUIRED } from '../lib/attribution';
 import {
   useTagImages,
   useSpecies,
@@ -19,6 +20,7 @@ import { DisabledActionHint } from '../components/DisabledActionHint';
 import { SpeciesPanel } from '../components/SpeciesPanel';
 import { ResizableSplit } from '../components/ResizableSplit';
 import { AppliedSpecies } from '../components/AppliedSpecies';
+import { NeedExpertToggle } from '../components/NeedExpertToggle';
 import { Cheatsheet } from '../components/Cheatsheet';
 import { SyncDialog } from '../components/SyncDialog';
 import { SnapshotsDialog } from '../components/SnapshotsDialog';
@@ -32,7 +34,9 @@ import { KeyConflictDialog } from '../components/KeyConflictDialog';
 import { ImageAdjustments } from '../components/ImageAdjustments';
 import { PawTrail } from '../components/Paw';
 import { cssFilter, NEUTRAL, type Adjustments } from '../lib/adjustments';
+import { FindFilterRail } from '../components/FindFilterRail';
 import { Overview, type PickMods, type ViewKind } from '../components/Overview';
+import { ImageStatusBadges } from '../components/ImageStatusBadges';
 import { groupBursts, type BurstGrouping } from '../lib/bursts';
 import { offsetActive, formatOffsetDelta, earliestCorrected } from '../lib/timeshift';
 import {
@@ -44,7 +48,7 @@ import {
   nextVisibleIndex,
   nearestVisibleIndex,
 } from '../lib/selection';
-import { effectiveOf } from '../lib/effective';
+import { effectiveOf, hasSpecies } from '../lib/effective';
 import { focusLocationLabel } from '../lib/focusLocation';
 import { sortIndices, type SortField, type SortDir } from '../lib/sortImages';
 import { findFilenameMatches } from '../lib/imageSearch';
@@ -70,7 +74,6 @@ import {
 } from '../lib/keys';
 import { useLocalBatch, saveLocalTags } from '../lib/localBatch';
 import { localTagImages } from '../lib/localWorkspace';
-import { DEFAULT_SPECIES } from '../lib/defaultSpecies';
 import type { Species } from '../lib/species';
 import { isVideoImage, type TagImage } from '../lib/workspace';
 import type { DraftRecord } from '../lib/db';
@@ -95,12 +98,14 @@ type PendingKeyConflict = {
 export function Tag() {
   const cfg = useStore((s) => s.s3Config);
   const taggerUser = useStore((s) => s.taggerUser);
+  const identityReady = !cfg || !!taggerUser.trim();
   const connectionId = useStore((s) => s.connectionId);
   const collectionKey = useStore((s) => s.selectedCollectionKey);
   const uploadPrefix = useStore((s) => s.selectedUploadPrefix);
   const burstGroupingEnabled = useStore((s) => s.burstGroupingEnabled);
   const burstThreshold = useStore((s) => s.burstThresholdSec);
   const autoAdvanceOnTag = useStore((s) => s.autoAdvanceOnTag);
+  const sortSpeciesByRecent = useStore((s) => s.sortSpeciesByRecent);
   const pendingSnapshots = useStore((s) => s.pendingSnapshots);
   const clearPendingSnapshots = useStore((s) => s.clearPendingSnapshots);
 
@@ -110,17 +115,23 @@ export function Tag() {
   const needsGesture = useLocalBatch((s) => s.needsGesture);
   const attachOriginals = useLocalBatch((s) => s.attachOriginals);
 
-  const images = useTagImages(cfg, connectionId, collectionKey, uploadPrefix);
-  const species = useSpecies(cfg, connectionId, collectionKey);
-  const locations = useLocations(cfg, connectionId, collectionKey);
-  const currentDeployment = useCurrentDeployment(cfg, connectionId, collectionKey, uploadPrefix);
+  const images = useTagImages(localRecord ? null : cfg, connectionId, collectionKey, uploadPrefix);
+  const species = useSpecies(localRecord ? null : cfg, connectionId, collectionKey);
+  const locations = useLocations(localRecord ? null : cfg, connectionId, collectionKey);
+  const canChangeLocation = !localRecord
+    && !!locations.data?.locations.some(
+      (location) => location.latitude !== null && location.longitude !== null,
+    );
+  const currentDeployment = useCurrentDeployment(localRecord ? null : cfg, connectionId, collectionKey, uploadPrefix);
   const locationLabel = focusLocationLabel(currentDeployment.data);
   const captureTimeZone = currentDeployment.data
+    && currentDeployment.data.latitude !== null
+    && currentDeployment.data.longitude !== null
     ? tzlookup(currentDeployment.data.latitude, currentDeployment.data.longitude)
     : undefined;
-  const collections = useCollections(cfg, connectionId);
+  const collections = useCollections(localRecord ? null : cfg, connectionId);
   const collection = collections.data?.find((c) => c.key === collectionKey);
-  const snapshots = useUploadSnapshots(cfg, connectionId, collectionKey, uploadPrefix);
+  const snapshots = useUploadSnapshots(localRecord ? null : cfg, connectionId, collectionKey, uploadPrefix);
   const hasSnapshot = (snapshots.data?.length ?? 0) > 0;
 
   const localImages = useMemo(
@@ -330,6 +341,8 @@ export function Tag() {
   const [capturingFor, setCapturingFor] = useState<string | null>(null);
   const [pendingKeyConflict, setPendingKeyConflict] = useState<PendingKeyConflict | null>(null);
   const [recent, setRecent] = useState<string[]>([]);
+  const [showSpeciesHelp, setShowSpeciesHelp] = useState(false);
+  const speciesHelpOpenRef = useRef(false);
   const [showCheatsheet, setShowCheatsheet] = useState(false);
   const [showSync, setShowSync] = useState(false);
   const [showSnapshots, setShowSnapshots] = useState(false);
@@ -352,6 +365,14 @@ export function Tag() {
   const openLoupe = (sp: Species) => {
     modalOpenRef.current = true;
     setZoomSpecies(sp);
+  };
+  const openSpeciesHelp = () => {
+    speciesHelpOpenRef.current = true;
+    setShowSpeciesHelp(true);
+  };
+  const closeSpeciesHelp = () => {
+    speciesHelpOpenRef.current = false;
+    setShowSpeciesHelp(false);
   };
   const closeLoupe = () => {
     modalOpenRef.current = false;
@@ -431,15 +452,40 @@ export function Tag() {
   const exhaustedFocusRef = useRef<{ key: string; filter: ImageFilter } | null>(null);
   const [showImageFilter, setShowImageFilter] = useState(false);
   const imageFilterButtonRef = useRef<HTMLButtonElement>(null);
-  const imageFilterTextRef = useRef<HTMLInputElement>(null);
-  const matchesCurrentFilter = (image: TagImage, draft: DraftRecord | undefined) => matchesImageFilter(
-    {
-      fileName: image.fileName,
-      timestamp: correctedTimestamp(image.baseTimestamp, timeOffset, draft?.timeOverride ?? null, captureTimeZone),
-      observations: effectiveOf(image, draft).observations,
-    },
-    imageFilter,
-  );
+  const overviewAreaRef = useRef<HTMLDivElement>(null);
+  const [railDocked, setRailDocked] = useState(false);
+  // Yield to the active workspace dialog without invoking Close's clearing
+  // behavior. Restore the remembered rail in the current layout on dismissal.
+  const overviewDialogOpen = showSync || showSnapshots || showDiscard || showTimeShift ||
+    showChangeLocation || bulkTime !== null || zoomSpecies !== null ||
+    pendingKeyConflict !== null || showCheatsheet || showSpeciesHelp || speciesHelpOpenRef.current;
+  const railVisible = showImageFilter && !overviewDialogOpen;
+  useLayoutEffect(() => {
+    if (view !== 'overview' || !overviewAreaRef.current) return;
+    const area = overviewAreaRef.current;
+    // Reserve 30rem for readable list rows or at least two image cards, plus
+    // the 18rem rail. Measure after the existing Species panel takes its space.
+    const measure = () => setRailDocked(area.clientWidth >= 48 * parseFloat(getComputedStyle(document.documentElement).fontSize));
+    const observer = new ResizeObserver(measure);
+    observer.observe(area);
+    const rail = document.getElementById('image-filter-panel');
+    if (rail) observer.observe(rail);
+    measure();
+    return () => observer.disconnect();
+  }, [view, list.length, uploadPrefix, images.isError]);
+  useEffect(() => { setShowImageFilter(false); }, [view, uploadPrefix]);
+  const matchesCurrentFilter = (image: TagImage, draft: DraftRecord | undefined) => {
+    const effective = effectiveOf(image, draft);
+    return matchesImageFilter(
+      {
+        fileName: image.fileName,
+        timestamp: correctedTimestamp(image.baseTimestamp, timeOffset, draft?.timeOverride ?? null, captureTimeZone),
+        observations: effective.observations,
+        questionable: effective.questionable,
+      },
+      imageFilter,
+    );
+  };
   const visibleIndices = useMemo(
     () => list.flatMap((image, index) => matchesCurrentFilter(image, drafts[image.key]) ? [index] : []),
     [captureTimeZone, drafts, imageFilter, list, timeOffset],
@@ -453,20 +499,30 @@ export function Tag() {
     imageFilter.day !== '' ||
     imageFilter.hour !== '' ||
     imageFilter.minute !== '';
+  const imageFilterSummary = [
+    imageFilter.text && `“${imageFilter.text}”`,
+    imageFilter.scope !== 'all' && { filename: 'Filename', species: 'Species', date: 'Date' }[imageFilter.scope],
+    imageFilter.tagged !== 'all' && ({ tagged: 'Tagged only', untagged: 'Untagged only', questionable: 'Questionable only', 'not-questionable': 'Not questionable only' }[imageFilter.tagged]),
+    ...(['year', 'month', 'day', 'hour', 'minute'] as const).map((part) =>
+      imageFilter[part] && `${part}: ${imageFilter[part]}`),
+  ].filter(Boolean).join(' · ');
   const visibleIndexSet = useMemo(() => new Set(visibleIndices), [visibleIndices]);
   const selectedForActions = useMemo(
     () => (imageFilterActive ? [...selected].filter((i) => visibleIndexSet.has(i)) : [...selected]),
     [imageFilterActive, selected, visibleIndexSet],
   );
 
+  const openImageFind = () => {
+    flushSync(() => setShowImageFilter(true));
+    imgSearchRef.current?.focus();
+  };
+
   const closeImageFilter = () => {
+    setImgQuery('');
+    setImageFilter(EMPTY_IMAGE_FILTER);
     setShowImageFilter(false);
     requestAnimationFrame(() => imageFilterButtonRef.current?.focus());
   };
-
-  useEffect(() => {
-    if (showImageFilter) imageFilterTextRef.current?.focus();
-  }, [showImageFilter]);
 
   // Exhausted auto-advance retains the image that was just tagged, even if
   // that edit hid it. A changed filter or explicit move releases that hold.
@@ -582,7 +638,7 @@ export function Tag() {
   const assignKey = useKeyBindings((state) => state.assignKey);
   const clearKey = useKeyBindings((state) => state.clearKey);
   const keysUnsaved = useKeyBindings((state) => state.unsaved);
-  const speciesList = localRecord ? DEFAULT_SPECIES : species.data?.species ?? [];
+  const speciesList = localRecord ? localRecord.preparedSpecies?.species ?? [] : species.data?.species ?? [];
 
   const bindingFor = (sci: string): string | null => {
     const k = effectiveKey(sci, speciesJsonKey(speciesList, sci), overrides);
@@ -644,27 +700,25 @@ export function Tag() {
   const [selectedSpecies, setSelectedSpecies] = useState<string | null>(null);
 
   // Operations target the selection when one exists, else the focused image.
-  const targetsOf = (): TagTarget[] => {
+  const targetImagesOf = (): TagImage[] => {
     // With no selection the focused image is the target — unless a filter is
     // hiding it, in which case there is nothing on screen for the action to
     // land on and it must do nothing at all.
     const focusTargetable = !!current && (!imageFilterActive || visibleIndexSet.has(focus));
     const idx = selected.size
-      ? selectedForActions.sort((a, b) => a - b)
+      ? [...selectedForActions].sort((a, b) => a - b)
       : focusTargetable
         ? [focus]
         : [];
-    return idx
-      .map((i) => list[i])
-      .filter(Boolean)
-      .map((img) => ({
-        mediaPath: img.key,
-        deploymentId: img.deploymentId,
-        // Seed a fresh draft from the FULL canonical base set so a partial edit
-        // (adding one species, toggling questionable) keeps every existing one.
-        base: { observations: img.baseObservations },
-      }));
+    return idx.map((i) => list[i]).filter((img): img is TagImage => !!img);
   };
+  const targetOf = (img: TagImage): TagTarget => ({
+    mediaPath: img.key,
+    deploymentId: img.deploymentId,
+    // Partial edits seed the full canonical species set.
+    base: { observations: img.baseObservations, questionable: img.baseQuestionable },
+  });
+  const targetsOf = (): TagTarget[] => targetImagesOf().map(targetOf);
 
   // Move focus to the next image, clearing selection — mirrors the keyboard
   // handler's `focusMove`, scoped to this component's own focus/anchor/selected
@@ -696,6 +750,7 @@ export function Tag() {
     effectiveOf(img, drafts[img.key]).observations.some((o) => o.scientificName === sci);
 
   const apply = (tag: AppliedTag) => {
+    if (!attributionAvailable()) return;
     const targets = targetsOf();
     if (!targets.length) return;
     // A bulk operation changes every selected image, but only the focused
@@ -710,6 +765,7 @@ export function Tag() {
   };
 
   const applyIncrementAt = (index: number, tag: AppliedTag) => {
+    if (!attributionAvailable()) return;
     // A drop is spatial: it updates only the image under the drop zone, even
     // if a multi-image selection still exists.
     const image = list[index];
@@ -733,6 +789,7 @@ export function Tag() {
   };
 
   const applyIncrement = (tag: AppliedTag) => {
+    if (!attributionAvailable()) return;
     // Keyboard bindings are selection-scoped, like the panel's explicit add
     // control. Keep this separate from spatial drag/drop targeting.
     const targets = targetsOf();
@@ -753,7 +810,7 @@ export function Tag() {
         .map((img) => ({
           mediaPath: img.key,
           deploymentId: img.deploymentId,
-          base: { observations: img.baseObservations },
+          base: { observations: img.baseObservations, questionable: img.baseQuestionable },
           currentCorrected: correctedTimestamp(
             img.baseTimestamp,
             timeOffset,
@@ -829,8 +886,27 @@ export function Tag() {
     ? nextVisibleIndex(visibleIndices, nextIndex, 1) != null
     : nextIndex < list.length - 1);
 
-  // On-screen questionable toggle mirrors Shift+Space: act on the selection
-  // (or the focused image), flipping off the focused image's current state.
+  // The compact controls and Shift+Space share the same selection semantics.
+  const toggleNeedExpert = () => {
+    if (!current) return;
+    const targets = targetsOf();
+    if (targets.length) setQuestionableManyFn(ctx, targets, !effectiveOf(current, drafts[current.key]).questionable);
+  };
+  const selectedExpertStates = selectedForActions
+    .map((index) => list[index]).filter((image): image is TagImage => !!image)
+    .map((image) => effectiveOf(image, drafts[image.key]).questionable);
+  const expertPressed: boolean | 'mixed' = selectedExpertStates.length &&
+    selectedExpertStates.some((value) => value !== selectedExpertStates[0])
+    ? 'mixed'
+    : selectedExpertStates[0] ?? (current ? effectiveOf(current, drafts[current.key]).questionable : false);
+  const expertToggle = (align: 'left' | 'right') => <NeedExpertToggle
+    pressed={expertPressed}
+    disabled={!current}
+    onClick={toggleNeedExpert}
+    selectionCount={selectedExpertStates.length}
+    nextState={current ? !effectiveOf(current, drafts[current.key]).questionable : undefined}
+    align={align}
+  />;
   // --- Global key handler: attached once, reads the latest state via a ref so
   // it never re-binds per render (plan perf requirement). ----------------------
   const stateRef = useRef<HandlerState>(null!);
@@ -861,7 +937,7 @@ export function Tag() {
     showCheatsheet,
     setShowCheatsheet,
     filterRef,
-    imgSearchRef,
+    openFindImage: openImageFind,
     speciesList,
     filter,
     view,
@@ -869,7 +945,10 @@ export function Tag() {
     enterFocus,
     closeFocus,
     isModalOpen: () =>
+      (railVisible && !railDocked) ||
       modalOpenRef.current ||
+      speciesHelpOpenRef.current ||
+      showSpeciesHelp ||
       showDiscard ||
       showSync ||
       showSnapshots ||
@@ -922,7 +1001,7 @@ export function Tag() {
 
   const draft = current ? drafts[current.key] : undefined;
   const eff = current ? effectiveOf(current, draft) : null;
-  const currentBase = current ? { observations: current.baseObservations } : undefined;
+  const currentBase = current ? { observations: current.baseObservations, questionable: current.baseQuestionable } : undefined;
   const nDirty = dirtyCount(drafts);
   const discardDetails = discardSummaries.map(
     (summary) =>
@@ -952,6 +1031,7 @@ export function Tag() {
             ]}
           />
         )}
+        {view === 'overview' && expertToggle('left')}
 
         <span className="text-[12px] font-mono text-inkSoft">
           {selected.size > 0 ? (
@@ -977,8 +1057,10 @@ export function Tag() {
         {/* Change location entry (issue #279) — corrects the whole upload's
             recorded camera location. Not available for a local (offline) batch,
             which has no connection to fetch the shared location registry. */}
-        {!localRecord && (
+        {canChangeLocation && (
           <button
+            disabled={!identityReady}
+            aria-describedby={!identityReady ? 'tagger-identity-required' : undefined}
             onClick={() => setShowChangeLocation(true)}
             className={`inline-flex items-center gap-1.5 text-[11.5px] font-mono px-2 py-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
               pendingLocation
@@ -999,10 +1081,10 @@ export function Tag() {
         {/* Upload time-shift entry + persistent active-offset indicator (§08).
             Disabled when no image in the upload has a capture time to shift —
             unless a shift is already in effect, so it stays reachable to clear. */}
-        <DisabledActionHint label="Time shift" reason={!sampleTimestamp && !hasUploadShift ? 'No image in this upload has a capture time to shift' : undefined}>
+        <DisabledActionHint label="Time shift" reason={!identityReady ? IDENTITY_REQUIRED : !sampleTimestamp && !hasUploadShift ? 'No image in this upload has a capture time to shift' : undefined}>
         <button
           onClick={() => setShowTimeShift(true)}
-          disabled={!sampleTimestamp && !hasUploadShift}
+          disabled={!identityReady || (!sampleTimestamp && !hasUploadShift)}
           className={`inline-flex items-center gap-1.5 text-[11.5px] font-mono px-2 py-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 disabled:cursor-not-allowed ${
             hasUploadShift
               ? 'bg-mark border border-ink text-ink font-[600]'
@@ -1025,10 +1107,10 @@ export function Tag() {
             mixed upload. Stored as per-image corrections, so it stacks on the
             upload offset. */}
         {!!current && (
-          <DisabledActionHint label="Time shift selection" reason={selected.size === 0 || scopedTimeApplicableCount === 0 ? scopedTimeUnavailableReason : undefined}>
+          <DisabledActionHint label="Time shift selection" reason={!identityReady ? IDENTITY_REQUIRED : selected.size === 0 || scopedTimeApplicableCount === 0 ? scopedTimeUnavailableReason : undefined}>
             <button
               onClick={openBulkTime}
-              disabled={selected.size === 0 || scopedTimeApplicableCount === 0}
+              disabled={!identityReady || selected.size === 0 || scopedTimeApplicableCount === 0}
               className="inline-flex items-center gap-1.5 text-[11.5px] font-mono px-2 py-1 border border-rule text-inkSoft hover:text-ink hover:border-ink disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
               title={
                 selected.size === 0 || scopedTimeApplicableCount === 0
@@ -1044,169 +1126,15 @@ export function Tag() {
           </DisabledActionHint>
         )}
 
-        {/* Find image by filename — jumps focus to a match (the virtualizer then
-            scrolls it into view). Separate from the species filter. */}
-        <div className="inline-flex items-center gap-1 border border-rule px-1.5 py-0.5">
-          <span aria-hidden className="text-[12px] text-inkMute">
-            ⌕
-          </span>
-          <input
-            ref={imgSearchRef}
-            value={imgQuery}
-            onChange={(e) => setImgQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                jumpToMatch(matchPos + (e.shiftKey ? -1 : 1));
-              } else if (e.key === 'Escape') {
-                setImgQuery('');
-                imgSearchRef.current?.blur();
-              }
-            }}
-            placeholder="Find image…"
-            className="w-28 bg-transparent text-[12px] font-mono text-ink placeholder:text-inkMute focus:outline-none"
-            title="Find image by filename (Enter / Shift+Enter to cycle, / to focus)"
-          />
-          {imgQuery.trim() && (
-            <>
-              <span
-                className={`text-[11px] font-mono ${matches.length ? 'text-accent' : 'text-warn'}`}
-              >
-                {matches.length ? matchPos + 1 : 0}/{matches.length}
-              </span>
-              <button
-                onClick={() => jumpToMatch(matchPos - 1)}
-                disabled={!matches.length}
-                className="text-[12px] text-inkSoft hover:text-ink disabled:opacity-40 px-0.5 min-h-11 min-w-11 sm:min-h-0 sm:min-w-0"
-                title="Previous match"
-                aria-label="Previous match"
-              >
-                ‹
-              </button>
-              <button
-                onClick={() => jumpToMatch(matchPos + 1)}
-                disabled={!matches.length}
-                className="text-[12px] text-inkSoft hover:text-ink disabled:opacity-40 px-0.5 min-h-11 min-w-11 sm:min-h-0 sm:min-w-0"
-                title="Next match"
-                aria-label="Next match"
-              >
-                ›
-              </button>
-              <button
-                onClick={() => {
-                  setImgQuery('');
-                  imgSearchRef.current?.focus();
-                }}
-                className="text-[12px] text-inkMute hover:text-ink px-0.5 min-h-11 min-w-11 sm:min-h-0 sm:min-w-0"
-                title="Clear"
-                aria-label="Clear image search"
-              >
-                ✕
-              </button>
-            </>
-          )}
-        </div>
-        <div className="relative">
-          <button
-            ref={imageFilterButtonRef}
-            type="button"
-            onClick={() => setShowImageFilter((shown) => !shown)}
-            aria-expanded={showImageFilter}
-            aria-controls="image-filter-panel"
-            className={`inline-flex min-h-11 items-center gap-1 border px-2 py-1 text-[12px] font-mono focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent sm:min-h-0 ${
-              imageFilterActive ? 'border-ink bg-mark text-ink' : 'border-rule text-inkSoft hover:text-ink hover:border-ink'
-            }`}
-          >
-            Filter {imageFilterActive ? `${visibleIndices.length}/${list.length}` : ''}
+        {view === 'overview' && <div className="flex max-w-full flex-wrap items-center gap-2 text-[12px] font-mono">
+          <button ref={imageFilterButtonRef} type="button"
+            onClick={openImageFind}
+            aria-expanded={showImageFilter} aria-controls="image-filter-panel"
+            className={`min-h-11 border px-2 ${imageFilterActive ? 'border-ink bg-mark' : 'border-rule'}`}>
+            Find &amp; filter
           </button>
-          {showImageFilter && (
-            <div
-              id="image-filter-panel"
-              role="region"
-              aria-label="Image filters"
-              onKeyDown={(e) => {
-                if (e.key !== 'Escape') return;
-                e.preventDefault();
-                e.stopPropagation();
-                closeImageFilter();
-              }}
-              className="absolute left-0 top-full z-40 mt-1 w-80 max-w-[calc(100vw-2rem)] space-y-3 border border-rule bg-panel p-3 shadow-lg max-sm:fixed max-sm:inset-x-2 max-sm:top-14 max-sm:mt-0 max-sm:w-auto"
-            >
-              <label className="block text-[11px] font-mono text-inkSoft">
-                Match text
-                <input
-                  ref={imageFilterTextRef}
-                  value={imageFilter.text}
-                  onChange={(e) => setImageFilter((f) => ({ ...f, text: e.target.value }))}
-                  placeholder="Filename, species, or date"
-                  className="mt-1 w-full border border-rule bg-paper px-2 py-1 text-[13px] text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-                />
-              </label>
-              <label className="block text-[11px] font-mono text-inkSoft">
-                Search in
-                <select
-                  value={imageFilter.scope}
-                  onChange={(e) =>
-                    setImageFilter((f) => ({ ...f, scope: e.target.value as ImageFilter['scope'] }))
-                  }
-                  className="mt-1 w-full border border-rule bg-paper px-2 py-1 text-[13px] text-ink"
-                >
-                  <option value="all">All fields</option>
-                  <option value="filename">Filename</option>
-                  <option value="species">Species</option>
-                  <option value="date">Date</option>
-                </select>
-              </label>
-              <label className="block text-[11px] font-mono text-inkSoft">
-                Tag state
-                <select
-                  value={imageFilter.tagged}
-                  onChange={(e) =>
-                    setImageFilter((f) => ({
-                      ...f,
-                      tagged: e.target.value as ImageFilter['tagged'],
-                    }))
-                  }
-                  className="mt-1 w-full border border-rule bg-paper px-2 py-1 text-[13px] text-ink"
-                >
-                  <option value="all">All images</option>
-                  <option value="tagged">Tagged only</option>
-                  <option value="untagged">Untagged only</option>
-                </select>
-              </label>
-              <fieldset>
-                <legend className="text-[11px] font-mono text-inkSoft">Capture date</legend>
-                <div className="mt-1 grid grid-cols-5 gap-1">
-                  {(['year', 'month', 'day', 'hour', 'minute'] as const).map((part) => (
-                    <input
-                      key={part}
-                      aria-label={`Capture ${part}`}
-                      value={imageFilter[part]}
-                      onChange={(e) =>
-                        setImageFilter((f) => ({ ...f, [part]: e.target.value }))
-                      }
-                      placeholder={{ year: 'YYYY', month: 'MM', day: 'DD', hour: 'HH', minute: 'MM' }[part]}
-                      inputMode="numeric"
-                      className="min-w-0 border border-rule bg-paper px-1 py-1 text-[12px] text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-                    />
-                  ))}
-                </div>
-              </fieldset>
-              <div className="flex items-center justify-between">
-                <span aria-live="polite" className="text-[11px] font-mono text-inkSoft">
-                  {visibleIndices.length} of {list.length} images
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setImageFilter(EMPTY_IMAGE_FILTER)}
-                  className="text-[12px] font-mono text-inkSoft underline decoration-dotted hover:text-ink"
-                >
-                  Clear
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+          {imageFilterActive && !showImageFilter && <span aria-label="Active image filter" title={imageFilterSummary} className="max-w-[20rem] truncate">Filter active · {imageFilterSummary} · {visibleIndices.length}/{list.length}</span>}
+        </div>}
 
         <div className="ml-auto flex flex-wrap items-center gap-3">
           {savedAt > 0 && <span className="text-[12px] font-mono text-accent">saved ✓</span>}
@@ -1254,6 +1182,8 @@ export function Tag() {
                 Snapshots…
               </button>
               <button
+                disabled={!identityReady}
+                aria-describedby={!identityReady ? 'tagger-identity-required' : undefined}
                 onClick={() => setShowSync(true)}
                 ref={syncButtonRef}
                 className="text-[12px] font-mono border border-ink px-2.5 py-1 text-ink hover:bg-panelHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
@@ -1283,29 +1213,36 @@ export function Tag() {
 
       <div className="flex-1 min-h-0">
         {view === 'overview' ? (
-          <div data-testid="overview-view" className="h-full grid grid-cols-1 lg:grid-cols-[1fr_340px] min-h-0 overflow-y-auto lg:overflow-visible">
-            <div className="flex flex-col min-h-[60svh] lg:min-h-0">
-              <SortBar field={sortField} dir={sortDir} onSort={handleSort} />
-              <div className="flex-1 min-h-0">
-                {imageFilterActive && visibleIndices.length === 0 ? (
-                  <p className="p-5 text-[13px] font-mono text-inkSoft" role="status">
-                    No images match these filters.
-                  </p>
-                ) : (
-                  <Overview
-                    list={list}
-                    visibleIndices={imageFilterActive ? visibleIndices : undefined}
-                    grouping={grouping}
-                    focus={focus}
-                    selected={selected}
-                    kind={overviewKind}
-                    onPick={pick}
-                    onSelectBurst={selectBurst}
-                    onDrill={drill}
-                    onDropSpecies={applyIncrementAt}
-                    timeZone={captureTimeZone}
-                  />
-                )}
+          <div data-testid="overview-view" className="h-full grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] min-h-0 overflow-y-auto lg:overflow-visible">
+            <div ref={overviewAreaRef} className="flex min-w-0 min-h-[60svh] lg:min-h-0">
+              <FindFilterRail open={railVisible} docked={railDocked} onClose={closeImageFilter}
+                findRef={imgSearchRef} query={imgQuery} setQuery={setImgQuery}
+                position={matchPos} matchCount={matches.length} jump={jumpToMatch}
+                filter={imageFilter} setFilter={setImageFilter} shown={visibleIndices.length} total={list.length} />
+              <div className="flex flex-1 min-w-0 flex-col min-h-0">
+                <SortBar field={sortField} dir={sortDir} onSort={handleSort} />
+                <div className="flex-1 min-h-0">
+                  {imageFilterActive && visibleIndices.length === 0 ? (
+                    <div className="p-5 text-[13px] font-mono text-inkSoft">
+                      <p role="status">No images match these filters.</p>
+                      <button type="button" onClick={() => setImageFilter(EMPTY_IMAGE_FILTER)} className="mt-2 min-h-11 border border-rule px-2">Reset filter</button>
+                    </div>
+                  ) : (
+                    <Overview
+                      list={list}
+                      visibleIndices={imageFilterActive ? visibleIndices : undefined}
+                      grouping={grouping}
+                      focus={focus}
+                      selected={selected}
+                      kind={overviewKind}
+                      onPick={pick}
+                      onSelectBurst={selectBurst}
+                      onDrill={drill}
+                      onDropSpecies={applyIncrementAt}
+                      timeZone={captureTimeZone}
+                    />
+                  )}
+                </div>
               </div>
             </div>
             <SpeciesPanel {...speciesPanelProps()} />
@@ -1335,6 +1272,7 @@ export function Tag() {
               </div>
             )}
             <div className="col-span-2 row-start-2 lg:col-span-1 lg:col-start-3 lg:row-start-1 flex w-full min-w-0 items-center justify-end gap-2">
+              {expertToggle('right')}
               {locationLabel && (
                 <span className="min-w-0 max-w-[35vw] truncate font-mono text-[10px] text-inkSoft"
                   aria-label={`Location: ${locationLabel}`} title={`Location: ${locationLabel}`}>
@@ -1359,6 +1297,8 @@ export function Tag() {
               first={
                 <FocusPane
                   current={current}
+                  questionable={!!eff?.questionable}
+                  hasSpecies={!!eff && hasSpecies(eff)}
                   onPrev={() => gotoFilteredImage(-1)}
                   onNext={() => gotoFilteredImage(1)}
                   canPrev={canGoPrevious}
@@ -1431,8 +1371,18 @@ export function Tag() {
 
   function speciesPanelProps() {
     const observations = eff?.observations ?? [];
+    // Clear Species follows the visible selection in either view, falling
+    // back to the focused image when no selection exists.
+    const detagImages = targetImagesOf();
+    // Untagged targets need no draft; clearing a mixed selection must not
+    // manufacture unsaved no-op edits for its already-empty images.
+    const detagTargets = detagImages.filter((img) => speciesCountOf(img) > 0).map(targetOf);
+    const canDetag = detagTargets.length > 0;
     return {
       species: speciesList,
+      showHelp: showSpeciesHelp,
+      onHelpOpen: openSpeciesHelp,
+      onHelpClose: closeSpeciesHelp,
       speciesLoading: !localRecord && species.isLoading,
       speciesLoadError: !localRecord && species.isError,
       onRetrySpecies: async () => !(await species.refetch()).isError,
@@ -1450,15 +1400,35 @@ export function Tag() {
       onClearKey: clearKey,
       keysUnsaved,
       recent,
+      sortByRecent: sortSpeciesByRecent,
       appliedSet: new Set(observations.map((o) => o.scientificName)),
       hasFocus: !!current,
       selectionCount: selected.size,
-      disabled: !current,
-      // The compact applied-species strip edits the focused image only. Mounted
-      // in the panel header so it covers both Overview and Focus layouts (the
-      // same panel renders in both) with one site.
+      disabled: !current || !identityReady,
+      // Chips edit the focused image; Clear Species follows the visible selection.
       headerSlot: (
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div
+          className="min-h-11 flex flex-wrap items-center gap-1.5"
+          data-testid="applied-species-drop-zone"
+          // Unlike a drop onto an image tile (always spatial — just that one
+          // image), this box has no single image of its own, so a drop here
+          // is selection-scoped like the keyboard/click-to-add path.
+          onDragOver={(e) => {
+            if (!e.dataTransfer.types.includes(SPECIES_DRAG_TYPE)) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'copy';
+          }}
+          onDrop={(e) => {
+            const tag = parseSpeciesDrag(e.dataTransfer.getData(SPECIES_DRAG_TYPE));
+            if (!tag) return;
+            e.preventDefault();
+            applyIncrement(tag);
+          }}
+        >
+          {!identityReady && <div id="tagger-identity-required" role="status" className="w-full border border-warn p-2 text-[13px]">
+            <p>{IDENTITY_REQUIRED}</p>
+            <button type="button" className="min-h-11 underline" onClick={() => { closeFocus(); useStore.getState().setSection('settings'); }}>Set Tagger identity</button>
+          </div>}
           {speciesCountPrefix && selected.size <= 1 && (
             <span
               className="border border-accent px-2 py-0.5 text-[12px] font-mono text-accent"
@@ -1467,9 +1437,12 @@ export function Tag() {
               Count: {speciesCountPrefix}
             </span>
           )}
+          {observations.length === 0 && (
+            <span className="text-[11px] font-mono text-inkMute">Drop species here</span>
+          )}
           <AppliedSpecies
             observations={observations}
-            disabled={!current}
+            disabled={!current || !identityReady}
             onSetCount={(sci, n) =>
               current && setSpeciesCountFn(
                 ctx,
@@ -1485,20 +1458,15 @@ export function Tag() {
             onRemove={(sci) =>
               current && removeSpeciesFn(ctx, current.key, current.deploymentId, currentBase, sci)
             }
-            onDetagAll={() =>
-              current &&
-              detagFn(ctx, [
-                {
-                  mediaPath: current.key,
-                  deploymentId: current.deploymentId,
-                  base: currentBase,
-                },
-              ])
-            }
+            onDetagAll={() => detagTargets.length && detagFn(ctx, detagTargets)}
+            canDetag={canDetag}
+            detagCount={detagImages.length}
+            detagSelection={selected.size > 0}
           />
           {current && (
             <button
               type="button"
+              disabled={!identityReady}
               aria-pressed={!!eff?.questionable}
               aria-label={eff?.questionable ? 'Clear questionable flag' : 'Mark image questionable'}
               title={eff?.questionable ? 'Clear questionable flag' : 'Mark image questionable'}
@@ -1522,6 +1490,8 @@ export function Tag() {
 // --- Focus view (single-image detail) ---------------------------------------
 function FocusPane({
   current,
+  questionable,
+  hasSpecies,
   onPrev,
   onNext,
   canPrev,
@@ -1531,6 +1501,8 @@ function FocusPane({
   onDropSpecies,
 }: {
   current: TagImage | undefined;
+  questionable: boolean;
+  hasSpecies: boolean;
   onPrev: () => void;
   onNext: () => void;
   canPrev: boolean;
@@ -1557,7 +1529,13 @@ function FocusPane({
   const showAdjust = !!current && !isVideo;
 
   const [isDragOver, setIsDragOver] = useState(false);
+  const [fittedMediaHeight, setFittedMediaHeight] = useState<number | null>(null);
   const dropRef = useRef<HTMLDivElement>(null);
+  // At this height the centered 44px navigation target reaches the corner
+  // badge zone. Nudge both controls below it while leaving badges corner-pinned.
+  const navigationPosition = fittedMediaHeight !== null && fittedMediaHeight < 88
+    ? 'top-[calc(50%+1.5rem)]'
+    : 'top-1/2';
 
   const getVisibleMediaRect = () => {
     const image = dropRef.current?.querySelector('img');
@@ -1654,6 +1632,14 @@ function FocusPane({
             isVideo={isVideo}
             filter={filter}
             adjust={adjustPanel}
+            onFittedHeightChange={setFittedMediaHeight}
+            statusBadges={(
+              <ImageStatusBadges
+                hasSpecies={hasSpecies}
+                questionable={questionable}
+                presentation="focus"
+              />
+            )}
           />
         )}
         {current && canPrev && (
@@ -1661,7 +1647,7 @@ function FocusPane({
             ref={previousButtonRef}
             type="button"
             onClick={navigatePrevious}
-            className="absolute left-3 top-1/2 z-20 min-h-11 min-w-11 -translate-y-1/2 grid place-items-center rounded-full border border-rule bg-paper/50 text-[22px] leading-none text-inkSoft opacity-75 shadow-sm transition-opacity hover:bg-paper/90 hover:text-ink hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            className={`absolute left-3 ${navigationPosition} z-20 min-h-11 min-w-11 -translate-y-1/2 grid place-items-center rounded-full border border-rule bg-paper/50 text-[22px] leading-none text-inkSoft opacity-75 shadow-sm transition-opacity hover:bg-paper/90 hover:text-ink hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent`}
             title="Previous image (ArrowLeft or ArrowUp)"
             aria-label="Previous image"
             aria-describedby="focus-navigation-help"
@@ -1674,7 +1660,7 @@ function FocusPane({
             ref={nextButtonRef}
             type="button"
             onClick={navigateNext}
-            className="absolute right-3 top-1/2 z-20 min-h-11 min-w-11 -translate-y-1/2 grid place-items-center rounded-full border border-rule bg-paper/50 text-[22px] leading-none text-inkSoft opacity-75 shadow-sm transition-opacity hover:bg-paper/90 hover:text-ink hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            className={`absolute right-3 ${navigationPosition} z-20 min-h-11 min-w-11 -translate-y-1/2 grid place-items-center rounded-full border border-rule bg-paper/50 text-[22px] leading-none text-inkSoft opacity-75 shadow-sm transition-opacity hover:bg-paper/90 hover:text-ink hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent`}
             title="Next image (ArrowRight or ArrowDown)"
             aria-label="Next image"
             aria-describedby="focus-navigation-help"
@@ -1764,12 +1750,16 @@ function FocusImage({
   isVideo,
   filter,
   adjust,
+  onFittedHeightChange,
+  statusBadges,
 }: {
   objectKey: string;
   alt: string;
   isVideo: boolean;
   filter?: string;
   adjust?: React.ReactNode;
+  onFittedHeightChange: (height: number | null) => void;
+  statusBadges?: React.ReactNode;
 }) {
   const { url, isError, markLoaded } = useMediaUrl(objectKey, 'high');
   const [loadedToken, setLoadedToken] = useState<string>();
@@ -1804,6 +1794,8 @@ function FocusImage({
             src={url}
             alt={alt}
             resetKey={objectKey}
+            onFittedHeightChange={onFittedHeightChange}
+            statusBadges={statusBadges}
             onLoaded={onLoaded}
             onError={onMediaError}
           />
@@ -1813,6 +1805,8 @@ function FocusImage({
             alt={alt}
             resetKey={objectKey}
             filter={filter}
+            onFittedHeightChange={onFittedHeightChange}
+            statusBadges={statusBadges}
             onLoaded={onLoaded}
             adjust={adjust}
           />
@@ -1838,27 +1832,36 @@ function FocusVideo({
   src,
   alt,
   resetKey,
+  onFittedHeightChange,
+  statusBadges,
   onLoaded,
   onError,
 }: {
   src: string;
   alt: string;
   resetKey: string;
+  onFittedHeightChange: (height: number | null) => void;
+  statusBadges?: React.ReactNode;
   onLoaded: () => void;
   onError: () => void;
 }) {
+  const { paneRef, fitted, onImageLoad } = useFittedZoom(src, onFittedHeightChange);
   return (
-    <video
-      key={resetKey}
-      src={src}
-      aria-label={alt}
-      controls
-      playsInline
-      preload="metadata"
-      onLoadedData={onLoaded}
-      onError={onError}
-      className="w-full h-full object-contain"
-    />
+    <div ref={paneRef} className="relative w-full h-full min-w-0 min-h-0">
+      <video
+        key={resetKey}
+        src={src}
+        aria-label={alt}
+        controls
+        playsInline
+        preload="metadata"
+        onLoadedMetadata={onImageLoad}
+        onLoadedData={onLoaded}
+        onError={onError}
+        className="w-full h-full object-contain"
+      />
+      <FittedStatusOverlay fitted={fitted}>{statusBadges}</FittedStatusOverlay>
+    </div>
   );
 }
 
@@ -1878,7 +1881,7 @@ const ZOOM_PROPS = {
  * rather than the pane: a letterboxed portrait or panorama then can't be
  * dragged out of view. `paneRef` goes on the element the zoom wrapper fills.
  */
-function useFittedZoom(src: string) {
+function useFittedZoom(src: string, onFittedHeightChange?: (height: number | null) => void) {
   const paneRef = useRef<HTMLDivElement>(null);
   const zoomRef = useRef<ReactZoomPanPinchRef>(null);
   const [pane, setPane] = useState<{ w: number; h: number } | null>(null);
@@ -1894,6 +1897,9 @@ function useFittedZoom(src: string) {
   }, []);
   const fit = pane && natural ? Math.min(pane.w / natural.w, pane.h / natural.h) : null;
   const fitted = fit && natural ? { width: natural.w * fit, height: natural.h * fit } : undefined;
+  useLayoutEffect(() => {
+    onFittedHeightChange?.(fitted?.height ?? null);
+  }, [fitted?.height, onFittedHeightChange]);
   // Always re-fit on a pane or image-size change, even while zoomed in: a
   // resolution change invalidates whatever framing the user had, so there is
   // nothing worth preserving by skipping this when the view isn't at 1x.
@@ -1901,11 +1907,38 @@ function useFittedZoom(src: string) {
     const zoom = zoomRef.current;
     if (fitted && zoom) zoom.centerView(1, 0);
   }, [pane?.w, pane?.h, fitted?.width, fitted?.height]);
-  const onImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
-    const img = e.currentTarget;
-    setLoaded({ src, w: img.naturalWidth, h: img.naturalHeight });
+  const onImageLoad = (e: React.SyntheticEvent<HTMLImageElement | HTMLVideoElement>) => {
+    const media = e.currentTarget;
+    setLoaded({
+      src,
+      w: 'naturalWidth' in media ? media.naturalWidth : media.videoWidth,
+      h: 'naturalHeight' in media ? media.naturalHeight : media.videoHeight,
+    });
   };
   return { paneRef, zoomRef, fitted, onImageLoad };
+}
+
+// Keep badges at the fitted picture's corners, including letterboxed media,
+// without scaling them with zoom or copying them into the image-only Lightbox.
+function FittedStatusOverlay({ fitted, children }: {
+  fitted: { width: number; height: number } | undefined;
+  children: React.ReactNode;
+}) {
+  if (!fitted || !children) return null;
+  return (
+    <div
+      data-testid="focus-image-status-badges"
+      className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10"
+      style={{
+        ...fitted,
+        // When a wide image is short, the navigation buttons overlap the
+        // upper-right corner. Move the expert badge inward to clear them.
+        '--focus-expert-badge-edge-inset': fitted.height < 112 ? '3rem' : '0.25rem',
+      } as React.CSSProperties}
+    >
+      {children}
+    </div>
+  );
 }
 
 function ZoomableImage({
@@ -1913,6 +1946,8 @@ function ZoomableImage({
   alt,
   resetKey,
   filter,
+  statusBadges,
+  onFittedHeightChange,
   onLoaded,
   adjust,
 }: {
@@ -1920,12 +1955,14 @@ function ZoomableImage({
   alt: string;
   resetKey: string;
   filter?: string;
+  statusBadges?: React.ReactNode;
+  onFittedHeightChange: (height: number | null) => void;
   onLoaded: () => void;
   adjust?: React.ReactNode;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [zoomed, setZoomed] = useState(false);
-  const { paneRef, zoomRef, fitted, onImageLoad } = useFittedZoom(src);
+  const { paneRef, zoomRef, fitted, onImageLoad } = useFittedZoom(src, onFittedHeightChange);
   // min-w-0/min-h-0 override the grid item's default content-based floor —
   // without them, the pane can never measure smaller than the zoom content's
   // last fitted pixel size, so a shrinking window gets stuck.
@@ -1969,6 +2006,7 @@ function ZoomableImage({
           </>
         )}
       </TransformWrapper>
+      <FittedStatusOverlay fitted={fitted}>{statusBadges}</FittedStatusOverlay>
       {expanded && <Lightbox src={src} alt={alt} filter={filter} onClose={() => setExpanded(false)} />}
     </div>
   );
@@ -2194,7 +2232,7 @@ type HandlerState = {
   showCheatsheet: boolean;
   setShowCheatsheet: (v: boolean) => void;
   filterRef: React.RefObject<HTMLInputElement>;
-  imgSearchRef: React.RefObject<HTMLInputElement>;
+  openFindImage: () => void;
   speciesList: Species[];
   filter: string;
   view: View;
@@ -2338,6 +2376,9 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
   // A focused video/audio control handles its own keys natively; don't let any
   // tagger hotkey fire while the user is scrubbing or playing.
   if (isMediaTarget(e.target)) return;
+  // Native activation owns Enter/Space while this compact button has focus.
+  if (e.target instanceof HTMLElement && e.target.matches('[data-need-expert-toggle]') &&
+      (e.key === 'Enter' || e.key === ' ')) return;
 
   // A focused range slider only needs arrow keys for its own navigation —
   // every other key, including species hotkeys, falls through below instead
@@ -2469,15 +2510,13 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
       gotoBurst(s, -1);
       return;
     case '/':
-      // The Overview search remains mounted for state continuity, but Focus
-      // owns the entire viewport and must not send a shortcut into that
-      // hidden control.
+      // Focus owns the viewport; Find exists only in Overview.
       if (s.view === 'focus') {
         e.preventDefault();
         return;
       }
       e.preventDefault();
-      s.imgSearchRef.current?.focus();
+      s.openFindImage();
       return;
     case ' ':
       e.preventDefault();
@@ -2500,7 +2539,7 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
         const anchorImage = focusedTileImage ?? current;
         if (!targets.length || !anchorImage) return;
         const anchorDraft = s.drafts[anchorImage.key];
-        s.setQuestionableMany(s.ctx, targets, !anchorDraft?.questionable);
+        s.setQuestionableMany(s.ctx, targets, !effectiveOf(anchorImage, anchorDraft).questionable);
         return;
       }
       s.filterRef.current?.focus();

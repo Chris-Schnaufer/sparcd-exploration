@@ -1,7 +1,8 @@
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { InfoTooltip } from '../components/InfoTooltip';
-import { useEffect, useMemo, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Connection, OfflineBanner, loadPersistedConnection, useOnline } from '@sparcd/auth-ui';
+import { PreparedAssignmentGate } from '../components/PreparedAssignmentGate';
 import { useStore } from '../store';
 import { Spinner } from '../components/Spinner';
 import { useLocations } from '../lib/useLocations';
@@ -79,6 +80,9 @@ export function Assign() {
   const uploaderUser = useStore((s) => s.uploaderUser);
   const setUploaderUser = useStore((s) => s.setUploaderUser);
   const ensureUploaderIdentity = useStore((s) => s.ensureUploaderIdentity);
+  const identityResolutionStatus = useStore((s) => s.identityResolutionStatus);
+  const identityResolutionError = useStore((s) => s.identityResolutionError);
+  const refreshUploaderIdentity = useStore((s) => s.refreshUploaderIdentity);
   const mountainRange = useStore((s) => s.mountainRange);
   const dateCollected = useStore((s) => s.dateCollected);
   const setMountainRange = useStore((s) => s.setMountainRange);
@@ -94,6 +98,11 @@ export function Assign() {
   const requireCollectionSelection = useStore((s) => s.requireCollectionSelection);
   const elevationUnit = useStore((s) => s.elevationUnit);
   const files = useStore((s) => s.files);
+  const flipId = useStore((s) => s.flipId);
+  const speciesScope = `${connectionId}/${selectedBucket}/${flipId}`;
+  const [speciesReadyScope, setSpeciesReadyScope] = useState<string | null>(null);
+  const speciesAssignmentReady = speciesReadyScope === speciesScope;
+  const setSpeciesAssignmentReady = useCallback((ready: boolean) => setSpeciesReadyScope(ready ? speciesScope : null), [speciesScope]);
 
   const {
     data,
@@ -199,7 +208,13 @@ export function Assign() {
       isFirstLocationEffect.current = false;
       if (selectedLocationId === mountedLocationIdRef.current) return;
     }
-    setUploadTimeZone(timeZoneForCoords(location.latitude, location.longitude));
+    if (location.latitude !== null && location.longitude !== null) {
+      setUploadTimeZone(timeZoneForCoords(location.latitude, location.longitude));
+    } else {
+      // A redacted location cannot establish a zone. Do not carry the prior
+      // location's zone into this batch; the operator must choose it manually.
+      setUploadTimeZone('');
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location?.key]);
 
@@ -211,7 +226,7 @@ export function Assign() {
   // Background processing finishing is no longer part of this gate: Upload
   // streams blobs as files individually become ready and only publishes once
   // processing genuinely completes, so there's nothing to wait for here.
-  const baseReady = !!location && !!slug && !!collection && !!uploadTimeZone && !!mountainRange.trim() && !!dateCollected;
+  const baseReady = !!location && !!slug && !!collection && !!uploadTimeZone && !!mountainRange.trim() && !!dateCollected && (!flipId || speciesAssignmentReady);
   const continueHint = !location
     ? 'Select a deployment location first'
     : !collection
@@ -224,7 +239,7 @@ export function Assign() {
             ? 'Enter a mountain range before continuing'
             : !dateCollected
               ? 'Enter a date collected before continuing'
-              : null;
+              : flipId && !speciesAssignmentReady ? 'Review prepared species before continuing' : null;
 
   function handleContinue() {
     if (!baseReady) return;
@@ -372,11 +387,32 @@ export function Assign() {
           onChange={(e) => setUploaderUser(e.target.value)}
           onBlur={ensureUploaderIdentity}
           placeholder="e.g. John Doe"
+          aria-describedby={identityResolutionStatus === 'error' ? 'assign-identity-resolution-error' : undefined}
+          aria-invalid={identityResolutionStatus === 'error' && !uploaderUser.trim()}
           className="w-full border border-rule bg-paper px-3 py-2 font-body text-[14px] text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1"
         />
         <p className="font-body text-[12px] text-inkMute mt-1.5">
           Recorded with every upload you make.
         </p>
+        {identityResolutionStatus === 'loading' && (
+          <p role="status" aria-live="polite" className="font-body text-[12px] text-inkMute mt-1.5">
+            Checking the connected account's attribution name…
+          </p>
+        )}
+        {identityResolutionStatus === 'error' && (
+          <div id="assign-identity-resolution-error" role="alert" className="flex flex-wrap items-center gap-2 font-body text-[12px] text-warn mt-1.5">
+            <span>{identityResolutionError ?? 'The connected account name is unavailable.'} {uploaderUser.trim()
+              ? 'The saved identity remains available.'
+              : 'Enter a custom identity before continuing.'}</span>
+            <button
+              type="button"
+              onClick={() => void refreshUploaderIdentity()}
+              className="underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            >
+              Retry account-name lookup
+            </button>
+          </div>
+        )}
       </section>
 
       <section>
@@ -396,7 +432,7 @@ export function Assign() {
           className="w-full border border-rule bg-paper px-3 py-2 font-body text-[14px] text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1"
         >
           <option value="">Select a timezone…</option>
-          {timeZones.map((tz) => (
+          {timeZones.filter(Boolean).map((tz) => (
             <option key={tz} value={tz}>
               {tz}
             </option>
@@ -404,8 +440,9 @@ export function Assign() {
         </select>
         <p id="upload-timezone-help" className="font-body text-[12px] text-inkMute mt-1.5">
           {!uploadTimeZone && <span className="text-warn">Select a timezone before continuing. </span>}
-          Defaults to the selected deployment location's zone — change it here if the camera's
-          clock was actually set to a different one.
+          {location && (location.latitude === null || location.longitude === null)
+            ? "This account cannot read the selected location's coordinates, so choose the camera timezone manually."
+            : "Defaults to the selected deployment location's zone — change it here if the camera's clock was actually set to a different one."}
         </p>
       </section>
 
@@ -478,6 +515,8 @@ export function Assign() {
           </p>
         </div>
       </section>
+
+      <PreparedAssignmentGate collection={collection} onReady={setSpeciesAssignmentReady} />
 
       {!baseReady && continueHint && (
         <p id="upload-continue-help" role="status" className="font-body text-[12px] text-warn">

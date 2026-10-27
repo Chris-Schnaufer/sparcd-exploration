@@ -563,6 +563,17 @@ describe('upstream signing', () => {
     ));
     assert.equal(request.headers.get('if-match'), 'c1f2');
   });
+
+  test('an internal HEAD is signed with the upstream credential', async () => {
+    let result;
+    const { request, signedHeaders } = await capture(async (upstream) => {
+      result = await upstream.head('sparcd-coll', 'Collections/u/deployments.csv');
+    });
+    assert.equal(request.method, 'HEAD');
+    assert.ok(request.headers.get('authorization'));
+    assert.deepEqual(result, { status: 200, etag: '"x"', contentLength: null });
+    assert.ok(signedHeaders.includes('host'));
+  });
 });
 
 describe('upstream listings', () => {

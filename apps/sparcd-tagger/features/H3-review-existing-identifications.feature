@@ -76,15 +76,136 @@ Feature: Review, correct and remove identifications that already exist
     Then every selected image is left with no species
 
   @H3
+  Scenario Outline: Clear Species follows the selection in either view even when focus is outside it
+    Given a mixed selection with focus "<focus>" the selection in "<view>"
+    Then Clear Species explains its two-image selection on hover and focus
+    When selection clearing is activated with "<key>" in "<view>"
+    Then only the tagged selected image has a dirty draft
+    And unselected identifications remain unchanged
+
+    Examples:
+      | view  | focus   | key   |
+      | grid  | inside  | Enter |
+      | list  | outside | Space |
+      | focus | inside  | Enter |
+      | focus | outside | Space |
+
+  @H3
+  Scenario: Clearing identifications in Focus clears every selected tagged image
+    Given several images are selected
+    When Focus is entered
+    And identifications are cleared
+    Then every selected image is left with no species
+
+  @H3
+  Scenario Outline: Clearing without a selection affects only the focused image
+    Given a tagged image is focused without a selection in "<view>"
+    When identifications are cleared
+    Then only the focused image has a dirty draft
+    And unselected identifications remain unchanged
+
+    Examples:
+      | view  |
+      | grid  |
+      | focus |
+
+  @H3
+  Scenario Outline: An untagged focused image does not hide a tagged selection's Clear Species action
+    Given a tagged and an untagged image are selected with the untagged one focused in "<view>" Overview
+    Then Clear Species explains its two-image selection on hover and focus
+    When Clear Species is activated with "<key>"
+    Then only the selected tagged image is edited in "<view>" Overview
+
+    Examples:
+      | view | key   |
+      | grid | Enter |
+      | list | Space |
+
+  @H3
+  Scenario: Clear Species is unavailable when only untagged targets are selected
+    Given only an untagged image is selected while a tagged image is focused
+    Then Clear Species is absent and no image has a new draft
+
+  @H3
+  Scenario Outline: A filtered selection cannot clear hidden images
+    Given several images are selected
+    When the selection is filtered to IMG003.JPG and cleared in "<view>"
+    Then the hidden selected images keep their original species
+
+    Examples:
+      | view  |
+      | grid  |
+      | focus |
+
+  @H3
+  Scenario Outline: A cleared selection survives Sync and reload without changing other images
+    Given several images are selected
+    And the unselected species rows are recorded
+    And clearing is prepared in "<view>"
+    When identifications are cleared
+    And a live sync is run
+    Then the cleared selection is stored and restored without changing other images
+
+    Examples:
+      | view  |
+      | grid  |
+      | focus |
+
+  @H3
   Scenario: An image can be flagged as questionable for a second opinion
     Given an image is focused
     When it is marked questionable
     Then the image's tile carries a questionable marker
     And the marker can be toggled off again
     And a selection of images can be marked in one action
-    # As-built: the questionable flag stays in this browser. It is not part of
-    # the canonical files a sync writes, so it does not travel to other users
-    # and its drafts stay listed as unsaved after a sync. Flag for review.
+    # Need expert is stored in media.csv and shared after Sync.
+
+  @H3
+  Scenario: Need expert is a compact shared status in Overview and Focus
+    Given an image is focused
+    Then the compact Need expert control is accessible in Overview
+    When Need expert is enabled from the compact control
+    And the Need expert sync preview reports one marked image
+    And a live sync is run
+    Then media.csv stores Need expert without rewriting observations
+    And the Need expert marker returns after a reload
+    And a new browser session sees the saved Need expert status
+    And the compact Need expert control is accessible in Focus
+    When Need expert is cleared from Focus
+    And a live sync is run
+    Then media.csv no longer stores Need expert
+    And the cleared Need expert status remains off after reload
+
+  @H3
+  Scenario: Need expert remains keyboard reachable in narrow Overview and Focus
+    Given an image is focused
+    When the workspace is narrowed to a phone width
+    Then Need expert can be toggled from the keyboard in Overview
+    And Need expert fits and remains keyboard reachable in Focus
+
+  @H3
+  Scenario: A mixed selection shows its target and one action applies the focused state
+    Given an image is focused
+    When one image is marked Need expert and three images are selected
+    Then the compact toggle describes the mixed selection and marks it in one activation
+
+  @H3
+  Scenario: A touch activation changes Need expert exactly once
+    Then a touch user can mark and clear Need expert with one tap each
+
+  @H3
+  Scenario: Reversing an unsynced Need expert status resolves the local edit
+    Given an image is focused
+    When Need expert is enabled from the compact control
+    And Need expert is toggled off before syncing
+    Then the image has no pending Need expert edit
+
+  @H3
+  Scenario: A concurrent media edit blocks a pending Need expert status
+    Given an image is focused
+    When Need expert is enabled from the compact control
+    And another writer changes media.csv
+    Then Sync reports a media conflict and keeps the local Need expert edit
 
   @H3 @H3-2
   Scenario: A confirmation records who reviewed it and when, even though nothing changes
@@ -119,6 +240,48 @@ Feature: Review, correct and remove identifications that already exist
     When a live sync is run
     Then the original identifier and separate review remain visible in the stored image
 
+  @H3 @H3-8
+  Scenario: A single unreviewed species control omits attribution and review warnings in Overview and Focus
+    Given an unreviewed single-species image is focused
+    Then the species control has no original attribution or negative review text
+    When the species control is shown in Focus
+    Then the species control has no original attribution or negative review text
+
+  @H3 @H3-8
+  Scenario: Unreviewed multi-species controls omit attribution and review summaries in Overview and Focus
+    Given a multi-species image with no review events is focused
+    When species controls are collapsed
+    And the viewport is set to 390 pixels wide
+    Then expanded species controls have no original attribution or negative review text
+    When species controls are collapsed
+    Then the collapsed species summary has no review label or original attribution
+    When the same species controls are shown in Focus
+    Then expanded species controls have no original attribution or negative review text
+    When species controls are collapsed
+    Then the collapsed species summary has no review label or original attribution
+
+  @H3 @H3-8
+  Scenario: Reviewed multi-species controls retain positive review information in Overview and Focus
+    Given a multi-species image with all identifications reviewed is focused
+    Then expanded species controls show positive review information without original attribution
+    When species controls are collapsed
+    Then the collapsed species summary says Reviewed
+    When the same species controls are shown in Focus
+    Then expanded species controls show positive review information without original attribution
+    When species controls are collapsed
+    Then the collapsed species summary says Reviewed
+
+  @H3 @H3-8
+  Scenario: Mixed multi-species controls use Partly reviewed in Overview and Focus
+    Given an image with mixed reviewed and unreviewed identifications is focused
+    Then expanded species controls show positive review information without negative labels
+    When species controls are collapsed
+    Then the collapsed species summary says Partly reviewed
+    When the same species controls are shown in Focus
+    Then expanded species controls show positive review information without negative labels
+    When species controls are collapsed
+    Then the collapsed species summary says Partly reviewed
+
   @H3 @H3-7
   Scenario: A correction preserves the immutable original upload baseline
     Given the original upload data is captured before a review
@@ -147,9 +310,8 @@ Feature: Review, correct and remove identifications that already exist
     And the live audit records the correction identity and time
 
   @H3 @H3-8
-  Scenario: Reviewed and unreviewed identifications are visibly distinguished
+  Scenario: Overview shows the mixed review state for an image
     Given an image with mixed reviewed and unreviewed identifications is focused
-    Then each identification shows whether it is reviewed
     And the image tile reports a mixed review status
     And the list row reports a mixed review status
     And an identification without a review event is labelled not reviewed

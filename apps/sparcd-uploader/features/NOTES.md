@@ -14,6 +14,25 @@ Coverage notes for the as-built uploader feature files.
   corresponds to that story's acceptance criteria. Everything else is
   `@unmapped` — most of this app is, which is the point of the exercise.
 
+## Issue #584 identity coverage
+
+- The shared `@sparcd/auth-ui` preference is keyed by the connected login and
+  stores the custom identity separately from the resolved default. Opaque hashed
+  preference keys and fallback markers keep raw login IDs out of these records;
+  the exposed v1 records are discarded. Unit tests
+  cover per-login isolation, reload persistence, blank-on-unresolved behavior,
+  default refresh, custom-value preservation, malformed storage, and unavailable
+  storage.
+- Uploader calls the signed `/-/whoami` endpoint and uses its `name` as the
+  access-service default. The Access-key fallback is used only after explicit
+  route-absence evidence; authorization failures, malformed responses, network
+  failures, timeouts, throttling, and server errors leave the value unresolved
+  unless this login already has a saved custom identity or resolved name.
+  Focused unit and Chrome BDD coverage is in `test/whoami.test.ts`,
+  `test/store.test.ts`, and `connect-and-session.feature`. The request-signing test
+  uses the production access-service signature verifier, and storage-failure tests
+  preserve a typed custom name across pending lookup completion and retry.
+
 ## Story mapping, honestly
 
 - **F1** (upload a batch once back online) — partly met: only image/video files
@@ -49,9 +68,9 @@ Coverage notes for the as-built uploader feature files.
   publishes as observation rows in the same upload. Until then the tags live in
   the hand-off record, which is swept only after 30 days without being opened
   or tagged, so a batch can wait weeks for a connection. An untagged batch is still
-  accepted and recorded as carrying no species. Attribution (the tagger's
-  identity travelling with the tags) is recorded on the hand-off record but is
-  **not written into the published data** — that criterion stays unmet.
+  accepted and recorded as carrying no species. The tagger's identity travels
+  with the identifications and is written to `observations.csv` in the
+  `classified_by` column.
 - **F3** (announce new data) — only the negative criterion is met: a failed or
   abandoned upload publishes no metadata, so nothing sees it. There is no
   notification mechanism.
@@ -114,6 +133,41 @@ along the way — is written up in `features/CORRECTIONS.md`. Since PR #26 fixed
 publishing after Inspect completes, publish scenarios use small media by
 default; only scenarios about background examination keep the deliberately slow
 MP4, and in-flight upload checks are held by the S3 mock.
+
+
+## Production offline harness (#498 / #497)
+
+`pnpm --filter sparcd-uploader test:production:offline` reuses the existing F1-2
+warm-page offline Inspect and cross-tool handoff scenarios against both built
+apps on one origin. Infrastructure coverage additionally proves real Google
+Chrome process restart, preserved profile/IndexedDB, and actual network blocking.
+The suite now also verifies actual cold offline reopening and installed-PWA
+launch with production assets. See `../e2e/production/README.md` for exact
+implementation checks and #497's separate platform/manual acceptance boundary.
+
+## Prepared collection species (#498, delivery step 2)
+
+Before local tagging, explicitly choose a collection in “Species for local
+tagging” and prepare it online. Preparation uses the same production species
+loader and source-aware key-profile reconciliation as standalone Tagger; it does
+not choose Assign's collection or location. Empty/missing collection files fall
+back to settings; denied/malformed lists do not silently substitute defaults.
+
+A versioned IndexedDB snapshot stores the accepted entries, local key overrides,
+source hash and source/collection/account identity without credentials. Each new
+version-2 Flip record gets its own copy; older readers reject that version rather
+than silently using a bundled list. Local Tagger uses that copy even when a live
+shared session changes, and never fetches a replacement vocabulary. Legacy or
+invalid handoffs explain how to return and prepare while retaining tags.
+
+Assign compares a tagged batch with a freshly loaded list for the actual target.
+Changed collections/lists require explicit review; identifications absent from
+the allowed list block continuation until reviewed, without deleting tags.
+Requested-species records retain their existing supported behavior.
+
+Delivery steps 3–5 add the versioned preparation journal, verified source
+recovery, coordinated production worker, installable manifest and safe updates.
+These implementation regressions do not complete #497’s independent matrix.
 
 Issue #479: `shared-session.feature` runs in the cross-tool suite against the
 real Uploader and Tagger through one origin. It checks refused-then-corrected

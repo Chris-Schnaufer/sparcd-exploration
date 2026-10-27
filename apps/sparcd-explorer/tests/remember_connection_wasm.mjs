@@ -40,9 +40,44 @@ try {
   const textFields = connectionForm.locator('input[type="text"]');
   const checkboxes = connectionForm.getByRole('checkbox');
   const endpoint = textFields.nth(0);
-  try {
-    await endpoint.waitFor({ state: 'visible', timeout: wasmStartupTimeout });
-  } catch (error) {
+  async function waitForEndpointOrPolarsFailure() {
+    let signalPolarsFailure;
+    const polarsFailure = new Promise((resolve) => { signalPolarsFailure = resolve; });
+    const onResponse = (response) => {
+      if (response.status() >= 500 && /corsproxy\.marimo\.app\/.*polars.*\.whl/i.test(response.url())) {
+        signalPolarsFailure();
+      }
+    };
+    page.on('response', onResponse);
+    try {
+      return await Promise.race([
+        endpoint.waitFor({ state: 'visible', timeout: wasmStartupTimeout })
+          .then(() => ({ ready: true }), (error) => ({ error })),
+        polarsFailure.then(() => ({ transientPolarsFailure: true })),
+      ]);
+    } finally {
+      page.off('response', onResponse);
+    }
+  }
+  let startupError;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const startup = await waitForEndpointOrPolarsFailure();
+    if (startup.ready) {
+      startupError = undefined;
+      break;
+    }
+    startupError = startup.error ?? new Error('Polars WASM package request failed during startup.');
+    // Pyodide fetches the Polars WASM wheel through marimo's CORS proxy.
+    // That external endpoint occasionally returns a transient 5xx; retry
+    // only that startup failure, not application or assertion failures.
+    const transientPolarsFetch = startup.transientPolarsFailure || diagnostics.some((entry) =>
+      /response 5\d\d: https:\/\/corsproxy\.marimo\.app\/.*polars.*\.whl/i.test(entry));
+    if (!transientPolarsFetch || attempt === 3) break;
+    diagnostics.length = 0;
+    await page.waitForTimeout(1_000 * attempt);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+  }
+  if (startupError) {
     const artifactDirectory = join(root, 'test-results');
     await mkdir(artifactDirectory, { recursive: true });
     await page.screenshot({ path: join(artifactDirectory, 'remember-connection-startup-failure.png'), fullPage: true });
@@ -59,7 +94,7 @@ try {
       join(artifactDirectory, 'remember-connection-startup-failure.txt'),
       `WASM diagnostics:\n${diagnostics.join('\n') || '<none>'}\nSidebar controls:\n${JSON.stringify(sidebarControls)}\nPage body:\n${body}`,
     );
-    throw new Error(`${error.message}\nWASM diagnostics:\n${diagnostics.join('\n') || '<none>'}\nSidebar controls:\n${JSON.stringify(sidebarControls)}\nPage body:\n${body}`);
+    throw new Error(`${startupError.message}\nWASM diagnostics:\n${diagnostics.join('\n') || '<none>'}\nSidebar controls:\n${JSON.stringify(sidebarControls)}\nPage body:\n${body}`);
   }
   await expect(endpoint).toHaveValue('shared.example', { timeout: wasmStartupTimeout });
   await expect(textFields).toHaveCount(2);

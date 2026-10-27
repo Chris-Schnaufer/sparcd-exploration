@@ -62,6 +62,17 @@ export function makeUpstream({ endpoint, region = 'us-east-1', accessKeyId, secr
       return { status: res.status, etag: res.headers.get('etag'), text: await res.text() };
     },
 
+    async head(bucket, key) {
+      const res = await sendMeta(url(bucket, key), { method: 'HEAD' });
+      if (res.status === 404) return { status: 404 };
+      if (!res.ok) throw new Error(`HEAD ${bucket}/${key} → ${res.status}`);
+      return {
+        status: res.status,
+        etag: res.headers.get('etag'),
+        contentLength: res.headers.get('content-length'),
+      };
+    },
+
     async getJson(bucket, key) {
       const res = await this.get(bucket, key);
       return res.status === 404 ? { status: 404 } : { ...res, value: JSON.parse(res.text) };
@@ -72,8 +83,11 @@ export function makeUpstream({ endpoint, region = 'us-east-1', accessKeyId, secr
      *              create. Returns the ETag of the object written, or false
      *              on 412/409, which is the caller's cue to reload and retry.
      */
-    async put(bucket, key, body, { contentType = 'application/json', retry = true, ...guard } = {}) {
+    async put(bucket, key, body, {
+      contentType = 'application/json', retry = true, metaSha256, ...guard
+    } = {}) {
       const headers = { 'content-type': contentType };
+      if (metaSha256) headers['x-amz-meta-sha256'] = metaSha256;
       if (guard.ifMatch) headers['if-match'] = normalizeIfMatch(guard.ifMatch);
       if (guard.ifNoneMatch) headers['if-none-match'] = guard.ifNoneMatch;
       const via = retry ? sendMeta : send;

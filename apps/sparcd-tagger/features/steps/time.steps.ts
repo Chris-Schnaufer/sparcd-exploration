@@ -1,3 +1,4 @@
+import { openFindFilter } from './support/world';
 import type { Page, Locator } from '@playwright/test';
 import { parseMedia } from '@sparcd/camtrap';
 import {
@@ -250,10 +251,10 @@ When('that one-image selection is toggled off', async ({ page }) => {
 });
 
 When('the selection is filtered down to IMG001.JPG', async ({ page }) => {
-  await page.getByRole('button', { name: 'Filter', exact: true }).click();
-  await page.getByLabel('Search in').selectOption('filename');
+  await openFindFilter(page);
+  await page.getByRole('group', { name: 'Search in', exact: true }).getByRole('radio', { name: 'Filename', exact: true }).check();
   await page.getByLabel('Match text').fill('IMG001.JPG');
-  await page.getByLabel('Match text').press('Escape');
+  await page.getByRole('button', { name: 'Find & filter', exact: true }).focus();
   await expect(gridCell(page, 'IMG002.JPG')).toHaveCount(0);
   await expect(gridCell(page, 'IMG003.JPG')).toHaveCount(0);
   await expect(positionReadout(page)).toHaveText('1 selected');
@@ -493,7 +494,7 @@ Then('the stored capture times are unchanged', async ({ s3 }) => {
 
 Then('the sync preview counts how many images would have a corrected time', async ({ page }) => {
   await sectionTab(page, 'Settings').click();
-  await expect(page.locator('#user')).toHaveValue('tes…key');
+  await expect(page.locator('#user')).toHaveValue('testkey');
   await sectionTab(page, 'Tag').click();
   await openSyncDialog(page);
   await expect(
@@ -522,7 +523,7 @@ Then(
 
 Given('a whole-upload shift was written to the stored files by a sync', async ({ page }) => {
   await sectionTab(page, 'Settings').click();
-  await expect(page.locator('#user')).toHaveValue('tes…key');
+  await expect(page.locator('#user')).toHaveValue('testkey');
   await sectionTab(page, 'Tag').click();
   await timeShiftButton(page).click();
   await bump(uploadShiftModal(page), 'Hour', 1);
