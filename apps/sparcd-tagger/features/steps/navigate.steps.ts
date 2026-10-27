@@ -481,7 +481,7 @@ Then('Tab wraps within the Focus viewer at both boundaries', async ({ page }) =>
   const last = focusable.last();
   await last.focus();
   await page.keyboard.press('Tab');
-  await expect(page.getByRole('button', { name: 'Close Focus' })).toBeFocused();
+  await expect(first).toBeFocused();
   await first.focus();
   await page.keyboard.press('Shift+Tab');
   await expect(last).toBeFocused();
