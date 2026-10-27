@@ -383,6 +383,10 @@ export function seedFixtures(s3: MockS3): void {
 
   s3.put(SETTINGS_BUCKET, 'Settings/species.json', SPECIES_JSON, 'application/json');
   s3.put(SETTINGS_BUCKET, 'Settings/locations.json', LOCATIONS_JSON, 'application/json');
+  // The shared settings locations file is redacted for non-admin accounts.
+  // Keep an authorized collection-scoped source for scenarios that exercise
+  // location correction and the exactLocations positive control.
+  s3.put(BUCKET, `Collections/${UUID}/locations.json`, LOCATIONS_JSON, 'application/json');
 
   // --- Upload A: partially tagged, has a deployment file and a snapshot ------
   s3.put(BUCKET, `${PREFIX_A}media.csv`, mediaCsv(PREFIX_A, MEDIA_A), 'text/csv');

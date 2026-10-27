@@ -10,10 +10,21 @@ import {
   gridCell,
   sectionTab,
   enterFocusView,
+  focusFrame,
+  speciesApply,
 } from './support/world';
-import { LOCATION_NAME, DEPLOYMENT, BUCKET, PREFIX_A, PREFIX_B } from './support/data';
-import { MEDIA_COL, parseCsvRows, serializeCsvRows } from '@sparcd/camtrap';
-import { LOCATIONS_JSON, SETTINGS_BUCKET, deploymentsCsv } from './support/data';
+import {
+  BUCKET,
+  DEPLOYMENT,
+  LOCATION_NAME,
+  PREFIX_A,
+  PREFIX_B,
+  PREFIX_C,
+  SETTINGS_BUCKET,
+  UUID,
+} from './support/data';
+import { MEDIA_COL, parseCsvRows, parseObservations, serializeCsvRows } from '@sparcd/camtrap';
+import { runLiveSync } from './support/flows';
 
 const SENSITIVITY_WORDS =
   /sensitiv|protected species|redact|coarsen|withheld|obfuscat|restricted location/i;
@@ -23,13 +34,15 @@ Given('the tagger is connected with credentials that can read a collection', asy
 });
 
 Given('the connected account cannot read exact coordinates', async ({ s3 }) => {
-  const locations = JSON.parse(LOCATIONS_JSON).map((entry: Record<string, unknown>) => ({
-    ...entry,
-    latProperty: null,
-    lngProperty: null,
-  }));
-  s3.put(SETTINGS_BUCKET, 'Settings/locations.json', JSON.stringify(locations), 'application/json');
-  s3.put(BUCKET, `${PREFIX_A}deployments.csv`, deploymentsCsv(false, true), 'text/csv');
+  s3.exactLocations = false;
+});
+
+Given('the connected account can read exact coordinates', async ({ s3 }) => {
+  s3.exactLocations = true;
+  // Exercise the shared-settings fallback here: this object remains redacted
+  // for non-admin users even when their collection membership grants the
+  // exactLocations permission.
+  s3.delete(BUCKET, `Collections/${UUID}/locations.json`);
 });
 
 Then(
@@ -39,7 +52,7 @@ Then(
   },
 );
 
-Then('the location identity remains visible but precise coordinates and location editing do not', async ({ page }) => {
+Then('the location identity remains visible but precise coordinates and location editing do not', async ({ page, s3 }) => {
   await expect(uploadRow(page, 'priortagger')).toContainText(LOCATION_NAME);
   await selectCollection(page);
   await openUpload(page);
@@ -49,6 +62,36 @@ Then('the location identity remains visible but precise coordinates and location
   await expect(page.locator('body')).toContainText('SAN15');
   const body = await page.locator('body').innerText();
   expect(body).not.toMatch(/31\.500000|-110\.200000/);
+  expect(s3.servedBody(BUCKET, `Collections/${UUID}/locations.json`) ?? '').not.toMatch(/31\.5|-110\.2/);
+  expect(s3.servedBody(BUCKET, `${PREFIX_A}deployments.csv`) ?? '').not.toMatch(/31\.500000|-110\.200000/);
+});
+
+When('the user identifies the focused image and syncs it', async ({ page }) => {
+  await focusFrame(page, 'IMG002.JPG');
+  await speciesApply(page, 'Canis latrans').click();
+  await runLiveSync(page);
+});
+
+Then('the identification is saved to the fresh upload', async ({ s3 }) => {
+  const observations = parseObservations(s3.text(BUCKET, `${PREFIX_C}observations.csv`));
+  expect(observations.some((observation) =>
+    observation.mediaId.endsWith('/IMG002.JPG') && observation.scientificName === 'Canis latrans')).toBe(true);
+});
+
+Then('the identification is saved', async ({ s3 }) => {
+  expect(s3.text(BUCKET, `${PREFIX_A}observations.csv`)).toContain('Canis latrans');
+});
+
+Then('the saved identification does not disclose precise coordinates', async ({ page, s3 }) => {
+  expect(s3.servedBody(BUCKET, `Collections/${UUID}/locations.json`) ?? '').not.toMatch(/31\.5|-110\.2/);
+  expect(s3.servedBody(BUCKET, `${PREFIX_A}deployments.csv`) ?? '').not.toMatch(/31\.500000|-110\.200000/);
+  expect(await page.locator('body').innerText()).not.toMatch(/31\.500000|-110\.200000/);
+});
+
+Then('the saved identification does not disclose precise coordinates for the fresh upload', async ({ page, s3 }) => {
+  expect(s3.servedBody(BUCKET, `Collections/${UUID}/locations.json`) ?? '').not.toMatch(/31\.5|-110\.2/);
+  expect(s3.servedBody(BUCKET, `${PREFIX_C}deployments.csv`) ?? '').not.toMatch(/31\.500000|-110\.200000/);
+  expect(await page.locator('body').innerText()).not.toMatch(/31\.500000|-110\.200000/);
 });
 
 Then('no location is withheld on the grounds of the species in the images', async ({ page }) => {
@@ -208,6 +251,15 @@ Then(
     await expect(uploadRow(page, 'priortagger')).toContainText(LOCATION_NAME);
   },
 );
+
+Then('the exact coordinates remain available to the authorized account', async ({ s3 }) => {
+  // exactLocations grants access to this collection's deployments, while the
+  // shared settings registry remains coordinate-redacted for non-admin users.
+  await expect.poll(() => s3.servedBody(SETTINGS_BUCKET, 'Settings/locations.json') ?? '').toContain('"latProperty":null');
+  await expect.poll(() => s3.servedBody(SETTINGS_BUCKET, 'Settings/locations.json') ?? '').not.toMatch(/31\.5|-110\.2/);
+  await expect.poll(() => s3.servedBody(BUCKET, `${PREFIX_A}deployments.csv`) ?? '').toMatch(/31\.500000/);
+  await expect.poll(() => s3.servedBody(BUCKET, `${PREFIX_A}deployments.csv`) ?? '').toMatch(/-110\.200000/);
+});
 
 When('an image is displayed', async ({ page }) => {
   await selectCollection(page);

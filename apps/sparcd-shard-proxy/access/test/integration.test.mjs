@@ -439,6 +439,31 @@ describe('coordinate permission redaction', () => {
       await root.put(bucket, registryKey, original);
     }
   });
+
+  test('exact-coordinate members get registry coordinates for coordinate-free deployment writes', async () => {
+    const bucket = `${NAMESPACE}${BUCKET_A}`;
+    const registryKey = `Collections/${UUID_A}/locations.json`;
+    const original = (await root.get(bucket, registryKey)).text;
+    const key = `Collections/${UUID_A}/Uploads/2026.10.26.00.00.05_exact-fallback/deployments.csv`;
+    const row = Array(23).fill('');
+    row[0] = `${UUID_A}:SET-1`;
+    row[1] = 'SET-1';
+    row[2] = 'Settings site';
+    row[12] = '900';
+    const coordinateFree = row.map((value) => '"' + value + '"').join(',') + '\n';
+    try {
+      await root.send(root.url(bucket, registryKey), { method: 'DELETE' });
+      const saved = await people.alice.raw('PUT', `/${BUCKET_A}/${key}`, {
+        body: coordinateFree,
+        headers: { 'content-type': 'text/csv', 'if-none-match': '*' },
+      });
+      assert.equal(saved.status, 200, saved.text);
+      const stored = (await root.get(bucket, key)).text;
+      assert.match(stored, /"-110\.200000","31\.500000"/);
+    } finally {
+      await root.put(bucket, registryKey, original);
+    }
+  });
 });
 
 describe('the access table', () => {

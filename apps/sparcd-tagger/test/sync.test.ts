@@ -864,6 +864,21 @@ describe('runSync — live write path', () => {
 });
 
 describe('runSync — location correction (issue #279)', () => {
+  it('refuses a location with redacted coordinates before writing any canonical file', async () => {
+    const cur = await canonical();
+    const { io, rec } = fakeIO(cur);
+    const redactedLocation = { ...NEW_DEPLOYMENT, latitude: null, longitude: null };
+    const plan = buildSyncPlan(IMAGES, {}, null, redactedLocation);
+
+    await expect(runSync(
+      { bucket: 'sparcd-x', uploadPrefix: PREFIX, user: 'jg', base: baseFrom(cur), plan, dryRun: false },
+      io,
+    )).rejects.toThrow('The selected location does not include exact coordinates.');
+
+    expect(rec.snapshots).toHaveLength(0);
+    expect(rec.replaces).toHaveLength(0);
+  });
+
   it('rewrites deployments.csv and every media/observation deployment id', async () => {
     const cur = await canonical();
     const { io, rec } = fakeIO(cur);
