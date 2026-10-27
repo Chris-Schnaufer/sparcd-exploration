@@ -22,7 +22,7 @@ that map to an agreed story carry its ID; the rest carry `@unmapped`.
 | `local-drafts-and-recovery.feature` | Local drafts, unsaved counts, History recovery, discard | `@unmapped` |
 | `sync-identifications-to-the-collection.feature` | Preview, dry-run gate, conflict, snapshot, conditional write, resume | `@H2` `@H3` + `@unmapped` |
 | `restore-a-previous-snapshot.feature` | Snapshot listing and restore (supports the M2 constraint) | `@unmapped` |
-| `correct-capture-times.feature` | Whole-upload, selection and per-image time correction | `@unmapped` |
+| `correct-capture-times.feature` | Whole-upload and selection time correction; direct single-image selection in grid/list and narrow touch controls, deselection, timestamp eligibility, and filtered targets (#521) | `@unmapped` |
 | `F4-location-visibility.feature` | What the tool actually reveals about camera locations | `@F4` |
 | `local-batch.feature` | Tagging a batch the Uploader handed over, with no connection | `@A1` `@unmapped` |
 
@@ -47,9 +47,14 @@ that map to an agreed story carry its ID; the rest carry `@unmapped`.
   preserves the original `classified_by` and `classification_timestamp` and
   appends a separate repeatable `[REVIEWED_BY:…][REVIEWED_AT:…]` event. The
   review event survives sync and the Uploader-to-Tagger handoff.
-- **F4 — not addressed by this tool.** No sensitive-species concept exists
-  anywhere in the tagger. Locations are shown to any connected user. Captured
-  honestly in `F4-location-visibility.feature` so the gap is on the record.
+- **F4 — coordinate redaction is enforced by the access proxy.** The Tagger
+  has no sensitive-species concept and does not make the authorization decision;
+  the proxy removes exact coordinates for accounts without `exactLocations`.
+  `F4-location-visibility.feature` covers the Tagger's behavior with redacted
+  location data, including `@F4-4`, while
+  `H2-protected-location-identification.feature` covers `@H2-7`. The proxy
+  integration tests cover the authorization boundary and the Tagger BDD mock
+  applies the same response policy to its browser requests.
 - **M2 (constraint) — largely supported.** Original files are never destroyed:
   the first live edit also creates an immutable original-upload baseline. Every
   later write is preceded by an immutable snapshot, replacement is conditional
@@ -130,3 +135,6 @@ Marked with trailing comments in the feature files:
 - A successful live sync **clears the whole-upload time shift**, because the
   shift has been baked into the stored capture times; leaving it would shift
   them twice on the next sync.
+
+Sync-state explanations (#525/#528): header and Browse row native hover titles are supplemented by keyboard-visible, Escape-dismissible descriptions. Coverage exercises all seven header states, dry-run progress with no writes, and completed sync with questionable-only drafts still pending; Browse checks local-only/unsynced/synced help at 375px and 1440px. Sync semantics are unchanged.
+Collection rail ID help (#523): Browse BDD covers per-collection hover and keyboard descriptions, Escape/pointer dismissal, keyboard selection, matching names, single-tooltip ownership across focus/hover, non-obstructing narrow-row help with selection-changing click-through at 320px/375px, separate desktop tooltip clicks that preserve selection at 1280px/1440px, and viewport bounds at 375px/1280px/1440px.

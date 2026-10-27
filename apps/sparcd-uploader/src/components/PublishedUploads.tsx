@@ -85,6 +85,12 @@ function UploadCard({
   const [note, setNote] = useState<{ tone: 'mute' | 'warn'; message: string } | null>(null);
 
   const { uuid } = parseCollectionKey(collection.key);
+  // A caller without exact-location permission receives identity-only
+  // registry rows. Those entries cannot be used for the location/timezone
+  // correction workflow, so keep them out of its picker.
+  const correctableLocations = locations.filter(
+    (location) => location.latitude !== null && location.longitude !== null,
+  );
 
   async function saveDescription() {
     if (!cfg) return;
@@ -123,8 +129,8 @@ function UploadCard({
 
   async function saveDeployment() {
     if (!cfg) return;
-    const loc = findAllowedLocation(locations, locationId);
-    if (!loc) return;
+    const loc = findAllowedLocation(correctableLocations, locationId);
+    if (!loc || loc.latitude === null || loc.longitude === null) return;
     setBusy(true);
     setNote(null);
     try {
@@ -146,10 +152,12 @@ function UploadCard({
           toDeploymentId: deployment.deploymentId,
           location: deployment,
           fromTimeZone: previousDeployment
+            && previousDeployment.latitude !== null
+            && previousDeployment.longitude !== null
             ? timeZoneForCoords(previousDeployment.latitude, previousDeployment.longitude)
             : undefined,
           legacyTimeZone: captureTimeZone,
-          toTimeZone: timeZoneForCoords(deployment.latitude, deployment.longitude),
+          toTimeZone: timeZoneForCoords(loc.latitude, loc.longitude),
         },
       );
       const result = await runPublishedEdit(
@@ -236,7 +244,7 @@ function UploadCard({
           >
             Edit description
           </button>
-          <button
+          {correctableLocations.length > 0 && <button
             onClick={() => {
               setMode('deployment');
               setNote(null);
@@ -244,7 +252,7 @@ function UploadCard({
             className="border border-ink text-ink min-h-[44px] px-4 py-1 sm:min-h-0 sm:px-3 text-[13px] font-body hover:bg-paperHover"
           >
             Correct location
-          </button>
+          </button>}
         </div>
       )}
 
@@ -278,7 +286,7 @@ function UploadCard({
       {mode === 'deployment' && (
         <div className="space-y-2 pt-1">
           <DeploymentPicker
-            locations={locations}
+            locations={correctableLocations}
             value={locationId}
             onChange={setLocationId}
             elevationUnit={elevationUnit}

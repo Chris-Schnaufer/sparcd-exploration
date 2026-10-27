@@ -518,8 +518,13 @@ async function buildWrites(
     const currentDeployment = parseDeployments(current.deployments.text)[0];
     const fromDeploymentId = currentDeployment?.deploymentId;
     const fromTimeZone = currentDeployment
+      && currentDeployment.latitude !== null
+      && currentDeployment.longitude !== null
       ? tzlookup(currentDeployment.latitude, currentDeployment.longitude)
       : undefined;
+    if (plan.locationEdit.latitude === null || plan.locationEdit.longitude === null) {
+      throw new Error('The selected location does not include exact coordinates.');
+    }
     const toTimeZone = tzlookup(plan.locationEdit.latitude, plan.locationEdit.longitude);
     const legacyTimeZone = parseUploadMeta(current.uploadMeta.text).captureTimeZone ?? fromTimeZone;
     const tagged = new Set(plan.tagEdits.map((e) => e.mediaId));
@@ -860,21 +865,40 @@ export async function runRestore(params: RestoreParams, io: SyncIO): Promise<Syn
   if (resumed) return resumed;
 
   const current = await io.loadCanonical();
-  // Legacy snapshots predate deployments.csv. They are safe only when every
-  // deployment referenced by their media/observations still exists in the
-  // current deployment file; otherwise restoring them would create dangling
-  // references after a later location correction.
-  if (bodies.deployments === undefined && current.deployments.text) {
-    const available = new Set(parseDeployments(current.deployments.text).map((deployment) => deployment.deploymentId));
-    const referenced = new Set([
-      ...parseCsvRows(bodies.media ?? '').map((row) => row[MEDIA_COL.deploymentId]),
-      ...parseCsvRows(bodies.observations ?? '').map((row) => row[OBS_COL.deploymentId]),
-    ].filter(Boolean));
-    if ([...referenced].some((deploymentId) => !available.has(deploymentId))) {
-      throw new Error('This snapshot predates deployment records and cannot be restored safely after a location change.');
+  const restoreBodies = { ...bodies };
+  if (restoreBodies.deployments !== undefined && current.deployments.text) {
+    const snapshotDeployments = parseDeployments(restoreBodies.deployments);
+    const currentDeployments = parseDeployments(current.deployments.text);
+    const snapshotHasRedactedCoordinates = snapshotDeployments.some(
+      (deployment) => deployment.latitude === null || deployment.longitude === null,
+    );
+    const currentHasExactCoordinates = currentDeployments.some(
+      (deployment) => deployment.latitude !== null && deployment.longitude !== null,
+    );
+    if (snapshotHasRedactedCoordinates && currentHasExactCoordinates) {
+      // A restricted snapshot contains the proxy's coordinate-free view. Do
+      // not restore it over the exact canonical file; keep the current bytes.
+      restoreBodies.deployments = current.deployments.text;
     }
   }
-  const writes = await prepareWrites(current, bodies);
+  // If the current deployment file will be retained (because the snapshot is
+  // legacy or its coordinate-redacted copy was replaced with the exact current
+  // file), every restored media/observation reference must still exist there.
+  // Otherwise the restore would leave dangling deployment IDs after a later
+  // location correction.
+  const currentDeploymentsWillRemain = current.deployments.text !== undefined
+    && (restoreBodies.deployments === undefined || restoreBodies.deployments === current.deployments.text);
+  if (currentDeploymentsWillRemain) {
+    const available = new Set(parseDeployments(current.deployments.text).map((deployment) => deployment.deploymentId));
+    const referenced = new Set([
+      ...parseCsvRows(restoreBodies.media ?? '').map((row) => row[MEDIA_COL.deploymentId]),
+      ...parseCsvRows(restoreBodies.observations ?? '').map((row) => row[OBS_COL.deploymentId]),
+    ].filter(Boolean));
+    if ([...referenced].some((deploymentId) => !available.has(deploymentId))) {
+      throw new Error('This snapshot references a deployment that is no longer present and cannot be restored safely after a location change.');
+    }
+  }
+  const writes = await prepareWrites(current, restoreBodies);
   if (writes.length === 0) return { status: 'noop' };
 
   const editStamp = javaEditStamp(io.now());
