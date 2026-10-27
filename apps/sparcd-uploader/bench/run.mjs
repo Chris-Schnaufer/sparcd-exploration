@@ -9,6 +9,10 @@ const appDir = fileURLToPath(new URL('../', import.meta.url));
 const benchDir = fileURLToPath(new URL('./', import.meta.url));
 const resultsDir = path.join(benchDir, 'results');
 const containerName = `sparcd-uploader-bench-${process.pid}`;
+// Pin the MinIO-compatible image already exercised by the main-branch
+// performance guard, while allowing local runners to override the registry.
+const minioImage = process.env.MINIO_IMAGE
+  || 'docker.io/pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372';
 const minioOrigin = 'http://127.0.0.1:19000';
 const appPort = Number(process.env.BENCH_APP_PORT ?? '5316');
 const appOrigin = `http://localhost:${appPort}`;
@@ -68,7 +72,7 @@ try {
     '-e', 'MINIO_ROOT_USER=minioadmin',
     '-e', 'MINIO_ROOT_PASSWORD=minioadmin',
     '-e', `MINIO_API_CORS_ALLOW_ORIGIN=${appOrigin}`,
-    'docker.io/pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372', 'server', '/data',
+    minioImage, 'server', '/data',
   ]);
   containerStarted = true;
   await waitFor(`${minioOrigin}/minio/health/ready`, 'MinIO');

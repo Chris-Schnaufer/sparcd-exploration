@@ -47,9 +47,12 @@ that map to an agreed story carry its ID; the rest carry `@unmapped`.
   preserves the original `classified_by` and `classification_timestamp` and
   appends a separate repeatable `[REVIEWED_BY:…][REVIEWED_AT:…]` event. The
   review event survives sync and the Uploader-to-Tagger handoff.
-- **F4 — not addressed by this tool.** No sensitive-species concept exists
-  anywhere in the tagger. Locations are shown to any connected user. Captured
-  honestly in `F4-location-visibility.feature` so the gap is on the record.
+- **F4 — coordinate redaction is enforced by the access proxy.** The Tagger
+  has no sensitive-species concept and does not make the authorization decision;
+  the proxy removes exact coordinates for accounts without `exactLocations`.
+  `F4-location-visibility.feature` covers the Tagger's behavior with redacted
+  location data while the proxy integration tests cover the authorization
+  boundary.
 - **M2 (constraint) — largely supported.** Original files are never destroyed:
   the first live edit also creates an immutable original-upload baseline. Every
   later write is preceded by an immutable snapshot, replacement is conditional
