@@ -321,6 +321,7 @@ Feature: Assign species to images in an upload
     Given the server rejects species vocabulary reads
     When the stale tagger tab regains focus
     Then the existing species vocabulary remains available
+    And the species panel explains the failed refresh without hiding cached species
     And no vocabulary-change message is shown
 
   @H2

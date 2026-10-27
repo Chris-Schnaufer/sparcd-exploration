@@ -205,7 +205,13 @@ export function Assign() {
       isFirstLocationEffect.current = false;
       if (selectedLocationId === mountedLocationIdRef.current) return;
     }
-    setUploadTimeZone(timeZoneForCoords(location.latitude, location.longitude));
+    if (location.latitude !== null && location.longitude !== null) {
+      setUploadTimeZone(timeZoneForCoords(location.latitude, location.longitude));
+    } else {
+      // A redacted location cannot establish a zone. Do not carry the prior
+      // location's zone into this batch; the operator must choose it manually.
+      setUploadTimeZone('');
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location?.key]);
 
@@ -402,7 +408,7 @@ export function Assign() {
           className="w-full border border-rule bg-paper px-3 py-2 font-body text-[14px] text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1"
         >
           <option value="">Select a timezone…</option>
-          {timeZones.map((tz) => (
+          {timeZones.filter(Boolean).map((tz) => (
             <option key={tz} value={tz}>
               {tz}
             </option>
@@ -410,8 +416,9 @@ export function Assign() {
         </select>
         <p id="upload-timezone-help" className="font-body text-[12px] text-inkMute mt-1.5">
           {!uploadTimeZone && <span className="text-warn">Select a timezone before continuing. </span>}
-          Defaults to the selected deployment location's zone — change it here if the camera's
-          clock was actually set to a different one.
+          {location && (location.latitude === null || location.longitude === null)
+            ? "This account cannot read the selected location's coordinates, so choose the camera timezone manually."
+            : "Defaults to the selected deployment location's zone — change it here if the camera's clock was actually set to a different one."}
         </p>
       </section>
 
