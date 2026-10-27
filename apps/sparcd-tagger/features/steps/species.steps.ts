@@ -1210,18 +1210,21 @@ Then('Escape, the close control or a click outside dismisses it', async ({ page 
 
 // --- Focus species list (#559) ----------------------------------------------
 
-When('Focus is entered', async ({ page }) => {
+When('Focus is entered to inspect applied species', async ({ page }) => {
   await enterFocusView(page);
 });
 
-Given('the focused image carries four species', async ({ page }) => {
-  // IMG001.JPG already carries Mule Deer (Odocoileus hemionus) from the
-  // fixture; apply the rest of the vocabulary to reach all four.
+Given('the focused image carries enough species to require scrolling', async ({ page }) => {
+  // IMG001.JPG carries Mule Deer in the fixture. Turn off auto-advance in the
+  // scenario and apply the other real species to create a long Focus list.
   await focusFrame(page, 'IMG001.JPG');
   await expect(appliedChip(page, 'Mule Deer')).toBeVisible();
   await speciesApply(page, 'Canis latrans').click();
+  await expect.poll(async () => draftSpecies(page, 'IMG001.JPG')).toContain('Canis latrans');
   await speciesApply(page, 'Pecari tajacu').click();
+  await expect.poll(async () => draftSpecies(page, 'IMG001.JPG')).toContain('Pecari tajacu');
   await speciesApply(page, 'Puma concolor').click();
+  await expect.poll(async () => draftSpecies(page, 'IMG001.JPG')).toContain('Puma concolor');
 });
 
 Then(
@@ -1237,8 +1240,10 @@ Then('the applied species list in Focus scrolls within a fixed height', async ({
   const list = page.getByTestId('applied-species-list');
   await expect(list).toBeVisible();
   for (const name of ['Mule Deer', 'Coyote', 'Javelina', 'Mountain Lion']) {
-    await expect(appliedChip(page, name)).toBeVisible();
+    await expect(appliedChip(page, name)).toHaveCount(1);
   }
+  await list.evaluate((el) => { el.scrollTop = 0; });
+  await expect(appliedChip(page, 'Mule Deer')).toBeVisible();
   const { scrollHeight, clientHeight, overflowY } = await list.evaluate((el) => ({
     scrollHeight: el.scrollHeight,
     clientHeight: el.clientHeight,

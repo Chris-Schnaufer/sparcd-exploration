@@ -392,13 +392,15 @@ Feature: Assign species to images in an upload
   @H2
   Scenario: Focus lists every applied species without a summary toggle to expand
     Given the focused image carries several species
-    When Focus is entered
+    When Focus is entered to inspect applied species
     Then every applied species is listed in Focus with no summary control to expand
 
   @H2
   Scenario: A long species list in Focus scrolls instead of growing the panel
-    Given the focused image carries four species
-    When Focus is entered
+    Given auto-advance is switched off in Settings
+    And the focused image carries enough species to require scrolling
+    When Focus is entered to inspect applied species
+    And the species panel's divider is dragged as far narrow as it will go
     Then the applied species list in Focus scrolls within a fixed height
 
   @H2
