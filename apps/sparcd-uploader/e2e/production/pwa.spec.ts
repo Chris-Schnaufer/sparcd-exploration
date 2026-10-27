@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { App, S3_ORIGIN } from '../../features/steps/app';
 import { S3Mock } from '../../features/steps/s3mock';
 import { seedDefaultStorage, COLLECTION_A_NAME } from '../../features/steps/fixtures-data';
+import { verifyRecoveredUpload } from './acceptance-helpers';
 import { jpegAt } from '../../features/steps/batches';
 
 test.use({ trace: 'off' });
@@ -74,6 +75,8 @@ test('installed Uploader launches as an app offline after a Chrome process resta
     await app.locator('button[title="PWA.JPG"]').click();
     await app.locator('div.group').filter({ hasText: 'Canis latrans' }).first().locator('button[title^="Apply"]').click();
     await expect.poll(async () => (await local.readFlipRecords())[0]?.tags?.['SDCARD/PWA.JPG']?.[0]?.scientificName).toBe('Canis latrans');
+    await app.getByRole('spinbutton', { name: 'Count for Coyote', exact: true }).fill('3');
+    await expect.poll(async () => (await local.readFlipRecords())[0]?.tags?.['SDCARD/PWA.JPG']?.[0]?.count).toBe(3);
     const batchUrl = app.url();
     await close();
     const restartedControl = await launch(true, 'pwa-local-tagger-restart');
@@ -85,6 +88,8 @@ test('installed Uploader launches as an app offline after a Chrome process resta
     local = new App(app, s3);
     await local.open({ path: batchUrl });
     await expect(app.locator('button[title="PWA.JPG"]')).toContainText('Coyote');
+    await app.locator('button[title="PWA.JPG"]').click();
+    await expect(app.getByRole('spinbutton', { name: 'Count for Coyote', exact: true })).toHaveValue('3');
     // Return stays available after restart; tags retain their original attribution.
     await expect(app.getByRole('button', { name: 'Done · back to Uploader' })).toBeEnabled();
     await app.getByRole('button', { name: 'Settings', exact: true }).click();
@@ -101,6 +106,7 @@ test('installed Uploader launches as an app offline after a Chrome process resta
     expect((await local.readFlipRecords())[0]?.tags?.['SDCARD/PWA.JPG']?.[0]?.scientificName).toBe('Canis latrans');
     expect(await app.evaluate(async () => { try { await fetch('/__offline-harness/probe.html?installed=1'); return false; } catch { return true; } })).toBe(true);
     expect(remote).toEqual([]);
+    await verifyRecoveredUpload(local, context!, 'PWA.JPG', 'pwa-person');
     passed = true;
   } finally {
     if (installed && context) {

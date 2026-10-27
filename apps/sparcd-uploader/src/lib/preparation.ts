@@ -97,34 +97,57 @@ function validatePreparation(raw: unknown): LocalPreparation | null {
   if (!valid) throw new Error('Saved preparation is damaged or from an unsupported version. Its stored data has been kept. Reopen the compatible app or reselect your folder to start a new batch.');
   return value;
 }
+/** Capture ownership when starting a fresh upload; never infer it from files. */
+export function preparationIdForUpload(): string | undefined {
+  const state = useStore.getState();
+  return state.files.length && lastToken === state.batchToken ? preparationId || undefined : undefined;
+}
 export function startPreparationJournal(): void {
   if (installed) return;
   installed = true;
   useStore.subscribe((s, previous) => {
     const changed = s.files !== previous.files || s.flipId !== previous.flipId || s.selectedBucket !== previous.selectedBucket || s.selectedLocationId !== previous.selectedLocationId || s.uploadDescription !== previous.uploadDescription || s.uploadTimeZone !== previous.uploadTimeZone || s.mountainRange !== previous.mountainRange || s.dateCollected !== previous.dateCollected || s.uploadCommentDate !== previous.uploadCommentDate;
-    const published = s.activeSnap?.phase === 'done' && !s.activeSnap.dryRun;
-    if (!changed && !published) return;
+    const snap = s.activeSnap;
+    // Consume the transition, not a lingering done snapshot. A History run may
+    // belong to a different batch (or have no ownership on legacy sessions).
+    const completed = snap?.phase === 'done' && !snap.dryRun &&
+      (previous.activeSnap?.sessionId !== snap.sessionId || previous.activeSnap?.phase !== 'done');
+    const publishedId = completed ? snap.preparationId : undefined;
+    if (publishedId) {
+      const currentPublished = preparationId === publishedId;
+      if (currentPublished) { preparationId = ''; hasPreparation = false; }
+      // Queue behind this ID's pending saves so none can resurrect it afterward.
+      writes.enqueue(publishedId, async () => {
+        await flipDb.transaction('rw', flipDb.preparations, async () => {
+          await flipDb.preparations.delete(publishedId);
+          const legacy = await flipDb.preparations.get('active');
+          if (legacy?.value && (legacy.value as LocalPreparation).id === publishedId) await flipDb.preparations.delete('active');
+        });
+      });
+      if (currentPublished) return;
+    }
+    if (!changed) return;
     // Do not erase a recoverable batch merely because the startup store is empty.
-    if (!s.files.length && !previous.files.length && !published) return;
+    if (!s.files.length && !previous.files.length) return;
     // Retain immutable references; serialize only the snapshot that actually writes.
     const files = s.files;
     const inputs = { selectedBucket: s.selectedBucket, selectedLocationId: s.selectedLocationId, uploadDescription: s.uploadDescription, uploadTimeZone: s.uploadTimeZone, mountainRange: s.mountainRange, dateCollected: s.dateCollected, uploadCommentDate: s.uploadCommentDate };
     // Capture ownership before queuing writes. Other windows have independent IDs.
-    if (s.files.length && !published && lastToken !== s.batchToken) {
+    if (s.files.length && lastToken !== s.batchToken) {
       batchSpecies = null;
       speciesRead = nextConnection === s.s3Config && validPreparedSpecies(nextSpecies) ? Promise.resolve(nextSpecies) : loadPreparedSpecies(s.s3Config ?? undefined);
       preparationId = crypto.randomUUID();
       lastToken = s.batchToken;
     }
-    if (s.files.length && !published && !preparationId) preparationId = crypto.randomUUID();
+    if (s.files.length && !preparationId) preparationId = crypto.randomUUID();
     const id = preparationId;
     const speciesPromise = validPreparedSpecies(batchSpecies) ? Promise.resolve(batchSpecies) : speciesRead;
-    if (!files.length || published) preparationId = '';
+    if (!files.length) preparationId = '';
     if (!id) return;
-    hasPreparation = files.length > 0 && !published;
+    hasPreparation = files.length > 0;
     report('Saving local preparation…');
     writes.enqueue(id, async () => {
-      if (!files.length || published) { if (id) await flipDb.preparations.delete(id); }
+      if (!files.length) { if (id) await flipDb.preparations.delete(id); }
       else {
         const species = await speciesPromise;
         const value: LocalPreparation = { v: 1, id, dirHandle: s.dirHandle ?? undefined, savedAt: new Date().toISOString(), files: files.map(({ file, ...entry }) => ({ ...entry, lastModified: file.lastModified })), flipId: s.flipId, species, inputs };
