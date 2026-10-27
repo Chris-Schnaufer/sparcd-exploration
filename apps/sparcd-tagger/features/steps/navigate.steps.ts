@@ -43,9 +43,9 @@ Then('the collection name and upload name are shown', async ({ page }) => {
 
 Then('its grid tile shows Has species and Questionable badges', async ({ page }) => {
   const tile = gridCell(page, 'IMG001.JPG');
-  await expect(tile).toHaveAccessibleName(/Has species.*Questionable/);
+  await expect(tile).toHaveAccessibleName(/Has species.*Needs expert opinion/);
   await expect(tile.locator('[title^="Has species"]')).toBeVisible();
-  await expect(tile.locator('[title="questionable"]')).toBeVisible();
+  await expect(tile.locator('[title="Needs expert opinion"]')).toBeVisible();
 });
 
 When('the Overview is switched to the list view', async ({ page }) => {
@@ -56,8 +56,8 @@ Then('its list row shows Has species and Questionable badges', async ({ page }) 
   const row = listRow(page, 'IMG001.JPG');
   const filename = row.locator('[data-column="filename"]');
   await expect(filename.locator('[title^="Has species"]')).toBeVisible();
-  await expect(filename.locator('[title="questionable"]')).toBeVisible();
-  await expect(row).toHaveAccessibleName(/Has species.*Questionable/);
+  await expect(filename.locator('[title="Needs expert opinion"]')).toBeVisible();
+  await expect(row).toHaveAccessibleName(/Has species.*Needs expert opinion/);
 });
 
 When('the Overview is resized to a narrow screen', async ({ page }) => {
@@ -82,9 +82,9 @@ Given('image {string} is focused', async ({ page }, fileName: string) => {
 
 Then('the focused tile is named Questionable and not Has species', async ({ page }) => {
   const tile = gridCell(page, 'IMG002.JPG');
-  await expect(tile).toHaveAccessibleName(/Questionable/);
+  await expect(tile).toHaveAccessibleName(/Needs expert opinion/);
   await expect(tile).not.toHaveAccessibleName(/Has species/);
-  await expect(tile.locator('[title="questionable"]')).toBeVisible();
+  await expect(tile.locator('[title="Needs expert opinion"]')).toBeVisible();
   await expect(tile.locator('[title^="Has species"]')).toHaveCount(0);
 });
 
@@ -354,7 +354,7 @@ Then('row numbers and the old species indicator are absent', async ({ page }) =>
 Then('meaningful edit and questionable markers remain accessible', async ({ page }) => {
   const row = listRow(page, 'IMG002.JPG');
   await expect(row.locator('[data-column="markers"]').getByLabel('Unsaved edit')).toBeVisible();
-  await expect(row.getByLabel('Questionable', { exact: true })).toBeVisible();
+  await expect(row.getByLabel('Needs expert opinion', { exact: true })).toBeVisible();
   await expect(row.locator('[data-column="markers"]').locator('[title]')).toHaveCount(1);
 });
 

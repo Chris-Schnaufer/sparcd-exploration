@@ -1507,7 +1507,13 @@ function FocusPane({
   const showAdjust = !!current && !isVideo;
 
   const [isDragOver, setIsDragOver] = useState(false);
+  const [fittedMediaHeight, setFittedMediaHeight] = useState<number | null>(null);
   const dropRef = useRef<HTMLDivElement>(null);
+  // At this height the centered 44px navigation target reaches the corner
+  // badge zone. Nudge both controls below it while leaving badges corner-pinned.
+  const navigationPosition = fittedMediaHeight !== null && fittedMediaHeight < 88
+    ? 'top-[calc(50%+1.5rem)]'
+    : 'top-1/2';
 
   const getVisibleMediaRect = () => {
     const image = dropRef.current?.querySelector('img');
@@ -1604,6 +1610,7 @@ function FocusPane({
             isVideo={isVideo}
             filter={filter}
             adjust={adjustPanel}
+            onFittedHeightChange={setFittedMediaHeight}
             statusBadges={(
               <ImageStatusBadges
                 hasSpecies={hasSpecies}
@@ -1618,7 +1625,7 @@ function FocusPane({
             ref={previousButtonRef}
             type="button"
             onClick={navigatePrevious}
-            className="absolute left-3 top-1/2 z-20 min-h-11 min-w-11 -translate-y-1/2 grid place-items-center rounded-full border border-rule bg-paper/50 text-[22px] leading-none text-inkSoft opacity-75 shadow-sm transition-opacity hover:bg-paper/90 hover:text-ink hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            className={`absolute left-3 ${navigationPosition} z-20 min-h-11 min-w-11 -translate-y-1/2 grid place-items-center rounded-full border border-rule bg-paper/50 text-[22px] leading-none text-inkSoft opacity-75 shadow-sm transition-opacity hover:bg-paper/90 hover:text-ink hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent`}
             title="Previous image (ArrowLeft or ArrowUp)"
             aria-label="Previous image"
             aria-describedby="focus-navigation-help"
@@ -1631,7 +1638,7 @@ function FocusPane({
             ref={nextButtonRef}
             type="button"
             onClick={navigateNext}
-            className="absolute right-3 top-1/2 z-20 min-h-11 min-w-11 -translate-y-1/2 grid place-items-center rounded-full border border-rule bg-paper/50 text-[22px] leading-none text-inkSoft opacity-75 shadow-sm transition-opacity hover:bg-paper/90 hover:text-ink hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            className={`absolute right-3 ${navigationPosition} z-20 min-h-11 min-w-11 -translate-y-1/2 grid place-items-center rounded-full border border-rule bg-paper/50 text-[22px] leading-none text-inkSoft opacity-75 shadow-sm transition-opacity hover:bg-paper/90 hover:text-ink hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent`}
             title="Next image (ArrowRight or ArrowDown)"
             aria-label="Next image"
             aria-describedby="focus-navigation-help"
@@ -1721,6 +1728,7 @@ function FocusImage({
   isVideo,
   filter,
   adjust,
+  onFittedHeightChange,
   statusBadges,
 }: {
   objectKey: string;
@@ -1728,6 +1736,7 @@ function FocusImage({
   isVideo: boolean;
   filter?: string;
   adjust?: React.ReactNode;
+  onFittedHeightChange: (height: number | null) => void;
   statusBadges?: React.ReactNode;
 }) {
   const { url, isError, markLoaded } = useMediaUrl(objectKey, 'high');
@@ -1763,6 +1772,7 @@ function FocusImage({
             src={url}
             alt={alt}
             resetKey={objectKey}
+            onFittedHeightChange={onFittedHeightChange}
             statusBadges={statusBadges}
             onLoaded={onLoaded}
             onError={onMediaError}
@@ -1773,6 +1783,7 @@ function FocusImage({
             alt={alt}
             resetKey={objectKey}
             filter={filter}
+            onFittedHeightChange={onFittedHeightChange}
             statusBadges={statusBadges}
             onLoaded={onLoaded}
             adjust={adjust}
@@ -1799,6 +1810,7 @@ function FocusVideo({
   src,
   alt,
   resetKey,
+  onFittedHeightChange,
   statusBadges,
   onLoaded,
   onError,
@@ -1806,11 +1818,12 @@ function FocusVideo({
   src: string;
   alt: string;
   resetKey: string;
+  onFittedHeightChange: (height: number | null) => void;
   statusBadges?: React.ReactNode;
   onLoaded: () => void;
   onError: () => void;
 }) {
-  const { paneRef, fitted, onImageLoad } = useFittedZoom(src);
+  const { paneRef, fitted, onImageLoad } = useFittedZoom(src, onFittedHeightChange);
   return (
     <div ref={paneRef} className="relative w-full h-full min-w-0 min-h-0">
       <video
@@ -1846,7 +1859,7 @@ const ZOOM_PROPS = {
  * rather than the pane: a letterboxed portrait or panorama then can't be
  * dragged out of view. `paneRef` goes on the element the zoom wrapper fills.
  */
-function useFittedZoom(src: string) {
+function useFittedZoom(src: string, onFittedHeightChange?: (height: number | null) => void) {
   const paneRef = useRef<HTMLDivElement>(null);
   const zoomRef = useRef<ReactZoomPanPinchRef>(null);
   const [pane, setPane] = useState<{ w: number; h: number } | null>(null);
@@ -1862,6 +1875,9 @@ function useFittedZoom(src: string) {
   }, []);
   const fit = pane && natural ? Math.min(pane.w / natural.w, pane.h / natural.h) : null;
   const fitted = fit && natural ? { width: natural.w * fit, height: natural.h * fit } : undefined;
+  useLayoutEffect(() => {
+    onFittedHeightChange?.(fitted?.height ?? null);
+  }, [fitted?.height, onFittedHeightChange]);
   // Always re-fit on a pane or image-size change, even while zoomed in: a
   // resolution change invalidates whatever framing the user had, so there is
   // nothing worth preserving by skipping this when the view isn't at 1x.
@@ -1891,7 +1907,12 @@ function FittedStatusOverlay({ fitted, children }: {
     <div
       data-testid="focus-image-status-badges"
       className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10"
-      style={fitted}
+      style={{
+        ...fitted,
+        // When a wide image is short, the navigation buttons overlap the
+        // upper-right corner. Move the expert badge inward to clear them.
+        '--focus-expert-badge-edge-inset': fitted.height < 112 ? '3rem' : '0.25rem',
+      } as React.CSSProperties}
     >
       {children}
     </div>
@@ -1904,6 +1925,7 @@ function ZoomableImage({
   resetKey,
   filter,
   statusBadges,
+  onFittedHeightChange,
   onLoaded,
   adjust,
 }: {
@@ -1912,12 +1934,13 @@ function ZoomableImage({
   resetKey: string;
   filter?: string;
   statusBadges?: React.ReactNode;
+  onFittedHeightChange: (height: number | null) => void;
   onLoaded: () => void;
   adjust?: React.ReactNode;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [zoomed, setZoomed] = useState(false);
-  const { paneRef, zoomRef, fitted, onImageLoad } = useFittedZoom(src);
+  const { paneRef, zoomRef, fitted, onImageLoad } = useFittedZoom(src, onFittedHeightChange);
   // min-w-0/min-h-0 override the grid item's default content-based floor —
   // without them, the pane can never measure smaller than the zoom content's
   // last fitted pixel size, so a shrinking window gets stuck.

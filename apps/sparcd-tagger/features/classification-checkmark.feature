@@ -33,5 +33,9 @@ Feature: Classification checkmarks are prominent without blocking images
       | 600   | 1000   | 390      |
       | 1200  | 240    | 390      |
 
+  Scenario: The previous-image control leaves a short panorama checkmark visible
+    Given a short panorama is focused with its previous-image control available
+    Then the previous-image control stays clear of the upper-left Focus checkmark
+
   Scenario: Touching a checkmark selects its image and leaves Focus opening available
     Then touch input passes through classification checkmarks

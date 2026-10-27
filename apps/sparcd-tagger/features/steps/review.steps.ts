@@ -541,14 +541,14 @@ When('it is marked questionable', async ({ page }) => {
 });
 
 Then("the image's tile carries a questionable marker", async ({ page }) => {
-  await expect(gridCell(page, 'IMG002.JPG').locator('[title="questionable"]')).toBeVisible();
-  await expect(gridCell(page, 'IMG002.JPG')).toHaveAccessibleName(/Questionable/);
+  await expect(gridCell(page, 'IMG002.JPG').locator('[title="Needs expert opinion"]')).toBeVisible();
+  await expect(gridCell(page, 'IMG002.JPG')).toHaveAccessibleName(/Needs expert opinion/);
 });
 
 Then('the marker can be toggled off again', async ({ page }) => {
   await page.keyboard.press('Shift+Space');
-  await expect(gridCell(page, 'IMG002.JPG').locator('[title="questionable"]')).toHaveCount(0);
-  await expect(gridCell(page, 'IMG002.JPG')).not.toHaveAccessibleName(/Questionable/);
+  await expect(gridCell(page, 'IMG002.JPG').locator('[title="Needs expert opinion"]')).toHaveCount(0);
+  await expect(gridCell(page, 'IMG002.JPG')).not.toHaveAccessibleName(/Needs expert opinion/);
 });
 
 Then('a selection of images can be marked in one action', async ({ page }) => {
@@ -556,7 +556,7 @@ Then('a selection of images can be marked in one action', async ({ page }) => {
   await gridCell(page, 'IMG003.JPG').click({ modifiers: ['Shift'] });
   await page.keyboard.press('Shift+Space');
   for (const f of ['IMG001.JPG', 'IMG002.JPG', 'IMG003.JPG']) {
-    await expect(gridCell(page, f).locator('[title="questionable"]')).toBeVisible();
+    await expect(gridCell(page, f).locator('[title="Needs expert opinion"]')).toBeVisible();
   }
 });
 
@@ -598,7 +598,7 @@ Then('the Need expert marker returns after a reload', async ({ page }) => {
   await openWorkspace(page);
   await focusFrame(page, 'IMG002.JPG');
   await expect(expertToggle(page)).toHaveAttribute('aria-pressed', 'true');
-  await expect(gridCell(page, 'IMG002.JPG').locator('[title="questionable"]')).toBeVisible();
+  await expect(gridCell(page, 'IMG002.JPG').locator('[title="Needs expert opinion"]')).toBeVisible();
 });
 
 Then('a new browser session sees the saved Need expert status', async ({ browser, s3 }) => {
@@ -636,7 +636,7 @@ Then('the cleared Need expert status remains off after reload', async ({ page })
   await openWorkspace(page);
   await focusFrame(page, 'IMG002.JPG');
   await expect(expertToggle(page)).toHaveAttribute('aria-pressed', 'false');
-  await expect(gridCell(page, 'IMG002.JPG')).not.toHaveAccessibleName(/Questionable/);
+  await expect(gridCell(page, 'IMG002.JPG')).not.toHaveAccessibleName(/Needs expert opinion/);
 });
 
 When('the workspace is narrowed to a phone width', async ({ page }) => {
@@ -682,7 +682,7 @@ Then('the compact toggle describes the mixed selection and marks it in one activ
   expect(text.join(' ')).toContain('Activating will mark all selected images');
   await control.click();
   for (const name of ['IMG001.JPG', 'IMG002.JPG', 'IMG003.JPG']) {
-    await expect(gridCell(page, name).locator('[title="questionable"]')).toBeVisible();
+    await expect(gridCell(page, name).locator('[title="Needs expert opinion"]')).toBeVisible();
   }
 });
 

@@ -295,7 +295,7 @@ function ListCell({
   const reviewLabel = reviewSummaryLabel(eff.observations);
   const statusLabels = [
     ...(hasSpecies(eff) ? ['Has species — one or more species, or an explicit no-species classification'] : []),
-    ...(eff.questionable ? ['Questionable'] : []),
+    ...(eff.questionable ? ['Needs expert opinion'] : []),
   ];
   const rowLabel = [
     `Filename: ${img.fileName}`,
@@ -435,7 +435,7 @@ function GridCell({
   const reviewLabel = reviewSummaryLabel(eff.observations);
   const statusLabels = [
     ...(hasSpecies(eff) ? ['Has species — one or more species, or an explicit no-species classification'] : []),
-    ...(eff.questionable ? ['Questionable'] : []),
+    ...(eff.questionable ? ['Needs expert opinion'] : []),
   ];
   const tileLabel = [
     `Filename: ${img.fileName}`,

@@ -18,6 +18,7 @@ that map to an agreed story carry its ID; the rest carry `@unmapped`.
 | `H1-examine-images-closely.feature` | Zoom, pan, fullscreen, per-image reset, video, display adjustments | `@H1` |
 | `H2-assign-species-to-images.feature` | Species panel, multi-species, Ghost, key bindings, bulk apply | `@H2` |
 | `H3-review-existing-identifications.feature` | Existing identifications shown, corrected, removed; attribution | `@H3` |
+| `need-expert-badge.feature` | Transparent goldenrod Need expert badges, coexistence with classification, shared status through fresh sessions, clearing, targeting, touch, and fullscreen exclusion (#555) | `@unmapped` |
 | `classification-checkmark.feature` | Classification checkmark appearance and placement in Grid/List/Focus; Ghost/Test, removal, sync/reload, letterboxing, themes, touch and fullscreen exclusion (#554) | `@unmapped` |
 | `navigate-and-select-images.feature` | Keyboard navigation, sort, find, selection, bursts, cheatsheet | `@unmapped` |
 | `local-drafts-and-recovery.feature` | Local drafts, unsaved counts, History recovery, discard | `@unmapped` |

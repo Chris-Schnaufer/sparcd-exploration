@@ -545,7 +545,7 @@ Then(
   async ({ page }) => {
     const pane = page.getByTestId('focus-drop-zone');
     await expect(pane.getByLabel('Has species', { exact: false })).toBeVisible();
-    await expect(pane.getByLabel('Questionable', { exact: true })).toBeVisible();
+    await expect(pane.getByLabel('Needs expert opinion', { exact: true })).toBeVisible();
   },
 );
 
@@ -569,7 +569,7 @@ Then('the status badges do not overlap the Adjust or image-navigation controls',
 
 Then('no status badges are shown in the fullscreen viewer', async ({ page }) => {
   await expect(lightbox(page).getByLabel('Has species', { exact: false })).toHaveCount(0);
-  await expect(lightbox(page).getByLabel('Questionable', { exact: true })).toHaveCount(0);
+  await expect(lightbox(page).getByLabel('Needs expert opinion', { exact: true })).toHaveCount(0);
 });
 
 Then('it fills the window over a dimmed background', async ({ page }) => {

@@ -25,7 +25,7 @@ Given('the checkmark layout uses width {int} and theme {string}', async ({ page 
   // The same theme class that App applies; this exercises both actual token sets.
   await page.evaluate(dark => document.documentElement.classList.toggle('dark', dark), theme === 'dark');
   await focusFrame(page, 'IMG001.JPG');
-  await page.getByRole('button', { name: 'Mark image questionable', exact: true }).click();
+  await page.getByRole('button', { name: "Toggle needing an expert's opinion", exact: true }).click();
 });
 Then('the classified grid image has a transparent green checkmark one third of its short side', async ({ page }) => {
   const tile = gridCell(page, 'IMG001.JPG'); const badge = check(tile);
@@ -37,7 +37,7 @@ Then('the classified grid image has a transparent green checkmark one third of i
   const image = (await tile.locator('img').boundingBox())!; const b = (await badge.boundingBox())!;
   expect(b.x - image.x).toBeGreaterThanOrEqual(0); expect(b.x - image.x).toBeLessThan(8);
   expect(b.y - image.y).toBeGreaterThanOrEqual(0); expect(b.y - image.y).toBeLessThan(8);
-  await expect(tile).toHaveAccessibleName(/Has species.*Questionable/);
+  await expect(tile).toHaveAccessibleName(/Has species.*Needs expert opinion/);
   expect((await tile.getAttribute('aria-label'))!.match(/Has species/g)).toHaveLength(1);
   await expect(tile.getByRole('img', { name: /^Has species/ })).toHaveCount(0);
   await expect(check(gridCell(page, 'IMG002.JPG'))).toHaveCount(0);
@@ -90,7 +90,7 @@ Then('list badges follow the filename in classification and expert order', async
   const row = listRow(page, 'IMG001.JPG'); const filename = row.locator('[data-column="filename"]');
   await transparentGreen(check(row));
   expect(await filename.locator('[role="img"]').evaluateAll(nodes => nodes.map(el => el.getAttribute('title')))).toEqual([
-    'Has species — one or more species, or an explicit no-species classification', 'questionable',
+    'Has species — one or more species, or an explicit no-species classification', 'Needs expert opinion',
   ]);
   const bounds = await filename.evaluate(el => {
     const text = el.firstElementChild!.getBoundingClientRect();
@@ -100,15 +100,15 @@ Then('list badges follow the filename in classification and expert order', async
   expect(bounds.badgeLeft).toBeGreaterThanOrEqual(bounds.textRight);
   expect(bounds.badgeRight).toBeLessThanOrEqual(bounds.columnRight);
   await expect(row.getByTestId('image-thumbnail').locator('[role="img"]')).toHaveCount(0);
-  await expect(row).toHaveAccessibleName(/Has species.*Questionable/);
+  await expect(row).toHaveAccessibleName(/Has species.*Needs expert opinion/);
   await page.screenshot({ path: `/tmp/554-list-${page.viewportSize()!.width}-${await page.locator('html').getAttribute('class')}.png` });
 });
 Then('classification checkmarks follow species edits Ghost Test clearing sync and reload', async ({ page }) => {
   await openSettings(page); await page.getByLabel('Move to the next image after assigning a species').uncheck();
   await sectionTab(page, 'Tag').click(); await focusFrame(page, 'IMG002.JPG');
   const tile = gridCell(page, 'IMG002.JPG'); await expect(check(tile)).toHaveCount(0);
-  await page.getByRole('button', { name: 'Mark image questionable', exact: true }).click();
-  await expect(tile.locator('[title="questionable"]')).toBeVisible(); await expect(check(tile)).toHaveCount(0);
+  await page.getByRole('button', { name: "Toggle needing an expert's opinion", exact: true }).click();
+  await expect(tile.locator('[title="Needs expert opinion"]')).toBeVisible(); await expect(check(tile)).toHaveCount(0);
   await speciesApply(page, 'Canis latrans').click(); await expect(check(tile)).toBeVisible();
   await speciesApply(page, 'Puma concolor').click();
   await page.getByRole('button', { name: 'Show all applied species' }).click();
@@ -128,6 +128,14 @@ Given('the checkmark image is {int} by {int} at viewport width {int}', async ({ 
   await page.reload(); await openWorkspace(page); await page.setViewportSize({ width: viewport, height: 950 });
   await focusFrame(page, 'IMG001.JPG'); await enterFocusView(page);
 });
+Given('a short panorama is focused with its previous-image control available', async ({ page, s3 }) => {
+  s3.put(BUCKET, mediaKey(PREFIX_A, 'IMG003.JPG'), makePng(1200, 240, 181), 'image/png');
+  await page.reload(); await openWorkspace(page); await page.setViewportSize({ width: 390, height: 950 });
+  await focusFrame(page, 'IMG003.JPG'); await enterFocusView(page);
+  await expect(page.getByRole('button', { name: 'Previous image', exact: true })).toBeVisible();
+  await expect(page.getByTestId('focus-drop-zone').locator('img[alt="IMG003.JPG"]')).toBeVisible();
+  await expect(check(page.getByTestId('focus-drop-zone'))).toBeVisible();
+});
 Then('the Focus checkmark stays inside the fitted image upper left corner', async ({ page }) => {
   const badge = check(focus(page)); await expect(badge).toBeVisible();
   const image = (await focus(page).locator('img').boundingBox())!; const b = (await badge.boundingBox())!;
@@ -139,6 +147,21 @@ Then('the Focus checkmark stays inside the fitted image upper left corner', asyn
   expect(b.y - image.y).toBeGreaterThanOrEqual(0); expect(b.y - image.y).toBeLessThan(8);
   expect(b.x + b.width).toBeLessThan(image.x + image.width); expect(b.y + b.height).toBeLessThan(image.y + image.height);
   await page.screenshot({ path: `/tmp/554-letterbox-${Math.round(image.width)}-${Math.round(image.height)}.png` });
+});
+Then('the previous-image control stays clear of the upper-left Focus checkmark', async ({ page }) => {
+  const pane = page.getByTestId('focus-drop-zone');
+  const image = (await pane.locator('img[alt="IMG003.JPG"]').boundingBox())!;
+  const badge = (await check(pane).boundingBox())!;
+  const previous = (await page.getByRole('button', { name: 'Previous image', exact: true }).boundingBox())!;
+  expect(image.height).toBeLessThan(88);
+  expect(badge.x - image.x).toBeGreaterThanOrEqual(0);
+  expect(badge.x - image.x).toBeLessThan(8);
+  expect(badge.y - image.y).toBeGreaterThanOrEqual(0);
+  expect(badge.y - image.y).toBeLessThan(8);
+  expect(badge.x < previous.x + previous.width && badge.x + badge.width > previous.x &&
+    badge.y < previous.y + previous.height && badge.y + badge.height > previous.y).toBe(false);
+  expect(previous.y).toBeGreaterThanOrEqual(0);
+  expect(previous.y + previous.height).toBeLessThanOrEqual(page.viewportSize()!.height);
 });
 Then('touch input passes through classification checkmarks', async ({ browser, s3 }) => {
   const context = await browser.newContext({ baseURL: ENDPOINT, hasTouch: true, viewport: { width: 390, height: 844 } });
