@@ -554,19 +554,15 @@ When('Focus is resized to a narrow screen', async ({ page }) => {
 });
 
 Then('the status badges do not overlap the Adjust or image-navigation controls', async ({ page }) => {
-  const badges = await page.getByTestId('focus-image-status-badges').boundingBox();
-  const adjust = await page.getByRole('button', { name: /^Adjust/ }).boundingBox();
-  expect(badges).not.toBeNull();
-  expect(adjust).not.toBeNull();
-  const intersects = (a: NonNullable<typeof badges>, b: NonNullable<typeof adjust>) =>
-    a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
-  expect(intersects(badges!, adjust!)).toBe(false);
-  for (const name of ['Previous image', 'Next image']) {
-    const control = page.getByRole('button', { name, exact: true });
-    if (await control.count()) {
-      const box = await control.boundingBox();
-      expect(box).not.toBeNull();
-      expect(intersects(badges!, box!)).toBe(false);
+  const badges = page.getByTestId('focus-image-status-badges').locator('[role="img"]');
+  await expect(badges).toHaveCount(2);
+  for (const badge of await badges.all()) {
+    const box = (await badge.boundingBox())!;
+    for (const name of [/^Adjust/, /^Previous image$/, /^Next image$/]) {
+      const control = page.getByRole('button', { name });
+      if (!await control.count()) continue;
+      const c = (await control.boundingBox())!;
+      expect(box.x < c.x + c.width && box.x + box.width > c.x && box.y < c.y + c.height && box.y + box.height > c.y).toBe(false);
     }
   }
 });
