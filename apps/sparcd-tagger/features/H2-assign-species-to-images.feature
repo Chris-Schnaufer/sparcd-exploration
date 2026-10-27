@@ -100,10 +100,16 @@ Feature: Assign species to images in an upload
     Then the Ghost-classified image shows a Has species badge
 
   @H2
-  Scenario: The species list can be narrowed by typing
+  Scenario Outline: The species list can be narrowed by typing under either sorting preference
+    Given species sorting preference is "<preference>"
     When text is typed into the species filter
     Then the list narrows to species matching that text by common or scientific name
     And close-but-inexact spellings still match
+
+    Examples:
+      | preference   |
+      | alphabetical |
+      | recent-first |
 
   @H2
   Scenario: A species not in the vocabulary can still be recorded as a request
@@ -112,10 +118,17 @@ Feature: Assign species to images in an upload
     And applying it records that free text against the image alongside the identification
 
   @H2
-  Scenario: Species used recently are easier to reach
-    Given several species have been applied during this session
+  Scenario: The species list stays alphabetical by common name by default
+    Then the species list is ordered alphabetically by common name
+    And applying a species does not reorder the list
+
+  @H2
+  Scenario: Sorting by latest assigned can be turned on in Settings
+    Given species sorting by recent is switched on in Settings
+    And several species have been applied during this session
     Then those species are listed first, most recently used first
     And their key bindings are unchanged by that reordering
+    And the species sorting preference survives reload and can be disabled
 
   @H2
   Scenario: A species can be given a key so it can be applied by keystroke

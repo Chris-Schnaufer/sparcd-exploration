@@ -24,7 +24,9 @@ import {
   ghostRow,
   positionReadout,
   listRow,
+  openSettings,
 } from './support/world';
+import { sortSpeciesByRecentCheckbox } from './support/flows';
 import {
   BUCKET,
   BUCKET_B,
@@ -118,8 +120,9 @@ Then('a popup explains how to use the species list', async ({ page }) => {
   await expect(dialog.getByRole('heading', { name: 'Keyboard keys' })).toBeVisible();
   await expect(dialog).toContainText('Hover (or focus) a row to assign or change its key');
   await expect(dialog).toContainText('A struck-through key means another species is already using it');
-  await expect(dialog.getByRole('heading', { name: 'Recently used' })).toBeVisible();
-  await expect(dialog).toContainText("Species you've applied recently float to the top of the list");
+  await expect(dialog.getByRole('heading', { name: 'List order' })).toBeVisible();
+  await expect(dialog).toContainText('By default the list stays sorted alphabetically by common name.');
+  await expect(dialog).toContainText('latest species assigned" in Settings to float recently applied species to the top');
 });
 
 Given('a species keyboard shortcut is configured', async ({ page }) => {
@@ -451,6 +454,46 @@ Then(
     expect(Array.isArray(drafts)).toBe(true);
   },
 );
+
+// --- Species order -----------------------------------------------------------
+
+Then('the species list is ordered alphabetically by common name', async ({ page }) => {
+  const names = await page.locator('div.group span.italic').allTextContents();
+  const vocabOrder = names.filter((n) => VOCAB.some((v) => v.scientific === n) || n === 'Casper');
+  expect(vocabOrder).toEqual(['Canis latrans', 'Casper', 'Pecari tajacu', 'Puma concolor', 'Odocoileus hemionus']);
+});
+
+Then('applying a species does not reorder the list', async ({ page }) => {
+  await focusFrame(page, 'IMG002.JPG');
+  await speciesApply(page, 'Pecari tajacu').click();
+  const names = await page.locator('div.group span.italic').allTextContents();
+  const vocabOrder = names.filter((n) => VOCAB.some((v) => v.scientific === n) || n === 'Casper');
+  expect(vocabOrder).toEqual(['Canis latrans', 'Casper', 'Pecari tajacu', 'Puma concolor', 'Odocoileus hemionus']);
+});
+
+Given('species sorting preference is {string}', async ({ page }, preference: string) => {
+  await openSettings(page);
+  await sortSpeciesByRecentCheckbox(page).setChecked(preference === 'recent-first');
+  await sectionTab(page, 'Tag').click();
+});
+
+Given('species sorting by recent is switched on in Settings', async ({ page }) => {
+  await openSettings(page);
+  await sortSpeciesByRecentCheckbox(page).check();
+  await sectionTab(page, 'Tag').click();
+});
+
+Then('the species sorting preference survives reload and can be disabled', async ({ page }) => {
+  await page.reload();
+  await connect(page);
+  await openSettings(page);
+  await expect(sortSpeciesByRecentCheckbox(page)).toBeChecked();
+  await sortSpeciesByRecentCheckbox(page).uncheck();
+  await page.reload();
+  await connect(page);
+  await openSettings(page);
+  await expect(sortSpeciesByRecentCheckbox(page)).not.toBeChecked();
+});
 
 // --- Recents ----------------------------------------------------------------
 
