@@ -234,3 +234,25 @@ Then('Escape closes only the species dialog after narrowing the window', async (
   await expect(find(page)).toHaveValue('IMG004');
   await expect(page.getByLabel('Match text')).toHaveValue('IMG');
 });
+
+When('the rail is open while Species Help opens and the viewport narrows', async ({ page }) => {
+  await openFindFilter(page);
+  await find(page).fill('IMG004');
+  await page.getByLabel('Match text').fill('IMG');
+  await page.getByRole('button', { name: 'About the species list', exact: true }).click();
+  const help = page.getByRole('dialog', { name: 'Using the species list', exact: true });
+  await expect(help).toBeVisible();
+  await page.setViewportSize({ width: 600, height: 860 });
+  await expect(help).toHaveAttribute('aria-modal', 'true');
+  await expect(panel(page)).not.toBeVisible();
+  await expect.poll(() => panel(page).evaluate(node => node.matches(':modal'))).toBe(false);
+});
+Then('Species Help remains modal and the rail restores with its values after closing', async ({ page }) => {
+  const help = page.getByRole('dialog', { name: 'Using the species list', exact: true });
+  await help.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(help).toHaveCount(0);
+  await expect(panel(page)).toBeVisible();
+  await expect(panel(page)).toHaveAttribute('data-layout', 'overlay');
+  await expect(find(page)).toHaveValue('IMG004');
+  await expect(page.getByLabel('Match text')).toHaveValue('IMG');
+});

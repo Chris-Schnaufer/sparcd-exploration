@@ -96,13 +96,13 @@ Then('the focused tile announces its species and review status', async ({ page }
 });
 
 When('the image filter limits Tag state to Questionable only', async ({ page }) => {
-  if (!(await page.getByLabel('Tag state').isVisible())) await page.getByRole('button', { name: 'Filter' }).click();
-  await page.getByLabel('Tag state').selectOption('questionable');
+  await openFindFilter(page);
+  await page.getByRole('group', { name: 'Tag state', exact: true }).getByRole('radio', { name: 'Questionable only', exact: true }).check();
 });
 
 When('the image filter limits Tag state to Not questionable only', async ({ page }) => {
-  if (!(await page.getByLabel('Tag state').isVisible())) await page.getByRole('button', { name: 'Filter' }).click();
-  await page.getByLabel('Tag state').selectOption('not-questionable');
+  await openFindFilter(page);
+  await page.getByRole('group', { name: 'Tag state', exact: true }).getByRole('radio', { name: 'Not questionable only', exact: true }).check();
 });
 
 Then('IMG001.JPG is absent from the Overview', async ({ page }) => {

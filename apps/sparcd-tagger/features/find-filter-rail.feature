@@ -61,3 +61,7 @@ Feature: Find and filter the Overview in an accessible responsive rail
   Scenario: Escape dismisses the species dialog without clearing the suspended rail
     When the rail is opened in the "grid" Overview
     Then Escape closes only the species dialog after narrowing the window
+
+  Scenario: Species Help keeps priority over the rail during resize
+    When the rail is open while Species Help opens and the viewport narrows
+    Then Species Help remains modal and the rail restores with its values after closing
