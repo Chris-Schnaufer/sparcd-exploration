@@ -72,6 +72,8 @@ export type FileEntry = ScannedFile & {
   thumbnail?: Blob;
   mimeType?: string; // worker-authoritative media type
   processError?: string;
+  /** Recovery retained this record, but its original bytes are not verified. */
+  needsOriginal?: boolean;
   // Species the tagger applied before this batch was ever uploaded. Carried
   // opaquely: the uploader displays it read-only and emits it as observation
   // rows, and never edits it.
@@ -177,7 +179,7 @@ type UploaderState = {
   /** Adopt a batch coming back from the tagger, already reattached to real
    *  Files and already carrying its Inspect results — nothing to re-process. */
   adoptTaggedBatch: (input: {
-    flipId: string;
+    flipId: string | null;
     files: FileEntry[];
     dirHandle: FileSystemDirectoryHandle | null;
   }) => void;
