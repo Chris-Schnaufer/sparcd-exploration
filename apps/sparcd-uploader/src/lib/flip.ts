@@ -22,7 +22,7 @@ import {
 } from '@sparcd/flip';
 import { assertPreparedSpecies } from './preparedSpecies';
 import { useStore, type FileEntry } from '../store';
-import { restoreFromHandle, reconcileReselect, reselectFolder } from './resume';
+import { restoreFromHandle, reconcileReselect, reselectFolder, type ReconcileProblem } from './resume';
 import type { ScannedFile } from './scanFiles';
 import { flushPreparation, readPreparation, bindCurrentPreparationSpecies, recoveryGuard, readPreparationForFlip } from './preparation';
 import { formatNaive } from './exifTime';
@@ -196,8 +196,8 @@ export async function adoptRecord(record: FlipRecord): Promise<FlipReturn> {
   guard();
   if (!restore.ok) return { kind: 'needs-gesture', record };
 
-  if (restore.problems.length) throw new Error(restore.problems.map(p => `${p.fileName}: ${p.reason}`).join('; ') + '. Nothing was removed. Reselect the original unchanged folder.');
-  await attach(record, restore.attached, guard);
+  if (!restore.attached.size && restore.problems.length) throw new Error(restore.problems.map(p => `${p.fileName}: ${p.reason}`).join('; ') + '. Nothing was removed. Reselect the original unchanged folder.');
+  await attach(record, restore.attached, guard, restore.problems);
   return { kind: 'restored' };
 }
 
@@ -221,17 +221,19 @@ export async function adoptReselected(
     scanned.map(f => ({ ...f, id: f.relPath, fileName: f.file.name, mediaKind: record.files.find(r => r.relPath === f.relPath)?.mediaKind ?? 'image' })) as ScannedFile[],
   );
   guard();
-  if (result.problems.length) throw new Error(result.problems.map(p => `${p.fileName}: ${p.reason}`).join('; ') + '. Nothing was removed. Reselect the original unchanged folder.');
-  await attach(record, result.attached, guard);
+  if (!result.attached.size && result.problems.length) throw new Error(result.problems.map(p => `${p.fileName}: ${p.reason}`).join('; ') + '. Nothing was removed. Reselect the original unchanged folder.');
+  await attach(record, result.attached, guard, result.problems);
 }
 
-async function attach(record: FlipRecord, attached: Map<string, File>, guard: () => void): Promise<void> {
+async function attach(record: FlipRecord, attached: Map<string, File>, guard: () => void, problems: ReconcileProblem[]): Promise<void> {
   const preparation = await readPreparationForFlip(record.id);
   guard();
   const files: FileEntry[] = [];
   for (const f of record.files) {
     const file = attached.get(f.relPath);
     if (file) files.push(toFileEntry(f, file, record));
+    else files.push({ ...toFileEntry(f, new File([], f.fileName), record), processState: 'error', needsOriginal: true,
+      processError: problems.find(problem => problem.localPath === f.relPath)?.reason ?? 'Original file could not be verified' });
   }
   bindCurrentPreparationSpecies(record.preparedSpecies, preparation?.id);
   useStore.getState().adoptTaggedBatch({

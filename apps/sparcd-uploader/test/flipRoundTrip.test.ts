@@ -45,17 +45,46 @@ let useStore: typeof import('../src/store')['useStore'];
 let handOffToTagger: typeof import('../src/lib/flip')['handOffToTagger'];
 let resumeFromFlip: typeof import('../src/lib/flip')['resumeFromFlip'];
 let adoptReselected: typeof import('../src/lib/flip')['adoptReselected'];
+let adoptRecord: typeof import('../src/lib/flip')['adoptRecord'];
 let buildBundle: typeof import('../src/lib/bundle')['buildBundle'];
 let captureTimestampOf: typeof import('@sparcd/flip')['captureTimestampOf'];
 
 beforeAll(async () => {
   ({ useStore } = await import('../src/store'));
-  ({ handOffToTagger, resumeFromFlip, adoptReselected } = await import('../src/lib/flip'));
+  ({ handOffToTagger, resumeFromFlip, adoptReselected, adoptRecord } = await import('../src/lib/flip'));
   ({ buildBundle } = await import('../src/lib/bundle'));
   ({ captureTimestampOf } = await import('@sparcd/flip'));
 });
 
 const at = (hour: number, minute: number): NaiveDateTime => ({ year: 2026, month: 7, day: 1, hour, minute, second: 0 });
+
+it.each(['reselect', 'handle'])('partially restores a tagged Flip through %s without dropping missing or changed originals', async method => {
+  stored.preparation = null;
+  const original = (name: string) => new File(['original'], name);
+  const record: FlipRecord = { v: 1, id: 'partial-flip', createdAt: new Date().toISOString(), returnUrl: '',
+    files: ['good.jpg', 'missing.jpg', 'changed.jpg'].map(fileName => ({ fileName, relPath: `SD/${fileName}`, size: 8, sha256: `sha-${fileName}`, mediaKind: 'image', exifTimestamp: '2026-07-01T12:00:00' })),
+    tags: { 'SD/good.jpg': [{ scientificName: 'Canis latrans', commonName: 'Coyote', count: 6, requestedSpecies: '', freeTags: '' }] }, taggerUser: 'Saved Identifier' };
+  const selection = [
+    { relPath: 'SD/good.jpg', size: 8, file: original('good.jpg') },
+    { relPath: 'SD/changed.jpg', size: 8, file: original('edited.jpg') },
+  ];
+  if (method === 'handle') {
+    record.dirHandle = { name: 'SD', queryPermission: async () => 'granted', async *values() {
+      for (const entry of selection) yield { kind: 'file', name: entry.relPath.split('/').pop(), getFile: async () => entry.file };
+    } } as unknown as FileSystemDirectoryHandle;
+    expect(await adoptRecord(record)).toEqual({ kind: 'restored' });
+  } else await adoptReselected(record, selection);
+  const files = useStore.getState().files;
+  expect(files).toHaveLength(3);
+  expect(files[0]).toMatchObject({ processState: 'ready', preTags: record.tags['SD/good.jpg'], preTaggerUser: 'Saved Identifier' });
+  expect(files.slice(1).every(file => file.needsOriginal && file.processState === 'error' && file.file.size === 0)).toBe(true);
+  expect(files[1].processError).toContain('not in the selected folder');
+  expect(files[2].processError).toContain('content hash differs');
+  expect(record.files).toHaveLength(3); expect(record.tags['SD/good.jpg'][0].count).toBe(6);
+  await adoptReselected(record, record.files.map(file => ({ relPath: file.relPath, size: 8, file: original(file.fileName) })));
+  expect(useStore.getState().files.every(file => file.processState === 'ready' && !file.needsOriginal)).toBe(true);
+  expect(useStore.getState().files[0].preTags).toEqual(record.tags['SD/good.jpg']);
+});
 
 const SIZE = 64;
 const entry = (name: string, over: Partial<FileEntry>): FileEntry =>

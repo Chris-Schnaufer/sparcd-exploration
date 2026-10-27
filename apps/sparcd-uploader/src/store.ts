@@ -72,6 +72,8 @@ export type FileEntry = ScannedFile & {
   thumbnail?: Blob;
   mimeType?: string; // worker-authoritative media type
   processError?: string;
+  /** Recovery retained this record, but its original bytes are not verified. */
+  needsOriginal?: boolean;
   // Species the tagger applied before this batch was ever uploaded. Carried
   // opaquely: the uploader displays it read-only and emits it as observation
   // rows, and never edits it.

@@ -174,13 +174,23 @@ export async function recoverPreparationFromHandle(saved: LocalPreparation): Pro
   await applyRecoveredPreparation(saved, result, guard, saved.dirHandle ?? null);
 }
 async function applyRecoveredPreparation(saved: LocalPreparation, result: Pick<RestoreOk, 'attached' | 'problems' | 'resolved'>, guard: () => void, dirHandle: FileSystemDirectoryHandle | null): Promise<void> {
-  if (result.problems.length) throw new Error(result.problems.map(p => `${p.fileName}: ${p.reason}`).join('; ') + '. Your saved preparation is unchanged. Reselect the original folder.');
+  if (!result.attached.size && result.problems.length) throw new Error(result.problems.map(p => `${p.fileName}: ${p.reason}`).join('; ') + '. Your saved preparation is unchanged. Reselect the original folder.');
   const flip = saved.flipId ? await readFlipRecord(saved.flipId) : null;
   guard();
   const files: FileEntry[] = saved.files.map(({ lastModified, ...entry }) => {
     const fresh = result.resolved.get(entry.relPath);
-    const original = result.attached.get(entry.relPath)!;
-    return { ...entry, ...(entry.sha256 ? {} : fresh), id: entry.id, ...(flip ? { preTags: flip.tags[entry.relPath] ?? [], preTaggerUser: flip.taggerUser } : {}), file: new File([original], original.name, { type: original.type, lastModified }), processState: 'ready' };
+    const original = result.attached.get(entry.relPath);
+    const tags = flip && Object.hasOwn(flip.tags, entry.relPath)
+      ? { preTags: flip.tags[entry.relPath], preTaggerUser: flip.taggerUser } : {};
+    if (!original) {
+      const problem = result.problems.find(p => p.localPath === entry.relPath);
+      // Retain every expected hash, tag and Inspect result in the journal.
+      // The empty File supplies no unverified bytes, and error validation blocks
+      // upload/handoff until originals are reselected (or explicitly removed).
+      return { ...entry, ...tags, file: new File([], entry.fileName, { lastModified }),
+        processState: 'error', needsOriginal: true, processError: problem?.reason ?? 'Original file could not be verified' };
+    }
+    return { ...entry, ...(entry.sha256 ? {} : fresh), id: entry.id, ...tags, file: new File([original], original.name, { type: original.type, lastModified }), processState: 'ready', processError: undefined, needsOriginal: undefined };
   });
   // Legacy singleton journals remain recoverable, but new writes have batch keys.
   preparationId = saved.id;

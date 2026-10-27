@@ -115,6 +115,7 @@ export function NewUpload() {
   const totalBytes = useMemo(() => files.reduce((sum, f) => sum + f.size, 0), [files]);
   const summary = useMemo(() => summarize(files, validations), [files, validations]);
   const tagged = useMemo(() => files.filter((f) => f.preTags?.length).length, [files]);
+  const missingOriginals = files.filter(file => file.needsOriginal);
 
   // Clicking a severity counter filters the list to just those files —
   // scrolling a 5000-row list for the one flagged file is not an option.
@@ -195,6 +196,14 @@ export function NewUpload() {
 
       {step === 'inspect' && (
         <div className="space-y-4">
+          {missingOriginals.length > 0 && <section aria-label="Original files need recovery" className="border border-warn p-3 space-y-2">
+            <p role="alert">Verified files and saved tags were restored. {missingOriginals.length} original {missingOriginals.length === 1 ? 'file needs' : 'files need'} recovery before continuing. Their saved hashes and tags are retained.</p>
+            <ul>{missingOriginals.map(file => <li key={file.id} className="break-words">{file.relPath}: {file.processError}</li>)}</ul>
+            <button type="button" className="min-h-11 border border-ink px-3" onClick={() => {
+              const guard = recoveryGuard();
+              void flushPreparation().then(() => { guard(); setStep('drop'); }).catch(error => setTagError((error as Error).message));
+            }}>Reselect original files</button>
+          </section>}
           <div className="space-y-3">
             <p className="font-body text-[14px] text-inkSoft">
               <span className="font-mono text-ink">{summary.processed}</span> of{' '}

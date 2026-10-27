@@ -1,10 +1,11 @@
 import { beforeAll, expect, it, vi } from 'vitest';
 const storage = () => { const values = new Map<string, string>(); return { getItem: (k: string) => values.get(k) ?? null, setItem: (k: string, v: string) => values.set(k, v), removeItem: (k: string) => values.delete(k) }; };
 Object.assign(globalThis, { window: Object.assign(globalThis, { addEventListener() {}, removeEventListener() {}, localStorage: storage(), sessionStorage: storage() }) });
-const memory = vi.hoisted(() => ({ rows: new Map<string, any>(), fail: false, hold: null as Promise<void> | null, entered: () => {}, puts: 0 }));
+const memory = vi.hoisted(() => ({ rows: new Map<string, any>(), flips: new Map<string, any>(), fail: false, hold: null as Promise<void> | null, entered: () => {}, puts: 0 }));
 vi.mock('@sparcd/flip', async original => ({ ...(await original<typeof import('@sparcd/flip')>()),
   flipDb: { transaction: async (_mode: string, _table: unknown, work: () => Promise<void>) => work(), preparations: { toArray: async () => structuredClone([...memory.rows.values()]), get: async (id: string) => structuredClone(memory.rows.get(id)), put: async (row: any) => { memory.puts++; memory.entered(); await memory.hold; if (memory.fail) throw new Error('QuotaExceededError'); memory.rows.set(row.id, structuredClone(row)); }, delete: async (id: string) => { memory.rows.delete(id); } } },
   loadPreparedSpecies: async () => null,
+  readFlipRecord: async (id: string) => memory.flips.get(id) ?? null,
 }));
 vi.mock('../src/lib/processPool', () => ({ processBatch: (items: any[], _started: any, result: any) => {
   for (const item of items) result({ id: item.id, sha256: item.file.name === 'edited.jpg' ? 'changed' : 'original', mediaKind: 'image' });
@@ -39,6 +40,55 @@ it('persists only non-secret batch data, survives failed writes, retries, and va
   expect(store.getState()).toMatchObject({ mountainRange: 'Santa Rita', dateCollected: '2026-07-01', uploadCommentDate: '07-02-2026', uploadDescription: 'preserved notes' });
   store.getState().resetBatch(); await journal.flushPreparation();
   expect(await journal.readPreparation()).toBeNull();
+});
+
+it.each(['reselect', 'handle'])('restores verified tagged files from a mixed %s selection and retains retryable verification records', async path => {
+  store.getState().resetBatch(); await journal.flushPreparation(); memory.rows.clear();
+  const original = new File(['original bytes'], 'original.jpg', { lastModified: 123 });
+  const saved = { v: 1 as const, id: `mixed-${path}`, savedAt: new Date().toISOString(),
+    files: ['good.jpg', 'missing.jpg', 'changed.jpg', 'size.jpg'].map(name => ({
+      id: `SD/${name}`, relPath: `SD/${name}`, fileName: name, size: original.size,
+      mediaKind: 'image' as const, processState: 'ready' as const, sha256: 'original', lastModified: 123,
+      manualSource: 'manual' as const, manualNaive: { year: 2026, month: 7, day: 1, hour: 12, minute: 0, second: 0 },
+      thumbnail: new Blob(['thumb']), preTags: [{ scientificName: 'Saved species', commonName: 'Saved', count: 2, requestedSpecies: '', freeTags: '' }], preTaggerUser: 'Original Tagger',
+    })), flipId: 'mixed-flip', species: null,
+    inputs: { selectedBucket: null, selectedLocationId: null, uploadDescription: 'mixed notes', uploadTimeZone: 'America/Phoenix' } };
+  const tags = { scientificName: 'Canis latrans', commonName: 'Coyote', count: 7, requestedSpecies: '', freeTags: '' };
+  memory.flips.set('mixed-flip', { tags: { 'SD/good.jpg': [tags] }, taggerUser: 'Returning Tagger' });
+  memory.rows.set(saved.id, { id: saved.id, value: structuredClone(saved) });
+  const selected = [
+    { id: 'SD/good.jpg', relPath: 'SD/good.jpg', fileName: 'good.jpg', mediaKind: 'image' as const, size: original.size, file: original },
+    { id: 'SD/changed.jpg', relPath: 'SD/changed.jpg', fileName: 'changed.jpg', mediaKind: 'image' as const, size: original.size, file: new File(['changed bytes!'], 'edited.jpg') },
+    { id: 'SD/size.jpg', relPath: 'SD/size.jpg', fileName: 'size.jpg', mediaKind: 'image' as const, size: 1, file: new File(['x'], 'small.jpg') },
+  ];
+  const handle = Object.defineProperties({ kind: 'directory', name: 'SD' }, {
+    queryPermission: { value: async () => 'granted' },
+    values: { value: async function* () {
+      for (const file of selected) yield { kind: 'file', name: file.fileName, getFile: async () => file.file };
+    } },
+  }) as unknown as FileSystemDirectoryHandle;
+  if (path === 'handle') await journal.recoverPreparationFromHandle({ ...saved, dirHandle: handle });
+  else await journal.recoverPreparation(saved, selected);
+  await journal.flushPreparation();
+  const files = store.getState().files;
+  expect(files).toHaveLength(4);
+  expect(files[0]).toMatchObject({ processState: 'ready', preTags: [tags], preTaggerUser: 'Returning Tagger', sha256: 'original', manualNaive: saved.files[0].manualNaive });
+  expect(await files[0].file.text()).toBe('original bytes');
+  for (const file of files.slice(1)) {
+    expect(file).toMatchObject({ processState: 'error', needsOriginal: true, sha256: 'original', preTags: saved.files[0].preTags });
+    expect(file.file.size).toBe(0); expect(store.getState().validations[file.id].severity).toBe('error');
+  }
+  expect(files[1].processError).toContain('not in the selected folder');
+  expect(files[2].processError).toContain('content hash differs');
+  expect(files[3].processError).toContain('size differs');
+  const retained = (await journal.listPreparations()).find(row => row.id === saved.id)!;
+  expect(retained.files.map(file => file.relPath)).toEqual(saved.files.map(file => file.relPath));
+  expect(retained.files.every(file => file.sha256 === 'original' && file.lastModified === 123)).toBe(true);
+  await journal.recoverPreparation(retained, saved.files.map(file => ({ ...file, file: original })));
+  await journal.flushPreparation();
+  expect(store.getState().files.every(file => file.processState === 'ready' && !file.needsOriginal && !file.processError)).toBe(true);
+  expect(store.getState().files[0].preTags).toEqual([tags]);
+  memory.flips.clear(); store.getState().resetBatch(); await journal.flushPreparation(); memory.rows.clear();
 });
 it('writes batch-owned keys and never overwrites or clears a sibling journal', async () => {
   const sibling = { id: 'sibling', value: { keep: 'other window' } };

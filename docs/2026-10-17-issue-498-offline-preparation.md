@@ -292,3 +292,20 @@ Reproduced the CI failures in independent Google Chrome. The five targeted cases
 passed after the fixes; the complete 217-scenario Uploader BDD suite then passed
 without retries on isolated port 5352 (10.4 minutes). TypeScript and diff checks
 passed. The temporary Chrome test configuration was restored.
+
+### Partial recovery retains the whole preparation
+
+A mixed folder now restores verified files with their saved species counts and
+Tagger attribution. Missing files and size/hash mismatches remain explicit error
+entries with no usable bytes; their expected hashes, tags and Inspect metadata
+stay in the same journal. Inspect lists the recovery problems and offers original
+folder reselection. Upload and local Tagger handoff stay blocked until the
+unavailable originals are recovered or explicitly removed. Reloading and retrying
+recovery does not discard those records. The same behavior covers Tagger returns
+and saved directory handles.
+
+Verification: all 415 Uploader unit tests, 217 standard browser scenarios and 50
+production offline scenarios passed without retries, including mixed-file reload
+and retry coverage. Uploader TypeScript, production build and all four production
+server/worker checks passed. PR #565 retains its separate ownership cleanup fix
+and is rebased onto this corrected head.
