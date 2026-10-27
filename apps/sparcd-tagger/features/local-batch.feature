@@ -1,4 +1,4 @@
-# DRAFT — for review, not yet agreed. Generated 2026-08-25 from apps/sparcd-tagger (src/App.tsx, src/components/Chrome.tsx, src/sections/Tag.tsx, src/lib/localBatch.ts, src/lib/localWorkspace.ts, src/lib/defaultSpecies.ts, src/lib/useMediaUrl.ts) plus packages/flip.
+# DRAFT — for review, not yet agreed. Generated 2026-08-25 from apps/sparcd-tagger (src/App.tsx, src/components/Chrome.tsx, src/sections/Tag.tsx, src/lib/localBatch.ts, src/lib/localWorkspace.ts, src/lib/useMediaUrl.ts) plus packages/flip.
 
 Feature: Tag a batch that has not been uploaded yet
 
@@ -6,8 +6,8 @@ Feature: Tag a batch that has not been uploaded yet
   As-built flow: the Uploader hands over a batch of images still sitting on the
   researcher's card and opens the tagger on it. There is no collection, so
   there is nothing to connect to: the workspace opens straight away, the images
-  come from the folder on this machine, and the species list travels with the
-  app. Tags go back into the hand-off record, and the Done button returns to
+  come from the folder on this machine, and the prepared collection species snapshot travels with the
+  batch. Tags go back into the hand-off record, and the Done button returns to
   the Uploader with them.
   """
 
@@ -19,12 +19,22 @@ Feature: Tag a batch that has not been uploaded yet
   Scenario: The workspace opens with no connection at all
     Then no connection screen is shown
     And the images are listed ready to tag
-    # Requirement A1: Anita tags before she has a connection.
+    # Prior online species preparation is required; tagging itself needs no live connection.
 
   @A1
   Scenario: The chrome says whose batch this is and how to give it back
     Then the header says it is a local batch from the Uploader, with the file count
     And it offers "Done · back to Uploader"
+
+  @A1
+  Scenario: Done is available even before a local batch identity is entered
+    When the local batch identity is cleared
+    Then "Done · back to Uploader" is enabled
+    When "Done · back to Uploader" is chosen
+    Then the browser goes back to the Uploader carrying the batch's id
+    And the returned batch remains untagged with a blank identity
+    # Regression for #499: Done used to stay disabled until the handoff
+    # identity was set, with no way back to the Uploader until it was found.
 
   @unmapped
   Scenario: Collection-only tools are absent, not disabled
@@ -66,3 +76,24 @@ Feature: Tag a batch that has not been uploaded yet
     Given the link points at a batch that is not in this browser
     Then the workspace says there is no such batch
     And it explains that the two tools only share batches on the same origin
+
+  @unmapped
+  Scenario Outline: A failed local save preserves edits and allows Done to be retried
+    Given a species has been applied to an image
+    And the next local <stage> save fails
+    When Done is attempted while saving fails
+    Then the return failure is announced and Done can be retried
+    When "Done · back to Uploader" is chosen
+    Then the browser goes back to the Uploader carrying the batch's id
+    And the batch carries the tag for the Uploader to read
+
+    Examples:
+      | stage   |
+      | draft   |
+      | handoff |
+
+  @unmapped
+  Scenario: Repeated Done activation saves and returns only once
+    Given a species has been applied to an image
+    When Done is activated twice while a save is pending
+    Then only one handoff is started and the batch returns with its tags

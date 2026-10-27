@@ -11,6 +11,7 @@ import {
   enterFocusView,
   focusFrame,
   gridCell,
+  selectedTiles,
   sectionTab,
   speciesRow,
   speciesTile,
@@ -32,6 +33,7 @@ import {
   UUID,
   UUID_B,
   PREFIX_A,
+  PREFIX_B,
   PREFIX_C,
   SETTINGS_BUCKET,
   SPECIES_JSON,
@@ -112,7 +114,7 @@ Then('a popup explains how to use the species list', async ({ page }) => {
   await expect(dialog).toContainText('Enter adds the first species in the original list');
   await expect(dialog).toContainText('A ✓ means that species is already on the focused image');
   await expect(dialog.getByRole('heading', { name: 'Reference photos' })).toBeVisible();
-  await expect(dialog).toContainText('Use the ⊕ control beside a thumbnail');
+  await expect(dialog).toContainText('Click a thumbnail to see the reference image enlarged.');
   await expect(dialog.getByRole('heading', { name: 'Keyboard keys' })).toBeVisible();
   await expect(dialog).toContainText('Hover (or focus) a row to assign or change its key');
   await expect(dialog).toContainText('A struck-through key means another species is already using it');
@@ -142,14 +144,95 @@ Then('the popup blocks species and navigation shortcuts', async ({ page }) => {
 Then('it can be dismissed with Escape, its close control, or a click outside', async ({ page }) => {
   await page.keyboard.press('Escape');
   await expect(speciesHelp(page)).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'About the species list' })).toBeFocused();
 
   await page.getByRole('button', { name: 'About the species list' }).click();
   await speciesHelp(page).getByRole('button', { name: 'Close' }).click();
   await expect(speciesHelp(page)).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'About the species list' })).toBeFocused();
 
   await page.getByRole('button', { name: 'About the species list' }).click();
   await speciesHelp(page).click({ position: { x: 4, y: 4 } });
   await expect(speciesHelp(page)).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'About the species list' })).toBeFocused();
+});
+
+Given('the help is opened from Focus at width {int}', async ({ page }, width: number) => {
+  await page.setViewportSize({ width, height: 900 });
+  await enterFocusView(page);
+  await page.getByRole('button', { name: 'About the species list' }).click();
+  await expect(speciesHelp(page)).toBeVisible();
+});
+
+Then('the help owns focus and blocks Focus shortcuts', async ({ page }) => {
+  const close = speciesHelp(page).getByRole('button', { name: 'Close', exact: true });
+  await expect(close).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(close).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(close).toBeFocused();
+  await page.keyboard.press('v');
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByRole('dialog', { name: 'Focus image viewer' })).toContainText('IMG002.JPG');
+  expect(await readStore(page, 'drafts')).toEqual([]);
+});
+
+When('help is dismissed back to Focus', async ({ page }) => {
+  await page.keyboard.press('Escape');
+  await expect(speciesHelp(page)).toHaveCount(0);
+});
+
+Then('the help trigger regains focus without closing Focus', async ({ page }) => {
+  await expect(page.getByRole('dialog', { name: 'Focus image viewer' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'About the species list' })).toBeFocused();
+});
+
+Then('the Add controls align in Overview, Focus and narrow layouts', async ({ page }) => {
+  const javelinaAdd = speciesApply(page, 'Pecari tajacu');
+  const muleDeerAdd = speciesApply(page, 'Odocoileus hemionus');
+
+  const expectAligned = async () => {
+    // Mule Deer has the vocabulary D key; Javelina has no key. Their optional
+    // key actions and badges must not shift the shared Add-control column.
+    await expect(speciesBadge(page, 'Odocoileus hemionus')).toHaveText('D');
+    await expect(speciesAssignKey(page, 'Pecari tajacu')).toBeVisible();
+    await expect(speciesClearKey(page, 'Odocoileus hemionus')).toBeVisible();
+    const addControls = page
+      .getByTestId('species-panel')
+      .locator('button[title^="Apply "], button[title$="already applied"]');
+    const boxes = await addControls.evaluateAll((buttons) =>
+      buttons.map((button) => {
+        const rect = button.getBoundingClientRect();
+        return { x: rect.x, width: rect.width, height: rect.height };
+      }),
+    );
+    expect(boxes.length).toBeGreaterThanOrEqual(4);
+    for (const box of boxes) {
+      expect(Math.abs(box.x - boxes[0].x)).toBeLessThanOrEqual(1);
+    }
+    const javelinaBox = await javelinaAdd.boundingBox();
+    const muleDeerBox = await muleDeerAdd.boundingBox();
+    expect(javelinaBox).not.toBeNull();
+    expect(muleDeerBox).not.toBeNull();
+    expect(Math.abs(javelinaBox!.x - muleDeerBox!.x)).toBeLessThanOrEqual(1);
+  };
+
+  await expectAligned();
+  await expect(javelinaAdd).toHaveAccessibleName('Apply Javelina');
+  await expect(javelinaAdd).toHaveAttribute('title', 'Apply Javelina');
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectAligned();
+
+  await page.setViewportSize({ width: 1440, height: 950 });
+  await enterFocusView(page);
+  await expectAligned();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectAligned();
+  const touchTarget = await javelinaAdd.boundingBox();
+  expect(touchTarget?.width).toBeGreaterThanOrEqual(44);
+  expect(touchTarget?.height).toBeGreaterThanOrEqual(44);
 });
 
 Then('each species shows its reference image where one exists', async ({ page }) => {
@@ -289,6 +372,21 @@ Then('applying a real species afterwards removes the Ghost label', async ({ page
   await speciesApply(page, 'Canis latrans').click();
   await expect(gridCell(page, 'IMG001.JPG')).toContainText('Coyote');
   await expect(gridCell(page, 'IMG001.JPG')).not.toContainText('Ghost');
+});
+
+Then('{string} shows no Has species badge', async ({ page }, fileName: string) => {
+  await expect(gridCell(page, fileName)).not.toHaveAccessibleName(/Has species/);
+});
+
+Then('the Ghost-classified image shows a Has species badge', async ({ page }) => {
+  await expect(gridCell(page, 'IMG002.JPG')).toHaveAccessibleName(/Has species/);
+});
+
+When('an unclassified image is classified as Ghost', async ({ page }) => {
+  await focusFrame(page, 'IMG002.JPG');
+  await ghostRow(page)
+    .locator('button[title^="Apply"], button[title$="already applied"]')
+    .click();
 });
 
 // --- Filtering --------------------------------------------------------------
@@ -722,6 +820,7 @@ When('count {int} is typed before the bound species key', async ({ page }, count
 });
 
 Then('the new species count is {int}', async ({ page }, count: number) => {
+  await expandApplied(page);
   await expect(appliedChip(page, 'Mule Deer').locator('input[type="number"]')).toHaveValue(
     String(count),
   );
@@ -1009,6 +1108,35 @@ When('its enlarge control is used', async ({ page }) => {
   await expect(loupe(page)).toBeVisible();
 });
 
+// The enlarge control is an invisible overlay sized to the whole 40×40
+// thumbnail, not a small icon in one corner. It intercepts pointer events
+// over the thumbnail's img, so clicking near its far corner (rather than
+// the image itself) proves the whole thumbnail is live, not just the
+// top-left — a direct click on the img there would instead be refused as
+// intercepted if the overlay were still corner-sized.
+When('the thumbnail is clicked away from its top-left corner', async ({ page }) => {
+  const thumbnail = speciesRow(page, 'Puma concolor').locator('img');
+  const box = await thumbnail.boundingBox();
+  expect(box).not.toBeNull();
+  // Click the thumbnail's true bottom-right pixel. The overlay must cover
+  // the complete image even when row actions make the row taller than it.
+  await page.mouse.click(box!.x + box!.width - 1, box!.y + box!.height - 1);
+});
+
+Then('that species was not applied by the click', async ({ page }) => {
+  await expect(speciesRow(page, 'Puma concolor').locator('[aria-label="Applied"]')).toHaveCount(0);
+});
+
+Then('the enlarge control shows no icon of its own', async ({ page }) => {
+  await expect(speciesLoupeButton(page, 'Puma concolor')).toBeEmpty();
+});
+
+Then('the enlarge control exposes its hover text and accessible name', async ({ page }) => {
+  const button = speciesLoupeButton(page, 'Puma concolor');
+  await expect(button).toHaveAttribute('title', 'Enlarge reference');
+  await expect(button).toHaveAccessibleName('Enlarge Mountain Lion reference image');
+});
+
 Then('the reference image is shown enlarged over the workspace', async ({ page }) => {
   const img = loupe(page).locator('img[alt="Mountain Lion"]');
   await expect(img).toBeVisible();
@@ -1108,6 +1236,42 @@ Then("that species' count is incremented by one", async ({ page }) => {
   await expect(appliedChip(page, 'Mule Deer').locator('input[type="number"]')).toHaveValue('3');
 });
 
+// Unlike a drop onto a tile (always spatial), the applied-species strip has
+// no single image of its own — it's selection-scoped, like the keyboard and
+// click-to-add paths.
+const appliedSpeciesDropZone = (page: Page) => page.getByTestId('applied-species-drop-zone');
+
+Given('the empty species strip is a visible drop target without a selection', async ({ page }) => {
+  await page.keyboard.press('Escape');
+  await expect(selectedTiles(page)).toHaveCount(0);
+  const zone = appliedSpeciesDropZone(page);
+  await expect(zone.getByText('Drop species here', { exact: true })).toBeVisible();
+  const bounds = await zone.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.height).toBeGreaterThanOrEqual(44);
+});
+
+When('a species tile is dragged onto the applied-species strip', async ({ page }) => {
+  await speciesRow(page, 'Canis latrans').dragTo(appliedSpeciesDropZone(page));
+});
+
+Then('every selected image receives the dropped species', async ({ page }) => {
+  await expect(positionReadout(page)).toHaveText('3 selected');
+  await waitForDirtyDrafts(page, 3);
+  const drafts = (await readStore(page, 'drafts')) as {
+    mediaPath: string;
+    observations: { scientificName: string; count: number }[];
+  }[];
+  const withCoyote = drafts.filter((d) =>
+    d.observations.some((o) => o.scientificName === 'Canis latrans'),
+  );
+  // IMG001 already carries Mule Deer in the fixture, so its tile summarizes
+  // as "Mule Deer +1" rather than naming Coyote — check the drafts directly.
+  expect(withCoyote.map((d) => d.mediaPath).sort()).toEqual(
+    ['IMG001.JPG', 'IMG002.JPG', 'IMG003.JPG'].map((f) => expect.stringMatching(new RegExp(`${f}$`))),
+  );
+});
+
 Then('only the focused image receives the dropped species', async ({ page }) => {
   await expect(positionReadout(page)).toHaveText('3 selected');
   await waitForDirtyDrafts(page, 1);
@@ -1183,4 +1347,88 @@ Then('the stored observations record no species for the image left behind', asyn
   }
   const meta = JSON.parse(s3.text(BUCKET, `${PREFIX_C}UploadMeta.json`)) as { imagesWithSpecies: number };
   expect(meta.imagesWithSpecies).toBe(1);
+});
+
+Then('the species panel explains the failed refresh without hiding cached species', async ({ page }) => {
+  const panel = page.getByTestId('species-panel');
+  await expect(panel.getByRole('alert')).toContainText("Couldn't refresh the species list. Your previously loaded species remain available.", { timeout: 20_000 });
+  await expect(panel.getByRole('button', { name: 'Retry loading species' })).toBeVisible();
+  await expect(speciesRow(page, 'Odocoileus hemionus')).toBeVisible();
+  await expect(panel).not.toContainText('No species in the vocabulary.');
+});
+
+When('the count preview layout is {string} at width {int}', async ({ page }, layout: string, width: number) => {
+  await speciesApply(page, 'Canis latrans').click();
+  await expect(appliedChip(page, 'Coyote').getByRole('spinbutton')).toHaveValue('1');
+  await page.setViewportSize({ width, height: 950 });
+  if (layout === 'Focus') await enterFocusView(page);
+  else if (layout === 'list') await page.getByRole('button', { name: '☰ List' }).click();
+  // Start on a stable non-editable control; Focus must retain modal focus.
+  if (layout === 'Focus') {
+    await page.getByRole('button', { name: 'Close Focus', exact: true }).focus();
+  } else {
+    await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+  }
+});
+
+When('the pending count is corrected from two to four', async ({ page }) => {
+  const focusedBefore = await page.evaluateHandle(() => document.activeElement);
+  await page.keyboard.press('2');
+  await expect(page.getByRole('status').filter({ hasText: /^Count: 2$/ })).toBeVisible();
+  await page.keyboard.press('Backspace');
+  await expect(page.getByText(/^Count: \d+$/)).toHaveCount(0);
+  await page.keyboard.press('4');
+  expect(await focusedBefore.evaluate((element) => element === document.activeElement)).toBe(true);
+  await focusedBefore.dispose();
+});
+
+Then('the species header alone announces pending count four', async ({ page }) => {
+  const preview = page.getByText('Count: 4', { exact: true });
+  await expect(preview).toHaveCount(1);
+  await expect(preview).toHaveAttribute('role', 'status');
+  await expect(appliedSpeciesDropZone(page).locator(':scope > :first-child')).toHaveText('Count: 4');
+  const panel = page.getByTestId('species-panel');
+  const header = panel.getByRole('textbox', { name: 'Filter species' }).locator('..');
+  const existingCount = header.getByRole('spinbutton', { name: 'Count for Coyote', exact: true });
+  const remove = header.getByRole('button', { name: 'Remove Coyote', exact: true });
+  await expect(header.getByRole('status').filter({ hasText: 'Count: 4' })).toBeVisible();
+  await expect(preview.locator('..').getByRole('spinbutton', { name: 'Count for Coyote', exact: true })).toHaveValue('1');
+  await preview.scrollIntoViewIfNeeded();
+  const bounds = await preview.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+  await expect(panel.getByRole('textbox', { name: 'Filter species' })).toBeVisible();
+  await expect(preview).not.toBeFocused();
+  for (const control of [existingCount, remove, header.getByRole('button', { name: 'Clear Species', exact: true })]) {
+    await expect(control).toBeVisible();
+    await expect(control).toBeEnabled();
+    const box = await control.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+  }
+  await existingCount.fill('2');
+  await expect(existingCount).toHaveValue('2');
+  await expect(preview).toBeVisible();
+  // Return species-key input to a non-editable control.
+  if (await page.getByRole('button', { name: 'Close Focus', exact: true }).count()) {
+    await page.getByRole('button', { name: 'Close Focus', exact: true }).focus();
+  } else await existingCount.blur();
+});
+
+When('the count-preview image changes', async ({ page }) => {
+  await focusFrame(page, 'IMG003.JPG');
+});
+
+When('the count-preview upload changes', async ({ page }) => {
+  const selectedPrefix = () => page.evaluate(async () => {
+    const path = '/sparcd-exploration/tagger/src/store.ts';
+    const { useStore } = await import(/* @vite-ignore */ path);
+    return useStore.getState().selectedUploadPrefix;
+  });
+  await expect.poll(selectedPrefix).toBe(PREFIX_A);
+  await sectionTab(page, 'Browse').click();
+  await openUpload(page, 'fielduser');
+  await expect.poll(selectedPrefix).toBe(PREFIX_B);
 });

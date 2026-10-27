@@ -38,6 +38,7 @@ export type PersistedFileState = 'awaiting-processing' | 'pending' | 'uploading'
 
 export interface BatchRecord {
   id: string; // sessionId — crypto.randomUUID, stable across resume
+  preparationId?: string; // explicit owner; absent on legacy upload sessions
   targetBucket: string;
   uploadPrefix: string; // Collections/<uuid>/Uploads/<stamp>_<slug>
   deploymentId: string;
@@ -50,6 +51,7 @@ export interface BatchRecord {
   uploaderSlug: string; // sanitized slug actually used in keys
   collectionUuid: string;
   description: string;
+  requiredComments?: import('./uploadComments').RequiredUploadComments;
   startedAt: string; // ISO
   completedAt?: string; // ISO once UploadComplete.json lands
   totalFiles: number;

@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode, type RefObject } from 'react';
+import { useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import Fuse from 'fuse.js';
 import type { Species } from '../lib/species';
 import type { AppliedTag } from '../lib/drafts';
@@ -16,6 +16,9 @@ export type SpeciesPanelProps = {
   showHelp: boolean;
   onHelpOpen: () => void;
   onHelpClose: () => void;
+  speciesLoading?: boolean;
+  speciesLoadError?: boolean;
+  onRetrySpecies?: () => Promise<boolean>;
   onApply: (tag: AppliedTag) => void; // add-only; count omitted defaults to 1
   filter: string;
   onFilterChange: (v: string) => void;
@@ -39,6 +42,18 @@ export type SpeciesPanelProps = {
 
 export function SpeciesPanel(props: SpeciesPanelProps) {
   const { species, filter } = props;
+  const [retrying, setRetrying] = useState(false);
+  const retryRef = useRef<HTMLButtonElement>(null);
+  async function retrySpecies() {
+    if (retrying || !props.onRetrySpecies) return;
+    setRetrying(true);
+    try {
+      const recovered = await props.onRetrySpecies();
+      // Keep focus on Retry during a failed attempt; after success return to
+      // the species filter, unless the user has already moved elsewhere.
+      if (recovered && document.activeElement === retryRef.current) props.filterRef.current?.focus();
+    } finally { setRetrying(false); }
+  }
 
   const fuse = useMemo(
     () =>
@@ -108,6 +123,19 @@ export function SpeciesPanel(props: SpeciesPanelProps) {
         {props.showHelp && <SpeciesHelp onClose={props.onHelpClose} />}
       </div>
 
+      {(props.speciesLoadError || retrying) && (
+        <div className="px-3 py-2 border-b border-warn text-[13px] font-body space-y-2">
+          {retrying ? <p role="status">Retrying the species list…</p> : (
+            <p role="alert">{species.length ? "Couldn't refresh the species list. Your previously loaded species remain available." : "Couldn't load the species list."} Check your connection and access permissions, then retry.</p>
+          )}
+          <button ref={retryRef} type="button" aria-label="Retry loading species" aria-disabled={retrying}
+            onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') event.stopPropagation(); }}
+            onClick={() => void retrySpecies()} className="min-h-11 px-3 py-2 border border-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+            {retrying ? 'Retrying…' : 'Retry'}
+          </button>
+        </div>
+      )}
+      {props.speciesLoading && !retrying && <p role="status" className="px-3 py-2 text-[13px] text-inkSoft">Loading species…</p>}
       <div className="flex-1 overflow-y-auto min-h-0">
         {ordered.map((s) => (
           <Row
@@ -142,7 +170,7 @@ export function SpeciesPanel(props: SpeciesPanelProps) {
           />
         )}
 
-        {!ordered.length && !trimmed && (
+        {!ordered.length && !trimmed && !props.speciesLoading && !props.speciesLoadError && !retrying && (
           <p className="p-4 text-[13px] text-inkMute font-body">No species in the vocabulary.</p>
         )}
       </div>
@@ -186,9 +214,11 @@ function Row(p: RowProps) {
       }
     >
       {/* Loupe: a sibling of the apply button (never nested — button-in-button is
-          invalid and would fire apply), overlaid on the thumbnail's top-left and
-          revealed on row hover/focus. stopPropagation keeps clicking it from
-          applying the species. */}
+          invalid and would fire apply), overlaid over the whole thumbnail.
+          Invisible — no icon or background — so hovering anywhere on the
+          thumbnail just shows the native "Enlarge reference" tooltip instead
+          of a separate overlay control. stopPropagation keeps clicking it
+          from applying the species. */}
       {p.iconUrl && p.onZoom && (
         <button
           type="button"
@@ -197,12 +227,10 @@ function Row(p: RowProps) {
             e.preventDefault();
             p.onZoom!();
           }}
-          className="absolute top-2 left-3 min-w-11 min-h-11 md:min-w-0 md:min-h-0 md:w-4 md:h-4 grid place-items-center bg-ink/55 text-paper text-[10px] font-mono opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 focus:opacity-100 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+          className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 cursor-zoom-in focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
           title="Enlarge reference"
           aria-label={`Enlarge ${p.common} reference image`}
-        >
-          ⊕
-        </button>
+        />
       )}
       <button
         onClick={p.onSelect ?? p.onApply}
@@ -234,25 +262,14 @@ function Row(p: RowProps) {
         )}
       </button>
 
-      {/* Actions sit before the key badge so the badge stays anchored to the
-          right edge — the hover-only buttons reserve space even when hidden, so
-          ordering them last would shove the badge left and break alignment. */}
+      {/* Keep the Add button and key badge in fixed trailing slots. The optional
+          key controls can grow to their left without shifting the Add button
+          from row to row. */}
       <div className="flex items-center gap-1.5 shrink-0">
         {p.capturing ? (
           <span className="text-[11px] font-mono text-accent animate-pulse">press a key…</span>
         ) : (
           <>
-            {p.onSelect && (
-              <button
-                onClick={p.onApply}
-                disabled={p.disabled}
-                className="inline-flex items-center justify-center min-w-11 min-h-11 md:min-w-7 md:min-h-7 text-base font-mono text-accent hover:bg-paperHover disabled:text-inkMute disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
-                title={p.applied ? `${p.common} already applied` : `Apply ${p.common}`}
-                aria-label={p.applied ? `${p.common} already applied` : `Apply ${p.common}`}
-              >
-                +
-              </button>
-            )}
             {p.onStartCapture && (
               <button
                 onClick={p.onStartCapture}
@@ -272,18 +289,31 @@ function Row(p: RowProps) {
                 ✕
               </button>
             )}
-            {p.badge && (
-              <kbd
-                className={`px-1.5 h-5 min-w-5 grid place-items-center border text-[11px] font-mono uppercase ${
-                  p.badgeConflict
-                    ? 'border-inkMute text-inkMute line-through'
-                    : 'border-ink text-ink'
-                }`}
-                title={p.badgeConflict ?? undefined}
+            {p.onSelect && (
+              <button
+                onClick={p.onApply}
+                disabled={p.disabled}
+                className="inline-flex w-11 h-11 md:w-7 md:h-7 shrink-0 items-center justify-center text-base font-mono text-accent hover:bg-paperHover disabled:text-inkMute disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+                title={p.applied ? `${p.common} already applied` : `Apply ${p.common}`}
+                aria-label={p.applied ? `${p.common} already applied` : `Apply ${p.common}`}
               >
-                {p.badge}
-              </kbd>
+                +
+              </button>
             )}
+            <span className="inline-flex w-8 shrink-0 justify-center">
+              {p.badge && (
+                <kbd
+                  className={`px-1.5 h-5 min-w-5 grid place-items-center border text-[11px] font-mono uppercase ${
+                    p.badgeConflict
+                      ? 'border-inkMute text-inkMute line-through'
+                      : 'border-ink text-ink'
+                  }`}
+                  title={p.badgeConflict ?? undefined}
+                >
+                  {p.badge}
+                </kbd>
+              )}
+            </span>
             {p.badge && p.badgeConflict && <span className="sr-only">{p.badgeConflict}</span>}
           </>
         )}

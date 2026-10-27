@@ -103,7 +103,7 @@ export function SpeciesHelp({ onClose }: { onClose: () => void }) {
             <h3 className="font-body text-[11px] font-[600] tracking-[0.16em] uppercase text-inkSoft mb-1.5">
               Reference photos
             </h3>
-            <p>Use the ⊕ control beside a thumbnail to see the reference image enlarged.</p>
+            <p>Click a thumbnail to see the reference image enlarged.</p>
           </section>
 
           <section>

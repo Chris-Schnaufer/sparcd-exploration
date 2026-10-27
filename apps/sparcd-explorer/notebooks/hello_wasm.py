@@ -461,6 +461,37 @@ def _():
           model.set("access_key", stored.accessKey || "");
           model.set("secure", typeof stored.secure === "boolean" ? stored.secure : false);
           model.save_changes();
+          // Marimo does not expose aria-describedby on its checkbox API.
+          // Associate the generated control without changing its visible label.
+          function describeRemember() {
+            const sidebar = document.querySelector("aside.app-sidebar");
+            if (!sidebar) return;
+            function visit(root) {
+              if (!observedRoots.has(root)) {
+                observedRoots.add(root);
+                observer.observe(root, { childList: true, subtree: true });
+              }
+              const warning = root.querySelector("#sparcd-remember-public-computer-warning");
+              for (const wrapper of root.querySelectorAll("[data-sparcd-remember-control]")) {
+                const host = wrapper.querySelector("marimo-checkbox");
+                const checkbox = (host?.shadowRoot || wrapper).querySelector('input[type="checkbox"], [role="checkbox"]');
+                if (!warning || !checkbox) continue;
+                // IDs cannot cross Marimo's nested shadow boundaries. Derive
+                // the native control's description from its visible note.
+                checkbox.setAttribute("aria-description", warning.textContent.trim());
+                checkbox.setAttribute("aria-label", "Remember endpoint & access key on this device");
+              }
+              for (const host of root.querySelectorAll("marimo-form, marimo-dict, marimo-checkbox")) {
+                if (host.shadowRoot) visit(host.shadowRoot);
+              }
+            }
+            visit(sidebar);
+          }
+          const observedRoots = new WeakSet();
+          const observer = new MutationObserver(describeRemember);
+          observer.observe(document.body, { childList: true, subtree: true });
+          describeRemember();
+          return () => observer.disconnect();
         }
         export default { render };
         """
@@ -593,7 +624,9 @@ def _(DEFAULT_ACCESS, DEFAULT_ENDPOINT, DEFAULT_SECRET, DEFAULT_SECURE, mo, reme
 
         {secure}
 
-        {remember}
+        <span data-sparcd-remember-control>{remember}</span>
+
+        <span id="sparcd-remember-public-computer-warning"><em>(Don't set remember endpoint &amp; access key if on a public computer)</em></span>
         """)
         .batch(
             endpoint=_endpoint_in,
@@ -999,7 +1032,6 @@ def _(BUCKETS, SPARCD_COLLECTION_DATA_CACHE, UPLOADS_PREFIXES, client, mo):
                 pl.col("longitude").cast(pl.Float64, strict=False),
                 pl.col("elevation").cast(pl.Float64, strict=False),
             )
-            .filter(pl.col("latitude").is_not_null() & pl.col("longitude").is_not_null())
         )
         media = (
             _to_df(_media_rows, _media_buckets, _media_uploads, MEDIA_COLS + [f"_m{i}" for i in range(50)])
@@ -1399,7 +1431,6 @@ def _(
         .rename({"lat_fixed": "latitude", "lng_fixed": "longitude"})
         .filter(pl.col("deployment_id").is_in(query_deployment_ids))
         .filter(pl.col("location_id") != "0000")
-        .filter(pl.col("latitude").is_not_null() & pl.col("longitude").is_not_null())
         .with_columns(pl.col("location_id").str.slice(0, 3).alias("mountain_range"))
     )
 
@@ -1450,6 +1481,8 @@ def _(
         import math as _math
 
         def _latlon_to_utm(lat, lon):
+            if lat is None or lon is None:
+                return {"utm_zone": None, "utm_easting": None, "utm_northing": None}
             _zone = int((lon + 180) / 6) + 1
             _hemisphere = "N" if lat >= 0 else "S"
             _a = 6378137.0
@@ -1498,7 +1531,7 @@ def _(
             _scale = 10 ** _coord_digits
 
             def _truncate_coord(v):
-                return int(v * _scale) / _scale
+                return None if v is None else int(v * _scale) / _scale
 
             _locations_table = _locations_table.with_columns(
                 pl.col(_coord_cols[0]).map_elements(_truncate_coord, return_dtype=pl.Float64),
@@ -1609,7 +1642,11 @@ def _(deployments, locations, observations_filtered, pl):
     # Each site counts once, with swapped coordinates corrected as the locations
     # cell does.
     _anchor = (
-        deployments.filter(pl.col("location_id") != "0000")
+        deployments.filter(
+            (pl.col("location_id") != "0000")
+            & pl.col("latitude").is_not_null()
+            & pl.col("longitude").is_not_null()
+        )
         .unique(["location_id", "latitude", "longitude"])
         .select(
             pl.when(pl.col("latitude").abs() > 90).then(pl.col("longitude")).otherwise(pl.col("latitude"))
@@ -1683,7 +1720,7 @@ def _(deployments, locations, observations_filtered, pl):
             },
         )
     else:
-        _loc_with_hex = locations.with_columns(
+        _loc_with_hex = locations.filter(pl.col("latitude").is_not_null() & pl.col("longitude").is_not_null()).with_columns(
             pl.struct(["latitude", "longitude"])
             .map_elements(
                 lambda s: _latlng_to_cell(s["latitude"], s["longitude"]),
@@ -1698,7 +1735,7 @@ def _(deployments, locations, observations_filtered, pl):
                 _upload_to_hex[_u] = _row["h3_id"]
 
         _obs_with_hex = observations_filtered.with_columns(
-            pl.col("upload").replace_strict(_upload_to_hex, default=None).alias("h3_id")
+            pl.col("upload").replace_strict(_upload_to_hex, default=None, return_dtype=pl.Utf8).alias("h3_id")
         ).filter(pl.col("h3_id").is_not_null())
 
         # Distinct common names, the same count as the map panel and stat card, and
@@ -1781,6 +1818,7 @@ def _(
     locations,
     map_display_mode,
     mo,
+    pl,
 ):
     # Map. Hex cells for protected display, or exact site points for precise QA
     # (points only offered on the trusted wildcats endpoint). Basemap comes from a
@@ -1875,7 +1913,7 @@ def _(
                     "checklists": _hex_lookup.get(_r["site_key"], {}).get("checklists", 0),
                     "most_recent": _hex_lookup.get(_r["site_key"], {}).get("most_recent", "—"),
                 }
-                for _r in locations.iter_rows(named=True)
+                for _r in locations.filter(pl.col("latitude").is_not_null() & pl.col("longitude").is_not_null()).iter_rows(named=True)
             ]
             camera_fig = go.Figure(
                 go.Scattermap(

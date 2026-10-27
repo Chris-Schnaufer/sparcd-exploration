@@ -4,6 +4,7 @@
 
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import {
   ListBucketsCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand,
   DeleteObjectCommand, ListObjectsV2Command, HeadBucketCommand,
@@ -59,11 +60,11 @@ before(async () => {
   };
 
   await invite('alice', [
-    { bucket: BUCKET_A, access: 'run' }, { bucket: BUCKET_B, access: 'look' },
+    { bucket: BUCKET_A, access: 'run', exactLocations: true }, { bucket: BUCKET_B, access: 'look' },
   ]);
   await invite('bob', [{ bucket: BUCKET_A, access: 'upload' }]);
   await invite('carol', [
-    { bucket: BUCKET_A, access: 'identify' }, { bucket: BUCKET_B, access: 'run' },
+    { bucket: BUCKET_A, access: 'identify', exactLocations: true }, { bucket: BUCKET_B, access: 'run' },
   ]);
 
   for (const name of ['alice', 'bob', 'carol']) {
@@ -157,6 +158,311 @@ describe('invariant 1: nothing outside the namespace', () => {
   test('the canary is still there, read with the upstream credential', async () => {
     const got = await root.get(CANARY, CANARY_KEY);
     assert.equal(got.text, CANARY_BODY);
+  });
+});
+
+describe('coordinate permission redaction', () => {
+  async function body(who, bucket, key) {
+    const out = await people[who].s3().send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+    return out.Body.transformToString();
+  }
+
+  test('settings and collection coordinates are redacted without exactLocations', async () => {
+    const settings = await body('bob', SETTINGS, 'Settings/locations.json');
+    assert.match(settings, /"nameProperty":"Settings site"/);
+    assert.match(settings, /"latProperty":null/);
+    assert.match(settings, /"lngProperty":null/);
+    const collection = await body('bob', BUCKET_A, `Collections/${UUID_A}/locations.json`);
+    assert.match(collection, /"idProperty":"LOC-/);
+    assert.match(collection, /"latProperty":null/);
+    assert.match(collection, /"lngProperty":null/);
+  });
+
+  test('a misleading XML content type cannot bypass coordinate redaction', async () => {
+    const bucket = `${NAMESPACE}${BUCKET_A}`;
+    const key = `Collections/${UUID_A}/locations.json`;
+    const original = (await root.get(bucket, key)).text;
+    try {
+      await root.put(bucket, key, original, { contentType: 'application/xml' });
+      const response = await people.bob.raw('GET', `/${BUCKET_A}/${key}`);
+      assert.equal(response.status, 200);
+      assert.match(response.text, /"latProperty":null/);
+      assert.match(response.text, /"lngProperty":null/);
+      assert.doesNotMatch(response.text, /"latProperty":32\.1|"lngProperty":-111\.1/);
+    } finally {
+      await root.put(bucket, key, original);
+    }
+  });
+
+  test('a restricted XML HEAD hides private hashes and checksums', async () => {
+    const key = `Collections/${UUID_A}/locations.json`;
+    const upstreamBucket = `${NAMESPACE}${BUCKET_A}`;
+    const original = await root.get(upstreamBucket, key);
+    const body = JSON.stringify([
+      { idProperty: 'HEAD-1', nameProperty: 'Head site', latProperty: 32.1, lngProperty: -111.1, elevationProperty: 1000 },
+    ]);
+    const digest = createHash('sha256').update(body).digest();
+    const digestHex = digest.toString('hex');
+    try {
+      await people.alice.s3().send(new PutObjectCommand({
+        Bucket: BUCKET_A,
+        Key: key,
+        Body: body,
+        ContentType: 'application/xml',
+        ChecksumSHA256: digest.toString('base64'),
+        Metadata: { sha256: digestHex },
+      }));
+      const exact = await people.alice.s3().send(new HeadObjectCommand({
+        Bucket: BUCKET_A, Key: key, ChecksumMode: 'ENABLED',
+      }));
+      assert.ok(exact.ChecksumSHA256);
+
+      const restricted = await people.bob.raw('HEAD', `/${BUCKET_A}/${key}`, {
+        headers: { 'x-amz-checksum-mode': 'ENABLED' },
+      });
+      assert.equal(restricted.status, 200);
+      assert.notEqual(restricted.headers.get('etag'), exact.ETag);
+      assert.notEqual(restricted.headers.get('x-amz-meta-sha256'), digestHex);
+      assert.equal(restricted.headers.get('x-amz-checksum-sha256'), null);
+      assert.equal(restricted.headers.get('content-length'), null);
+
+      const restrictedGet = await people.bob.raw('GET', `/${BUCKET_A}/${key}`, {
+        headers: { 'x-amz-checksum-mode': 'ENABLED' },
+      });
+      assert.equal(restrictedGet.status, 200);
+      assert.equal(restrictedGet.headers.get('x-amz-checksum-sha256'), null);
+    } finally {
+      await root.put(upstreamBucket, key, original.text);
+    }
+  });
+
+  test('exactLocations membership receives precise collection locations and deployments', async () => {
+    const locations = await body('alice', BUCKET_A, `Collections/${UUID_A}/locations.json`);
+    assert.match(locations, /"latProperty":32.1/);
+    const deployments = await body('alice', BUCKET_A, `${prefixA}/deployments.csv`);
+    assert.match(deployments, /-111.1,32.1/);
+    const redacted = await body('bob', BUCKET_A, `${prefixA}/deployments.csv`);
+    assert.doesNotMatch(redacted, /-111.1,32.1/);
+    assert.match(redacted, /DEP-1/);
+  });
+
+  test('opaque validators, sizes, and conditional reads do not expose coordinate-bearing bytes', async () => {
+    const key = `${prefixA}/deployments.csv`;
+    const upstreamBucket = `${NAMESPACE}${BUCKET_A}`;
+    const upstream = await root.get(upstreamBucket, key);
+    await root.put(upstreamBucket, key, upstream.text, {
+      contentType: 'text/csv', metaSha256: 'b'.repeat(64),
+    });
+    const opaqueRead = await people.bob.raw('GET', `/${BUCKET_A}/${key}`);
+    assert.equal(opaqueRead.status, 200);
+    assert.notEqual(opaqueRead.headers.get('etag'), upstream.etag);
+    assert.match(opaqueRead.headers.get('etag'), /^"spcd-[a-f0-9]{64}"$/);
+    assert.notEqual(opaqueRead.headers.get('x-amz-meta-sha256'), 'b'.repeat(64));
+    assert.match(opaqueRead.headers.get('x-amz-meta-sha256'), /^[a-f0-9]{64}$/);
+    assert.doesNotMatch(opaqueRead.text, /-111\.1,32\.1/);
+
+    const opaqueHead = await people.bob.raw('HEAD', `/${BUCKET_A}/${key}`);
+    assert.equal(opaqueHead.status, 200);
+    assert.equal(opaqueHead.headers.get('etag'), opaqueRead.headers.get('etag'));
+    assert.equal(opaqueHead.headers.get('content-length'), null);
+
+    // A caller's cached condition is over the proxy representation, not the
+    // raw upstream bytes. Raw upstream validators are ignored after signature
+    // verification so they cannot turn a private object into a 304 oracle.
+    const conditional = await people.bob.raw('GET', `/${BUCKET_A}/${key}`, {
+      headers: { 'if-none-match': upstream.etag },
+    });
+    assert.equal(conditional.status, 200);
+    assert.match(conditional.text, /DEP-1/);
+    const mismatchedIfMatch = await people.bob.raw('GET', `/${BUCKET_A}/${key}`, {
+      headers: { 'if-match': '"not-the-current-private-etag"' },
+    });
+    assert.equal(mismatchedIfMatch.status, 200);
+    assert.match(mismatchedIfMatch.text, /DEP-1/);
+
+    const listed = await people.bob.s3().send(new ListObjectsV2Command({
+      Bucket: BUCKET_A, Prefix: `${prefixA}/`,
+    }));
+    const entry = listed.Contents.find((item) => item.Key === key);
+    assert.ok(entry);
+    assert.equal(entry.Size, 0);
+    assert.equal(entry.ETag, opaqueRead.headers.get('etag'));
+
+    const settingsListing = await people.bob.s3().send(new ListObjectsV2Command({
+      Bucket: SETTINGS, Prefix: 'Settings/locations.json',
+    }));
+    const settingsEntry = settingsListing.Contents?.find((item) => item.Key === 'Settings/locations.json');
+    assert.ok(settingsEntry);
+    assert.equal(settingsEntry.Size, 0);
+    assert.match(settingsEntry.ETag ?? '', /^"spcd-[a-f0-9]{64}"$/);
+  });
+
+  test('UploadComplete exact metadata digest is opaque to coordinate-restricted members', async () => {
+    const key = `${prefixA}/UploadComplete.json`;
+    const rawDigest = 'a'.repeat(64);
+    await root.put(`${NAMESPACE}${BUCKET_A}`, key, JSON.stringify({
+      metadataBundleSha256: rawDigest, files: [],
+    }), { metaSha256: rawDigest });
+    const restrictedResponse = await people.bob.raw('GET', `/${BUCKET_A}/${key}`);
+    const exactResponse = await people.alice.raw('GET', `/${BUCKET_A}/${key}`);
+    const restricted = JSON.parse(restrictedResponse.text);
+    const exact = JSON.parse(exactResponse.text);
+    assert.notEqual(restricted.metadataBundleSha256, rawDigest);
+    assert.match(restricted.metadataBundleSha256, /^[a-f0-9]{64}$/);
+    assert.equal(exact.metadataBundleSha256, rawDigest);
+    assert.notEqual(restrictedResponse.headers.get('x-amz-meta-sha256'), rawDigest);
+    assert.equal(exactResponse.headers.get('x-amz-meta-sha256'), rawDigest);
+  });
+
+  test('a restricted uploader can safely retry an identical UploadComplete create', async () => {
+    const key = `Collections/${UUID_A}/Uploads/2026.10.26.00.00.00_retry/UploadComplete.json`;
+    const body = JSON.stringify({
+      schemaVersion: 1,
+      uploadPath: key.slice(0, key.lastIndexOf('/')),
+      fileCount: 0,
+      metadataBundleSha256: 'b'.repeat(64),
+      files: [],
+      completedAt: '2026-10-26T10:00:00.000Z',
+    });
+    const options = { body, headers: { 'content-type': 'application/json', 'if-none-match': '*' } };
+    const first = await people.bob.raw('PUT', `/${BUCKET_A}/${key}`, options);
+    assert.equal(first.status, 200, first.text);
+
+    // Simulate a lost successful response. The restricted response hides the
+    // metadata digest, so neither exact nor incorrect digest guesses may
+    // change the retry status; only public fields participate in the check.
+    const retry = await people.bob.raw('PUT', `/${BUCKET_A}/${key}`, options);
+    assert.equal(retry.status, 200, retry.text);
+    const digestGuess = await people.bob.raw('PUT', `/${BUCKET_A}/${key}`, {
+      ...options,
+      body: body.replace('b'.repeat(64), 'c'.repeat(64)),
+    });
+    assert.equal(digestGuess.status, 200, digestGuess.text);
+    const conflict = await people.bob.raw('PUT', `/${BUCKET_A}/${key}`, {
+      ...options,
+      body: body.replace('"fileCount":0', '"fileCount":1'),
+    });
+    assert.equal(conflict.status, 412, conflict.text);
+    assert.equal((await root.get(`${NAMESPACE}${BUCKET_A}`, key)).text, body);
+  });
+
+  test('restricted deployment writes refill exact coordinates from the current registry', async () => {
+    const key = `Collections/${UUID_A}/Uploads/2026.10.26.00.00.00_restricted/deployments.csv`;
+    const locationId = `LOC-${UUID_A.slice(0, 4)}`;
+    const makeRow = (uncertainty = '0') => {
+      const row = Array(23).fill('');
+      row[0] = `${UUID_A}:${locationId}`;
+      row[1] = locationId;
+      row[2] = 'Educational Test site';
+      row[5] = uncertainty;
+      row[11] = '0';
+      row[12] = '1000.000000';
+      return row.map((value) => '"' + value.replaceAll('"', '""') + '"').join(',') + '\n';
+    };
+
+    const created = await people.bob.raw('PUT', `/${BUCKET_A}/${key}`, {
+      body: makeRow(), headers: { 'content-type': 'text/csv', 'if-none-match': '*' },
+    });
+    assert.equal(created.status, 200, created.text);
+    assert.match((await root.get(`${NAMESPACE}${BUCKET_A}`, key)).text, /"-111\.100000","32\.100000"/);
+
+    const read = await people.bob.raw('GET', `/${BUCKET_A}/${key}`);
+    const replaced = await people.bob.raw('PUT', `/${BUCKET_A}/${key}`, {
+      body: makeRow('1'), headers: { 'content-type': 'text/csv', 'if-match': read.headers.get('etag') },
+    });
+    assert.equal(replaced.status, 200, replaced.text);
+    assert.match((await root.get(`${NAMESPACE}${BUCKET_A}`, key)).text, /"-111\.100000","32\.100000","1"/);
+  });
+
+  test('restricted Tagger snapshots remain coordinate-free and writable', async () => {
+    const upload = `Collections/${UUID_A}/Uploads/2026.10.26.00.00.03_snapshot`;
+    const key = `${upload}/.sparcd-tagger-snapshots/bob/2026-10-26T00-00-00/deployments.csv`;
+    const row = Array(23).fill('');
+    row[0] = `${UUID_A}:SAN15`;
+    row[1] = 'SAN15';
+    row[2] = 'North site';
+    row[12] = '1200.000000';
+    const body = row.map((value) => '"' + value + '"').join(',') + '\n';
+    const saved = await people.bob.raw('PUT', `/${BUCKET_A}/${key}`, {
+      body, headers: { 'content-type': 'text/csv', 'if-none-match': '*' },
+    });
+    assert.equal(saved.status, 200, saved.text);
+    const snapshot = await root.get(`${NAMESPACE}${BUCKET_A}`, key);
+    assert.match(snapshot.text, /"SAN15","North site","",""/);
+    assert.doesNotMatch(snapshot.text, /-110\.200000|31\.500000/);
+  });
+
+  test('restricted deployment writes use settings fallback for empty collection registries and reject ambiguous matches', async () => {
+    const bucket = `${NAMESPACE}${BUCKET_A}`;
+    const registryKey = `Collections/${UUID_A}/locations.json`;
+    const original = (await root.get(bucket, registryKey)).text;
+    const key = `Collections/${UUID_A}/Uploads/2026.10.26.00.00.01_fallback/deployments.csv`;
+    const makeRow = (id, name, elevation) => {
+      const row = Array(23).fill('');
+      row[0] = `${UUID_A}:${id}`;
+      row[1] = id;
+      row[2] = name;
+      row[12] = String(elevation);
+      return row.map((value) => '"' + value.replaceAll('"', '""') + '"').join(',') + '\n';
+    };
+    try {
+      await root.put(bucket, registryKey, '[]');
+      const fallback = await people.bob.raw('PUT', `/${BUCKET_A}/${key}`, {
+        body: makeRow('SET-1', 'Settings site', 900),
+        headers: { 'content-type': 'text/csv', 'if-none-match': '*' },
+      });
+      assert.equal(fallback.status, 200, fallback.text);
+      assert.match((await root.get(bucket, key)).text, /"-110\.200000","31\.500000"/);
+
+      const missingRegistry = await root.send(root.url(bucket, registryKey), { method: 'DELETE' });
+      assert.equal(missingRegistry.status, 204);
+      const missingFallbackKey = `Collections/${UUID_A}/Uploads/2026.10.26.00.00.04_missing-registry/deployments.csv`;
+      const missingFallback = await people.bob.raw('PUT', `/${BUCKET_A}/${missingFallbackKey}`, {
+        body: makeRow('SET-1', 'Settings site', 900),
+        headers: { 'content-type': 'text/csv', 'if-none-match': '*' },
+      });
+      assert.equal(missingFallback.status, 200, missingFallback.text);
+      assert.match((await root.get(bucket, missingFallbackKey)).text, /"-110\.200000","31\.500000"/);
+
+      await root.put(bucket, registryKey, JSON.stringify([
+        { idProperty: 'DUP', nameProperty: 'Duplicate site', latProperty: 31, lngProperty: -110, elevationProperty: 900 },
+        { idProperty: 'DUP', nameProperty: 'Duplicate site', latProperty: 32, lngProperty: -111, elevationProperty: 900 },
+      ]));
+      const ambiguousKey = `Collections/${UUID_A}/Uploads/2026.10.26.00.00.02_ambiguous/deployments.csv`;
+      const ambiguous = await people.bob.raw('PUT', `/${BUCKET_A}/${ambiguousKey}`, {
+        body: makeRow('DUP', 'Duplicate site', 900),
+        headers: { 'content-type': 'text/csv', 'if-none-match': '*' },
+      });
+      assert.equal(ambiguous.status, 403);
+      assert.equal((await root.get(bucket, ambiguousKey)).status, 404);
+    } finally {
+      await root.put(bucket, registryKey, original);
+    }
+  });
+
+  test('exact-coordinate members get registry coordinates for coordinate-free deployment writes', async () => {
+    const bucket = `${NAMESPACE}${BUCKET_A}`;
+    const registryKey = `Collections/${UUID_A}/locations.json`;
+    const original = (await root.get(bucket, registryKey)).text;
+    const key = `Collections/${UUID_A}/Uploads/2026.10.26.00.00.05_exact-fallback/deployments.csv`;
+    const row = Array(23).fill('');
+    row[0] = `${UUID_A}:SET-1`;
+    row[1] = 'SET-1';
+    row[2] = 'Settings site';
+    row[12] = '900';
+    const coordinateFree = row.map((value) => '"' + value + '"').join(',') + '\n';
+    try {
+      await root.send(root.url(bucket, registryKey), { method: 'DELETE' });
+      const saved = await people.alice.raw('PUT', `/${BUCKET_A}/${key}`, {
+        body: coordinateFree,
+        headers: { 'content-type': 'text/csv', 'if-none-match': '*' },
+      });
+      assert.equal(saved.status, 200, saved.text);
+      const stored = (await root.get(bucket, key)).text;
+      assert.match(stored, /"-110\.200000","31\.500000"/);
+    } finally {
+      await root.put(bucket, registryKey, original);
+    }
   });
 });
 
@@ -922,14 +1228,15 @@ describe('hardening', () => {
     assert.match(res.text, /<Name>sparcd-settings-test<\/Name>/);
   });
 
-  test('a settings listing hands back each ETag as the upstream wrote it', async () => {
+  test('a restricted settings listing uses the opaque ETag and hides object size', async () => {
     const key = 'Settings/locations.json';
     const listed = await people.alice.s3().send(
       new ListObjectsV2Command({ Bucket: SETTINGS, Prefix: 'Settings/' }));
     const head = await people.alice.s3().send(new HeadObjectCommand({ Bucket: SETTINGS, Key: key }));
     const entry = listed.Contents.find((c) => c.Key === key);
-    assert.match(entry.ETag, /^"[0-9a-f]+"$/);
+    assert.match(entry.ETag, /^"spcd-[0-9a-f]{64}"$/);
     assert.equal(entry.ETag, head.ETag);
+    assert.equal(entry.Size, 0);
   });
 
   // 8 — presigned writes

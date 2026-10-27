@@ -80,7 +80,37 @@ Every active person: GetObject/HeadObject/ListObjectsV2 on the settings bucket u
 the namespace except invariant 4, plus reading `Settings/activity/**`.
 A person sees a collection bucket in ListBuckets only with a membership; everyone
 active sees the settings bucket. Paused or invited people get 403 on everything.
-`exactLocations` is stored and returned but not yet enforced (team decision pending).
+`exactLocations` controls coordinate redaction. For non-admin callers, the proxy always
+redacts `latProperty`/`lngProperty` from `Settings/locations.json`; it redacts those
+fields from a collection's `locations.json` and blanks longitude/latitude columns in
+that collection's `deployments.csv` unless the caller's membership has
+`exactLocations: true`. Names, IDs, elevation, and deployment relationships remain
+available. A missing `members.json` means no membership and therefore no collection
+access for regular users. Admin callers retain exact-coordinate access.
+
+For coordinate-restricted responses, the proxy also replaces content-derived
+ETags and `x-amz-meta-sha256` values with stable keyed opaque validators, removes
+`Content-Length` from `HEAD`, removes `Content-Range` from redacted reads, and
+removes `x-amz-checksum-*` response headers. It sets the `Size` of protected
+entries to zero in object listings. Conditional
+read headers are verified as part of the caller signature but are not sent
+upstream, so raw storage validators cannot reveal whether a private byte version
+matches. The exact-data `metadataBundleSha256` in `UploadComplete.json` is also
+replaced with a keyed value. A create-only retry of `UploadComplete.json` after a
+lost response is accepted when its public completion fields match the stored
+object. The hidden metadata digest is excluded from that decision, so retry
+status cannot be used to test digest guesses; a change to public fields remains
+a 412 conflict.
+
+An upload-only member may create or replace a canonical `deployments.csv` only
+when both coordinate columns are blank and the write carries a signed S3
+precondition. The proxy fills coordinates from the collection's non-empty
+`locations.json`, falling back to `Settings/locations.json` only when the
+collection registry is missing or empty. A deployment row must match exactly
+one current location by ID, name, and elevation; stale or ambiguous rows are
+refused. The legacy Cloudflare Worker and Caddy passthrough recipe have no
+per-person membership model and must not be used where exact-location access
+differs between users.
 CopyObject, ListMultipartUploads, bucket create/delete, ACL, policy, versioning and
 tagging calls are 403.
 
@@ -102,8 +132,8 @@ object-lock family, `x-amz-trailer` — is refused.
 
 `If-Match` is forwarded with the quotes stripped from each tag, after the caller's
 signature has been verified against what they sent, because Ceph RGW answers 412 to a
-quoted tag on a PUT even when it is current; ETags come back to the client exactly as
-the upstream wrote them.
+quoted tag on a PUT even when it is current. Unrestricted ETags come back to the client
+as the upstream wrote them; validators for coordinate-protected objects are opaque.
 
 Object keys are refused when a decoded segment is `.` or `..`, or the key contains a
 backslash or a NUL, or starts with `/`.

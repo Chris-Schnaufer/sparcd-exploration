@@ -1,13 +1,13 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import type { DraftObservation } from '../lib/db';
-import { isGhostObs, reviewStatus, reviewSummary } from '../lib/effective';
+import { isGhostObs, reviewSummary } from '../lib/effective';
 
 // The compact applied-species strip under the SpeciesPanel header. A single
 // wrapping line of chips for the focused image — the 99% single-species case is
 // just one small chip. ≥2 species collapse to a one-line summary that expands
 // (accordion). Editing happens here (count, remove, detag all); ADDING stays the
-// job of the dominant SpeciesPanel list. This component edits the focused image
-// only — it is add-target agnostic.
+// job of the dominant SpeciesPanel list. Chips edit the focused image; Clear
+// Species follows the view-specific target scope supplied by the workspace.
 
 export type AppliedSpeciesProps = {
   observations: DraftObservation[]; // effective set for the focused image
@@ -15,6 +15,11 @@ export type AppliedSpeciesProps = {
   onSetCount: (scientificName: string, count: number) => void;
   onRemove: (scientificName: string) => void;
   onDetagAll: () => void;
+  // Clear Species follows the visible selection, or the focused image when
+  // nothing is selected. Chips continue to edit only the focused image.
+  canDetag: boolean;
+  detagCount: number;
+  detagSelection: boolean;
 };
 
 function labelOf(o: DraftObservation): string {
@@ -27,25 +32,34 @@ function reviewLabel(o: DraftObservation): string | null {
   return review ? `Reviewed by ${review.reviewedBy} at ${review.reviewedAt}` : null;
 }
 
-function reviewStateLabel(o: DraftObservation): string {
-  const reviewEvents = o.reviewEvents ?? [];
-  if (!reviewEvents.length) return 'Not reviewed';
-  return reviewLabel(o) ?? 'Reviewed';
-}
-
 export function AppliedSpecies(props: AppliedSpeciesProps) {
   const [expanded, setExpanded] = useState(false);
+  const clearHelpId = useId();
   const obs = props.observations;
+  const clearHelp = props.detagSelection
+    ? `Remove all species from ${props.detagCount === 1 ? 'this selected image' : `these ${props.detagCount} selected images`}`
+    : 'Remove all species from this image';
 
-  if (props.disabled || obs.length === 0) return null;
+  // The strip itself still reflects the focused image's own species. Clear
+  // Species stays available even when the focused image has none, as long as
+  // it would still clear species elsewhere in the current selection.
+  if (props.disabled || (obs.length === 0 && !props.canDetag)) return null;
 
   const multi = obs.length > 1;
   // Collapsed multi-species summary: first chip + "+N more".
   const summary = multi ? `${labelOf(obs[0])}${obs[0].count > 1 ? ` ×${obs[0].count}` : ''}` : '';
-  const summaryReview = multi ? reviewSummary(obs) : null;
+  const reviewState = multi ? reviewSummary(obs) : null;
+  // Species controls show only positive review information. The image-level
+  // summary wording is coordinated with #466; an entirely unreviewed set has
+  // no review label, and a mixed set is described as partly reviewed.
+  const summaryReview = reviewState === 'reviewed'
+    ? 'Reviewed'
+    : reviewState === 'mixed'
+      ? 'Partly reviewed'
+      : null;
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
+    <div className="relative flex flex-wrap items-center gap-1.5">
       {multi && !expanded ? (
         <button
           onClick={() => setExpanded(true)}
@@ -82,13 +96,31 @@ export function AppliedSpecies(props: AppliedSpeciesProps) {
         ))
       ) : null}
 
-      <button
-        onClick={props.onDetagAll}
-        className="text-[11px] font-mono text-inkMute hover:text-warn underline decoration-dotted focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
-        title="Remove all species from this image"
-      >
-        Clear Species
-      </button>
+      {props.canDetag && (
+        <span className="inline-flex group">
+          <button
+            type="button"
+            onClick={props.onDetagAll}
+            aria-describedby={clearHelpId}
+            onKeyDown={(event) => {
+              // Native button activation owns these keys instead of Overview's
+              // Enter-to-Focus and Space-to-species-filter shortcuts.
+              if ((event.key === 'Enter' || event.key === ' ') &&
+                  !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey) event.stopPropagation();
+            }}
+            className="min-h-11 inline-flex items-center text-[11px] font-mono text-inkMute hover:text-warn underline decoration-dotted focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+          >
+            Clear Species
+          </button>
+          <span
+            id={clearHelpId}
+            role="tooltip"
+            className="pointer-events-none invisible absolute left-0 top-full z-40 mt-1 w-56 max-w-[calc(100vw-2rem)] border border-rule bg-panel px-2 py-1 text-[11px] font-mono text-ink shadow-lg group-hover:visible group-focus-within:visible"
+          >
+            {clearHelp}
+          </span>
+        </span>
+      )}
     </div>
   );
 }
@@ -103,6 +135,7 @@ function Chip({
   onRemove: () => void;
 }) {
   const ghost = isGhostObs(obs);
+  const positiveReview = reviewLabel(obs);
   return (
     <span
       className={`inline-flex items-center gap-1.5 pl-2.5 pr-1 py-1 text-[13px] border ${
@@ -112,17 +145,11 @@ function Chip({
       <span className="truncate max-w-[12rem]">
         {ghost ? '◯ Ghost' : labelOf(obs)}
       </span>
-      {obs.classifiedBy && (
-        <span className="text-[11px] text-inkMute" aria-label={`Originally identified by ${obs.classifiedBy}`}>
-          Originally identified by {obs.classifiedBy}
+      {positiveReview && (
+        <span className="text-[11px] text-inkMute" aria-label={positiveReview}>
+          {positiveReview}
         </span>
       )}
-      <span
-        className={`text-[11px] ${reviewStatus(obs) === 'reviewed' ? 'text-inkMute' : 'text-warn'}`}
-        aria-label={reviewStateLabel(obs)}
-      >
-        {reviewStateLabel(obs)}
-      </span>
       {obs.requestedSpecies && (
         <span className="font-mono text-inkMute text-[11px]">requested</span>
       )}
