@@ -128,6 +128,14 @@ Given('the checkmark image is {int} by {int} at viewport width {int}', async ({ 
   await page.reload(); await openWorkspace(page); await page.setViewportSize({ width: viewport, height: 950 });
   await focusFrame(page, 'IMG001.JPG'); await enterFocusView(page);
 });
+Given('a short panorama is focused with its previous-image control available', async ({ page, s3 }) => {
+  s3.put(BUCKET, mediaKey(PREFIX_A, 'IMG003.JPG'), makePng(1200, 240, 181), 'image/png');
+  await page.reload(); await openWorkspace(page); await page.setViewportSize({ width: 390, height: 950 });
+  await focusFrame(page, 'IMG003.JPG'); await enterFocusView(page);
+  await expect(page.getByRole('button', { name: 'Previous image', exact: true })).toBeVisible();
+  await expect(page.getByTestId('focus-drop-zone').locator('img[alt="IMG003.JPG"]')).toBeVisible();
+  await expect(check(page.getByTestId('focus-drop-zone'))).toBeVisible();
+});
 Then('the Focus checkmark stays inside the fitted image upper left corner', async ({ page }) => {
   const badge = check(focus(page)); await expect(badge).toBeVisible();
   const image = (await focus(page).locator('img').boundingBox())!; const b = (await badge.boundingBox())!;
@@ -139,6 +147,21 @@ Then('the Focus checkmark stays inside the fitted image upper left corner', asyn
   expect(b.y - image.y).toBeGreaterThanOrEqual(0); expect(b.y - image.y).toBeLessThan(8);
   expect(b.x + b.width).toBeLessThan(image.x + image.width); expect(b.y + b.height).toBeLessThan(image.y + image.height);
   await page.screenshot({ path: `/tmp/554-letterbox-${Math.round(image.width)}-${Math.round(image.height)}.png` });
+});
+Then('the previous-image control stays clear of the upper-left Focus checkmark', async ({ page }) => {
+  const pane = page.getByTestId('focus-drop-zone');
+  const image = (await pane.locator('img[alt="IMG003.JPG"]').boundingBox())!;
+  const badge = (await check(pane).boundingBox())!;
+  const previous = (await page.getByRole('button', { name: 'Previous image', exact: true }).boundingBox())!;
+  expect(image.height).toBeLessThan(88);
+  expect(badge.x - image.x).toBeGreaterThanOrEqual(0);
+  expect(badge.x - image.x).toBeLessThan(8);
+  expect(badge.y - image.y).toBeGreaterThanOrEqual(0);
+  expect(badge.y - image.y).toBeLessThan(8);
+  expect(badge.x < previous.x + previous.width && badge.x + badge.width > previous.x &&
+    badge.y < previous.y + previous.height && badge.y + badge.height > previous.y).toBe(false);
+  expect(previous.y).toBeGreaterThanOrEqual(0);
+  expect(previous.y + previous.height).toBeLessThanOrEqual(page.viewportSize()!.height);
 });
 Then('touch input passes through classification checkmarks', async ({ browser, s3 }) => {
   const context = await browser.newContext({ baseURL: ENDPOINT, hasTouch: true, viewport: { width: 390, height: 844 } });
