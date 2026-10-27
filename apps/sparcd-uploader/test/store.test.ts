@@ -81,6 +81,9 @@ beforeEach(() => {
     s3Config: null,
     uploaderUser: '',
     identityPersistenceError: false,
+    identityEditing: false,
+    identityResolvedDefault: null,
+    identityDefaultSource: null,
     identityUnsavedCustom: null,
     identityResolutionStatus: 'idle',
     identityResolutionError: null,
@@ -585,8 +588,8 @@ describe('connected identity fallback', () => {
     expect(useStore.getState().uploaderUser).toBe('Custom Field Name');
 
     window.localStorage.clear();
-    useStore.setState({ uploaderUser: '', identityResolutionStatus: 'idle', s3Config: config, connectionId: 82 });
-    await useStore.getState().refreshUploaderIdentity();
+    useStore.getState().connect({ ...config, accessKey: 'unresolved-login' }, false);
+    await vi.waitFor(() => expect(useStore.getState().identityResolutionStatus).toBe('error'));
     expect(useStore.getState()).toMatchObject({ uploaderUser: '', identityResolutionStatus: 'error' });
   });
 
