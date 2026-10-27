@@ -76,12 +76,38 @@ Feature: Review, correct and remove identifications that already exist
     Then every selected image is left with no species
 
   @H3
-  Scenario: Clearing identifications in Focus only affects the focused image
+  Scenario Outline: Clear Species follows the selection in either view even when focus is outside it
+    Given a mixed selection with focus "<focus>" the selection in "<view>"
+    Then Clear Species explains its two-image selection on hover and focus
+    When selection clearing is activated with "<key>" in "<view>"
+    Then only the tagged selected image has a dirty draft
+    And unselected identifications remain unchanged
+
+    Examples:
+      | view  | focus   | key   |
+      | grid  | inside  | Enter |
+      | list  | outside | Space |
+      | focus | inside  | Enter |
+      | focus | outside | Space |
+
+  @H3
+  Scenario: Clearing identifications in Focus clears every selected tagged image
     Given several images are selected
     When Focus is entered
     And identifications are cleared
-    Then only the focused image is left with no species
-    And the other selected images keep their species
+    Then every selected image is left with no species
+
+  @H3
+  Scenario Outline: Clearing without a selection affects only the focused image
+    Given a tagged image is focused without a selection in "<view>"
+    When identifications are cleared
+    Then only the focused image has a dirty draft
+    And unselected identifications remain unchanged
+
+    Examples:
+      | view  |
+      | grid  |
+      | focus |
 
   @H3
   Scenario Outline: An untagged focused image does not hide a tagged selection's Clear Species action
@@ -101,18 +127,29 @@ Feature: Review, correct and remove identifications that already exist
     Then Clear Species is absent and no image has a new draft
 
   @H3
-  Scenario: A filtered selection cannot clear hidden images
+  Scenario Outline: A filtered selection cannot clear hidden images
     Given several images are selected
-    When the selection is filtered to IMG003.JPG and cleared
+    When the selection is filtered to IMG003.JPG and cleared in "<view>"
     Then the hidden selected images keep their original species
 
+    Examples:
+      | view  |
+      | grid  |
+      | focus |
+
   @H3
-  Scenario: A cleared selection survives Sync and reload without changing other images
+  Scenario Outline: A cleared selection survives Sync and reload without changing other images
     Given several images are selected
     And the unselected species rows are recorded
+    And clearing is prepared in "<view>"
     When identifications are cleared
     And a live sync is run
     Then the cleared selection is stored and restored without changing other images
+
+    Examples:
+      | view  |
+      | grid  |
+      | focus |
 
   @H3
   Scenario: An image can be flagged as questionable for a second opinion

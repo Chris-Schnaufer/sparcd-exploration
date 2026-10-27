@@ -229,14 +229,12 @@ Then('the removed species is absent from the stored image and marked as removed'
 
 // --- Clear Species ------------------------------------------------------------------
 
-// Clear Species is view-scoped: in the Overview it clears a whole selection
-// (like the other bulk actions), but in Focus it only ever clears the
-// focused image, even if a selection from the Overview is still active.
+// Clear Species follows the visible selection in both Overview and Focus.
 const focusClearSpecies = (page: Page) => page.getByRole('button', { name: 'Clear Species', exact: true });
 
 When('Focus is entered', async ({ page }) => {
   await enterFocusView(page);
-  await expect(focusClearSpecies(page)).toHaveAccessibleDescription('Remove all species from this image');
+  await expect(focusClearSpecies(page)).toHaveAccessibleDescription('Remove all species from these 3 selected images');
 });
 
 Given('the focused image carries at least one species', async ({ page }) => {
@@ -273,18 +271,60 @@ When('identifications are cleared', async ({ page }) => {
 // with IMG001 and IMG003 carrying species from the H3 background fixture;
 // IMG002 starts untagged.
 Then('every selected image is left with no species', async ({ page }) => {
+  await closeClearFocus(page);
   await expect(gridCell(page, 'IMG001.JPG')).not.toContainText('Mule Deer');
   await expect(gridCell(page, 'IMG003.JPG')).not.toContainText('Ghost');
 });
 
-Then('only the focused image is left with no species', async ({ page }) => {
-  // The Overview (and its grid cells) aren't mounted while Focus is open.
-  await page.getByRole('button', { name: 'Close Focus', exact: true }).click();
-  await expect(gridCell(page, 'IMG003.JPG')).not.toContainText('Ghost');
+async function closeClearFocus(page: Page): Promise<void> {
+  const close = page.getByRole('button', { name: 'Close Focus', exact: true });
+  if (await close.count()) await close.click();
+}
+async function dirtyClearedPaths(page: Page): Promise<string[]> {
+  await page.keyboard.press('Control+s');
+  const rows = await readStore(page, 'drafts') as { mediaPath: string; dirty: boolean; observations: unknown[] }[];
+  const dirty = rows.filter(row => row.dirty);
+  expect(dirty.every(row => row.observations.length === 0)).toBe(true);
+  return dirty.map(row => row.mediaPath.split('/').pop()!).sort();
+}
+Given('a mixed selection with focus {string} the selection in {string}', async ({ page }, focus: string, view: string) => {
+  if (view === 'list') await showList(page);
+  const image = (name: string) => view === 'list' ? listRow(page, name) : gridCell(page, name);
+  await image('IMG001.JPG').click();
+  await image('IMG002.JPG').click({ modifiers: ['Shift'] });
+  if (focus === 'outside') {
+    // Toggle the focused tagged image back out, retaining the original selection.
+    await image('IMG004.JPG').click({ modifiers: ['ControlOrMeta'] });
+    await image('IMG004.JPG').click({ modifiers: ['ControlOrMeta'] });
+    await expect(image('IMG004.JPG')).toHaveAttribute('aria-current', 'true');
+  }
+  if (view === 'focus') await enterFocusView(page);
 });
-
-Then('the other selected images keep their species', async ({ page }) => {
-  await expect(gridCell(page, 'IMG001.JPG')).toContainText('Mule Deer');
+Given('a tagged image is focused without a selection in {string}', async ({ page }, view: string) => {
+  await gridCell(page, 'IMG001.JPG').click();
+  await gridCell(page, 'IMG001.JPG').click({ modifiers: ['ControlOrMeta'] });
+  if (view === 'focus') await enterFocusView(page);
+  await expect(focusClearSpecies(page)).toHaveAccessibleDescription('Remove all species from this image');
+});
+Given('clearing is prepared in {string}', async ({ page }, view: string) => {
+  if (view === 'focus') await enterFocusView(page);
+});
+When('selection clearing is activated with {string} in {string}', async ({ page }, key: string, view: string) => {
+  await focusClearSpecies(page).focus();
+  await page.keyboard.press(key);
+  await expect(page.getByRole('dialog', { name: 'Focus image viewer' })).toHaveCount(view === 'focus' ? 1 : 0);
+});
+Then('only the tagged selected image has a dirty draft', async ({ page }) => {
+  await expect.poll(() => dirtyClearedPaths(page)).toEqual(['IMG001.JPG']);
+});
+Then('only the focused image has a dirty draft', async ({ page }) => {
+  await expect.poll(() => dirtyClearedPaths(page)).toEqual(['IMG001.JPG']);
+});
+Then('unselected identifications remain unchanged', async ({ page }) => {
+  await closeClearFocus(page);
+  await showList(page);
+  await expect(listRow(page, 'IMG003.JPG')).toContainText('Ghost');
+  await expect(listRow(page, 'IMG004.JPG')).toContainText('Mountain Lion');
 });
 
 Given('a tagged and an untagged image are selected with the untagged one focused in {string} Overview', async ({ page }, view: string) => {
@@ -339,14 +379,16 @@ Then('Clear Species is absent and no image has a new draft', async ({ page }) =>
   expect(await readStore(page, 'drafts')).toEqual([]);
 });
 
-When('the selection is filtered to IMG003.JPG and cleared', async ({ page }) => {
+When('the selection is filtered to IMG003.JPG and cleared in {string}', async ({ page }, view: string) => {
   await page.getByRole('button', { name: 'Filter', exact: true }).click();
   await page.getByLabel('Match text').fill('IMG003.JPG');
   await page.getByLabel('Search in').selectOption('filename');
   await page.keyboard.press('Escape');
   await expect(gridCell(page, 'IMG001.JPG')).toHaveCount(0);
+  if (view === 'focus') await enterFocusView(page);
   await expect(focusClearSpecies(page)).toHaveAccessibleDescription('Remove all species from this selected image');
   await focusClearSpecies(page).click();
+  await closeClearFocus(page);
   await page.getByRole('button', { name: /^Filter/ }).click();
   await page.getByRole('region', { name: 'Image filters' }).getByRole('button', { name: 'Clear', exact: true }).click();
   await page.keyboard.press('Escape');

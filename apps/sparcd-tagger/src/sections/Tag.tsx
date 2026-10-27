@@ -1388,15 +1388,9 @@ export function Tag() {
 
   function speciesPanelProps() {
     const observations = eff?.observations ?? [];
-    // Clear Species is view-scoped rather than always selection-scoped: in
-    // Focus only one image is ever on screen, so it must only ever clear
-    // `current` — even if a multi-selection from the Overview is still sitting
-    // in state. In the Overview, it clears the whole selection like the other
-    // bulk actions (species-add, questionable toggle), via the shared
-    // selection-or-focus helper `targetsOf()`.
-    const detagImages: TagImage[] = view === 'focus'
-      ? (current ? [current] : [])
-      : targetImagesOf();
+    // Clear Species follows the visible selection in either view, falling
+    // back to the focused image when no selection exists.
+    const detagImages = targetImagesOf();
     // Untagged targets need no draft; clearing a mixed selection must not
     // manufacture unsaved no-op edits for its already-empty images.
     const detagTargets = detagImages.filter((img) => speciesCountOf(img) > 0).map(targetOf);
@@ -1447,7 +1441,7 @@ export function Tag() {
             onDetagAll={() => detagTargets.length && detagFn(ctx, detagTargets)}
             canDetag={canDetag}
             detagCount={detagImages.length}
-            detagSelection={view === 'overview' && selected.size > 0}
+            detagSelection={selected.size > 0}
           />
           {current && (
             <button

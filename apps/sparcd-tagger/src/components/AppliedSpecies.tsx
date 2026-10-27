@@ -15,10 +15,8 @@ export type AppliedSpeciesProps = {
   onSetCount: (scientificName: string, count: number) => void;
   onRemove: (scientificName: string) => void;
   onDetagAll: () => void;
-  // Clear Species is view-scoped: in Focus this is always 1 (the current
-  // image); in the Overview with a selection it can be more. These describe
-  // what Clear Species is actually about to affect, which may include images
-  // beyond the focused one even when the focused image itself has none.
+  // Clear Species follows the visible selection, or the focused image when
+  // nothing is selected. Chips continue to edit only the focused image.
   canDetag: boolean;
   detagCount: number;
   detagSelection: boolean;
