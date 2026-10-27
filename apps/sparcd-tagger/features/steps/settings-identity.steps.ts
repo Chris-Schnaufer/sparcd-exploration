@@ -22,7 +22,7 @@ Given('the account-name service fails with {string}', async ({ page }, failure: 
 });
 Then('Settings has the required section order and disconnect guidance', async ({ page }) => {
   const labels = await page.locator('main section > label:first-child, main section > span:first-child').allTextContents();
-  expect(labels.map(label => label.trim())).toEqual(['Tagger Identity', 'Auto-advance', 'Date format', 'Time format', 'Distance units', 'Sync default', 'Burst grouping', 'Connection']);
+  expect(labels.map(label => label.trim())).toEqual(['Tagger Identity', 'Auto-advance', 'Species order', 'Date format', 'Time format', 'Distance units', 'Sync default', 'Burst grouping', 'Connection']);
   const preferences = page.getByRole('group', { name: 'Sync and burst preferences', exact: true });
   await expect(preferences).toHaveClass(/border-t/);
   await expect(preferences.getByText('Sync default', { exact: true })).toBeVisible();
