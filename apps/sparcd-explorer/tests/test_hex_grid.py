@@ -51,6 +51,20 @@ class HexGridTest(unittest.TestCase):
 
         self.assertEqual(hex_ids(swapped), hex_ids(corrected))
 
+    def test_all_redacted_coordinates_leave_the_map_empty_without_crashing(self):
+        s3 = FakeS3()
+        s3.upload(
+            "u1",
+            deployments=[deployment("AAA01", "Alpha", "", "")],
+            media=[media("u1", "a.jpg", "AAA01", "2024-01-01T10:00:00")],
+        )
+
+        ns, scopes = run_explorer(s3)
+
+        self.assertEqual(ns["locations"].height, 1)
+        self.assertEqual(ns["hex_summary"].height, 0)
+        self.assertIsNone(scopes["camera_map"]["camera_map"])
+
 
 if __name__ == "__main__":
     unittest.main()
