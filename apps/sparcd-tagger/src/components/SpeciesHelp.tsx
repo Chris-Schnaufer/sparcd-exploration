@@ -88,10 +88,13 @@ export function SpeciesHelp({ onClose }: { onClose: () => void }) {
               </li>
               <li>Press its assigned key — the fastest way once you know the keys.</li>
               <li>
-                Drag it onto an image, or onto the box above this list that shows the focused
-                image's species, to apply it the same way.
+                Drag it onto an image to add it there.
               </li>
-              <li>Type to filter the list, then press Enter to add the top match.</li>
+              <li>
+                Type to filter the visible list. Enter adds the first species in the original list
+                whose common or scientific name contains your text; that may differ from the top
+                visible row, and fuzzy-only matches are not added.
+              </li>
               <li>A ✓ means that species is already on the focused image.</li>
             </ul>
           </section>
@@ -100,7 +103,7 @@ export function SpeciesHelp({ onClose }: { onClose: () => void }) {
             <h3 className="font-body text-[11px] font-[600] tracking-[0.16em] uppercase text-inkSoft mb-1.5">
               Reference photos
             </h3>
-            <p>Click a thumbnail to see it enlarged.</p>
+            <p>Click a thumbnail to see the reference image enlarged.</p>
           </section>
 
           <section>

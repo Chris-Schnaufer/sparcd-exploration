@@ -25,8 +25,12 @@ export type FileSpec = {
 };
 
 export type OpenOptions = {
+  /** Production recovery tests can reopen the exact local-batch entry URL. */
+  path?: string;
   /** Simulate a browser with no folder picker at all (phone-shaped). */
   noFolderPicker?: boolean;
+  /** Keep the desktop directory input but disable the File System Access API. */
+  noDirectoryHandle?: boolean;
 };
 
 type WireFile = { path: string; mime: string; b64?: string; zeroBytes?: number; padBytes?: number; broken?: boolean };
@@ -86,12 +90,13 @@ export class App {
         return w.__pickedFolder;
       };
     });
-    if (opts.noFolderPicker) {
-      await this.page.addInitScript(() => {
-        // A device that cannot present a folder picker: no File System Access
-        // API and a coarse pointer.
+    if (opts.noFolderPicker || opts.noDirectoryHandle) {
+      await this.page.addInitScript((phone) => {
+        // Disable File System Access while retaining real input pickers.
+        // The phone-shaped fixture also reports a coarse pointer.
         // @ts-expect-error deleting an optional capability
         delete window.showDirectoryPicker;
+        if (!phone) return;
         const real = window.matchMedia.bind(window);
         window.matchMedia = (q: string) =>
           q.includes('pointer: coarse')
@@ -106,9 +111,9 @@ export class App {
                 dispatchEvent: () => false,
               } as unknown as MediaQueryList)
             : real(q);
-      });
+      }, opts.noFolderPicker ?? false);
     }
-    await this.page.goto(APP_PATH);
+    await this.page.goto(opts.path ?? APP_PATH);
   }
 
   /** Re-open the app in the same context (same storage), e.g. after a reload. */
@@ -178,7 +183,7 @@ export class App {
     return this.page.locator('ol[aria-label="Upload steps"] span.bg-mark');
   }
 
-  async expectStep(label: 'Files' | 'Inspect' | 'Assign' | 'Upload'): Promise<void> {
+  async expectStep(label: 'Choose' | 'Verify' | 'Describe' | 'Upload'): Promise<void> {
     await expect(this.activeStep()).toContainText(label);
   }
 
@@ -464,7 +469,7 @@ export class App {
 
   async pickFolder(specs: FileSpec[], dir: string): Promise<void> {
     await this.writeFolderToDisk(specs, dir);
-    await this.page.locator('input[type="file"]').first().setInputFiles(dir);
+    await this.page.getByLabel('New upload folder', { exact: true }).setInputFiles(dir);
   }
 
   async readBundleRecords(): Promise<Record<string, unknown>[]> {
@@ -473,7 +478,7 @@ export class App {
 
   /** Choose individual files through the plain (non-directory) file input. */
   async pickFiles(specs: FileSpec[]): Promise<void> {
-    await this.page.locator('input[type="file"]').first().setInputFiles(
+    await this.page.getByLabel('New upload files', { exact: true }).setInputFiles(
       specs.map((s) => ({
         name: s.path.split('/').pop()!,
         mimeType: s.mime ?? (s.path.toLowerCase().endsWith('.mp4') ? 'video/mp4' : 'image/jpeg'),
@@ -607,22 +612,6 @@ export class App {
     await this.page.keyboard.press('d');
   }
 
-  /** Set a React-controlled input's value the way a real keystroke would. */
-  async setControlledValue(selector: string, value: string, nth = 0): Promise<void> {
-    await this.page.evaluate(
-      ({ selector, value, nth }) => {
-        const el = document.querySelectorAll(selector)[nth] as HTMLInputElement;
-        const setter = Object.getOwnPropertyDescriptor(
-          window.HTMLInputElement.prototype,
-          'value',
-        )!.set!;
-        setter.call(el, value);
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-      },
-      { selector, value, nth },
-    );
-  }
-
   /** The Inspect summary line ("2 of 4 files processed · 1.2 KB · 1 warnings"). */
   async batchSummary(): Promise<string> {
     return this.page.evaluate(() => {
@@ -654,13 +643,19 @@ export class App {
         open.onsuccess = () => resolve(open.result);
         open.onerror = () => reject(open.error);
       });
-      if (!db.objectStoreNames.contains(storeName)) return [];
-      const tx = db.transaction(storeName, 'readonly');
-      const req = tx.objectStore(storeName).getAll();
-      return new Promise((resolve, reject) => {
-        req.onsuccess = () => resolve(req.result as Record<string, unknown>[]);
-        req.onerror = () => reject(req.error);
-      });
+      try {
+        if (!db.objectStoreNames.contains(storeName)) return [];
+        return await new Promise<Record<string, unknown>[]>((resolve, reject) => {
+          const tx = db.transaction(storeName, 'readonly');
+          const req = tx.objectStore(storeName).getAll();
+          tx.oncomplete = () => resolve(req.result as Record<string, unknown>[]);
+          tx.onabort = () => reject(tx.error ?? new Error('IndexedDB read aborted'));
+          tx.onerror = () => reject(tx.error ?? req.error);
+          req.onerror = () => reject(req.error);
+        });
+      } finally {
+        db.close();
+      }
     }, store);
 
     try {
@@ -685,21 +680,33 @@ export class App {
   }
 
   async continueToAssign(): Promise<void> {
-    await this.page.getByRole('button', { name: 'Continue' }).click();
-    await expect(this.page.getByRole('heading', { name: 'Target collection' })).toBeVisible();
+    const control = this.page.getByRole('button', { name: 'Continue' });
+    await expect(control).toBeEnabled();
+    // Pointer hover stops the Verify attention animation before the click.
+    await control.hover({ force: true });
+    await control.click();
+    await expect(this.page.getByRole('heading', { name: 'Collection' })).toBeVisible();
+  }
+
+  async fillRequiredUploadComments(): Promise<void> {
+    const mountain = this.page.getByLabel('Mountain range (required)', { exact: true });
+    const collected = this.page.getByLabel('Date collected (required)', { exact: true });
+    if (!(await mountain.inputValue()).trim()) await mountain.fill('Santa Catalina Mountains');
+    if (!(await collected.inputValue())) await collected.fill('2026-10-01');
   }
 
   async continueToUpload(): Promise<void> {
+    await this.fillRequiredUploadComments();
     await this.page.getByRole('button', { name: 'Continue' }).click();
     await expect(this.page.getByRole('heading', { name: 'Upload', exact: true })).toBeVisible();
   }
 
   /** Throw the current batch away and scan a different one. */
   async rescan(specs: FileSpec[], opts: { raw?: boolean } = {}): Promise<void> {
-    const startOver = this.page.getByRole('button', { name: 'Start over' });
-    if (await startOver.isVisible().catch(() => false)) {
-      await startOver.click();
-      await this.expectStep('Files');
+    const backToChoose = this.page.getByRole('button', { name: 'Back', exact: true });
+    if (await backToChoose.isVisible().catch(() => false)) {
+      await backToChoose.click();
+      await this.expectStep('Choose');
     }
     if (opts.raw) await this.dropRawEntries(specs);
     else await this.dropFolder(specs);
@@ -710,8 +717,7 @@ export class App {
     opts: { deployment?: string; uploader?: string; description?: string } = {},
   ): Promise<void> {
     await expect(this.fileListToggle()).toBeVisible({ timeout: 30_000 });
-    await this.page.getByRole('button', { name: 'Continue' }).click();
-    await expect(this.page.getByRole('heading', { name: 'Target collection' })).toBeVisible();
+    await this.continueToAssign();
     await this.waitForCollections();
     await this.chooseDeployment(opts.deployment ?? 'Bear Canyon');
     await this.setUploader(opts.uploader ?? 'Ada Lovelace');
@@ -722,13 +728,12 @@ export class App {
   /** Back out to Drop, re-scan the same folder, and return to the Upload step. */
   async rescanFromUploadStep(): Promise<void> {
     await this.page.getByRole('button', { name: 'Back' }).click();
-    await expect(this.page.getByRole('heading', { name: 'Target collection' })).toBeVisible();
+    await expect(this.page.getByRole('heading', { name: 'Collection' })).toBeVisible();
     await this.page.getByRole('button', { name: 'Back' }).click();
     await expect(this.fileListToggle()).toBeVisible();
     await this.rescan(this.lastSpecs);
     await expect(this.fileListToggle()).toBeVisible();
-    await this.page.getByRole('button', { name: 'Continue' }).click();
-    await expect(this.page.getByRole('heading', { name: 'Target collection' })).toBeVisible();
+    await this.continueToAssign();
     await this.continueToUpload();
   }
 
@@ -783,7 +788,7 @@ export class App {
   }
 
   async setDescription(text: string): Promise<void> {
-    await this.page.getByPlaceholder('What this batch is — site, date range, notes.').fill(text);
+    await this.page.getByPlaceholder('Additional notes about this batch.').fill(text);
   }
 
   timeZoneSelect(): Locator {
@@ -796,8 +801,16 @@ export class App {
 
   // --- Upload --------------------------------------------------------------
 
-  dryRunCheckbox(): Locator {
-    return this.page.getByLabel('Test the upload, nothing is written');
+  /** The dry-run checkbox lives under the collapsed "Advanced" disclosure —
+   *  expand it first if it isn't already, so every existing caller keeps
+   *  working without having to know that. */
+  async dryRunCheckbox(): Promise<Locator> {
+    const checkbox = this.page.getByLabel('Test the upload, nothing is written');
+    if (!(await checkbox.isVisible().catch(() => false))) {
+      const advanced = this.page.getByRole('button', { name: 'Advanced', exact: true });
+      if (await advanced.isVisible().catch(() => false)) await advanced.click();
+    }
+    return checkbox;
   }
 
   concurrencyModeRadio(mode: 'Adaptive (default)' | 'Manual'): Locator {
@@ -813,6 +826,7 @@ export class App {
    *  `lanes` to pin at whatever the current value is. */
   async pinConcurrency(lanes?: number): Promise<void> {
     await this.gotoSection('Settings');
+    await this.page.getByText('Advanced', { exact: true }).click();
     await this.concurrencyModeRadio('Manual').check();
     if (lanes !== undefined) await this.laneSlider().fill(String(lanes));
     await this.gotoSection('New upload');

@@ -34,9 +34,31 @@ Feature: Assign species to images in an upload
   @H2
   Scenario: The species list's info control explains how to use it, and dismisses normally
     Given an image is focused
+    And a species keyboard shortcut is configured
     When the species list's info control is used
     Then a popup explains how to use the species list
+    And clicking inside the popup does not dismiss it
+    And the popup blocks species and navigation shortcuts
     And it can be dismissed with Escape, its close control, or a click outside
+
+  @H2
+  Scenario Outline: Species help keeps Focus keyboard ownership and returns focus
+    Given an image is focused
+    And a species keyboard shortcut is configured
+    And the help is opened from Focus at width <width>
+    Then the help owns focus and blocks Focus shortcuts
+    When help is dismissed back to Focus
+    Then the help trigger regains focus without closing Focus
+
+    Examples:
+      | width |
+      | 1440  |
+      | 390   |
+
+  @H2
+  Scenario: Species Add controls stay aligned when rows have different key controls
+    Given an image is focused
+    Then the Add controls align in Overview, Focus and narrow layouts
 
   @H2
   Scenario: Clicking a species tile highlights it without identifying an image
@@ -72,10 +94,22 @@ Feature: Assign species to images in an upload
     And applying a real species afterwards removes the Ghost label
 
   @H2
-  Scenario: The species list can be narrowed by typing
+  Scenario: An explicit no-species classification counts as Has species like a real identification
+    Then "IMG002.JPG" shows no Has species badge
+    When an unclassified image is classified as Ghost
+    Then the Ghost-classified image shows a Has species badge
+
+  @H2
+  Scenario Outline: The species list can be narrowed by typing under either sorting preference
+    Given species sorting preference is "<preference>"
     When text is typed into the species filter
     Then the list narrows to species matching that text by common or scientific name
     And close-but-inexact spellings still match
+
+    Examples:
+      | preference   |
+      | alphabetical |
+      | recent-first |
 
   @H2
   Scenario: A species not in the vocabulary can still be recorded as a request
@@ -94,6 +128,7 @@ Feature: Assign species to images in an upload
     And several species have been applied during this session
     Then those species are listed first, most recently used first
     And their key bindings are unchanged by that reordering
+    And the species sorting preference survives reload and can be disabled
 
   @H2
   Scenario: A species can be given a key so it can be applied by keystroke
@@ -334,6 +369,7 @@ Feature: Assign species to images in an upload
     Given the server rejects species vocabulary reads
     When the stale tagger tab regains focus
     Then the existing species vocabulary remains available
+    And the species panel explains the failed refresh without hiding cached species
     And no vocabulary-change message is shown
 
   @H2
@@ -343,6 +379,15 @@ Feature: Assign species to images in an upload
     Then the reference image is shown enlarged over the workspace
     And no tagging keystroke takes effect while it is open
     And Escape, the close control or a click outside dismisses it
+
+  @H2
+  Scenario: The whole reference thumbnail opens the enlarged view, not just its corner
+    Given a species row carries a reference image
+    When the thumbnail is clicked away from its top-left corner
+    Then the reference image is shown enlarged over the workspace
+    And that species was not applied by the click
+    And the enlarge control shows no icon of its own
+    And the enlarge control exposes its hover text and accessible name
 
   @H2
   Scenario: An upload with nothing to tag offers no species panel at all
@@ -381,6 +426,19 @@ Feature: Assign species to images in an upload
     Then only the Overview image under the drop receives the species
 
   @H2
+  Scenario: Dropping a species on the applied-species strip tags the whole selection
+    Given several images are selected
+    When a species tile is dragged onto the applied-species strip
+    Then every selected image receives the dropped species
+
+  @H2
+  Scenario: Dropping a species on the applied-species strip with no selection tags the focused image
+    Given an image is focused
+    And the empty species strip is a visible drop target without a selection
+    When a species tile is dragged onto the applied-species strip
+    Then that species is recorded on the focused image with a count of one
+
+  @H2
   Scenario: Dragging the Ghost tile onto an image replaces its species with Ghost
     Given the focused image already carries one species
     When the Ghost tile is dragged onto the image area in the Focus view
@@ -404,3 +462,36 @@ Feature: Assign species to images in an upload
     And the sync is run
     Then the image left behind still reads as untagged
     And the stored observations record no species for the image left behind
+
+  @H2
+  Scenario Outline: Pending count stays in the species header across layouts
+    Given an image is focused
+    When the count preview layout is "<layout>" at width <width>
+    And the pending count is corrected from two to four
+    Then the species header alone announces pending count four
+    When the bound key is pressed once
+    Then the new species count is 4
+    And the pending species count is cleared
+
+    Examples:
+      | layout | width |
+      | grid   | 1440  |
+      | list   | 1440  |
+      | Focus  | 1440  |
+      | grid   | 390   |
+      | list   | 390   |
+      | Focus  | 390   |
+
+  @H2
+  Scenario: Navigating to another image clears the pending count
+    Given an image is focused
+    And count 15 is pending
+    When the count-preview image changes
+    Then no pending species count is shown
+
+  @H2
+  Scenario: Switching to a different upload clears the pending count
+    Given an image is focused
+    And count 15 is pending
+    When the count-preview upload changes
+    Then no pending species count is shown

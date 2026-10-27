@@ -87,9 +87,10 @@ Coverage notes for the as-built uploader feature files.
   reflects a running upload. Not written up as behavior.
 - **Elevation unit** (metres/feet) is stored and persisted, and the deployment
   detail popover reads it, but no UI sets it — the setter is never called.
-- **Concurrency** and the **dry-run default** live on the Upload step and reset
-  on every page load, despite Settings still saying they will "join here in P4".
-  Documented where they actually are, with the non-persistence noted.
+- **Concurrency** lives in Settings only (#494 removed the Upload step's own
+  copy of the control). The **dry-run default** still lives on the Upload
+  step, now behind a collapsed "Advanced" disclosure. Both reset on every page
+  load — documented where they actually are, with the non-persistence noted.
 - `upload.ts` documents a **re-stamp-on-prefix-collision retry** and a
   `runUpload` entry point; neither exists in the shipped code. The wizard uses
   the streaming run, which treats a metadata-path collision as a hard error.
@@ -113,3 +114,46 @@ along the way — is written up in `features/CORRECTIONS.md`. Since PR #26 fixed
 publishing after Inspect completes, publish scenarios use small media by
 default; only scenarios about background examination keep the deliberately slow
 MP4, and in-flight upload checks are held by the S3 mock.
+
+
+## Production offline harness (#498 / #497)
+
+`pnpm --filter sparcd-uploader test:production:offline` reuses the existing F1-2
+warm-page offline Inspect and cross-tool handoff scenarios against both built
+apps on one origin. Infrastructure coverage additionally proves real Google
+Chrome process restart, preserved profile/IndexedDB, and actual network blocking.
+The suite now also verifies actual cold offline reopening and installed-PWA
+launch with production assets. See `../e2e/production/README.md` for exact
+implementation checks and #497's separate platform/manual acceptance boundary.
+
+## Prepared collection species (#498, delivery step 2)
+
+Before local tagging, explicitly choose a collection in “Species for local
+tagging” and prepare it online. Preparation uses the same production species
+loader and source-aware key-profile reconciliation as standalone Tagger; it does
+not choose Assign's collection or location. Empty/missing collection files fall
+back to settings; denied/malformed lists do not silently substitute defaults.
+
+A versioned IndexedDB snapshot stores the accepted entries, local key overrides,
+source hash and source/collection/account identity without credentials. Each new
+version-2 Flip record gets its own copy; older readers reject that version rather
+than silently using a bundled list. Local Tagger uses that copy even when a live
+shared session changes, and never fetches a replacement vocabulary. Legacy or
+invalid handoffs explain how to return and prepare while retaining tags.
+
+Assign compares a tagged batch with a freshly loaded list for the actual target.
+Changed collections/lists require explicit review; identifications absent from
+the allowed list block continuation until reviewed, without deleting tags.
+Requested-species records retain their existing supported behavior.
+
+Delivery steps 3–5 add the versioned preparation journal, verified source
+recovery, coordinated production worker, installable manifest and safe updates.
+These implementation regressions do not complete #497’s independent matrix.
+
+Issue #479: `shared-session.feature` runs in the cross-tool suite against the
+real Uploader and Tagger through one origin. It checks refused-then-corrected
+endpoint switching, reload, Remember on/off, stale remembered prefill, delayed
+versioned/legacy sibling replies, and logout without session resurrection.
+Ordered barrier messages make stale delivery deterministic; assertions inspect
+actual signed request destinations and accepted live/tab state. These scenarios
+are `@unmapped` regressions, not new user-story coverage claims.
