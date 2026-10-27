@@ -1893,9 +1893,9 @@ function FittedStatusOverlay({ fitted, children }: {
       className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10"
       style={{
         ...fitted,
-        // When a wide image is short, the navigation buttons overlap its
-        // upper corners. Move both badges inward so the controls stay clear.
-        '--focus-status-badge-edge-inset': fitted.height < 112 ? '3rem' : '0.25rem',
+        // When a wide image is short, the navigation buttons overlap the
+        // upper-right corner. Move the expert badge inward to clear them.
+        '--focus-expert-badge-edge-inset': fitted.height < 112 ? '3rem' : '0.25rem',
       } as React.CSSProperties}
     >
       {children}
