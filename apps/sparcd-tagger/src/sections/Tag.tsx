@@ -1475,7 +1475,24 @@ export function Tag() {
       disabled: !current,
       // Chips edit the focused image; Clear Species follows the selection.
       headerSlot: (
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div
+          className="min-h-11 flex flex-wrap items-center gap-1.5"
+          data-testid="applied-species-drop-zone"
+          // Unlike a drop onto an image tile (always spatial — just that one
+          // image), this box has no single image of its own, so a drop here
+          // is selection-scoped like the keyboard/click-to-add path.
+          onDragOver={(e) => {
+            if (!e.dataTransfer.types.includes(SPECIES_DRAG_TYPE)) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'copy';
+          }}
+          onDrop={(e) => {
+            const tag = parseSpeciesDrag(e.dataTransfer.getData(SPECIES_DRAG_TYPE));
+            if (!tag) return;
+            e.preventDefault();
+            applyIncrement(tag);
+          }}
+        >
           {speciesCountPrefix && selected.size <= 1 && (
             <span
               className="border border-accent px-2 py-0.5 text-[12px] font-mono text-accent"
@@ -1483,6 +1500,9 @@ export function Tag() {
             >
               Count: {speciesCountPrefix}
             </span>
+          )}
+          {observations.length === 0 && (
+            <span className="text-[11px] font-mono text-inkMute">Drop species here</span>
           )}
           <AppliedSpecies
             observations={observations}

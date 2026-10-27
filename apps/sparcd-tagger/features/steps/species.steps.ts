@@ -11,6 +11,7 @@ import {
   enterFocusView,
   focusFrame,
   gridCell,
+  selectedTiles,
   sectionTab,
   speciesRow,
   speciesTile,
@@ -1092,6 +1093,42 @@ Then("that species' count is incremented by one", async ({ page }) => {
   await expect(appliedChip(page, 'Mule Deer').locator('input[type="number"]')).toHaveValue('3');
 });
 
+// Unlike a drop onto a tile (always spatial), the applied-species strip has
+// no single image of its own — it's selection-scoped, like the keyboard and
+// click-to-add paths.
+const appliedSpeciesDropZone = (page: Page) => page.getByTestId('applied-species-drop-zone');
+
+Given('the empty species strip is a visible drop target without a selection', async ({ page }) => {
+  await page.keyboard.press('Escape');
+  await expect(selectedTiles(page)).toHaveCount(0);
+  const zone = appliedSpeciesDropZone(page);
+  await expect(zone.getByText('Drop species here', { exact: true })).toBeVisible();
+  const bounds = await zone.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.height).toBeGreaterThanOrEqual(44);
+});
+
+When('a species tile is dragged onto the applied-species strip', async ({ page }) => {
+  await speciesRow(page, 'Canis latrans').dragTo(appliedSpeciesDropZone(page));
+});
+
+Then('every selected image receives the dropped species', async ({ page }) => {
+  await expect(positionReadout(page)).toHaveText('3 selected');
+  await waitForDirtyDrafts(page, 3);
+  const drafts = (await readStore(page, 'drafts')) as {
+    mediaPath: string;
+    observations: { scientificName: string; count: number }[];
+  }[];
+  const withCoyote = drafts.filter((d) =>
+    d.observations.some((o) => o.scientificName === 'Canis latrans'),
+  );
+  // IMG001 already carries Mule Deer in the fixture, so its tile summarizes
+  // as "Mule Deer +1" rather than naming Coyote — check the drafts directly.
+  expect(withCoyote.map((d) => d.mediaPath).sort()).toEqual(
+    ['IMG001.JPG', 'IMG002.JPG', 'IMG003.JPG'].map((f) => expect.stringMatching(new RegExp(`${f}$`))),
+  );
+});
+
 Then('only the focused image receives the dropped species', async ({ page }) => {
   await expect(positionReadout(page)).toHaveText('3 selected');
   await waitForDirtyDrafts(page, 1);
@@ -1206,6 +1243,7 @@ Then('the species header alone announces pending count four', async ({ page }) =
   const preview = page.getByText('Count: 4', { exact: true });
   await expect(preview).toHaveCount(1);
   await expect(preview).toHaveAttribute('role', 'status');
+  await expect(appliedSpeciesDropZone(page).locator(':scope > :first-child')).toHaveText('Count: 4');
   const panel = page.getByTestId('species-panel');
   const header = panel.getByRole('textbox', { name: 'Filter species' }).locator('..');
   const existingCount = header.getByRole('spinbutton', { name: 'Count for Coyote', exact: true });
