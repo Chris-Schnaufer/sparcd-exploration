@@ -1,3 +1,4 @@
+import { applyCanonicalPatches, type CanonicalPatch } from './canonicalPatch';
 // The compatibility sync — the tagger's only S3 write path (P4). It turns local
 // drafts into the canonical Camtrap output the Java app, sparcd-web, and the
 // marimo explorer already read: it replaces upload-level `media.csv`,
@@ -122,10 +123,12 @@ function observationsEqual(a: DraftObservation[], b: DraftObservation[]): boolea
 
 /** Canonical review events plus any new ones from the draft. A draft left clean
  *  by an earlier sync carries none, so the stored history must not depend on it. */
-function mergeReviewEvents(base: ReviewEvent[] = [], draft: ReviewEvent[] = []): ReviewEvent[] | undefined {
+export function mergeReviewEvents(base: ReviewEvent[] = [], draft: ReviewEvent[] = []): ReviewEvent[] | undefined {
   const out = [...base];
   for (const e of draft) {
-    if (!out.some((b) => b.reviewedBy === e.reviewedBy && b.reviewedAt === e.reviewedAt)) out.push(e);
+    const index = out.findIndex(b => b.reviewedBy === e.reviewedBy && b.reviewedAt === e.reviewedAt);
+    if (index < 0) out.push(e);
+    else if (e.reversedBy && e.reversedAt) out[index] = { ...out[index], reversedBy: e.reversedBy, reversedAt: e.reversedAt };
   }
   return out.length ? out : undefined;
 }
@@ -186,7 +189,8 @@ export function buildSyncPlan(
     // A Tagger correction replaces an uploader estimate with a user-provided
     // time. Keep the marker so downstream readers still know the camera did
     // not supply it, but make its source accurately say "manual".
-    const timestampSource = timeChanged && img.timestampSource ? 'manual' : undefined;
+    const sourceChanged = d?.timeSourceOverride !== undefined && d.timeSourceOverride !== img.timestampSource;
+    const timestampSource = d?.timeSourceOverride !== undefined ? d.timeSourceOverride : timeChanged && img.timestampSource ? 'manual' : undefined;
     const tagChanged = !observationsEqual(obs, img.baseObservations);
     const confirmedSpecies = d?.confirmedSpecies ?? [];
     // Match provenance by the stable species key even when count/name fields
@@ -206,7 +210,7 @@ export function buildSyncPlan(
     const removedSpecies = [...new Set([
       ...(img.baseRemovedSpecies ?? []),
       ...(d?.removedSpecies ?? []).filter((name) => img.baseObservations.some((o) => o.scientificName === name)),
-    ])].filter((name) => !obs.some((o) => o.scientificName === name));
+    ])].filter((name) => !obs.some((o) => o.scientificName === name || o.correctedFrom === name));
 
     if (timeChanged) summary.timeCorrections++;
 
@@ -258,13 +262,14 @@ export function buildSyncPlan(
           // Drafts written before classifiedBy/classificationTimestamp were
           // modeled can omit them. Preserve the canonical values rather than
           // blanking them when another observation on the image is edited.
-          const classifiedBy = base
+          const classifiedBy = o.restorationRow ? o.classifiedBy : base
             ? base.classifiedBy ?? o.classifiedBy ?? (touched ? user.trim() || undefined : undefined)
             : o.classifiedBy ?? (user.trim() || undefined);
           const classificationTimestamp = base
             ? base.classificationTimestamp ?? o.classificationTimestamp
             : o.classificationTimestamp;
           return {
+            restorationRow: o.restorationRow,
             scientificName: o.scientificName,
             count: Math.max(1, o.count),
             commonName: o.commonName || undefined,
@@ -296,6 +301,7 @@ export function buildSyncPlan(
           const base = baseForObservation(o);
           const explicitlyConfirmed = confirmedSpecies.includes(o.scientificName);
           return {
+            restorationRow: o.restorationRow,
             scientificName: o.scientificName,
             count: Math.max(1, o.count),
             commonName: o.commonName || undefined,
@@ -304,16 +310,16 @@ export function buildSyncPlan(
             // Only the explicitly re-applied species receives the current
             // reviewer identity. Other legacy rows keep their canonical
             // attribution (or remain unattributed).
-            classifiedBy: base?.classifiedBy ?? o.classifiedBy ??
+            classifiedBy: o.restorationRow ? o.classifiedBy : base?.classifiedBy ?? o.classifiedBy ??
               (explicitlyConfirmed ? user.trim() || undefined : undefined),
-            classificationTimestamp: base?.classificationTimestamp ?? o.classificationTimestamp ??
+            classificationTimestamp: o.restorationRow ? o.classificationTimestamp : base?.classificationTimestamp ?? o.classificationTimestamp ??
               (explicitlyConfirmed ? new Date().toISOString() : undefined),
             reviewEvents: mergeReviewEvents(base?.reviewEvents, o.reviewEvents),
             correctedFrom: base?.correctedFrom ?? o.correctedFrom,
           };
         }),
       });
-    } else if (timeChanged) {
+    } else if (timeChanged || sourceChanged) {
       // Time correction on an image whose species rows don't change. Goes to
       // `mergeMedia` only (it reads `mediaTimestamp`); `observations` stays `[]`
       // here and is never handed to `mergeObservations`, so its rows survive.
@@ -367,6 +373,8 @@ export const originalBaselinePrefixOf = (uploadPrefix: string): string =>
 
 /** Every S3/Dexie effect the sync performs, injected so it is fully testable. */
 export type SyncIO = {
+  /** Automatic saving retains journals and the original baseline, without per-edit snapshots. */
+  createSnapshots?: boolean;
   /** Re-HEAD/GET the three canonical files with current ETag + SHA-256. */
   loadCanonical: () => Promise<CanonicalState>;
   /** Conditional `writeImmutable` of one snapshot object; rejects with a 412-typed error if the key exists. */
@@ -412,6 +420,9 @@ export type SyncResult =
   | { status: 'unsupported'; message: string };
 
 export type SyncParams = {
+  canonicalBodies?: Partial<Record<CanonicalRole, string>>;
+  canonicalPatches?: CanonicalPatch[];
+  auditEvents?: { id: string; user: string; at: string; undoOf?: string; changes: unknown[] }[];
   bucket: string;
   uploadPrefix: string;
   user: string;
@@ -680,6 +691,17 @@ async function tryResume(
   if (!resumeJournal) return null;
   const journal = resumeJournal;
   const cur = await io.loadCanonical();
+  // A tab can close after a successful PUT but before its local receipt is
+  // committed. Exact intended bytes prove this object already reached storage;
+  // retain the current ETag and do not repeat the canonical write.
+  let receiptsRecovered = false;
+  for (const object of journal.objects) {
+    if (object.status === 'pending' && cur[object.role].hash === object.intendedHash) {
+      object.status = 'written'; object.newETag = cur[object.role].etag;
+      receiptsRecovered = true;
+    }
+  }
+  if (receiptsRecovered && !dryRun) await io.saveJournal(journal);
   const decision = planResume(journal, remoteStates(cur));
   if (decision.kind === 'conflict')
     return { status: 'conflict', role: decision.role, reason: decision.reason };
@@ -736,7 +758,7 @@ async function commitWrites(io: SyncIO, c: CommitCtx, summary: DiffSummary): Pro
   // 2. Immutable pre-change snapshot, with a single +1s re-stamp on collision.
   let activePrefix = c.snapshotPrefix;
   try {
-    await writeSnapshotSet(io, activePrefix, c.current, c.user, c.editStamp);
+    if (io.createSnapshots !== false) await writeSnapshotSet(io, activePrefix, c.current, c.user, c.editStamp);
   } catch (err) {
     if (!isPrecondition(err)) throw err;
     const bumped = snapshotStamp(new Date(io.now().getTime() + 1000));
@@ -778,7 +800,7 @@ export async function runSync(params: SyncParams, io: SyncIO): Promise<SyncResul
   const resumed = await tryResume(io, params.resumeJournal, dryRun);
   if (resumed) return resumed;
 
-  if (planIsEmpty(plan)) return { status: 'noop' };
+  if (planIsEmpty(plan) && !params.auditEvents?.length && !params.canonicalPatches?.length && !params.canonicalBodies) return { status: 'noop' };
 
   const current = await io.loadCanonical();
 
@@ -795,7 +817,26 @@ export async function runSync(params: SyncParams, io: SyncIO): Promise<SyncResul
   }
 
   const editStamp = javaEditStamp(io.now());
-  const writes = await buildWrites(current, plan, user, editStamp, uploadPrefix);
+  const writes = params.canonicalBodies ? await prepareWrites(current, params.canonicalBodies) : await buildWrites(current, plan, user, editStamp, uploadPrefix);
+  if (params.canonicalPatches?.length) {
+    const projected = { ...current };
+    for (const write of writes) projected[write.role] = { ...projected[write.role], text: write.body };
+    for (const [role, body] of Object.entries(applyCanonicalPatches(projected, params.canonicalPatches))) {
+      const write: PreparedWrite = { role: role as CanonicalRole, body, hash: await sha256Hex(body) };
+      const index = writes.findIndex(w => w.role === role);
+      if (index >= 0) writes[index] = write; else writes.push(write);
+    }
+    writes.sort((a, b) => ROLE_ORDER.indexOf(a.role) - ROLE_ORDER.indexOf(b.role));
+  }
+  if (params.auditEvents?.length) {
+    const meta = writes.find(w => w.role === 'uploadMeta');
+    const body = JSON.parse(meta?.body ?? current.uploadMeta.text);
+    const history = (body.taggerActions ?? []) as { id: string }[];
+    body.taggerActions = [...history, ...params.auditEvents.filter(event => !history.some(old => old.id === event.id))];
+    const text = JSON.stringify(body, null, 2);
+    const write: PreparedWrite = { role: 'uploadMeta', body: text, hash: await sha256Hex(text) };
+    if (meta) Object.assign(meta, write); else writes.push(write);
+  }
   const syncedMediaIds = [...new Set([...plan.tagEdits, ...plan.timeEdits, ...plan.statusEdits].map((edit) => edit.mediaId))];
   const syncedIds = new Set(syncedMediaIds);
   const mediaRows = parseCsvRows(writes.find((write) => write.role === 'media')?.body ?? current.media.text)
@@ -928,4 +969,11 @@ function remoteStates(state: CanonicalState): Record<CanonicalRole, RemoteState>
     deployments: { etag: state.deployments.etag, hash: state.deployments.hash },
     uploadMeta: { etag: state.uploadMeta.etag, hash: state.uploadMeta.hash },
   };
+}
+
+/** Pure projection used to retain the exact pre-action values for location Undo. */
+export async function projectSync(current: CanonicalState, plan: SyncPlan, user: string, at: Date, prefix: string): Promise<CanonicalState> {
+  const projected = structuredClone(current);
+  for (const write of await buildWrites(current, plan, user, javaEditStamp(at), prefix)) projected[write.role] = { ...projected[write.role], text: write.body, hash: write.hash };
+  return projected;
 }

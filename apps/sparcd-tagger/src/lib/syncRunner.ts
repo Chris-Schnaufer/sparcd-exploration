@@ -22,6 +22,11 @@ import type { TagImage } from './workspace';
 import { useDraftStore } from './drafts';
 
 export type SyncArgs = {
+  automatic?: boolean;
+  canonicalBodies?: import('./sync').SyncParams['canonicalBodies'];
+  submittedRevisions?: Record<string, string>;
+  canonicalPatches?: import('./canonicalPatch').CanonicalPatch[];
+  auditEvents?: import('./sync').SyncParams['auditEvents'];
   cfg: S3Config;
   bucket: string;
   uploadPrefix: string;
@@ -38,7 +43,7 @@ export type SyncArgs = {
  * writes. On a successful live write it re-grounds on the new canonical state.
  */
 export async function performSync(args: SyncArgs): Promise<SyncResult> {
-  requireAttribution();
+  if (!args.automatic) requireAttribution();
   if (!args.user.trim()) throw new Error(IDENTITY_REQUIRED);
   const { cfg, bucket, uploadPrefix, user, images, drafts, dryRun, timeZone } = args;
 
@@ -55,7 +60,8 @@ export async function performSync(args: SyncArgs): Promise<SyncResult> {
     base = await getUpload(bucket, uploadPrefix);
   }
 
-  const plan = buildSyncPlan(images, drafts, base?.timeOffset ?? null, base?.pendingLocation ?? null, user, timeZone);
+  const plan = buildSyncPlan(images, drafts, base?.timeOffset ?? null, args.canonicalPatches?.length ? null : base?.pendingLocation ?? null, user, timeZone);
+  if (args.submittedRevisions) plan.draftRevisions = args.submittedRevisions;
   const resumeJournal = await loadSyncJournal(bucket, uploadPrefix);
 
   const io = makeSyncIO(cfg, bucket, uploadPrefix, {
@@ -65,9 +71,10 @@ export async function performSync(args: SyncArgs): Promise<SyncResult> {
         { bucket, uploadPrefix }, journal.receipt?.draftRevisions ?? {},
       );
     },
-    clear: () => clearSyncJournal(bucket, uploadPrefix),
+    clear: () => args.automatic ? Promise.resolve() : clearSyncJournal(bucket, uploadPrefix),
   });
 
+  if (args.automatic) io.createSnapshots = false;
   const result = await runSync(
     {
       bucket,
@@ -82,11 +89,14 @@ export async function performSync(args: SyncArgs): Promise<SyncResult> {
       plan,
       dryRun,
       resumeJournal,
+      auditEvents: args.auditEvents,
+      canonicalPatches: args.canonicalPatches,
+      canonicalBodies: args.canonicalBodies,
     },
     io,
   );
 
-  if (result.status === 'synced' && !dryRun) {
+  if (result.status === 'synced' && !dryRun && !args.automatic) {
     const fresh = await loadCanonicalState(cfg, bucket, uploadPrefix);
     await groundUpload(bucket, uploadPrefix, fresh);
     // A successful live sync bakes the upload offset into canonical `media.csv`

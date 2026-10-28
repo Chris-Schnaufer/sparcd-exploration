@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { parseObservations } from '@sparcd/camtrap';
 import { Given, Then, expect, sectionTab, openSettings, gridCell, speciesApply, focusFrame, APP_URL } from './support/world';
-import { runLiveSync, readStore } from './support/flows';
+import { waitForAutomaticSave, readStore } from './support/flows';
 import { installS3Mock } from './support/s3mock';
 import { BUCKET, PREFIX_A } from './support/data';
 
@@ -22,13 +22,12 @@ Given('the account-name service fails with {string}', async ({ page }, failure: 
 });
 Then('Settings has the required section order and disconnect guidance', async ({ page }) => {
   const labels = await page.locator('main section > label:first-child, main section > span:first-child').allTextContents();
-  expect(labels.map(label => label.trim())).toEqual(['Tagger Identity', 'Auto-advance', 'Species order', 'Date format', 'Time format', 'Distance units', 'Sync default', 'Burst grouping', 'Connection']);
-  const preferences = page.getByRole('group', { name: 'Sync and burst preferences', exact: true });
+  expect(labels.map(label => label.trim())).toEqual(['Tagger Identity', 'Auto-advance', 'Species order', 'Date format', 'Time format', 'Distance units', 'Burst grouping', 'Connection']);
+  const preferences = page.getByRole('group', { name: 'Burst preferences', exact: true });
   await expect(preferences).toHaveClass(/border-t/);
-  await expect(preferences.getByText('Sync default', { exact: true })).toBeVisible();
   await preferences.getByLabel('Group rapid sequences into bursts').check();
   await expect(preferences.locator('#burst')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Disconnect', exact: true })).toHaveAccessibleDescription("Clears this browser's local Tagger data and logs you out. Remembered connection details remain. Disconnect before leaving a shared or public computer.");
+  await expect(page.getByRole('button', { name: 'Disconnect', exact: true })).toHaveAccessibleDescription("Logs you out after pending saves finish. Your saved Undo remains scoped to this account in this browser. Disconnect before leaving a shared or public computer.");
 });
 Then('the reordered Settings controls remain usable on a phone', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 860 });
@@ -61,11 +60,12 @@ Then('missing attribution prevents mouse keyboard drag and write actions', async
   await expect(page.getByRole('button', { name: 'Apply Coyote', exact: true })).toBeDisabled();
   await focusFrame(page, 'IMG001.JPG');
   await expect(gridCell(page, 'IMG001.JPG')).toContainText('Mule Deer ×2');
-  // Unresolved attribution removes the count/removal editors and disables
-  // re-applying the canonical species (the review/confirmation entry point).
-  await expect(page.getByRole('spinbutton', { name: 'Count for Mule Deer', exact: true })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Remove Mule Deer', exact: true })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Clear Species', exact: true })).toHaveCount(0);
+  // Pausing attribution retains mounted editors so unfinished text survives.
+  // Counts, removal, clearing and review must still be unavailable.
+  const count = page.getByRole('spinbutton', { name: 'Count for Mule Deer', exact: true });
+  await expect(count).toBeVisible(); await expect(count).toHaveValue('2'); await expect(count).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Remove Mule Deer', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Clear Species', exact: true })).toBeDisabled();
   await expect(page.getByRole('button', { name: /^Mule Deer Odocoileus hemionus/ })).toBeDisabled();
   await page.keyboard.press('d');
   await expect(gridCell(page, 'IMG001.JPG')).toContainText('Mule Deer ×2');
@@ -75,7 +75,8 @@ Then('missing attribution prevents mouse keyboard drag and write actions', async
   await gridCell(page, 'IMG002.JPG').dispatchEvent('drop', { dataTransfer: drag });
   await page.keyboard.press('ArrowDown'); await expect(gridCell(page, 'IMG003.JPG')).toHaveAttribute('aria-current', 'true');
   expect((await readStore(page, 'drafts')).filter((draft: any) => draft.dirty)).toHaveLength(0);
-  await expect(page.getByRole('button', { name: 'Sync…', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Sync…', exact: true })).toHaveCount(0);
+  await expect(page.getByTestId('automatic-save').getByRole('button', { name: 'Undo latest action' })).toBeDisabled();
   const errors = await page.evaluate(async url => {
     const { performSync, performRestore } = await import(/* @vite-ignore */ url);
     return Promise.all([performSync, performRestore].map(async fn => {
@@ -94,7 +95,7 @@ Then('entering a custom identity enables tagging despite the lookup error', asyn
   await focusFrame(page, 'IMG001.JPG');
   const count = page.getByRole('spinbutton', { name: 'Count for Mule Deer', exact: true });
   await expect(count).toHaveValue('2');
-  await count.fill('3'); await expect(count).toHaveValue('3');
+  await count.fill('3'); await count.press('Enter'); await expect(count).toHaveValue('3');
   await expect(page.getByLabel(/^Reviewed by Explicit Identifier at/)).toBeVisible();
   await page.getByRole('button', { name: 'Remove Mule Deer', exact: true }).click();
   await expect(count).toHaveCount(0);
@@ -172,7 +173,7 @@ Then('actions under successive custom identities retain their attribution after 
   await openSettings(page); await page.locator('#user').fill('Actor B'); await page.locator('#user').blur(); await sectionTab(page, 'Tag').click();
   await focusFrame(page, 'IMG005.JPG'); await speciesApply(page, 'Puma concolor').click();
   await focusFrame(page, 'IMG004.JPG'); await speciesApply(page, 'Puma concolor').click();
-  await runLiveSync(page);
+  await waitForAutomaticSave(page);
   const observations = parseObservations(s3.text(BUCKET, `${PREFIX_A}observations.csv`));
   expect(observations.find(o => o.mediaId.endsWith('IMG002.JPG') && o.scientificName === 'Canis latrans')?.classifiedBy).toBe('Actor A');
   expect(observations.find(o => o.mediaId.endsWith('IMG005.JPG') && o.scientificName === 'Puma concolor')?.classifiedBy).toBe('Actor B');

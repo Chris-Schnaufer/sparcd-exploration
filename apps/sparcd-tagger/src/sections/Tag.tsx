@@ -1,3 +1,4 @@
+import { useAutomaticSave, FocusSaveControls } from '../components/AutomaticSave';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { TransformWrapper, TransformComponent, type ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
@@ -8,7 +9,6 @@ import {
   useSpecies,
   useCollections,
   uploadNameOf,
-  useUploadSnapshots,
   useLocations,
   useCurrentDeployment,
 } from '../lib/queries';
@@ -22,8 +22,6 @@ import { ResizableSplit } from '../components/ResizableSplit';
 import { AppliedSpecies } from '../components/AppliedSpecies';
 import { NeedExpertToggle } from '../components/NeedExpertToggle';
 import { Cheatsheet } from '../components/Cheatsheet';
-import { SyncDialog } from '../components/SyncDialog';
-import { SnapshotsDialog } from '../components/SnapshotsDialog';
 import { DiscardConfirmDialog } from '../components/DiscardConfirmDialog';
 import { buildDiscardSummaries } from '../lib/discardSummary';
 import { TimeShiftModal } from '../components/TimeShiftModal';
@@ -98,16 +96,16 @@ type PendingKeyConflict = {
 export function Tag() {
   const cfg = useStore((s) => s.s3Config);
   const taggerUser = useStore((s) => s.taggerUser);
-  const identityReady = !cfg || !!taggerUser.trim();
   const connectionId = useStore((s) => s.connectionId);
   const collectionKey = useStore((s) => s.selectedCollectionKey);
   const uploadPrefix = useStore((s) => s.selectedUploadPrefix);
+  const canAutoEdit = useAutomaticSave(s => s.view.canEdit && s.saver?.record.uploadPrefix === uploadPrefix);
+  const editingUnavailable = useAutomaticSave(s => s.view.message);
+  const identityReady = !cfg || (!!taggerUser.trim() && canAutoEdit);
   const burstGroupingEnabled = useStore((s) => s.burstGroupingEnabled);
   const burstThreshold = useStore((s) => s.burstThresholdSec);
   const autoAdvanceOnTag = useStore((s) => s.autoAdvanceOnTag);
   const sortSpeciesByRecent = useStore((s) => s.sortSpeciesByRecent);
-  const pendingSnapshots = useStore((s) => s.pendingSnapshots);
-  const clearPendingSnapshots = useStore((s) => s.clearPendingSnapshots);
 
   // A local batch bypasses the connection entirely, so both S3 queries below
   // are disabled (`cfg` is null) and their data comes from the record instead.
@@ -131,8 +129,6 @@ export function Tag() {
     : undefined;
   const collections = useCollections(localRecord ? null : cfg, connectionId);
   const collection = collections.data?.find((c) => c.key === collectionKey);
-  const snapshots = useUploadSnapshots(localRecord ? null : cfg, connectionId, collectionKey, uploadPrefix);
-  const hasSnapshot = (snapshots.data?.length ?? 0) > 0;
 
   const localImages = useMemo(
     () => (localRecord ? localTagImages(localRecord) : EMPTY),
@@ -344,8 +340,6 @@ export function Tag() {
   const [showSpeciesHelp, setShowSpeciesHelp] = useState(false);
   const speciesHelpOpenRef = useRef(false);
   const [showCheatsheet, setShowCheatsheet] = useState(false);
-  const [showSync, setShowSync] = useState(false);
-  const [showSnapshots, setShowSnapshots] = useState(false);
   const [showDiscard, setShowDiscard] = useState(false);
   const [showTimeShift, setShowTimeShift] = useState(false);
   const [showChangeLocation, setShowChangeLocation] = useState(false);
@@ -405,6 +399,7 @@ export function Tag() {
   // so ordering lives entirely here. Species count is draft-aware (effective), so
   // re-sorting by species stays live as tags change.
   const base = localRecord ? localImages : images.data ?? EMPTY;
+  const imageKeys = useMemo(() => base.map(image => image.key).join('\0'), [base]);
   const speciesCountOf = (img: TagImage) => effectiveOf(img, drafts[img.key]).observations.length;
   const order = useMemo(
     () => sortIndices(base, speciesCountOf, sortField, sortDir),
@@ -430,13 +425,6 @@ export function Tag() {
   const [speciesCountPrefix, setSpeciesCountPrefix] = useState('');
   const [matchPos, setMatchPos] = useState(0);
   const imgSearchRef = useRef<HTMLInputElement>(null);
-  const syncButtonRef = useRef<HTMLButtonElement>(null);
-
-  const closeSync = () => {
-    setShowSync(false);
-    requestAnimationFrame(() => syncButtonRef.current?.focus());
-  };
-
   useEffect(() => {
     if (selected.size > 1) setSpeciesCountPrefix('');
   }, [selected.size]);
@@ -448,6 +436,7 @@ export function Tag() {
     setSpeciesCountPrefix('');
   }, [focusedImageKey, uploadPrefix]);
   const matches = useMemo(() => findFilenameMatches(list, imgQuery), [list, imgQuery]);
+  const matchPositions = matches.join(',');
   const [imageFilter, setImageFilter] = useState<ImageFilter>(EMPTY_IMAGE_FILTER);
   const exhaustedFocusRef = useRef<{ key: string; filter: ImageFilter } | null>(null);
   const [showImageFilter, setShowImageFilter] = useState(false);
@@ -456,8 +445,8 @@ export function Tag() {
   const [railDocked, setRailDocked] = useState(false);
   // Yield to the active workspace dialog without invoking Close's clearing
   // behavior. Restore the remembered rail in the current layout on dismissal.
-  const overviewDialogOpen = showSync || showSnapshots || showDiscard || showTimeShift ||
-    showChangeLocation || bulkTime !== null || zoomSpecies !== null ||
+  const overviewDialogOpen = showDiscard || showTimeShift || showChangeLocation ||
+    bulkTime !== null || zoomSpecies !== null ||
     pendingKeyConflict !== null || showCheatsheet || showSpeciesHelp || speciesHelpOpenRef.current;
   const railVisible = showImageFilter && !overviewDialogOpen;
   useLayoutEffect(() => {
@@ -566,7 +555,7 @@ export function Tag() {
     else setMatchPos(0);
     // jumpToMatch reads `matches`; depend on the query+matches, not the closure.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [imgQuery, matches]);
+  }, [imgQuery, matchPositions]);
 
   // An upload offset shifts every image equally, so it never changes a burst
   // gap — only the band labels. Feed the offset-corrected time so bands read the
@@ -591,7 +580,8 @@ export function Tag() {
     list,
   ]);
 
-  // Reset focus/selection when the upload changes / data arrives. Null the sort
+  // Reset focus/selection when the upload or its image identities change.
+  // Metadata acknowledgements from automatic saving retain the active workspace. Null the sort
   // permutation ref so the remap effect below treats the next `order` as a fresh
   // baseline rather than translating stale positions across a different upload.
   useEffect(() => {
@@ -602,7 +592,7 @@ export function Tag() {
     setImgQuery('');
     setMatchPos(0);
     prevOrderRef.current = null;
-  }, [uploadPrefix, images.data]);
+  }, [collectionKey, uploadPrefix, imageKeys]);
 
   // When only the sort order changes (a header click, or a draft edit while
   // sorting by species), the user's focus/anchor/selection are positions in the
@@ -625,14 +615,7 @@ export function Tag() {
     setSelected((sel) => (sel.size ? new Set([...sel].map(remap)) : sel));
   }, [order]);
 
-  // History routes here with `pendingSnapshots` set to jump straight into the
-  // recovery dialog for the chosen upload; consume the flag once.
-  useEffect(() => {
-    if (pendingSnapshots) {
-      setShowSnapshots(true);
-      clearPendingSnapshots();
-    }
-  }, [pendingSnapshots, clearPendingSnapshots]);
+
 
   const overrides = useKeyBindings((state) => activeKeyProfile(state).overrides);
   const assignKey = useKeyBindings((state) => state.assignKey);
@@ -950,9 +933,8 @@ export function Tag() {
       speciesHelpOpenRef.current ||
       showSpeciesHelp ||
       showDiscard ||
-      showSync ||
-      showSnapshots ||
       showTimeShift ||
+      showChangeLocation ||
       pendingKeyConflict !== null,
   };
 
@@ -1011,7 +993,7 @@ export function Tag() {
   const hasUploadShift = offsetActive(timeOffset);
 
   return (
-    <div className="h-[100dvh] lg:h-full flex flex-col min-h-0" aria-hidden={view === 'focus'}>
+    <div data-testid="tag-workspace" data-upload-prefix={uploadPrefix ?? ''} className="h-[100dvh] lg:h-full flex flex-col min-h-0" aria-hidden={view === 'focus'}>
       {/* Reminds the user which collection and upload they're tagging — lost
           otherwise once Browse's own "Uploads in X" heading is left behind. */}
       {!localRecord && (
@@ -1158,7 +1140,7 @@ export function Tag() {
           >
             ?
           </button>
-          {nDirty > 0 && (
+          {localRecord && nDirty > 0 && (
             <button
               onClick={() => setShowDiscard(true)}
               className="text-[11px] font-mono text-inkMute hover:text-warn underline decoration-dotted"
@@ -1167,32 +1149,7 @@ export function Tag() {
               {nDirty} unsaved · discard
             </button>
           )}
-          {!localRecord && (
-            <>
-              <button
-                onClick={() => setShowSnapshots(true)}
-                disabled={!hasSnapshot}
-                className="text-[12px] font-mono border border-rule px-2.5 py-1 text-inkSoft hover:text-ink hover:border-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-inkSoft disabled:hover:border-rule"
-                title={
-                  hasSnapshot
-                    ? 'Browse and restore prior canonical snapshots of this upload'
-                    : 'No snapshots yet — a snapshot is taken the first time this upload is synced'
-                }
-              >
-                Snapshots…
-              </button>
-              <button
-                disabled={!identityReady}
-                aria-describedby={!identityReady ? 'tagger-identity-required' : undefined}
-                onClick={() => setShowSync(true)}
-                ref={syncButtonRef}
-                className="text-[12px] font-mono border border-ink px-2.5 py-1 text-ink hover:bg-panelHover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-                title="Review and sync local edits to the canonical S3 files"
-              >
-                Sync…
-              </button>
-            </>
-          )}
+
         </div>
       </div>
 
@@ -1290,6 +1247,7 @@ export function Tag() {
                 aria-label="Close Focus" title="Close Focus (Escape)">×</button>
             </div>
           </div>
+          {cfg && <div className="shrink-0 border-t border-rule bg-panel px-3 py-1"><FocusSaveControls onReview={() => { closeFocus(); requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('[data-testid="automatic-save"] button:not([disabled])')?.focus()); }} /></div>}
           <div className="flex-1 min-h-0">
             <ResizableSplit
               storageKey="sparcd-tagger:focus-split"
@@ -1323,10 +1281,6 @@ export function Tag() {
           onClose={() => setShowDiscard(false)}
         />
       )}
-      {showSync && (
-        <SyncDialog ctx={ctx} images={list} drafts={drafts} timeZone={captureTimeZone} onClose={closeSync} />
-      )}
-      {showSnapshots && <SnapshotsDialog ctx={ctx} onClose={() => setShowSnapshots(false)} />}
       {showTimeShift && (
         <TimeShiftModal
           offset={timeOffset}
@@ -1425,9 +1379,9 @@ export function Tag() {
             applyIncrement(tag);
           }}
         >
-          {!identityReady && <div id="tagger-identity-required" role="status" className="w-full border border-warn p-2 text-[13px]">
-            <p>{IDENTITY_REQUIRED}</p>
-            <button type="button" className="min-h-11 underline" onClick={() => { closeFocus(); useStore.getState().setSection('settings'); }}>Set Tagger identity</button>
+          {!identityReady && <div id="tagger-identity-required" role={taggerUser.trim() ? "note" : "status"} className="w-full border border-warn p-2 text-[13px]">
+            <p>{taggerUser.trim() ? editingUnavailable : IDENTITY_REQUIRED}</p>
+            {!taggerUser.trim() && <button type="button" className="min-h-11 underline" onClick={() => { closeFocus(); useStore.getState().setSection('settings'); }}>Set Tagger identity</button>}
           </div>}
           {speciesCountPrefix && selected.size <= 1 && (
             <span
@@ -1441,6 +1395,7 @@ export function Tag() {
             <span className="text-[11px] font-mono text-inkMute">Drop species here</span>
           )}
           <AppliedSpecies
+            key={current?.key}
             observations={observations}
             disabled={!current || !identityReady}
             // Focus has its own dedicated species column with room to spare, so
@@ -1633,6 +1588,7 @@ function FocusPane({
             objectKey={current.key}
             alt={current.fileName}
             isVideo={isVideo}
+            hasStatusBadge={hasSpecies || questionable}
             filter={filter}
             adjust={adjustPanel}
             onFittedHeightChange={setFittedMediaHeight}
@@ -1751,6 +1707,7 @@ function FocusImage({
   objectKey,
   alt,
   isVideo,
+  hasStatusBadge,
   filter,
   adjust,
   onFittedHeightChange,
@@ -1759,6 +1716,7 @@ function FocusImage({
   objectKey: string;
   alt: string;
   isVideo: boolean;
+  hasStatusBadge: boolean;
   filter?: string;
   adjust?: React.ReactNode;
   onFittedHeightChange: (height: number | null) => void;
@@ -1808,6 +1766,7 @@ function FocusImage({
             alt={alt}
             resetKey={objectKey}
             filter={filter}
+            hasStatusBadge={hasStatusBadge}
             onFittedHeightChange={onFittedHeightChange}
             statusBadges={statusBadges}
             onLoaded={onLoaded}
@@ -1918,7 +1877,7 @@ function useFittedZoom(src: string, onFittedHeightChange?: (height: number | nul
       h: 'naturalHeight' in media ? media.naturalHeight : media.videoHeight,
     });
   };
-  return { paneRef, zoomRef, fitted, onImageLoad };
+  return { paneRef, zoomRef, pane, fitted, onImageLoad };
 }
 
 // Keep badges at the fitted picture's corners, including letterboxed media,
@@ -1949,6 +1908,7 @@ function ZoomableImage({
   alt,
   resetKey,
   filter,
+  hasStatusBadge,
   statusBadges,
   onFittedHeightChange,
   onLoaded,
@@ -1958,6 +1918,7 @@ function ZoomableImage({
   alt: string;
   resetKey: string;
   filter?: string;
+  hasStatusBadge: boolean;
   statusBadges?: React.ReactNode;
   onFittedHeightChange: (height: number | null) => void;
   onLoaded: () => void;
@@ -1965,7 +1926,22 @@ function ZoomableImage({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [zoomed, setZoomed] = useState(false);
-  const { paneRef, zoomRef, fitted, onImageLoad } = useFittedZoom(src, onFittedHeightChange);
+  const { paneRef, zoomRef, pane, fitted, onImageLoad } = useFittedZoom(src, onFittedHeightChange);
+  const topBadgeSize = hasStatusBadge && fitted
+    ? Math.min(56, Math.max(28, window.innerWidth * 0.04), fitted.width * 0.12, fitted.height * 0.2)
+    : 0;
+  const fittedTop = pane && fitted ? (pane.h - fitted.height) / 2 : Number.POSITIVE_INFINITY;
+  const adjustInset = 16;
+  const adjustHeight = 44;
+  const badgeInset = 4;
+  const badgeGap = 8;
+  const badgeTop = fittedTop + badgeInset;
+  // On a phone, keep Adjust at its upper-left default unless that hit target
+  // would cover the fitted image's classification badge. Then place it just
+  // below the badge with a small gap.
+  const adjustTop = !!adjust && badgeTop < adjustInset + adjustHeight && badgeTop + topBadgeSize > adjustInset
+    ? fittedTop + topBadgeSize + adjustInset + badgeInset + badgeGap
+    : adjustInset;
   // min-w-0/min-h-0 override the grid item's default content-based floor —
   // without them, the pane can never measure smaller than the zoom content's
   // last fitted pixel size, so a shrinking window gets stuck.
@@ -2005,6 +1981,7 @@ function ZoomableImage({
               onExpand={() => setExpanded(true)}
               onReset={zoomed ? () => resetTransform() : undefined}
               extra={adjust}
+              extraTop={adjustTop}
             />
           </>
         )}
@@ -2135,6 +2112,7 @@ function ZoomControls({
   onReset,
   dark,
   extra,
+  extraTop = 16,
 }: {
   onIn: () => void;
   onOut: () => void;
@@ -2142,6 +2120,7 @@ function ZoomControls({
   onReset?: () => void;
   dark?: boolean;
   extra?: React.ReactNode;
+  extraTop?: number;
 }) {
   const tone = dark
     ? 'text-paper/80 hover:text-paper hover:bg-paper/10'
@@ -2185,7 +2164,7 @@ function ZoomControls({
       </div>
       {/* One mounted Adjust instance: CSS repositions its trigger without
           discarding the portalled dialog or moving keyboard focus. */}
-      {extra && <div className="absolute top-4 left-4 z-10 lg:static lg:mt-2">{extra}</div>}
+      {extra && <div className="absolute left-4 z-10 lg:static lg:mt-2" style={{ top: `${extraTop}px` }}>{extra}</div>}
     </div>
   );
 }
@@ -2242,7 +2221,7 @@ type HandlerState = {
   setView: (v: View) => void;
   enterFocus: () => void;
   closeFocus: () => void;
-  isModalOpen: () => boolean; // an overlay (loupe, or the Sync/Snapshots/Time-shift dialogs) owns the keys
+  isModalOpen: () => boolean; // an overlay (loupe, time-shift or location dialog) owns the keys
 };
 
 function isTypingTarget(t: EventTarget | null): boolean {
@@ -2333,9 +2312,8 @@ function gotoBurst(s: HandlerState, dir: 1 | -1): void {
 
 function handleKey(e: KeyboardEvent, s: HandlerState): void {
   // An overlay owns the keyboard while open — the species loupe, or the
-  // Sync/Snapshots/Time-shift dialogs. Suppress all tagger hotkeys so nothing
-  // is tagged or navigated behind the modal; a keystroke landing on a frame
-  // mid-sync would create a draft edit the sync then silently clears.
+  // time-shift and location dialogs. Suppress tagging and navigation behind
+  // the topmost modal while it owns the keyboard.
   if (s.isModalOpen()) return;
 
   // Image tiles are native buttons: let Enter and Space produce their native

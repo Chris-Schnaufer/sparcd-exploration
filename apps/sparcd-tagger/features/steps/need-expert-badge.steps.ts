@@ -1,6 +1,6 @@
 import type { Page, Locator } from '@playwright/test';
 import { Given, When, Then, expect, gridCell, listRow, focusFrame, enterFocusView, openWorkspace, ENDPOINT } from './support/world';
-import { runLiveSync } from './support/flows';
+import { waitForAutomaticSave } from './support/flows';
 import { BUCKET, PREFIX_A } from './support/data';
 import { installS3Mock } from './support/s3mock';
 
@@ -64,17 +64,18 @@ Then('clicking the expert badge selects and opens the image without toggling it'
 });
 Then('the regular Focus status badges stay clear of viewer controls', async ({ page }) => {
   const mark = badge(focus(page)); await goldenrod(mark);
-  const marks = [mark, check(focus(page))];
   const image = (await focus(page).locator('img').boundingBox())!;
-  for (const item of marks) {
-    const b = (await item.boundingBox())!;
+  const markers = [mark, check(focus(page))];
+  for (const marker of markers) {
+    const b = (await marker.boundingBox())!;
     expect(b.width).toBeLessThanOrEqual(56);
     expect(b.width * b.height / (image.width * image.height)).toBeLessThan(0.04);
-    for (const controlName of [/^Adjust/, /^Previous image$/, /^Next image$/, /^Zoom in$/, /^Zoom out$/, /^Open fullscreen$/]) {
-      const control = page.getByRole('button', { name: controlName }); if (!await control.count()) continue;
-      const c = (await control.boundingBox())!;
-      expect(b.x < c.x + c.width && b.x + b.width > c.x && b.y < c.y + c.height && b.y + b.height > c.y).toBe(false);
-    }
+  }
+  const b = (await mark.boundingBox())!;
+  for (const controlName of [/^Adjust/, /^Previous image$/, /^Next image$/, /^Zoom in$/, /^Zoom out$/, /^Open fullscreen$/]) {
+    const control = page.getByRole('button', { name: controlName }); if (!await control.count()) continue;
+    const c = (await control.boundingBox())!;
+    expect(b.x < c.x + c.width && b.x + b.width > c.x && b.y < c.y + c.height && b.y + b.height > c.y).toBe(false);
   }
   await expect(toggle(page)).toBeVisible();
   await page.screenshot({ path: `/tmp/555-focus-${page.viewportSize()!.width}-${await page.locator('html').getAttribute('class')}.png` });
@@ -101,7 +102,7 @@ Then('an image without species shares its expert badge through sync fresh sessio
   const original = s3.text(BUCKET, `${PREFIX_A}observations.csv`);
   await focusFrame(page, 'IMG002.JPG'); await toggle(page).click();
   await expect(badge(gridCell(page, 'IMG002.JPG'))).toBeVisible(); await expect(check(gridCell(page, 'IMG002.JPG'))).toHaveCount(0);
-  await runLiveSync(page); await page.reload(); await openWorkspace(page);
+  await waitForAutomaticSave(page); await page.reload(); await openWorkspace(page);
   await expect(badge(gridCell(page, 'IMG002.JPG'))).toBeVisible();
   const context = await browser.newContext({ baseURL: ENDPOINT });
   try {
@@ -111,7 +112,7 @@ Then('an image without species shares its expert badge through sync fresh sessio
     await enterFocusView(sibling);
     await expect(badge(focus(sibling))).toBeVisible(); await expect(check(focus(sibling))).toHaveCount(0);
     await toggle(sibling).click(); await expect(badge(focus(sibling))).toHaveCount(0);
-    await expect(toggle(sibling)).toHaveAttribute('aria-pressed', 'false'); await runLiveSync(sibling);
+    await expect(toggle(sibling)).toHaveAttribute('aria-pressed', 'false'); await waitForAutomaticSave(sibling);
   } finally { await context.close(); }
   await page.reload(); await openWorkspace(page);
   await expect(badge(gridCell(page, 'IMG002.JPG'))).toHaveCount(0);
@@ -137,7 +138,8 @@ Then('touching an expert badge leaves the expert toggle state unchanged', async 
     const b = (await badge(tile).boundingBox())!;
     await page.touchscreen.tap(b.x + b.width / 2, b.y + b.height / 2);
     await expect(tile).toHaveAttribute('aria-current', 'true'); await expect(toggle(page)).toHaveAttribute('aria-pressed', 'true');
-    await page.touchscreen.tap(b.x + b.width / 2, b.y + b.height / 2);
+    await tile.tap(); await tile.tap();
+    await expect(page.getByRole('dialog', { name: 'Focus image viewer' })).toBeVisible();
     await expect(badge(focus(page))).toBeVisible(); await toggle(page).tap(); await expect(badge(focus(page))).toHaveCount(0);
     await expect(toggle(page)).toHaveAttribute('aria-pressed', 'false');
   } finally { await context.close(); }

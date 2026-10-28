@@ -1,4 +1,6 @@
-import { useId, useState } from 'react';
+import { useId, useState, useEffect, useRef } from 'react';
+import { useStore } from '../store';
+import { unfinishedEditor } from '../lib/editorState';
 import type { DraftObservation } from '../lib/db';
 import { isGhostObs, reviewSummary } from '../lib/effective';
 
@@ -11,7 +13,7 @@ import { isGhostObs, reviewSummary } from '../lib/effective';
 
 export type AppliedSpeciesProps = {
   observations: DraftObservation[]; // effective set for the focused image
-  disabled: boolean; // no image focused
+  disabled: boolean; // editing is paused; retain unfinished count input
   onSetCount: (scientificName: string, count: number) => void;
   onRemove: (scientificName: string) => void;
   onDetagAll: () => void;
@@ -30,17 +32,19 @@ function labelOf(o: DraftObservation): string {
 }
 
 function reviewLabel(o: DraftObservation): string | null {
-  const reviewEvents = o.reviewEvents ?? [];
+  const reviewEvents = (o.reviewEvents ?? []).filter(event => !event.reversedAt);
   const review = reviewEvents[reviewEvents.length - 1];
   return review ? `Reviewed by ${review.reviewedBy} at ${review.reviewedAt}` : null;
 }
 
 function ChipList({
   obs,
+  disabled,
   onSetCount,
   onRemove,
 }: {
   obs: DraftObservation[];
+  disabled: boolean;
   onSetCount: AppliedSpeciesProps['onSetCount'];
   onRemove: AppliedSpeciesProps['onRemove'];
 }) {
@@ -50,6 +54,7 @@ function ChipList({
         <Chip
           key={o.scientificName}
           obs={o}
+          disabled={disabled}
           onSetCount={(n) => onSetCount(o.scientificName, n)}
           onRemove={() => onRemove(o.scientificName)}
         />
@@ -68,12 +73,13 @@ export function AppliedSpecies(props: AppliedSpeciesProps) {
   // The strip itself still reflects the focused image's own species. Clear
   // Species stays available even when the focused image has none, as long as
   // it would still clear species elsewhere in the current selection.
-  if (props.disabled || (obs.length === 0 && !props.canDetag)) return null;
+  if (obs.length === 0 && !props.canDetag) return null;
 
   const clearControl = props.canDetag ? (
     <span className="inline-flex group">
       <button
         type="button"
+        disabled={props.disabled}
         onClick={props.onDetagAll}
         aria-describedby={clearHelpId}
         onKeyDown={(event) => {
@@ -103,13 +109,12 @@ export function AppliedSpecies(props: AppliedSpeciesProps) {
           data-testid="applied-species-list"
           className="flex flex-wrap items-start gap-1.5 max-h-24 overflow-y-auto"
         >
-          <ChipList obs={obs} onSetCount={props.onSetCount} onRemove={props.onRemove} />
+          <ChipList obs={obs} disabled={props.disabled} onSetCount={props.onSetCount} onRemove={props.onRemove} />
         </div>
         {clearControl}
       </div>
     );
   }
-
   const multi = obs.length > 1;
   // Collapsed multi-species summary: first chip + "+N more".
   const summary = multi ? `${labelOf(obs[0])}${obs[0].count > 1 ? ` ×${obs[0].count}` : ''}` : '';
@@ -127,6 +132,7 @@ export function AppliedSpecies(props: AppliedSpeciesProps) {
     <div className="relative flex flex-wrap items-center gap-1.5">
       {multi && !expanded ? (
         <button
+          disabled={props.disabled}
           onClick={() => setExpanded(true)}
           aria-expanded={false}
           className="min-w-11 min-h-11 inline-flex items-center gap-1.5 text-[12px] border border-rule text-inkSoft hover:text-ink focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent px-2 py-1"
@@ -141,6 +147,7 @@ export function AppliedSpecies(props: AppliedSpeciesProps) {
         </button>
       ) : multi ? (
         <button
+          disabled={props.disabled}
           onClick={() => setExpanded(false)}
           aria-expanded={true}
           className="min-w-11 min-h-11 grid place-items-center text-[20px] leading-none text-inkSoft hover:text-ink focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
@@ -151,7 +158,7 @@ export function AppliedSpecies(props: AppliedSpeciesProps) {
         </button>
       ) : null}
       {(!multi || expanded) ? (
-        <ChipList obs={obs} onSetCount={props.onSetCount} onRemove={props.onRemove} />
+        <ChipList obs={obs} disabled={props.disabled} onSetCount={props.onSetCount} onRemove={props.onRemove} />
       ) : null}
 
       {clearControl}
@@ -161,15 +168,33 @@ export function AppliedSpecies(props: AppliedSpeciesProps) {
 
 function Chip({
   obs,
+  disabled,
   onSetCount,
   onRemove,
 }: {
   obs: DraftObservation;
+  disabled: boolean;
   onSetCount: (n: number) => void;
   onRemove: () => void;
 }) {
   const ghost = isGhostObs(obs);
   const positiveReview = reviewLabel(obs);
+  const automatic = useStore(s => !!s.s3Config);
+  const id = useId();
+  const [text, setText] = useState(String(obs.count));
+  const textRef = useRef(text); textRef.current = text;
+  const focused = useRef(false);
+  const unfinished = useRef(false);
+  useEffect(() => { if (!focused.current && !unfinished.current) setText(String(obs.count)); }, [obs.count]);
+  useEffect(() => () => unfinishedEditor(id, false), [id]);
+  const finish = (input: HTMLInputElement) => {
+    if (disabled) return;
+    if (!input.reportValidity()) { queueMicrotask(() => input.focus()); return; }
+    const count = Number(textRef.current);
+    unfinished.current = false;
+    unfinishedEditor(id, false);
+    if (count !== obs.count) onSetCount(count);
+  };
   return (
     <span
       className={`inline-flex items-center gap-1.5 pl-2.5 pr-1 py-1 text-[13px] border ${
@@ -190,15 +215,29 @@ function Chip({
       {/* Ghost is exactly one (no count editor). Real species own a per-chip count. */}
       {!ghost && (
         <input
+          disabled={disabled}
           type="number"
           min={1}
-          value={obs.count}
-          onChange={(e) => onSetCount(Math.max(1, Number(e.target.value) || 1))}
+          required
+          step={1}
+          value={automatic ? text : obs.count}
+          onFocus={() => { focused.current = true; }}
+          onChange={(e) => {
+            if (!automatic) { onSetCount(Math.max(1, Number(e.target.value) || 1)); return; }
+            textRef.current = e.target.value; setText(e.target.value);
+            unfinished.current = e.target.value !== String(obs.count);
+            unfinishedEditor(id, unfinished.current);
+          }}
+          onBlur={(e) => { focused.current = false; if (automatic) finish(e.currentTarget); }}
+          onKeyDown={(e) => { if (automatic && e.key === 'Enter') { e.preventDefault(); if (e.currentTarget.reportValidity()) e.currentTarget.blur(); } }}
+          aria-describedby={automatic ? `${id}-help` : undefined}
           className="w-10 bg-paper border border-rule px-1 py-0.5 text-[12px] font-mono text-ink focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
           aria-label={`Count for ${labelOf(obs)}`}
         />
       )}
+      {automatic && <span id={`${id}-help`} className="sr-only">Enter a whole number of at least one. Finish with Enter or leave this field to save.</span>}
       <button
+        disabled={disabled}
         onClick={onRemove}
         className="min-w-11 min-h-11 md:min-w-0 md:min-h-0 md:w-5 md:h-5 grid place-items-center text-inkMute hover:text-warn focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
         title="Remove this species"

@@ -1,3 +1,4 @@
+import { connectionChangeAllowed, navigateAfterSave } from './lib/saveNavigation';
 import { create } from 'zustand';
 import type { S3Config } from '@sparcd/types';
 import {
@@ -46,10 +47,6 @@ type TaggerState = {
   selectedCollectionKey: string | null; // `${bucket}::${uuid}`
   selectedUploadPrefix: string | null; // full `Collections/<uuid>/Uploads/<stamp>/`
 
-  // Set when History routes to an upload to restore a snapshot: the Tag
-  // workspace consumes it once to auto-open its Snapshots dialog, then clears it.
-  pendingSnapshots: boolean;
-
   // Active login’s display identity used for attribution and audit paths. Local
   // batch mode may carry its handoff identity separately because it has no S3.
   taggerUser: string;
@@ -63,7 +60,6 @@ type TaggerState = {
   identityResolutionError: string | null;
   ensureTaggerIdentity: () => void;
   refreshTaggerIdentity: () => Promise<void>;
-  dryRun: boolean; // off by default; on to preview a sync without writing anything
   burstGroupingEnabled: boolean; // off by default — our cameras shoot no bursts
   burstThresholdSec: number; // sequence grouping threshold (5–600s), used when enabled
   dateFormat: DateFormat; // display only — media.csv col 4 is always stored as full ISO
@@ -78,12 +74,9 @@ type TaggerState = {
   toggleTheme: () => void;
   selectCollection: (key: string | null) => void;
   selectUpload: (prefix: string | null) => void;
-  openUploadForSnapshots: (collectionKey: string, uploadPrefix: string) => void;
-  clearPendingSnapshots: () => void;
   setSyncState: (state: SyncState) => void;
   /** Custom identity for this login, or the disconnected local batch. */
   setTaggerUser: (value: string) => void;
-  setDryRun: (value: boolean) => void;
   setBurstGrouping: (value: boolean) => void;
   setBurstThreshold: (value: number) => void;
   setDateFormat: (value: DateFormat) => void;
@@ -281,7 +274,7 @@ export const useStore = create<TaggerState>()(
   // shared home every SPARC'd tool reads; date/time/distance display prefs,
   // auto-advance persist to their own localStorage keys (see the loaders
   // above); attribution comes from the active connection. Everything else —
-  // selection, sync state, pendingSnapshots, dryRun — is transient and dropped
+  // selection and save state — is transient and dropped
   // on reload by design.
   (set, get) => ({
     s3Config: initialSession,
@@ -291,10 +284,8 @@ export const useStore = create<TaggerState>()(
     syncState: 'local-only',
     selectedCollectionKey: null,
     selectedUploadPrefix: null,
-    pendingSnapshots: false,
     taggerUser: initialSession ? connectedIdentity(initialSession) : loadLocalBatchIdentity(),
     ...emptyIdentityState,
-    dryRun: false,
     burstGroupingEnabled: false,
     burstThresholdSec: 60,
     ...initialDisplayPreferences,
@@ -302,6 +293,7 @@ export const useStore = create<TaggerState>()(
     sortSpeciesByRecent: loadSortSpeciesByRecent(),
 
     connect: (config, remember) => {
+      if (!connectionChangeAllowed(config)) return;
       const current = get();
       const sameLogin = current.s3Config?.accessKey.trim() === config.accessKey.trim();
       const transient = sameLogin ? current.identityUnsavedCustom : null;
@@ -323,6 +315,7 @@ export const useStore = create<TaggerState>()(
       void get().refreshTaggerIdentity();
     },
     disconnect: () => {
+      if (!connectionChangeAllowed(null)) return;
       clearClientCache();
       clearSharedConnection();
       clearAutoAdvance();
@@ -347,23 +340,14 @@ export const useStore = create<TaggerState>()(
         saveSharedTheme(theme);
         return { theme };
       }),
-    selectCollection: (key) =>
-      set({ selectedCollectionKey: key, selectedUploadPrefix: null, syncState: 'local-only' }),
-    selectUpload: (prefix) =>
+    selectCollection: (key) => key === get().selectedCollectionKey ? set({ section: 'browse' }) : navigateAfterSave(() =>
+      set({ selectedCollectionKey: key, selectedUploadPrefix: null, section: 'browse', syncState: 'local-only' })),
+    selectUpload: (prefix) => prefix === get().selectedUploadPrefix ? set({ section: prefix ? 'tag' : 'browse' }) : navigateAfterSave(() =>
       set({
         selectedUploadPrefix: prefix,
         section: prefix ? 'tag' : 'browse',
         syncState: 'local-only',
-      }),
-    openUploadForSnapshots: (collectionKey, uploadPrefix) =>
-      set({
-        selectedCollectionKey: collectionKey,
-        selectedUploadPrefix: uploadPrefix,
-        section: 'tag',
-        syncState: 'local-only',
-        pendingSnapshots: true,
-      }),
-    clearPendingSnapshots: () => set({ pendingSnapshots: false }),
+      })),
     setSyncState: (state) => set({ syncState: state }),
     beginTaggerIdentityEdit: () => set({ identityEditing: true }),
     setTaggerUser: (value) => {
@@ -431,7 +415,6 @@ export const useStore = create<TaggerState>()(
         });
       }
     },
-    setDryRun: (value) => set({ dryRun: value }),
     setBurstGrouping: (value) => set({ burstGroupingEnabled: value }),
     setBurstThreshold: (value) => set({ burstThresholdSec: value }),
     setDateFormat: (dateFormat) =>
@@ -468,7 +451,7 @@ export const useStore = create<TaggerState>()(
 // connectionId so client-side caches scoped to a connection are invalidated.
 // Also answers a sibling tab's own request with our current s3Config, if any.
 subscribeSharedConnection((cfg) => {
-  if (localBatchId) return;
+  if (localBatchId || !connectionChangeAllowed(cfg)) return;
   const currentState = useStore.getState();
   const current = currentState.s3Config;
   if (cfg && current && cfg.accessKey === current.accessKey && cfg.endpoint === current.endpoint &&

@@ -8,6 +8,7 @@
 // editing one image never re-renders the whole strip.
 
 import { create } from 'zustand';
+import { acceptEdit, canAcceptEdit, expandUploadOffset, hasEditLifecycle, normalizeEditLocation } from './editLifecycle';
 import { attributionAvailable, connectedAttribution } from './attribution';
 import { shiftTimestamp, type Deployment } from '@sparcd/camtrap';
 import { draftRevisionOf } from './draftRevision';
@@ -62,6 +63,7 @@ export type AppliedTag = {
   count: number; // floored to ≥1
   requestedSpecies?: string;
   freeTags?: string;
+  correctedFrom?: string;
   /** Identity captured when the edit is made, before a later account switch. */
   classifiedBy?: string;
   /** ISO timestamp paired with classifiedBy — when that attribution was made. */
@@ -104,6 +106,7 @@ export function addObservation(obs: DraftObservation[], tag: AppliedTag): DraftO
     count: Math.max(1, tag.count),
     requestedSpecies: tag.requestedSpecies ?? '',
     freeTags: tag.freeTags ?? '',
+    ...(tag.correctedFrom ? { correctedFrom: tag.correctedFrom } : {}),
     classifiedBy: tag.classifiedBy?.trim() || undefined,
     classificationTimestamp: tag.classificationTimestamp,
   };
@@ -318,9 +321,10 @@ export const useDraftStore = create<DraftState>((set, get) => {
     patch: Partial<DraftRecord> | ((prev: DraftRecord, base?: BaseSeed) => Partial<DraftRecord>),
     resolveDirty?: (next: DraftRecord, base?: BaseSeed) => boolean,
   ): void => {
-    if (!targets.length || !attributionAvailable()) return;
+    if (!targets.length || !attributionAvailable() || !canAcceptEdit()) return;
     const now = new Date().toISOString();
     const updates: Record<string, DraftRecord> = {};
+    const before: Record<string, DraftRecord> = {};
     const cur = get().drafts;
     for (const { mediaPath, deploymentId, base } of targets) {
       // A clean draft has no pending intent. Seed from the latest canonical
@@ -328,7 +332,12 @@ export const useDraftStore = create<DraftState>((set, get) => {
       const existing = cur[mediaPath];
       const prev = existing?.dirty || !base ? existing ?? blankDraft(ctx, mediaPath, deploymentId, base)
         : blankDraft(ctx, mediaPath, deploymentId, base);
+      before[mediaPath] = prev;
       const p = typeof patch === 'function' ? patch(prev, base) : patch;
+      const changed = Object.keys(p).some(key =>
+        JSON.stringify((p as Record<string, unknown>)[key]) !==
+        JSON.stringify((prev as unknown as Record<string, unknown>)[key]));
+      if (!changed) continue;
       const next: DraftRecord = {
         ...prev,
         deploymentId: deploymentId || prev.deploymentId,
@@ -338,9 +347,10 @@ export const useDraftStore = create<DraftState>((set, get) => {
       };
       if (resolveDirty) next.dirty = resolveDirty(next, base);
       updates[mediaPath] = next;
-      scheduleSave(next);
+      if (!hasEditLifecycle()) scheduleSave(next);
     }
     set((s) => ({ drafts: { ...s.drafts, ...updates } }));
+    acceptEdit({ ctx, before, after: updates });
   };
 
   return {
@@ -387,7 +397,10 @@ export const useDraftStore = create<DraftState>((set, get) => {
         const confirmedSpecies = confirmed
           ? [...new Set([...(prev.confirmedSpecies ?? []), tag.scientificName])]
           : prev.confirmedSpecies;
-        const observations = addObservation(prev.observations, tag);
+        const correctedFrom = !alreadyPresent && prev.removedSpecies?.length === 1 && targets.some(target =>
+          target.mediaPath === prev.mediaPath && target.base?.observations.some(o => o.scientificName === prev.removedSpecies![0]))
+          ? prev.removedSpecies[0] : undefined;
+        const observations = addObservation(prev.observations, correctedFrom ? { ...tag, correctedFrom } : tag);
         const removedSpecies = (prev.removedSpecies ?? []).filter((name) => name !== tag.scientificName);
         return {
           observations: confirmed
@@ -463,7 +476,14 @@ export const useDraftStore = create<DraftState>((set, get) => {
     }),
 
     setTimeOffset: (ctx, offset) => {
-      if (!attributionAvailable()) return;
+      if (!attributionAvailable() || !canAcceptEdit()) return;
+      const expanded = expandUploadOffset(ctx, offset);
+      if (expanded) {
+        // Absolute per-image values remain valid when an earlier upload shift
+        // finishes while a newer shift is already queued.
+        mutateMany(ctx, expanded, prev => ({ timeOverride: expanded.find(t => t.mediaPath === prev.mediaPath)!.currentCorrected }));
+        return;
+      }
       // Optimistic Zustand update (hot path) + durable Dexie mirror. Unlike a
       // draft, the offset lives on the `uploads` record, so it never shows in
       // `dirtyCount` — the active-offset indicator (ClockChip) is its signal.
@@ -472,8 +492,11 @@ export const useDraftStore = create<DraftState>((set, get) => {
     },
 
     setPendingLocation: async (ctx, location) => {
-      if (!attributionAvailable()) return;
+      if (!attributionAvailable() || !canAcceptEdit()) return;
+      const before = get().pendingLocation;
+      location = normalizeEditLocation(location);
       set({ pendingLocation: location });
+      acceptEdit({ ctx, before: {}, after: {}, location: { before, after: location } });
       await setUploadPendingLocation(ctx.bucket, ctx.uploadPrefix, location);
     },
 
@@ -592,6 +615,7 @@ export const useDraftStore = create<DraftState>((set, get) => {
       if (!receipt) return;
       const next = { ...get().drafts };
       const changed: DraftRecord[] = [];
+      const sources = new Map<string, DraftRecord>();
       for (const [path, submitted] of Object.entries(receipt.draftRevisions)) {
         const rec = next[path];
         if (!rec || rec.bucket !== ctx.bucket || rec.uploadPrefix !== ctx.uploadPrefix) continue;
@@ -629,10 +653,20 @@ export const useDraftStore = create<DraftState>((set, get) => {
         };
         next[path] = acknowledged;
         changed.push(acknowledged);
+        sources.set(path, rec);
       }
       if (changed.length) {
-        set({ drafts: next });
         await db.drafts.bulkPut(changed);
+        set(state => {
+          const drafts = { ...state.drafts };
+          for (const updated of changed) {
+            // Do not replace a newer edit made while the durable receipt was
+            // being written. Its normal debounced write remains responsible
+            // for persisting that newer revision.
+            if (drafts[updated.mediaPath] === sources.get(updated.mediaPath)) drafts[updated.mediaPath] = updated;
+          }
+          return { drafts };
+        });
       }
     },
   };

@@ -80,6 +80,7 @@ export function Assign() {
   const setStep = useStore((s) => s.setStep);
   const uploaderUser = useStore((s) => s.uploaderUser);
   const setUploaderUser = useStore((s) => s.setUploaderUser);
+  const beginUploaderIdentityEdit = useStore((s) => s.beginUploaderIdentityEdit);
   const ensureUploaderIdentity = useStore((s) => s.ensureUploaderIdentity);
   const identityResolutionStatus = useStore((s) => s.identityResolutionStatus);
   const identityResolutionError = useStore((s) => s.identityResolutionError);
@@ -386,6 +387,7 @@ export function Assign() {
           name="uploaderUser"
           autoComplete="name"
           value={uploaderUser}
+          onFocus={beginUploaderIdentityEdit}
           onChange={(e) => setUploaderUser(e.target.value)}
           onBlur={ensureUploaderIdentity}
           placeholder="e.g. John Doe"

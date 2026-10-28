@@ -1,16 +1,14 @@
 @H3
-Feature: Retrying Need expert publication preserves newer local edits
+Feature: Recovering Need expert publication preserves later accepted actions
   Background:
     Given an upload with existing identifications is open in the tagging workspace
-    And an image is focused
 
-  Scenario Outline: A reloaded journal acknowledges only the state it submitted
-    When a Need expert sync fails after publishing media
-    And the interrupted image receives a "<edit>" edit
-    And the interrupted sync is resumed after a browser reload
-    Then the journaled status is saved and the "<edit>" draft is acknowledged correctly
-    And the retry result survives another reload
-    And the retained edit can be saved separately
+  Scenario Outline: Later work accepted during a save survives its failure and reload
+    When a Need expert save is held after publishing media
+    And a later "<edit>" action is accepted during that save
+    And the earlier save fails and the browser reloads
+    Then the complete "<edit>" result is stored with no pending drafts
+    And retrying and reloading cannot duplicate its attribution events
 
     Examples:
       | edit      |
@@ -18,3 +16,14 @@ Feature: Retrying Need expert publication preserves newer local edits
       | species   |
       | status    |
       | time      |
+
+  Scenario Outline: Other changes retain a previously saved expert marker through retry
+    When a saved expert image receives a "<edit>" action during an earlier save
+    And the earlier save fails and the browser reloads
+    Then the complete "<edit>" result is stored with no pending drafts
+    And retrying and reloading cannot duplicate its attribution events
+
+    Examples:
+      | edit |
+      | drop |
+      | time |

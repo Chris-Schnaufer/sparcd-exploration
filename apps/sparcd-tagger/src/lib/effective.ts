@@ -12,7 +12,7 @@ export type ReviewSummary = ReviewStatus | 'mixed';
  * Original attribution (`classifiedBy`) does not imply that anyone later
  * reviewed the identification. */
 export function reviewStatus(observation: DraftObservation): ReviewStatus {
-  return observation.reviewEvents?.length ? 'reviewed' : 'unreviewed';
+  return observation.reviewEvents?.some(event => !event.reversedAt) ? 'reviewed' : 'unreviewed';
 }
 
 /** Summarize per-identification review state for an image-level indicator. */

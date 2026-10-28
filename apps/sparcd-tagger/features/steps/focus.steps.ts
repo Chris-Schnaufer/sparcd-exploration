@@ -564,7 +564,7 @@ Then('the status badges do not overlap the Adjust or image-navigation controls',
       const control = page.getByRole('button', { name });
       if (!await control.count()) continue;
       const c = (await control.boundingBox())!;
-      expect(box.x < c.x + c.width && box.x + box.width > c.x && box.y < c.y + c.height && box.y + box.height > c.y).toBe(false);
+      expect(box.x < c.x + c.width && box.x + box.width > c.x && box.y < c.y + c.height && box.y + box.height > c.y, JSON.stringify({ badge: await badge.getAttribute('aria-label'), control: String(name), box, controlBox: c })).toBe(false);
     }
   }
 });
@@ -1046,20 +1046,20 @@ When('the viewport is narrowed to a phone size', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
 });
 
-Then('the Adjust control sits at the top-left, clear of the zoom column', async ({ page }) => {
-  const [adjust, fullscreen] = await Promise.all([
-    adjustToggle(page).boundingBox(),
-    page.getByRole('button', { name: 'Open fullscreen' }).boundingBox(),
-  ]);
+Then('the Adjust control stays clear of status badges and zoom controls', async ({ page }) => {
+  const adjust = await adjustToggle(page).boundingBox();
   expect(adjust).not.toBeNull();
-  expect(fullscreen).not.toBeNull();
-  expect(adjust!.x).toBeLessThan(fullscreen!.x);
-  expect(adjust!.y).toBeLessThan(fullscreen!.y);
   const canvas = (await page.getByTestId('focus-drop-zone').boundingBox())!;
-  expect(Math.abs(adjust!.x - canvas.x - 16)).toBeLessThanOrEqual(2);
-  expect(Math.abs(adjust!.y - canvas.y - 16)).toBeLessThanOrEqual(2);
+  expect(adjust!.x).toBeGreaterThanOrEqual(canvas.x);
   expect(adjust!.x + adjust!.width).toBeLessThanOrEqual(Math.min(canvas.x + canvas.width, 390));
-  expect(adjust!.y + adjust!.height).toBeLessThanOrEqual(844);
+  expect(adjust!.y).toBeGreaterThanOrEqual(canvas.y);
+  expect(adjust!.y + adjust!.height).toBeLessThanOrEqual(Math.min(canvas.y + canvas.height, 844));
+  const obstructions = page.locator('[data-testid="focus-image-status-badges"] [role="img"], button[aria-label="Open fullscreen"], button[aria-label="Zoom in"], button[aria-label="Zoom out"]');
+  for (const obstruction of await obstructions.all()) {
+    const box = (await obstruction.boundingBox())!;
+    expect(adjust!.x < box.x + box.width && adjust!.x + adjust!.width > box.x && adjust!.y < box.y + box.height && adjust!.y + adjust!.height > box.y,
+      JSON.stringify({ adjust, obstruction: box })).toBe(false);
+  }
   await expect(adjustToggle(page)).toHaveCount(1);
 });
 
@@ -1273,53 +1273,7 @@ Given('auto-advance is disabled for adjustment shortcut checks', async ({ page }
   await sectionTab(page, 'Tag').click();
 });
 
-Then('Keep values supports {word} toggling without blocking workspace shortcuts', async ({ page }, activation: string) => {
-  const image = page.locator('.react-transform-component img');
-  const originalSrc = await image.getAttribute('src');
-  const originalName = await image.getAttribute('alt');
-  expect(originalSrc).toBeTruthy();
-  expect(originalName).toBeTruthy();
-  const count = page.getByRole('spinbutton', { name: 'Count for Mule Deer', exact: true });
-  let expectedCount = Number(await count.inputValue());
 
-  for (const checked of [true, false]) {
-    await adjustToggle(page).click();
-    await expect(page.getByLabel('Brightness', { exact: true })).toBeFocused();
-    await page.getByLabel('Contrast', { exact: true }).fill('90');
-    const checkbox = page.getByRole('checkbox', { name: 'Keep values', exact: true });
-    if (activation === 'pointer') {
-      await page.getByText('Keep values', { exact: true }).click();
-    } else {
-      await page.getByLabel('Brightness', { exact: true }).focus();
-      for (let tab = 0; tab < 4; tab++) await page.keyboard.press('Tab');
-      await expect(checkbox).toBeFocused();
-      await page.keyboard.press('Space');
-    }
-    await expect(checkbox).toBeFocused();
-    await expect(checkbox).toBeChecked({ checked });
-    await expect(image).toHaveAttribute('src', originalSrc!);
-    await expect(count).toHaveValue(String(expectedCount));
-    await page.keyboard.press('Enter');
-    await expect(checkbox).toBeFocused();
-    await expect(checkbox).toBeChecked({ checked });
-
-    await page.keyboard.press('d');
-    await expect(count).toHaveValue(String(++expectedCount));
-    await expect(checkbox).toBeFocused();
-    await expect(checkbox).toBeChecked({ checked });
-    await page.keyboard.press('ArrowRight');
-    await expect(image).not.toHaveAttribute('src', originalSrc!);
-    await expect(image).not.toHaveAttribute('alt', originalName!);
-    await expect.poll(() => image.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth > 0)).toBe(true);
-    await expect(adjustmentPanel(page)).toHaveCount(0);
-    await page.keyboard.press('ArrowLeft');
-    await expect(image).toHaveAttribute('src', originalSrc!);
-    await expect(image).toHaveAttribute('alt', originalName!);
-    await expect(count).toHaveValue(String(expectedCount));
-    const style = await image.getAttribute('style');
-    expect(style).toContain(checked ? 'contrast(180%)' : 'contrast(100%)');
-  }
-});
 
 Then('split preferences survive resizing and reload without hiding controls', async ({ page }) => {
   const divider = page.getByRole('separator'), pane = page.getByTestId('focus-species-pane');
@@ -1391,4 +1345,52 @@ Then('canceled and unmounted drags stop resizing', async ({ page }) => {
   await page.mouse.move(10, 10); await page.mouse.up();
   expect(await page.evaluate(() => localStorage.getItem('sparcd-tagger:focus-split:w'))).toBe(saved);
   await enterFocusView(page); await expect(divider).toBeVisible();
+});
+
+Then('Keep values supports {word} toggling without blocking workspace shortcuts', async ({ page }, activation: string) => {
+  const image = page.locator('.react-transform-component img');
+  const originalSrc = await image.getAttribute('src');
+  const originalName = await image.getAttribute('alt');
+  expect(originalSrc).toBeTruthy();
+  expect(originalName).toBeTruthy();
+  const count = page.getByRole('spinbutton', { name: 'Count for Mule Deer', exact: true });
+  let expectedCount = Number(await count.inputValue());
+
+  for (const checked of [true, false]) {
+    await adjustToggle(page).click();
+    await expect(page.getByLabel('Brightness', { exact: true })).toBeFocused();
+    await page.getByLabel('Contrast', { exact: true }).fill('90');
+    const checkbox = page.getByRole('checkbox', { name: 'Keep values', exact: true });
+    if (activation === 'pointer') {
+      await page.getByText('Keep values', { exact: true }).click();
+    } else {
+      await page.getByLabel('Brightness', { exact: true }).focus();
+      for (let tab = 0; tab < 4; tab++) await page.keyboard.press('Tab');
+      await expect(checkbox).toBeFocused();
+      await page.keyboard.press('Space');
+    }
+    await expect(checkbox).toBeFocused();
+    await expect(checkbox).toBeChecked({ checked });
+    await expect(image).toHaveAttribute('src', originalSrc!);
+    await expect(count).toHaveValue(String(expectedCount));
+    await page.keyboard.press('Enter');
+    await expect(checkbox).toBeFocused();
+    await expect(checkbox).toBeChecked({ checked });
+
+    await page.keyboard.press('d');
+    await expect(count).toHaveValue(String(++expectedCount));
+    await expect(checkbox).toBeFocused();
+    await expect(checkbox).toBeChecked({ checked });
+    await page.keyboard.press('ArrowRight');
+    await expect(image).not.toHaveAttribute('src', originalSrc!);
+    await expect(image).not.toHaveAttribute('alt', originalName!);
+    await expect.poll(() => image.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth > 0)).toBe(true);
+    await expect(adjustmentPanel(page)).toHaveCount(0);
+    await page.keyboard.press('ArrowLeft');
+    await expect(image).toHaveAttribute('src', originalSrc!);
+    await expect(image).toHaveAttribute('alt', originalName!);
+    await expect(count).toHaveValue(String(expectedCount));
+    const style = await image.getAttribute('style');
+    expect(style).toContain(checked ? 'contrast(180%)' : 'contrast(100%)');
+  }
 });

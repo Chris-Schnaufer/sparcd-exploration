@@ -48,13 +48,11 @@ Feature: Find and filter the Overview in an accessible responsive rail
     When the image filter is opened in a narrow viewport
     Then the overlay supports touch clearing, resetting, and closing
 
-  Scenario Outline: Other dialogs retain priority during responsive changes
+  Scenario Outline: Time shift retains priority during responsive changes
     When the rail is opened in the "grid" Overview
     Then the "<dialog>" dialog keeps priority while resizing and restores the rail at <width> pixels
     Examples:
       | dialog     | width |
-      | Sync       | 600   |
-      | Sync       | 1440  |
       | Time shift | 600   |
       | Time shift | 1440  |
 
