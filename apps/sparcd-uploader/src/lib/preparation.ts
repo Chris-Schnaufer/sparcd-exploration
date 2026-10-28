@@ -17,7 +17,7 @@ export type LocalPreparation = {
   species: PreparedSpecies | null;
   inputs: Pick<ReturnType<typeof useStore.getState>, 'selectedBucket' | 'selectedLocationId' | 'uploadDescription' | 'uploadTimeZone'> & Partial<Pick<ReturnType<typeof useStore.getState>, 'mountainRange' | 'dateCollected' | 'uploadCommentDate'>>;
 };
-type MissingRemovalIntent = { v: 1; id: string; preparationId: string; flipId: string | null; ownerScope?: string; relPath: string; size: number; sha256: string; createdAt: string };
+type MissingRemovalIntent = { v: 1; id: string; preparationId: string; flipId: string | null; ownerScope?: string; relPath: string; size: number; sha256: string; createdAt: string; appliedAt?: string };
 const pendingMissingRemovals = new Map<string, { intentId: string; preparationId: string; relPath: string; fileName: string; error: string }>();
 let failedRemovalRequest: { fileId: string; preparationId: string; flipId: string | null; relPath: string; size: number; sha256: string } | null = null;
 const removalListeners = new Set<() => void>();
@@ -80,21 +80,28 @@ function removeStoreFileAfterDurableCommit(fileId: string): void {
   try { useStore.getState().removeFile(fileId); }
   finally { skipNextPreparationFileSnapshot = false; }
 }
-export async function listPreparations(onUnavailable?: (id: string) => void): Promise<LocalPreparation[]> {
-  await replayMissingRemovalIntents();
+export async function listPreparations(onUnavailable?: (id: string, reason?: string, fileName?: string) => void): Promise<LocalPreparation[]> {
   const rows = await flipDb.preparations.toArray();
   const unique = new Map<string, LocalPreparation>();
   for (const row of rows) {
     try {
       const value = validatePreparation(row.value);
       if (!value) throw new Error('Empty preparation');
-      if (!unique.has(value.id) || unique.get(value.id)!.savedAt < value.savedAt) unique.set(value.id, value);
-    } catch { onUnavailable?.(row.id); }
+      try {
+        // A conflict in one handoff must not hide unrelated recoverable batches.
+        await replayMissingRemovalIntents({ preparationId: value.id });
+      } catch (error) {
+        onUnavailable?.(row.id, (error as Error).message, value.files[0]?.fileName);
+        continue;
+      }
+      const refreshed = validatePreparation((await flipDb.preparations.get(row.id))?.value);
+      if (refreshed && (!unique.has(refreshed.id) || unique.get(refreshed.id)!.savedAt < refreshed.savedAt)) unique.set(refreshed.id, refreshed);
+    } catch { onUnavailable?.(row.id, 'Saved data is damaged or from an unsupported version.'); }
   }
   return [...unique.values()].sort((a, b) => b.savedAt.localeCompare(a.savedAt));
 }
 export async function readPreparationForFlip(flipId: string): Promise<LocalPreparation | null> {
-  await replayMissingRemovalIntents();
+  await replayMissingRemovalIntents({ flipId });
   // Validate matching journals only: unrelated damaged/future records cannot
   // strand a healthy Flip return. A damaged matching record remains an error.
   const rows = await flipDb.preparations.toArray();
@@ -152,17 +159,24 @@ async function applyMissingRemovalIntent(intent: MissingRemovalIntent): Promise<
         }
       }
     }
-    await flipDb.removalIntents.delete(intent.id);
+    // Keep the completed intent as a durable tombstone. Another open Uploader
+    // tab may still hold the old preparation snapshot and autosave it later.
+    await flipDb.removalIntents.put({ id: intent.id, value: { ...intent, appliedAt: new Date().toISOString() } });
   });
 }
-export async function replayMissingRemovalIntents(): Promise<void> {
+export async function replayMissingRemovalIntents(scope: { preparationId?: string; flipId?: string } = {}): Promise<void> {
   const rows = await flipDb.removalIntents.toArray();
   const completed: MissingRemovalIntent[] = [];
   for (const row of rows) {
     const intent = row.value as MissingRemovalIntent;
-    if (!intent || intent.v !== 1 || intent.id !== row.id || typeof intent.preparationId !== 'string' || typeof intent.relPath !== 'string' || !Number.isFinite(intent.size) || typeof intent.sha256 !== 'string' || !intent.sha256) {
+    // Applied intents remain as durable cross-tab tombstones; they are not work
+    // to replay. Filter before validation so a damaged sibling cannot block a
+    // different batch from opening.
+    if ((scope.preparationId && intent?.preparationId !== scope.preparationId) || (scope.flipId && intent?.flipId !== scope.flipId)) continue;
+    if (!intent || intent.v !== 1 || intent.id !== row.id || typeof intent.preparationId !== 'string' || !intent.preparationId || (intent.flipId !== null && typeof intent.flipId !== 'string') || (intent.ownerScope !== undefined && typeof intent.ownerScope !== 'string') || typeof intent.relPath !== 'string' || !intent.relPath || !Number.isFinite(intent.size) || intent.size < 0 || typeof intent.sha256 !== 'string' || !intent.sha256 || !Number.isFinite(Date.parse(intent.createdAt)) || (intent.appliedAt !== undefined && !Number.isFinite(Date.parse(intent.appliedAt)))) {
       throw new Error('A saved removal needs recovery. Its journal is invalid; keep this browser data and contact support.');
     }
+    if (intent.appliedAt) continue;
     try {
       await applyMissingRemovalIntent(intent);
       completed.push(intent);
@@ -244,8 +258,8 @@ export async function removeMissingOriginal(fileId: string): Promise<void> {
   }
 }
 export async function retryMissingOriginalRemovals(): Promise<void> {
-  await replayMissingRemovalIntents();
   const request = failedRemovalRequest;
+  await replayMissingRemovalIntents({ preparationId: request?.preparationId ?? preparationId, ...(request?.flipId ? { flipId: request.flipId } : {}) });
   failedRemovalRequest = null;
   if (!request) return;
   const currentState = useStore.getState();
@@ -264,8 +278,8 @@ export async function readBoundPreparationSpecies(): Promise<PreparedSpecies | n
   return validPreparedSpecies(species) ? species : null;
 }
 export async function readPreparation(): Promise<LocalPreparation | null> {
-  await replayMissingRemovalIntents();
   if (!preparationId) return null;
+  await replayMissingRemovalIntents({ preparationId });
   return validatePreparation((await flipDb.preparations.get(preparationId))?.value);
 }
 function validatePreparation(raw: unknown): LocalPreparation | null {
@@ -339,8 +353,16 @@ export function startPreparationJournal(): void {
       if (!files.length) { if (id) await flipDb.preparations.delete(id); }
       else {
         const species = await speciesPromise;
-        const value: LocalPreparation = { v: 1, id, dirHandle: s.dirHandle ?? undefined, savedAt: new Date().toISOString(), files: files.map(({ file, ...entry }) => ({ ...entry, lastModified: file.lastModified })), flipId: s.flipId, species, inputs };
-        await flipDb.transaction('rw', flipDb.preparations, async () => {
+        await flipDb.transaction('rw', flipDb.preparations, flipDb.removalIntents, async () => {
+          const tombstones = (await flipDb.removalIntents.toArray())
+            .map(row => row.value as MissingRemovalIntent)
+            .filter(intent => intent?.preparationId === id);
+          const retainedFiles = files.filter(file => !tombstones.some(intent => intent.relPath === file.relPath && sameRemovalTarget(file, intent)));
+          if (!retainedFiles.length) {
+            await flipDb.preparations.delete(id);
+            return;
+          }
+          const value: LocalPreparation = { v: 1, id, dirHandle: s.dirHandle ?? undefined, savedAt: new Date().toISOString(), files: retainedFiles.map(({ file, ...entry }) => ({ ...entry, lastModified: file.lastModified })), flipId: s.flipId, species, inputs };
           await flipDb.preparations.put({ id, value });
           // Retire only this batch's legacy singleton after its replacement is durable.
           const legacy = await flipDb.preparations.get('active');

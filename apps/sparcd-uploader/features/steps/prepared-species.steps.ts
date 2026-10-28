@@ -276,3 +276,45 @@ Then('the file stays absent after recovery reload and Edit tags return', async (
   expect((await app.listedFiles()).map(file => file.name)).not.toContain('IMG_0001.JPG');
   expect((await app.readFlipRecords()).find(record => record.id === id)!.files.map((file: any) => file.relPath)).not.toContain('SDCARD/IMG_0001.JPG');
 });
+
+When('the storage login is disconnected and deferred', async ({ app }) => {
+  await app.unstubTagger();
+  await app.page.getByRole('button', { name: 'Logout', exact: true }).click();
+  await expect(app.connectForm()).toBeVisible();
+  await app.page.getByRole('button', { name: 'Login later', exact: true }).click();
+  await expect(app.page.getByRole('heading', { name: 'Choose the folder again' })).toBeVisible();
+  await app.seedPickedFolder(app.lastSpecs);
+  await app.page.getByRole('button', { name: 'Choose folder', exact: true }).click();
+  await app.waitForInspected();
+  await expect(app.page.getByRole('button', { name: 'Edit tags', exact: true })).toBeEnabled();
+});
+
+Then("Edit tags remains available with the batch's prepared species", async ({ app }) => {
+  const id = app.notes.flipId as string;
+  await app.page.getByRole('button', { name: 'Edit tags', exact: true }).click();
+  await app.page.waitForURL(/\/tagger\/\?batch=/);
+  const params = new URL(app.page.url()).searchParams;
+  expect(params.get('batch')).toBe(id);
+  expect(params.get('ownerScope')).toMatch(/^flip-owner-v1:[a-f0-9]{64}$/);
+  const species = app.page.getByTestId('species-panel');
+  await expect(species.getByText('Coyote', { exact: true })).toBeVisible();
+  await expect(species.getByText('Ghost', { exact: true })).toBeVisible();
+});
+
+When('the saved preparation recovery list is opened', async ({ app }) => {
+  await app.page.goto(APP_PATH);
+  await expect(app.page.getByRole('region', { name: 'Saved local preparation' })).toBeVisible();
+});
+
+Then('the Reopen saved tags link carries the batch owner scope', async ({ app }) => {
+  const record = (await app.readFlipRecords()).find(item => item.id === app.notes.flipId);
+  expect(record?.ownerScope).toMatch(/^flip-owner-v1:[a-f0-9]{64}$/);
+  const link = app.page.getByRole('link', { name: 'Reopen saved tags using thumbnails', exact: true });
+  await expect(link).toBeVisible();
+  const target = new URL(await link.getAttribute('href')!, app.page.url());
+  expect(target.searchParams.get('batch')).toBe(app.notes.flipId);
+  expect(target.searchParams.get('ownerScope')).toBe(record!.ownerScope);
+  await link.click();
+  await app.page.waitForURL(/\/tagger\/\?batch=/);
+  expect(new URL(app.page.url()).searchParams.get('ownerScope')).toBe(record!.ownerScope);
+});

@@ -304,8 +304,10 @@ function seedMissingRemoval(id: string, withFlip = true) {
   store.setState({ files: [
     { ...missing, file: new File([], missing.fileName) },
     { ...good, file: new File(['goodfile'], good.fileName) },
-  ], flipId: saved.flipId, batchToken: 901, s3Config: { endpoint: 'https://example.test', accessKey: 'person', secretKey: 'secret', region: 'us-east-1', forcePathStyle: true } });
+  ], flipId: saved.flipId, batchToken: 902, s3Config: { endpoint: 'https://example.test', accessKey: 'person', secretKey: 'secret', region: 'us-east-1', forcePathStyle: true } });
   journal.bindCurrentPreparationSpecies(null, id);
+  // adoptTaggedBatch advances the token after binding the local preparation.
+  store.setState({ batchToken: 903 });
   return { saved, missing };
 }
 it('journals a missing-file removal before atomically removing its preparation, Flip file, and tags', async () => {
@@ -321,7 +323,7 @@ it('journals a missing-file removal before atomically removing its preparation, 
   expect(flip.ownerScope).toBe('owner-test');
   expect(flip.revision).toBe(5);
   expect(flip.returnUrl).toBe('/uploader/');
-  expect(memory.removals.size).toBe(0);
+  expect([...memory.removals.values()].find(row => row.value.preparationId === saved.id)?.value.appliedAt).toBeTruthy();
   expect(store.getState().files.map(file => file.relPath)).toEqual(['SD/GOOD.JPG']);
 });
 it.each(['preparation', 'flip'] as const)('keeps both records unchanged and replays the durable intent after a %s update failure', async stage => {
@@ -329,7 +331,7 @@ it.each(['preparation', 'flip'] as const)('keeps both records unchanged and repl
   await journal.flushPreparation();
   memory.failAtomicStage = stage;
   await expect(journal.removeMissingOriginal('SD/MISSING.JPG')).rejects.toThrow('QuotaExceededError');
-  expect(memory.removals.size).toBe(1);
+  expect([...memory.removals.values()].filter(row => row.value.preparationId === saved.id && !row.value.appliedAt)).toHaveLength(1);
   expect(memory.rows.get(saved.id).value.files).toHaveLength(2);
   expect(memory.flips.get(saved.flipId!)!.files).toHaveLength(2);
   expect(journal.isMissingRemovalPending('SD/MISSING.JPG')).toBe(true);
@@ -338,7 +340,7 @@ it.each(['preparation', 'flip'] as const)('keeps both records unchanged and repl
   expect(memory.rows.get(saved.id).value.files.map((file: any) => file.relPath)).toEqual(['SD/GOOD.JPG']);
   expect(memory.flips.get(saved.flipId!)!.files.map((file: any) => file.relPath)).toEqual(['SD/GOOD.JPG']);
   expect(memory.flips.get(saved.flipId!)!.tags).not.toHaveProperty('SD/MISSING.JPG');
-  expect(memory.removals.size).toBe(0);
+  expect([...memory.removals.values()].find(row => row.value.preparationId === saved.id)?.value.appliedAt).toBeTruthy();
   expect(store.getState().files.map(file => file.relPath)).toEqual(['SD/GOOD.JPG']);
   expect(journal.isMissingRemovalPending('SD/MISSING.JPG')).toBe(false);
 });
@@ -349,7 +351,7 @@ it('leaves a missing original visible when the durable removal intent cannot be 
   await expect(journal.removeMissingOriginal('SD/MISSING.JPG')).rejects.toThrow('QuotaExceededError');
   expect(store.getState().files.some(file => file.id === 'SD/MISSING.JPG')).toBe(true);
   expect(journal.isMissingRemovalPending('SD/MISSING.JPG')).toBe(false);
-  expect(memory.removals.size).toBe(0);
+  expect([...memory.removals.values()].some(row => row.value.preparationId === saved.id)).toBe(false);
   expect(memory.rows.get(saved.id).value.files).toHaveLength(2);
   expect(memory.flips.get(saved.flipId!)!.files).toHaveLength(2);
   memory.failIntent = false;
@@ -379,7 +381,7 @@ it('replays a durable removal during preparation loading after a prior transacti
   await journal.listPreparations();
   expect(memory.rows.get(saved.id).value.files.map((file: any) => file.relPath)).toEqual(['SD/GOOD.JPG']);
   expect(memory.flips.get(saved.flipId!)!.files.map((file: any) => file.relPath)).toEqual(['SD/GOOD.JPG']);
-  expect(memory.removals.size).toBe(0);
+  expect([...memory.removals.values()].find(row => row.value.preparationId === saved.id)?.value.appliedAt).toBeTruthy();
 });
 it.each(['preparation', 'flip'] as const)('keeps a replacement at the same path in the %s and surfaces an identity conflict during replay', async source => {
   const { saved } = seedMissingRemoval(`remove-conflict-${source}`);
@@ -395,11 +397,11 @@ it.each(['preparation', 'flip'] as const)('keeps a replacement at the same path 
   }
   const intent = { v: 1, id: 'remove-conflict-intent', preparationId: saved.id, flipId: saved.flipId, ownerScope: 'owner-test', relPath: 'SD/MISSING.JPG', size: 12, sha256: 'hash-missing', createdAt: new Date().toISOString() };
   memory.removals.set(intent.id, { id: intent.id, value: intent });
-  await expect(journal.listPreparations()).rejects.toThrow('different file at SD/MISSING.JPG');
+  await expect(journal.readPreparation()).rejects.toThrow('different file at SD/MISSING.JPG');
   expect(memory.rows.get(saved.id).value.files).toHaveLength(2);
   expect(memory.flips.get(saved.flipId!)!.files).toHaveLength(2);
   expect(source === 'preparation' ? memory.rows.get(saved.id).value.files[0].sha256 : memory.flips.get(saved.flipId!)!.files[0].sha256).toBe('different-content');
-  expect(memory.removals.size).toBe(1);
+  expect(memory.removals.get(intent.id)?.value.appliedAt).toBeUndefined();
   memory.removals.clear();
 });
 it('retains a durable intent when the active login does not own its Flip handoff', async () => {
@@ -407,13 +409,13 @@ it('retains a durable intent when the active login does not own its Flip handoff
   await journal.flushPreparation();
   const intent = { v: 1, id: 'remove-owner-intent', preparationId: saved.id, flipId: saved.flipId, ownerScope: 'another-owner', relPath: 'SD/MISSING.JPG', size: 12, sha256: 'hash-missing', createdAt: new Date().toISOString() };
   memory.removals.set(intent.id, { id: intent.id, value: intent });
-  await expect(journal.listPreparations()).rejects.toThrow('different connected login');
+  await expect(journal.readPreparation()).rejects.toThrow('different connected login');
   expect(memory.rows.get(saved.id).value.files).toHaveLength(2);
   expect(memory.flips.get(saved.flipId!)!.files).toHaveLength(2);
-  expect(memory.removals.size).toBe(1);
+  expect(memory.removals.get(intent.id)?.value.appliedAt).toBeUndefined();
   memory.removals.clear();
 });
-it('clears a replayed intent idempotently when both saved records already omit that identity', async () => {
+it('marks a replayed intent applied idempotently when both saved records already omit that identity', async () => {
   const { saved } = seedMissingRemoval('remove-idempotent');
   await journal.flushPreparation();
   const preparation = memory.rows.get(saved.id);
@@ -426,7 +428,40 @@ it('clears a replayed intent idempotently when both saved records already omit t
   const intent = { v: 1, id: 'remove-idempotent-intent', preparationId: saved.id, flipId: saved.flipId, ownerScope: 'owner-test', relPath: 'SD/MISSING.JPG', size: 12, sha256: 'hash-missing', createdAt: new Date().toISOString() };
   memory.removals.set(intent.id, { id: intent.id, value: intent });
   await journal.listPreparations();
-  expect(memory.removals.size).toBe(0);
+  expect(memory.removals.get(intent.id)?.value.appliedAt).toBeTruthy();
   expect(memory.rows.get(saved.id).value.files).toHaveLength(1);
   expect(memory.flips.get(saved.flipId!)!.files).toHaveLength(1);
+});
+
+it('keeps an unrelated preparation available when a sibling removal has an owner conflict', async () => {
+  memory.rows.clear(); memory.flips.clear(); memory.removals.clear();
+  const { saved } = seedMissingRemoval('remove-sibling-owner-conflict');
+  const healthy = { ...structuredClone(saved), id: 'healthy-sibling', flipId: null, files: saved.files.map(file => ({ ...file, id: `healthy/${file.fileName}`, relPath: `healthy/${file.fileName}` })) };
+  memory.rows.set(healthy.id, { id: healthy.id, value: healthy });
+  const intent = { v: 1, id: 'sibling-owner-intent', preparationId: saved.id, flipId: saved.flipId, ownerScope: 'another-owner', relPath: 'SD/MISSING.JPG', size: 12, sha256: 'hash-missing', createdAt: new Date().toISOString() };
+  memory.removals.set(intent.id, { id: intent.id, value: intent });
+  const unavailable: string[] = [];
+  const available = await journal.listPreparations(id => unavailable.push(id));
+  expect(available.map(item => item.id)).toEqual(['healthy-sibling']);
+  expect(unavailable).toEqual([saved.id]);
+  expect(memory.rows.get(healthy.id).value.files).toHaveLength(2);
+  expect(memory.removals.get(intent.id)?.value.appliedAt).toBeUndefined();
+  memory.removals.delete(intent.id);
+  memory.rows.clear(); memory.flips.clear(); memory.removals.clear();
+  memory.rows.delete(healthy.id);
+});
+
+it('does not let an older tab autosave a removed original back into its preparation', async () => {
+  const { saved } = seedMissingRemoval('remove-stale-tab-autosave');
+  await journal.flushPreparation();
+  const staleFiles = [...store.getState().files];
+  await journal.removeMissingOriginal('SD/MISSING.JPG');
+  expect(memory.rows.get(saved.id).value.files.map((file: any) => file.relPath)).toEqual(['SD/GOOD.JPG']);
+  // Another tab still has the original two-file snapshot and makes an unrelated
+  // metadata edit. Its autosave must preserve the durable removal tombstone.
+  store.setState({ files: staleFiles, uploadDescription: 'edited in stale tab' });
+  await journal.flushPreparation();
+  expect(memory.rows.get(saved.id).value.files.map((file: any) => file.relPath)).toEqual(['SD/GOOD.JPG']);
+  expect(memory.rows.get(saved.id).value.inputs.uploadDescription).toBe('edited in stale tab');
+  expect([...memory.removals.values()].some(row => row.value.preparationId === saved.id && row.value.appliedAt)).toBe(true);
 });

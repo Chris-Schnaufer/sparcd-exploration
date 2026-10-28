@@ -188,15 +188,18 @@ export type FlipReturn =
  * `restoreFromHandle`).
  */
 export async function resumeFromFlip(flipId: string): Promise<FlipReturn> {
-  // A durable missing-file intent must settle before the Tagger handoff is
-  // offered for reattachment or made visible to the preparation recovery UI.
-  await replayMissingRemovalIntents();
   const guard = recoveryGuard();
   const config = useStore.getState().s3Config;
   const ownerScope = config ? await deriveFlipOwnerScope(config) : returningFlipOwnerScope();
   if (!ownerScope) return { kind: 'not-found', message: 'Reconnect with the login that owns this batch to return it to Uploader. The saved batch has been kept.' };
-  const record = await readFlipRecord(flipId, ownerScope);
+  let record = await readFlipRecord(flipId, ownerScope);
   guard();
+  if (!record) return { kind: 'not-found', message: await flipRecordUnavailableReason(flipId, ownerScope) };
+  // Resolve only this batch's pending removals. A conflict in a sibling batch
+  // must not prevent an unrelated Tagger hand-back from being recovered.
+  await replayMissingRemovalIntents({ flipId });
+  guard();
+  record = await readFlipRecord(flipId, ownerScope);
   if (!record) return { kind: 'not-found', message: await flipRecordUnavailableReason(flipId, ownerScope) };
   return adoptRecord(record);
 }

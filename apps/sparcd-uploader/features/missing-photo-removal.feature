@@ -53,6 +53,16 @@ Feature: Remove missing originals from the saved Uploader and Tagger batch
     Then the file and its saved identification are removed from both journals
     And the file stays absent after recovery reload and Edit tags return
 
+  Scenario: A returned batch remains editable without a storage login
+    Given a batch was tagged in the Tagger and handed back
+    When the storage login is disconnected and deferred
+    Then Edit tags remains available with the batch's prepared species
+
+  Scenario: Recovery reopens saved tags with the verified owner scope
+    Given a batch was tagged in the Tagger and handed back
+    When the saved preparation recovery list is opened
+    Then the Reopen saved tags link carries the batch owner scope
+
   @touch
   Scenario: A missing original can be removed by touch at a narrow viewport
     Given a tagged batch returns with IMG_0001.JPG unavailable
