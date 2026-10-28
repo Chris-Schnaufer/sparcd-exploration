@@ -100,7 +100,7 @@ Then('the Tagger explains preparation recovery and preserves the batch', async (
   expect(record.tags['SDCARD/IMG_0002.JPG'][0].scientificName).toBe('Canis latrans');
 });
 
-async function prepareTaggedBatchWithOriginalProblem(app: App, problem: 'unavailable' | 'changed'): Promise<void> {
+async function prepareTaggedBatchWithOriginalProblem(app: App, problem: 'unavailable' | 'changed', targetNames = ['IMG_0001.JPG']): Promise<void> {
   await app.stubTagger();
   await app.page.getByRole('button', { name: 'Tag species before upload', exact: true }).click();
   await app.page.waitForURL(/\/tagger\/\?batch=/);
@@ -112,9 +112,9 @@ async function prepareTaggedBatchWithOriginalProblem(app: App, problem: 'unavail
   await app.finishFlipRecord(id, tags, 'Anita');
   await app.page.goto(`${APP_PATH}?flip=${id}`);
   app.notes.originalRemovalSpecs = app.lastSpecs;
-  const available: FileSpec[] = app.lastSpecs.filter(file => !file.path.endsWith('IMG_0001.JPG'));
+  const available: FileSpec[] = app.lastSpecs.filter(file => !targetNames.some(name => file.path.endsWith(name)));
   if (problem === 'changed') {
-    const original = app.lastSpecs.find(file => file.path.endsWith('IMG_0001.JPG'))!;
+    const original = app.lastSpecs.find(file => file.path.endsWith(targetNames[0]))!;
     const bytes = Buffer.from(original.bytes!);
     bytes[0] ^= 0xff;
     available.push({ ...original, bytes });
@@ -132,6 +132,7 @@ async function prepareTaggedBatchWithOriginalProblem(app: App, problem: 'unavail
 
 Given('a tagged batch returns with IMG_0001.JPG unavailable', async ({ app }) => prepareTaggedBatchWithOriginalProblem(app, 'unavailable'));
 Given('a tagged batch returns with IMG_0001.JPG changed', async ({ app }) => prepareTaggedBatchWithOriginalProblem(app, 'changed'));
+Given('a tagged batch returns with IMG_0001.JPG and IMG_0002.JPG unavailable', async ({ app }) => prepareTaggedBatchWithOriginalProblem(app, 'unavailable', ['IMG_0001.JPG', 'IMG_0002.JPG']));
 
 When('the missing original is removed by {string}', async ({ app }, action: string) => {
   const remove = app.page.getByRole('button', { name: 'Remove unavailable or changed original IMG_0001.JPG', exact: true });
@@ -168,6 +169,15 @@ When('the file list is filtered to only the unavailable original', async ({ app 
   await app.page.getByRole('button', { name: /need attention/ }).click();
   await expect(app.page.getByRole('button', { name: 'Remove unavailable or changed original IMG_0001.JPG', exact: true })).toBeVisible();
   await expect(app.page.getByRole('button', { name: 'Preview IMG_0002.JPG', exact: true })).toHaveCount(0);
+});
+
+When('the last filtered original IMG_0002.JPG is removed', async ({ app }) => {
+  await app.page.getByRole('button', { name: /need attention/ }).click();
+  const remove = app.page.getByRole('button', { name: 'Remove unavailable or changed original IMG_0002.JPG', exact: true });
+  await expect(remove).toHaveAccessibleDescription(/recovered batch and saved Tagger handoff/);
+  await remove.click();
+  await expect(remove).toHaveCount(0);
+  await expect(app.page.getByRole('button', { name: 'Preview IMG_0001.JPG', exact: true })).toBeFocused();
 });
 
 When('that last displayed original is removed', async ({ app }) => {

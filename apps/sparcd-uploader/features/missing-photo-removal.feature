@@ -29,6 +29,10 @@ Feature: Remove missing originals from the saved Uploader and Tagger batch
     When the file list is filtered to only the unavailable original
     And that last displayed original is removed
 
+  Scenario: Focus moves to the previous file when the last filtered row is removed
+    Given a tagged batch returns with IMG_0001.JPG and IMG_0002.JPG unavailable
+    When the last filtered original IMG_0002.JPG is removed
+
   Scenario: The named Remove control works with keyboard activation
     Given a tagged batch returns with IMG_0001.JPG unavailable
     When the remove control is activated with the keyboard
