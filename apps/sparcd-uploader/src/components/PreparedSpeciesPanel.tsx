@@ -1,4 +1,5 @@
 import { readBoundPreparationSpecies, acceptPreparationSpecies } from '../lib/preparation';
+import { returningFlipOwnerScope } from '../lib/flip';
 import { useEffect, useRef, useState } from 'react';
 import { useOnline, useKeyBindings, activeKeyProfile } from '@sparcd/auth-ui';
 import { bindPreparedSpecies, deriveFlipOwnerScope, loadPreparedSpecies, readFlipRecord, savePreparedSpecies, validPreparedSpecies, type PreparedSpecies } from '@sparcd/flip';
@@ -33,7 +34,9 @@ export function PreparedSpeciesPanel({ onReady }: { onReady: (ready: boolean) =>
     setSelected(null); setResult(null); setSnapshot(null); setError(''); setBusy(false);
     onReady(false);
     void (async () => {
-      const ownerScope = cfg ? await deriveFlipOwnerScope(cfg) : undefined;
+      // A connected login takes precedence; offline return uses the same
+      // verified scope as file recovery and reopening Tagger.
+      const ownerScope = cfg ? await deriveFlipOwnerScope(cfg) : returningFlipOwnerScope();
       const saved = flipId
         ? ownerScope ? (await readFlipRecord(flipId, ownerScope))?.preparedSpecies : null
         : useStore.getState().files.length ? await readBoundPreparationSpecies() : await loadPreparedSpecies(cfg ?? undefined);

@@ -367,6 +367,14 @@ it('preserves the prepared owner through an offline handoff and return, while re
   useStore.setState({ s3Config: { ...TEST_CONFIG, accessKey: 'different-login' } });
   expect(await resumeFromFlip(record.id)).toMatchObject({ kind: 'not-found' });
   await expect(adoptRecord(record)).rejects.toThrow('not available for the connected login');
+  useStore.setState({ s3Config: null });
+  window.location.search = `?flip=${record.id}&ownerScope=invalid`;
+  expect(await resumeFromFlip(record.id)).toMatchObject({ kind: 'not-found' });
+  await expect(reopenTagger(record.id)).rejects.toThrow('Reconnect with the login');
+  window.location.search = `?flip=${record.id}&ownerScope=${encodeURIComponent(testOwnerScope)}`;
+  await reopenTagger(record.id);
+  expect(window.location.href).toContain(`batch=${record.id}&ownerScope=${encodeURIComponent(testOwnerScope)}`);
+  expect(stored.record).toEqual(record);
 });
 
 it('captures a live picker FileList before asynchronous ownership checks', async () => {

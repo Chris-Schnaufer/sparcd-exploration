@@ -113,7 +113,7 @@ export async function handOffToTagger(): Promise<void> {
 export async function reopenTagger(flipId: string): Promise<void> {
   const guard = recoveryGuard();
   const config = useStore.getState().s3Config;
-  const ownerScope = config ? await deriveFlipOwnerScope(config) : returningOwnerScope();
+  const ownerScope = config ? await deriveFlipOwnerScope(config) : returningFlipOwnerScope();
   if (!ownerScope) throw new Error('Reconnect with the login that owns this batch before reopening Tagger.');
   const record = await readFlipRecord(flipId, ownerScope);
   if (!record) throw new Error('This batch is not available for the connected login. Its saved work has been kept.');
@@ -189,7 +189,7 @@ export type FlipReturn =
 export async function resumeFromFlip(flipId: string): Promise<FlipReturn> {
   const guard = recoveryGuard();
   const config = useStore.getState().s3Config;
-  const ownerScope = config ? await deriveFlipOwnerScope(config) : returningOwnerScope();
+  const ownerScope = config ? await deriveFlipOwnerScope(config) : returningFlipOwnerScope();
   if (!ownerScope) return { kind: 'not-found', message: 'Reconnect with the login that owns this batch to return it to Uploader. The saved batch has been kept.' };
   const record = await readFlipRecord(flipId, ownerScope);
   guard();
@@ -271,14 +271,15 @@ async function attach(record: FlipRecord, attached: Map<string, File>, guard: ()
   if (preparation) useStore.setState({ mountainRange: '', dateCollected: '', uploadCommentDate: null, ...preparation.inputs });
 }
 
-function returningOwnerScope(): string | null {
+/** The validated scope carried by an explicit offline return from Tagger. */
+export function returningFlipOwnerScope(): string | null {
   const scope = new URLSearchParams(window.location.search).get('ownerScope');
   return isValidFlipOwnerScope(scope) ? scope : null;
 }
 
 async function assertRecordOwner(record: FlipRecord): Promise<string> {
   const config = useStore.getState().s3Config;
-  const ownerScope = config ? await deriveFlipOwnerScope(config) : returningOwnerScope();
+  const ownerScope = config ? await deriveFlipOwnerScope(config) : returningFlipOwnerScope();
   if (!record.ownerScope || ownerScope !== record.ownerScope) {
     throw new Error('This batch is not available for the connected login. Its saved work has been kept.');
   }
