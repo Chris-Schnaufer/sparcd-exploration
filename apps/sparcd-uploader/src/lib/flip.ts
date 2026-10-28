@@ -13,7 +13,7 @@
 
 import {
   newFlipId,
-  flipRecordUnavailableReason,
+  deriveFlipOwnerScope,
   loadPreparedSpecies,
   readFlipRecord,
   writeFlipRecord,
@@ -76,6 +76,8 @@ const toFlipFile = (f: FileEntry, estimate: CaptureEstimate | undefined): FlipFi
  */
 export async function handOffToTagger(): Promise<void> {
   const s = useStore.getState();
+  if (!s.s3Config) throw new Error('Connect with the login that owns this batch before opening Tagger. Your inspected files and tags are unchanged.');
+  const ownerScope = await deriveFlipOwnerScope(s.s3Config);
   const guard = recoveryGuard();
   await flushPreparation();
   const preparation = await readPreparation();
@@ -95,21 +97,27 @@ export async function handOffToTagger(): Promise<void> {
     files: s.files.filter((f) => f.processState === 'ready' && f.sha256).map((f) => toFlipFile(f, estimates.get(f.id))),
     tags: Object.fromEntries(s.files.filter(f => f.preTags?.length).map(f => [f.relPath, f.preTags!])),
     preparedSpecies: structuredClone(preparedSpecies),
+    ownerScope,
   });
   if (useStore.getState().batchToken !== s.batchToken || useStore.getState().s3Config !== s.s3Config) throw new Error('The batch or connection changed. Try tagging again.');
   guard();
   useStore.setState({ flipId: id });
   await flushPreparation();
   guard();
-  window.location.href = taggerBatchUrl(id);
+  window.location.href = taggerBatchUrl(id, ownerScope);
 }
 
 /** Re-enter the same tagging session — drafts live tagger-side, so it resumes. */
 export async function reopenTagger(flipId: string): Promise<void> {
   const guard = recoveryGuard();
+  const config = useStore.getState().s3Config;
+  if (!config) throw new Error('Reconnect with the login that owns this batch before reopening Tagger.');
+  const ownerScope = await deriveFlipOwnerScope(config);
+  const record = await readFlipRecord(flipId, ownerScope);
+  if (!record) throw new Error('This batch is not available for the connected login. Its saved work has been kept.');
   await flushPreparation();
   guard();
-  window.location.href = taggerBatchUrl(flipId);
+  window.location.href = taggerBatchUrl(flipId, ownerScope);
 }
 
 const toFileEntry = (f: FlipFile, file: File, record: FlipRecord): FileEntry => ({
@@ -178,15 +186,19 @@ export type FlipReturn =
  */
 export async function resumeFromFlip(flipId: string): Promise<FlipReturn> {
   const guard = recoveryGuard();
-  const record = await readFlipRecord(flipId);
+  const config = useStore.getState().s3Config;
+  if (!config) return { kind: 'not-found', message: 'Reconnect with the login that owns this batch to return it to Uploader. The saved batch has been kept.' };
+  const ownerScope = await deriveFlipOwnerScope(config);
+  const record = await readFlipRecord(flipId, ownerScope);
   guard();
-  if (!record) return { kind: 'not-found', message: await flipRecordUnavailableReason(flipId) };
+  if (!record) return { kind: 'not-found', message: 'This batch is not available for the connected login. Reconnect with the login that started it; the saved batch has been kept.' };
   return adoptRecord(record);
 }
 
 /** The retry a "Reopen batch" click drives, with the record already in hand. */
 export async function adoptRecord(record: FlipRecord): Promise<FlipReturn> {
   const guard = recoveryGuard();
+  await assertRecordOwner(record);
   if (!record.dirHandle) return { kind: 'needs-reselect', record };
 
   const restore = await restoreFromHandle(
@@ -205,8 +217,10 @@ export async function adoptRecord(record: FlipRecord): Promise<FlipReturn> {
  * verification. The picker can stay open while another tab disconnects. */
 export async function reselectFlip(record: FlipRecord, list?: FileList): Promise<void> {
   const guard = recoveryGuard();
+  await assertRecordOwner(record);
   const picked = await reselectFolder(list);
   guard();
+  await assertRecordOwner(record);
   if (picked) await adoptReselected(record, picked.scanned);
 }
 
@@ -216,6 +230,7 @@ export async function adoptReselected(
   scanned: { relPath: string; size: number; file: File }[],
 ): Promise<void> {
   const guard = recoveryGuard();
+  await assertRecordOwner(record);
   const result = await reconcileReselect(
     record.files.map(f => ({ localPath: f.relPath, fileName: f.fileName, size: f.size, sha256: f.sha256 })),
     scanned.map(f => ({ ...f, id: f.relPath, fileName: f.file.name, mediaKind: record.files.find(r => r.relPath === f.relPath)?.mediaKind ?? 'image' })) as ScannedFile[],
@@ -242,4 +257,12 @@ async function attach(record: FlipRecord, attached: Map<string, File>, guard: ()
     dirHandle: record.dirHandle ?? null,
   });
   if (preparation) useStore.setState({ mountainRange: '', dateCollected: '', uploadCommentDate: null, ...preparation.inputs });
+}
+
+async function assertRecordOwner(record: FlipRecord): Promise<string> {
+  const config = useStore.getState().s3Config;
+  if (!config || !record.ownerScope || await deriveFlipOwnerScope(config) !== record.ownerScope) {
+    throw new Error('This batch is not available for the connected login. Its saved work has been kept.');
+  }
+  return record.ownerScope;
 }

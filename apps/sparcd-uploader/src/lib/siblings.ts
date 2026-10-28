@@ -9,8 +9,8 @@ const familyRoot = (): string => {
 };
 
 /** Where the uploader sends the user to tag a handed-over batch. */
-export const taggerBatchUrl = (flipId: string): string =>
-  `${familyRoot()}tagger/?batch=${encodeURIComponent(flipId)}`;
+export const taggerBatchUrl = (flipId: string, ownerScope: string): string =>
+  `${familyRoot()}tagger/?batch=${encodeURIComponent(flipId)}&ownerScope=${encodeURIComponent(ownerScope)}`;
 
 /** Where the tagger sends them back to, stamped into the record it reads. */
 export const uploaderReturnUrl = (flipId: string): string =>

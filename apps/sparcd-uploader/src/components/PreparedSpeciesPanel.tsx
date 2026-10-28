@@ -1,7 +1,7 @@
 import { readBoundPreparationSpecies, acceptPreparationSpecies } from '../lib/preparation';
 import { useEffect, useRef, useState } from 'react';
 import { useOnline, useKeyBindings, activeKeyProfile } from '@sparcd/auth-ui';
-import { bindPreparedSpecies, loadPreparedSpecies, readFlipRecord, savePreparedSpecies, validPreparedSpecies, type PreparedSpecies } from '@sparcd/flip';
+import { bindPreparedSpecies, deriveFlipOwnerScope, loadPreparedSpecies, readFlipRecord, savePreparedSpecies, validPreparedSpecies, type PreparedSpecies } from '@sparcd/flip';
 import type { SpeciesResult } from '@sparcd/s3-safe';
 import { useStore } from '../store';
 import { useCollections } from '../lib/useCollections';
@@ -33,7 +33,10 @@ export function PreparedSpeciesPanel({ onReady }: { onReady: (ready: boolean) =>
     setSelected(null); setResult(null); setSnapshot(null); setError(''); setBusy(false);
     onReady(false);
     void (async () => {
-      const saved = flipId ? (await readFlipRecord(flipId))?.preparedSpecies : useStore.getState().files.length ? await readBoundPreparationSpecies() : await loadPreparedSpecies(cfg ?? undefined);
+      const ownerScope = cfg ? await deriveFlipOwnerScope(cfg) : undefined;
+      const saved = flipId
+        ? ownerScope ? (await readFlipRecord(flipId, ownerScope))?.preparedSpecies : null
+        : useStore.getState().files.length ? await readBoundPreparationSpecies() : cfg ? await loadPreparedSpecies(cfg) : null;
       if (generation.current !== attempt) return;
       if (validPreparedSpecies(saved)) { setSnapshot(saved); acceptPreparationSpecies(saved); onReady(true); }
     })().catch(() => {
@@ -55,7 +58,7 @@ export function PreparedSpeciesPanel({ onReady }: { onReady: (ready: boolean) =>
       if (changes) return;
       const prepared = await snapshotPreparation(cfg, collection, loaded);
       if (attempt !== generation.current || useStore.getState().s3Config !== cfg) return;
-      if (flipId) await bindPreparedSpecies(flipId, prepared);
+      if (flipId) await bindPreparedSpecies(flipId, prepared, await deriveFlipOwnerScope(cfg));
       else {
         await savePreparedSpecies(prepared);
         if (attempt !== generation.current || useStore.getState().s3Config !== cfg) return;

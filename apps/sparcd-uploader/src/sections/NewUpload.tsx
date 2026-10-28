@@ -329,9 +329,8 @@ function useFlipReturn(): FlipPending | null {
   useEffect(() => {
     const id = returningFlipId();
     if (!id) return;
-    void resumeFromFlip(id).then((r) => setState(r.kind === 'restored' ? null : r)).catch(async () => {
-      const { readFlipRecord } = await import('@sparcd/flip');
-      try { const record = await readFlipRecord(id); setState(record ? { kind: 'needs-reselect', record } : { kind: 'not-found' }); } catch { setState({ kind: 'not-found' }); }
+    void resumeFromFlip(id).then((r) => setState(r.kind === 'restored' ? null : r)).catch(() => {
+      setState({ kind: 'not-found', message: 'This batch is unavailable for the connected login. Its saved work has been kept.' });
     });
   }, []);
 

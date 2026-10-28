@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { readFlipRecord, validPreparedSpecies } from '@sparcd/flip';
+import { deriveFlipOwnerScope, readFlipRecord, validPreparedSpecies } from '@sparcd/flip';
 import { diffSpecies, activeKeyProfile, useKeyBindings } from '@sparcd/auth-ui';
 import type { CollectionRef } from '@sparcd/s3-safe';
 import { useStore } from '../store';
@@ -27,7 +27,8 @@ export function PreparedAssignmentGate({ collection, onReady }: { collection: Co
     if (!cfg || !collection) return;
     setMessage('Checking the prepared species against the assigned collection…');
     void (async () => {
-      const snapshot = (await readFlipRecord(flipId))?.preparedSpecies;
+      const ownerScope = await deriveFlipOwnerScope(cfg);
+      const snapshot = (await readFlipRecord(flipId, ownerScope))?.preparedSpecies;
       if (!validPreparedSpecies(snapshot)) throw new Error('This batch needs species prepared online. Return to Inspect to prepare its list; existing tags are preserved.');
       const loaded = await fetchPreparation(cfg, collection);
       if (!current) return;
@@ -35,7 +36,7 @@ export function PreparedAssignmentGate({ collection, onReady }: { collection: Co
       const source = `${loaded.sourceBucket}/${loaded.sourceKey}`;
       reviewSource.current = { profile, source };
       const pending = activeKeyProfile(useKeyBindings.getState()).speciesSources?.[source]?.pendingSpeciesChange;
-      const { missing, changed } = assessPreparedAssignment(snapshot, loaded, cfg, collection.key, tags);
+      const { missing, changed } = await assessPreparedAssignment(snapshot, loaded, cfg, collection.key, tags);
       if (missing.length) {
         setIncompatible(true);
         setMessage(`These identifications are not in the assigned collection’s current species list: ${missing.join(', ')}. Return to Inspect and review the tags before uploading. No tags have been removed.`);
