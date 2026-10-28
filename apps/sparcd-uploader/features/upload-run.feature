@@ -202,12 +202,12 @@ Feature: Upload and publish a batch
   Scenario: Upload availability is visible as the browser goes offline and online
     Given the upload has not been started
     When the browser reports offline before upload
-    Then the upload status says it is offline and real upload is disabled
+    Then the paused offline status message is shown and real upload is disabled
     And dry run remains available while offline
     When the operator allows a real upload while offline
-    Then the real upload action is available despite the offline signal
+    Then real upload is enabled with the offline opt-in status message
     When the browser reports online again
-    Then the upload status says it is online and real upload is enabled
+    Then the online status message is shown and real upload is enabled
 
   @unmapped
   Scenario: A transient error during the resume verify pass is retried rather than counted as a file failure
