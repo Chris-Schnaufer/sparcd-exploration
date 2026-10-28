@@ -2,7 +2,7 @@ import { loadMasterSpecies } from './masterSpecies';
 // The pre-upload journal is separate from real-upload sessions and credentials.
 // A single IndexedDB transaction replaces the snapshot: interrupted writes keep
 // the previous version. Original File bytes never enter this record.
-import { deriveFlipOwnerScope, flipDb, readFlipRecord, validPreparedSpecies, type PreparedSpecies } from '@sparcd/flip';
+import { deriveFlipOwnerScope, flipDb, loadPreparedSpecies, readFlipRecord, validPreparedSpecies, type PreparedSpecies, type FlipRecord } from '@sparcd/flip';
 import { useStore, type FileEntry } from '../store';
 import { reconcileReselect, restoreFromHandle, type RestoreOk } from './resume';
 import type { ScannedFile } from './scanFiles';
@@ -17,6 +17,18 @@ export type LocalPreparation = {
   species: PreparedSpecies | null;
   inputs: Pick<ReturnType<typeof useStore.getState>, 'selectedBucket' | 'selectedLocationId' | 'uploadDescription' | 'uploadTimeZone'> & Partial<Pick<ReturnType<typeof useStore.getState>, 'mountainRange' | 'dateCollected' | 'uploadCommentDate'>>;
 };
+type MissingRemovalIntent = { v: 1; id: string; preparationId: string; flipId: string | null; ownerScope?: string; relPath: string; size: number; sha256: string; createdAt: string };
+const pendingMissingRemovals = new Map<string, { intentId: string; preparationId: string; relPath: string; fileName: string; error: string }>();
+let failedRemovalRequest: { fileId: string; preparationId: string; flipId: string | null; relPath: string; size: number; sha256: string } | null = null;
+const removalListeners = new Set<() => void>();
+let removalMessage = '';
+let removalRevision = 0;
+export const missingRemovalStatus = () => removalMessage;
+export const missingRemovalVersion = () => removalRevision;
+export const subscribeMissingRemoval = (listener: () => void) => { removalListeners.add(listener); return () => { removalListeners.delete(listener); }; };
+function reportMissingRemoval(message: string) { removalMessage = message; removalRevision++; for (const listener of removalListeners) listener(); }
+export function isMissingRemovalPending(fileId: string): boolean { return pendingMissingRemovals.has(fileId); }
+export function isAnyMissingRemovalPending(): boolean { return pendingMissingRemovals.size > 0; }
 let installed = false;
 let batchSpecies: PreparedSpecies | null = null;
 let lastToken = -1;
@@ -24,6 +36,7 @@ let preparationId = '';
 let nextSpecies: PreparedSpecies | null = null;
 let nextConnection: unknown;
 let speciesRead: Promise<PreparedSpecies | null> = Promise.resolve(null);
+let skipNextPreparationFileSnapshot = false;
 /** Reject asynchronous restoration after a new batch or connection takes ownership. */
 export function recoveryGuard(): () => void {
   const { batchToken, connectionId } = useStore.getState();
@@ -62,7 +75,13 @@ const writes = new PreparationQueue(failed => report(failed
 export const preparationStatus = () => status;
 export const subscribePreparation = (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; };
 function report(message: string) { status = message; for (const listener of listeners) listener(); }
+function removeStoreFileAfterDurableCommit(fileId: string): void {
+  skipNextPreparationFileSnapshot = true;
+  try { useStore.getState().removeFile(fileId); }
+  finally { skipNextPreparationFileSnapshot = false; }
+}
 export async function listPreparations(onUnavailable?: (id: string) => void): Promise<LocalPreparation[]> {
+  await replayMissingRemovalIntents();
   const rows = await flipDb.preparations.toArray();
   const unique = new Map<string, LocalPreparation>();
   for (const row of rows) {
@@ -75,11 +94,168 @@ export async function listPreparations(onUnavailable?: (id: string) => void): Pr
   return [...unique.values()].sort((a, b) => b.savedAt.localeCompare(a.savedAt));
 }
 export async function readPreparationForFlip(flipId: string): Promise<LocalPreparation | null> {
+  await replayMissingRemovalIntents();
   // Validate matching journals only: unrelated damaged/future records cannot
   // strand a healthy Flip return. A damaged matching record remains an error.
   const rows = await flipDb.preparations.toArray();
   const matching = rows.filter(row => row.value && typeof row.value === 'object' && 'flipId' in row.value && row.value.flipId === flipId);
   return matching.map(row => validatePreparation(row.value)!).sort((a, b) => b.savedAt.localeCompare(a.savedAt))[0] ?? null;
+}
+
+function sameRemovalTarget(file: { relPath?: unknown; size?: unknown; sha256?: unknown }, intent: MissingRemovalIntent): boolean {
+  return file.relPath === intent.relPath && file.size === intent.size && file.sha256 === intent.sha256;
+}
+function assertRemovalTarget(file: { relPath?: unknown; size?: unknown; sha256?: unknown }, intent: MissingRemovalIntent, source: string): void {
+  if (file.relPath !== intent.relPath) return;
+  if (!sameRemovalTarget(file, intent)) throw new Error(`${source} now contains a different file at ${intent.relPath}. The saved record was kept; review it before removing anything.`);
+}
+async function applyMissingRemovalIntent(intent: MissingRemovalIntent): Promise<void> {
+  let ownerConnectionId: number | null = null;
+  if (intent.flipId) {
+    const state = useStore.getState();
+    if (!state.s3Config) throw new Error('Reconnect with the login that owns this Tagger handoff before retrying its removal.');
+    ownerConnectionId = state.connectionId;
+    const ownerScope = await deriveFlipOwnerScope(state.s3Config);
+    if (ownerScope !== intent.ownerScope || useStore.getState().connectionId !== ownerConnectionId) {
+      throw new Error('This removal belongs to a different connected login. Reconnect with the login that owns this batch and retry.');
+    }
+  }
+  await flipDb.transaction('rw', flipDb.preparations, flipDb.records, flipDb.removalIntents, async () => {
+    if (ownerConnectionId !== null && useStore.getState().connectionId !== ownerConnectionId) {
+      throw new Error('The connected login changed during removal. The saved records were kept; reconnect to the batch owner and retry.');
+    }
+    const preparationRow = await flipDb.preparations.get(intent.preparationId);
+    if (preparationRow) {
+      const preparation = validatePreparation(preparationRow.value);
+      if (!preparation || preparation.id !== intent.preparationId) throw new Error('The saved preparation changed and could not be safely updated. Keep it open and retry.');
+      const entry = preparation.files.find(file => file.relPath === intent.relPath);
+      if (entry) {
+        assertRemovalTarget(entry, intent, 'The saved preparation');
+        preparation.files = preparation.files.filter(file => file.relPath !== intent.relPath);
+        if (preparation.files.length) {
+          preparation.savedAt = new Date().toISOString();
+          await flipDb.preparations.put({ id: intent.preparationId, value: preparation });
+        } else await flipDb.preparations.delete(intent.preparationId);
+      }
+    }
+    if (intent.flipId) {
+      const record = await flipDb.records.get(intent.flipId);
+      if (record) {
+        if (record.ownerScope !== intent.ownerScope) throw new Error('The saved Tagger handoff ownership changed. Its record was kept; reconnect to the original login and retry.');
+        const entry = record.files.find(file => file.relPath === intent.relPath);
+        if (entry) {
+          assertRemovalTarget(entry, intent, 'The saved Tagger handoff');
+          const tags = { ...record.tags };
+          delete tags[intent.relPath];
+          const updated: FlipRecord = { ...record, files: record.files.filter(file => file.relPath !== intent.relPath), tags, usedAt: new Date().toISOString(), revision: (record.revision ?? 0) + 1 };
+          await flipDb.records.put(updated);
+        }
+      }
+    }
+    await flipDb.removalIntents.delete(intent.id);
+  });
+}
+export async function replayMissingRemovalIntents(): Promise<void> {
+  const rows = await flipDb.removalIntents.toArray();
+  const completed: MissingRemovalIntent[] = [];
+  for (const row of rows) {
+    const intent = row.value as MissingRemovalIntent;
+    if (!intent || intent.v !== 1 || intent.id !== row.id || typeof intent.preparationId !== 'string' || typeof intent.relPath !== 'string' || !Number.isFinite(intent.size) || typeof intent.sha256 !== 'string' || !intent.sha256) {
+      throw new Error('A saved removal needs recovery. Its journal is invalid; keep this browser data and contact support.');
+    }
+    try {
+      await applyMissingRemovalIntent(intent);
+      completed.push(intent);
+    } catch (error) {
+      const message = (error as Error).message;
+      for (const [fileId, pending] of pendingMissingRemovals) if (pending.intentId === intent.id) pendingMissingRemovals.set(fileId, { ...pending, error: message });
+      finalizeReplayedRemovals(completed);
+      reportMissingRemoval(`Could not replay the saved removal for ${intent.relPath}. ${message}`);
+      throw error;
+    }
+  }
+  finalizeReplayedRemovals(completed);
+  if (completed.length) reportMissingRemoval('Removed file from the saved preparation and Tagger handoff.');
+}
+function finalizeReplayedRemovals(completed: MissingRemovalIntent[]): void {
+  if (!completed.length) return;
+  const current = useStore.getState();
+  for (const intent of completed) {
+    for (const [fileId, pending] of pendingMissingRemovals) {
+      if (pending.intentId !== intent.id) continue;
+      if (preparationId === intent.preparationId) {
+        const file = current.files.find(entry => entry.id === fileId && entry.relPath === intent.relPath);
+        if (file) removeStoreFileAfterDurableCommit(fileId);
+      }
+      pendingMissingRemovals.delete(fileId);
+    }
+  }
+}
+export async function removeMissingOriginal(fileId: string): Promise<void> {
+  if (pendingMissingRemovals.has(fileId)) return;
+  if (pendingMissingRemovals.size) throw new Error('Finish or retry the pending removal before removing another original.');
+  const state = useStore.getState();
+  const file = state.files.find(entry => entry.id === fileId && entry.needsOriginal);
+  if (!file) throw new Error('This file no longer needs recovery. Refresh the file list and try again.');
+  const retryRequest = { fileId, preparationId, flipId: state.flipId, relPath: file.relPath, size: file.size, sha256: file.sha256 ?? '' };
+  let saved: LocalPreparation;
+  let flip: FlipRecord | undefined;
+  try {
+    await flushPreparation();
+    const current = await readPreparation();
+    if (!current) throw new Error('The saved preparation could not be found.');
+    const savedFile = current.files.find(entry => entry.relPath === file.relPath);
+    if (!savedFile || !savedFile.sha256 || !file.sha256 || savedFile.size !== file.size || savedFile.sha256 !== file.sha256) throw new Error('The saved preparation no longer matches this file identity. Refresh the recovered batch before removing it.');
+    saved = current;
+    flip = saved.flipId ? await flipDb.records.get(saved.flipId) : undefined;
+    if (saved.flipId) {
+      const currentState = useStore.getState();
+      if (!flip?.ownerScope || !currentState.s3Config) throw new Error('The Tagger handoff owner could not be verified. Reconnect to the login that owns this batch before removing it.');
+      const ownerScope = await deriveFlipOwnerScope(currentState.s3Config);
+      if (ownerScope !== flip.ownerScope || useStore.getState().connectionId !== currentState.connectionId) throw new Error('This Tagger handoff belongs to a different connected login. Reconnect to its owner before removing it.');
+    }
+  } catch (error) {
+    failedRemovalRequest = retryRequest;
+    reportMissingRemoval(`Could not prepare the removal for ${file.fileName}. The file remains in the list. ${(error as Error).message}`);
+    throw error;
+  }
+  const intent: MissingRemovalIntent = { v: 1, id: crypto.randomUUID(), preparationId: saved.id, flipId: saved.flipId, ownerScope: flip?.ownerScope, relPath: file.relPath, size: file.size, sha256: file.sha256!, createdAt: new Date().toISOString() };
+  // The intent is the commit point: a failed journal write leaves the file visible.
+  try { await flipDb.removalIntents.put({ id: intent.id, value: intent }); }
+  catch (error) {
+    failedRemovalRequest = retryRequest;
+    reportMissingRemoval(`Could not save the removal request for ${file.fileName}. The file remains in the list. ${(error as Error).message}`);
+    throw error;
+  }
+  failedRemovalRequest = null;
+  pendingMissingRemovals.set(fileId, { intentId: intent.id, preparationId: saved.id, relPath: file.relPath, fileName: file.fileName, error: '' });
+  reportMissingRemoval(`Removing ${file.fileName} from the saved batch…`);
+  try {
+    await applyMissingRemovalIntent(intent);
+    pendingMissingRemovals.delete(fileId);
+    // Only after both durable records agree do we alter the autosaved store.
+    removeStoreFileAfterDurableCommit(fileId);
+    reportMissingRemoval(`Removed ${file.fileName} from this batch and its saved Tagger handoff.`);
+  } catch (error) {
+    const message = (error as Error).message;
+    pendingMissingRemovals.set(fileId, { intentId: intent.id, preparationId: saved.id, relPath: file.relPath, fileName: file.fileName, error: message });
+    reportMissingRemoval(`Could not finish removing ${file.fileName}. ${message}`);
+    throw error;
+  }
+}
+export async function retryMissingOriginalRemovals(): Promise<void> {
+  await replayMissingRemovalIntents();
+  const request = failedRemovalRequest;
+  failedRemovalRequest = null;
+  if (!request) return;
+  const currentState = useStore.getState();
+  const currentFile = currentState.files.find(file => file.id === request.fileId && file.needsOriginal);
+  if (preparationId !== request.preparationId || currentState.flipId !== request.flipId || !currentFile || currentFile.relPath !== request.relPath || currentFile.size !== request.size || currentFile.sha256 !== request.sha256) {
+    const error = new Error('The batch changed after this removal failed. Review the current batch before retrying.');
+    reportMissingRemoval(`Could not prepare the removal again. ${error.message}`);
+    throw error;
+  }
+  await removeMissingOriginal(request.fileId);
 }
 /** The in-memory binding also exists when durable writes fail. Never substitute
  * another window's selected cache for a batch with no prepared vocabulary. */
@@ -88,6 +264,7 @@ export async function readBoundPreparationSpecies(): Promise<PreparedSpecies | n
   return validPreparedSpecies(species) ? species : null;
 }
 export async function readPreparation(): Promise<LocalPreparation | null> {
+  await replayMissingRemovalIntents();
   if (!preparationId) return null;
   return validatePreparation((await flipDb.preparations.get(preparationId))?.value);
 }
@@ -117,6 +294,7 @@ export function startPreparationJournal(): void {
   if (installed) return;
   installed = true;
   useStore.subscribe((s, previous) => {
+    if (skipNextPreparationFileSnapshot && s.files !== previous.files) { skipNextPreparationFileSnapshot = false; return; }
     const changed = s.files !== previous.files || s.flipId !== previous.flipId || s.selectedBucket !== previous.selectedBucket || s.selectedLocationId !== previous.selectedLocationId || s.uploadDescription !== previous.uploadDescription || s.uploadTimeZone !== previous.uploadTimeZone || s.mountainRange !== previous.mountainRange || s.dateCollected !== previous.dateCollected || s.uploadCommentDate !== previous.uploadCommentDate;
     const snap = s.activeSnap;
     // Consume the transition, not a lingering done snapshot. A History run may

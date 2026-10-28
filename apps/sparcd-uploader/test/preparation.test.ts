@@ -1,9 +1,10 @@
 import { beforeAll, expect, it, vi } from 'vitest';
 const storage = () => { const values = new Map<string, string>(); return { getItem: (k: string) => values.get(k) ?? null, setItem: (k: string, v: string) => values.set(k, v), removeItem: (k: string) => values.delete(k) }; };
 Object.assign(globalThis, { window: Object.assign(globalThis, { addEventListener() {}, removeEventListener() {}, localStorage: storage(), sessionStorage: storage() }) });
-const memory = vi.hoisted(() => ({ rows: new Map<string, any>(), flips: new Map<string, any>(), fail: false, hold: null as Promise<void> | null, entered: () => {}, puts: 0 }));
+const memory = vi.hoisted(() => ({ rows: new Map<string, any>(), flips: new Map<string, any>(), removals: new Map<string, any>(), fail: false, failIntent: false, failAtomicStage: '' as '' | 'preparation' | 'flip', inTransaction: false, hold: null as Promise<void> | null, entered: () => {}, puts: 0 }));
 vi.mock('@sparcd/flip', async original => ({ ...(await original<typeof import('@sparcd/flip')>()),
-  flipDb: { transaction: async (_mode: string, _table: unknown, work: () => Promise<void>) => work(), preparations: { toArray: async () => structuredClone([...memory.rows.values()]), get: async (id: string) => structuredClone(memory.rows.get(id)), put: async (row: any) => { memory.puts++; memory.entered(); await memory.hold; if (memory.fail) throw new Error('QuotaExceededError'); memory.rows.set(row.id, structuredClone(row)); }, delete: async (id: string) => { memory.rows.delete(id); } } },
+  deriveFlipOwnerScope: async () => 'owner-test',
+  flipDb: { transaction: async (_mode: string, ...args: any[]) => { const work = args.at(-1); const rows = structuredClone([...memory.rows]); const flips = structuredClone([...memory.flips]); const removals = structuredClone([...memory.removals]); memory.inTransaction = true; try { return await work(); } catch (error) { memory.rows = new Map(rows); memory.flips = new Map(flips); memory.removals = new Map(removals); throw error; } finally { memory.inTransaction = false; } }, preparations: { toArray: async () => structuredClone([...memory.rows.values()]), get: async (id: string) => structuredClone(memory.rows.get(id)), put: async (row: any) => { memory.puts++; memory.entered(); await memory.hold; if (memory.fail || memory.inTransaction && memory.failAtomicStage === 'preparation') throw new Error('QuotaExceededError'); memory.rows.set(row.id, structuredClone(row)); }, delete: async (id: string) => { memory.rows.delete(id); } }, records: { get: async (id: string) => structuredClone(memory.flips.get(id)), put: async (row: any) => { if (memory.inTransaction && memory.failAtomicStage === 'flip') throw new Error('QuotaExceededError'); memory.flips.set(row.id, structuredClone(row)); } }, removalIntents: { toArray: async () => structuredClone([...memory.removals.values()]), get: async (id: string) => structuredClone(memory.removals.get(id)), put: async (row: any) => { if (memory.failIntent) throw new Error('QuotaExceededError'); memory.removals.set(row.id, structuredClone(row)); }, delete: async (id: string) => { memory.removals.delete(id); } } },
   loadPreparedSpecies: async () => null,
   readFlipRecord: async (id: string) => memory.flips.get(id) ?? null,
 }));
@@ -292,4 +293,140 @@ it('uses a refreshed master list for an immediately selected next batch without 
   await journal.flushPreparation();
   expect((await journal.readPreparation())?.species).toEqual(fresh);
   store.getState().resetBatch(); await journal.flushPreparation(); memory.rows.clear();
+});
+
+function seedMissingRemoval(id: string, withFlip = true) {
+  const missing = { id: 'SD/MISSING.JPG', relPath: 'SD/MISSING.JPG', fileName: 'MISSING.JPG', size: 12, lastModified: 123, mediaKind: 'image' as const, processState: 'error' as const, sha256: 'hash-missing', needsOriginal: true, processError: 'not in the selected folder' };
+  const good = { id: 'SD/GOOD.JPG', relPath: 'SD/GOOD.JPG', fileName: 'GOOD.JPG', size: 8, lastModified: 124, mediaKind: 'image' as const, processState: 'ready' as const, sha256: 'hash-good' };
+  const saved = { v: 1 as const, id, savedAt: new Date().toISOString(), files: [missing, good], flipId: withFlip ? `flip-${id}` : null, species: null, inputs: { selectedBucket: null, selectedLocationId: null, uploadDescription: 'saved note', uploadTimeZone: 'America/Phoenix' } };
+  memory.rows.set(id, { id, value: structuredClone(saved) });
+  if (withFlip) memory.flips.set(saved.flipId!, { id: saved.flipId!, v: 2, createdAt: new Date().toISOString(), returnUrl: '/uploader/', ownerScope: 'owner-test', files: [missing, good], tags: { 'SD/MISSING.JPG': [{ scientificName: 'Canis latrans', commonName: 'Coyote', count: 1, requestedSpecies: '', freeTags: '' }], 'SD/GOOD.JPG': [] }, revision: 4 });
+  store.setState({ files: [
+    { ...missing, file: new File([], missing.fileName) },
+    { ...good, file: new File(['goodfile'], good.fileName) },
+  ], flipId: saved.flipId, batchToken: 901, s3Config: { endpoint: 'https://example.test', accessKey: 'person', secretKey: 'secret', region: 'us-east-1', forcePathStyle: true } });
+  journal.bindCurrentPreparationSpecies(null, id);
+  return { saved, missing };
+}
+it('journals a missing-file removal before atomically removing its preparation, Flip file, and tags', async () => {
+  const { saved } = seedMissingRemoval('remove-success');
+  await journal.flushPreparation();
+  await journal.removeMissingOriginal('SD/MISSING.JPG');
+  const preparation = (await journal.readPreparation())!;
+  const flip = memory.flips.get(saved.flipId!)!;
+  expect(preparation.files.map(file => file.relPath)).toEqual(['SD/GOOD.JPG']);
+  expect(flip.files.map((file: any) => file.relPath)).toEqual(['SD/GOOD.JPG']);
+  expect(flip.tags).not.toHaveProperty('SD/MISSING.JPG');
+  expect(flip.tags['SD/GOOD.JPG']).toEqual([]);
+  expect(flip.ownerScope).toBe('owner-test');
+  expect(flip.revision).toBe(5);
+  expect(flip.returnUrl).toBe('/uploader/');
+  expect(memory.removals.size).toBe(0);
+  expect(store.getState().files.map(file => file.relPath)).toEqual(['SD/GOOD.JPG']);
+});
+it.each(['preparation', 'flip'] as const)('keeps both records unchanged and replays the durable intent after a %s update failure', async stage => {
+  const { saved } = seedMissingRemoval(`remove-failure-${stage}`);
+  await journal.flushPreparation();
+  memory.failAtomicStage = stage;
+  await expect(journal.removeMissingOriginal('SD/MISSING.JPG')).rejects.toThrow('QuotaExceededError');
+  expect(memory.removals.size).toBe(1);
+  expect(memory.rows.get(saved.id).value.files).toHaveLength(2);
+  expect(memory.flips.get(saved.flipId!)!.files).toHaveLength(2);
+  expect(journal.isMissingRemovalPending('SD/MISSING.JPG')).toBe(true);
+  memory.failAtomicStage = '';
+  await journal.retryMissingOriginalRemovals();
+  expect(memory.rows.get(saved.id).value.files.map((file: any) => file.relPath)).toEqual(['SD/GOOD.JPG']);
+  expect(memory.flips.get(saved.flipId!)!.files.map((file: any) => file.relPath)).toEqual(['SD/GOOD.JPG']);
+  expect(memory.flips.get(saved.flipId!)!.tags).not.toHaveProperty('SD/MISSING.JPG');
+  expect(memory.removals.size).toBe(0);
+  expect(store.getState().files.map(file => file.relPath)).toEqual(['SD/GOOD.JPG']);
+  expect(journal.isMissingRemovalPending('SD/MISSING.JPG')).toBe(false);
+});
+it('leaves a missing original visible when the durable removal intent cannot be written', async () => {
+  const { saved } = seedMissingRemoval('remove-journal-fails');
+  await journal.flushPreparation();
+  memory.failIntent = true;
+  await expect(journal.removeMissingOriginal('SD/MISSING.JPG')).rejects.toThrow('QuotaExceededError');
+  expect(store.getState().files.some(file => file.id === 'SD/MISSING.JPG')).toBe(true);
+  expect(journal.isMissingRemovalPending('SD/MISSING.JPG')).toBe(false);
+  expect(memory.removals.size).toBe(0);
+  expect(memory.rows.get(saved.id).value.files).toHaveLength(2);
+  expect(memory.flips.get(saved.flipId!)!.files).toHaveLength(2);
+  memory.failIntent = false;
+  await journal.retryMissingOriginalRemovals();
+  expect(memory.rows.get('remove-journal-fails').value.files.map((file: any) => file.relPath)).toEqual(['SD/GOOD.JPG']);
+  expect(store.getState().files.map(file => file.relPath)).toEqual(['SD/GOOD.JPG']);
+});
+it('does not let a pre-intent Retry target a different batch that reuses the file id', async () => {
+  const { saved } = seedMissingRemoval('remove-retry-scope', false);
+  await journal.flushPreparation();
+  memory.failIntent = true;
+  await expect(journal.removeMissingOriginal('SD/MISSING.JPG')).rejects.toThrow('QuotaExceededError');
+  memory.failIntent = false;
+  journal.bindCurrentPreparationSpecies(null, 'another-batch');
+  await expect(journal.retryMissingOriginalRemovals()).rejects.toThrow('batch changed');
+  expect(memory.rows.get(saved.id).value.files).toHaveLength(2);
+  expect(store.getState().files.some(file => file.id === 'SD/MISSING.JPG')).toBe(true);
+});
+it('replays a durable removal during preparation loading after a prior transaction failure', async () => {
+  const { saved } = seedMissingRemoval('remove-reload-replay');
+  await journal.flushPreparation();
+  memory.failAtomicStage = 'flip';
+  await expect(journal.removeMissingOriginal('SD/MISSING.JPG')).rejects.toThrow('QuotaExceededError');
+  memory.failAtomicStage = '';
+  // listPreparations is the startup gate: it replays the journal before it
+  // returns any recoverable preparation to the UI.
+  await journal.listPreparations();
+  expect(memory.rows.get(saved.id).value.files.map((file: any) => file.relPath)).toEqual(['SD/GOOD.JPG']);
+  expect(memory.flips.get(saved.flipId!)!.files.map((file: any) => file.relPath)).toEqual(['SD/GOOD.JPG']);
+  expect(memory.removals.size).toBe(0);
+});
+it.each(['preparation', 'flip'] as const)('keeps a replacement at the same path in the %s and surfaces an identity conflict during replay', async source => {
+  const { saved } = seedMissingRemoval(`remove-conflict-${source}`);
+  await journal.flushPreparation();
+  if (source === 'preparation') {
+    const replacement = memory.rows.get(saved.id);
+    replacement.value.files[0] = { ...replacement.value.files[0], sha256: 'different-content' };
+    memory.rows.set(saved.id, replacement);
+  } else {
+    const replacement = memory.flips.get(saved.flipId!)!;
+    replacement.files[0] = { ...replacement.files[0], sha256: 'different-content' };
+    memory.flips.set(saved.flipId!, replacement);
+  }
+  const intent = { v: 1, id: 'remove-conflict-intent', preparationId: saved.id, flipId: saved.flipId, ownerScope: 'owner-test', relPath: 'SD/MISSING.JPG', size: 12, sha256: 'hash-missing', createdAt: new Date().toISOString() };
+  memory.removals.set(intent.id, { id: intent.id, value: intent });
+  await expect(journal.listPreparations()).rejects.toThrow('different file at SD/MISSING.JPG');
+  expect(memory.rows.get(saved.id).value.files).toHaveLength(2);
+  expect(memory.flips.get(saved.flipId!)!.files).toHaveLength(2);
+  expect(source === 'preparation' ? memory.rows.get(saved.id).value.files[0].sha256 : memory.flips.get(saved.flipId!)!.files[0].sha256).toBe('different-content');
+  expect(memory.removals.size).toBe(1);
+  memory.removals.clear();
+});
+it('retains a durable intent when the active login does not own its Flip handoff', async () => {
+  const { saved } = seedMissingRemoval('remove-owner-conflict');
+  await journal.flushPreparation();
+  const intent = { v: 1, id: 'remove-owner-intent', preparationId: saved.id, flipId: saved.flipId, ownerScope: 'another-owner', relPath: 'SD/MISSING.JPG', size: 12, sha256: 'hash-missing', createdAt: new Date().toISOString() };
+  memory.removals.set(intent.id, { id: intent.id, value: intent });
+  await expect(journal.listPreparations()).rejects.toThrow('different connected login');
+  expect(memory.rows.get(saved.id).value.files).toHaveLength(2);
+  expect(memory.flips.get(saved.flipId!)!.files).toHaveLength(2);
+  expect(memory.removals.size).toBe(1);
+  memory.removals.clear();
+});
+it('clears a replayed intent idempotently when both saved records already omit that identity', async () => {
+  const { saved } = seedMissingRemoval('remove-idempotent');
+  await journal.flushPreparation();
+  const preparation = memory.rows.get(saved.id);
+  preparation.value.files = preparation.value.files.filter((file: any) => file.relPath !== 'SD/MISSING.JPG');
+  memory.rows.set(saved.id, preparation);
+  const flip = memory.flips.get(saved.flipId!)!;
+  flip.files = flip.files.filter((file: any) => file.relPath !== 'SD/MISSING.JPG');
+  delete flip.tags['SD/MISSING.JPG'];
+  memory.flips.set(saved.flipId!, flip);
+  const intent = { v: 1, id: 'remove-idempotent-intent', preparationId: saved.id, flipId: saved.flipId, ownerScope: 'owner-test', relPath: 'SD/MISSING.JPG', size: 12, sha256: 'hash-missing', createdAt: new Date().toISOString() };
+  memory.removals.set(intent.id, { id: intent.id, value: intent });
+  await journal.listPreparations();
+  expect(memory.removals.size).toBe(0);
+  expect(memory.rows.get(saved.id).value.files).toHaveLength(1);
+  expect(memory.flips.get(saved.flipId!)!.files).toHaveLength(1);
 });

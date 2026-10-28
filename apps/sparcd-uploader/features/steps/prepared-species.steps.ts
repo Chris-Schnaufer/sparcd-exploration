@@ -1,6 +1,8 @@
 import { S3_ORIGIN } from './app';
+import type { App, FileSpec } from './app';
 import { Given, When, Then, expect } from './fixtures';
 import { BUCKET_A, UUID_A, SETTINGS_BUCKET } from './fixtures-data';
+import { APP_PATH } from './app';
 const scopedKey = `Collections/${UUID_A}/species.json`;
 const scoped = JSON.stringify([{ name: 'Alpha Coyote', scientificName: 'Canis latrans', speciesIconURL: '', keyBinding: 'Y' }]);
 
@@ -96,4 +98,171 @@ Then('the Tagger explains preparation recovery and preserves the batch', async (
   const [record] = await app.readFlipRecords();
   expect(record.files).toHaveLength(4);
   expect(record.tags['SDCARD/IMG_0002.JPG'][0].scientificName).toBe('Canis latrans');
+});
+
+async function prepareTaggedBatchWithOriginalProblem(app: App, problem: 'unavailable' | 'changed'): Promise<void> {
+  await app.stubTagger();
+  await app.page.getByRole('button', { name: 'Tag species before upload', exact: true }).click();
+  await app.page.waitForURL(/\/tagger\/\?batch=/);
+  const id = new URL(app.page.url()).searchParams.get('batch')!;
+  const tags = {
+    'SDCARD/IMG_0001.JPG': [{ scientificName: 'Canis latrans', commonName: 'Coyote', count: 2, requestedSpecies: '', freeTags: '' }],
+    'SDCARD/IMG_0002.JPG': [{ scientificName: 'Casper', commonName: 'Ghost', count: 1, requestedSpecies: '', freeTags: '' }],
+  };
+  await app.finishFlipRecord(id, tags, 'Anita');
+  await app.page.goto(`${APP_PATH}?flip=${id}`);
+  app.notes.originalRemovalSpecs = app.lastSpecs;
+  const available: FileSpec[] = app.lastSpecs.filter(file => !file.path.endsWith('IMG_0001.JPG'));
+  if (problem === 'changed') {
+    const original = app.lastSpecs.find(file => file.path.endsWith('IMG_0001.JPG'))!;
+    const bytes = Buffer.from(original.bytes!);
+    bytes[0] ^= 0xff;
+    available.push({ ...original, bytes });
+  }
+  await app.seedPickedFolder(available);
+  await app.page.getByRole('button', { name: 'Choose folder', exact: true }).click();
+  await expect(app.page.getByRole('region', { name: 'Original files need recovery' })).toContainText('IMG_0001.JPG');
+  await app.fileListToggle().click();
+  const record = (await app.readFlipRecords()).find(item => item.id === id)!;
+  app.notes.originalRemovalFlipRevision = record.revision;
+  app.notes.originalRemovalFlipPaths = record.files.map((file: any) => file.relPath);
+  app.notes.remoteObjectKeysBeforeRemoval = [...app.s3.objects.keys()].sort();
+  app.notes.missingRemovalFlipId = id;
+}
+
+Given('a tagged batch returns with IMG_0001.JPG unavailable', async ({ app }) => prepareTaggedBatchWithOriginalProblem(app, 'unavailable'));
+Given('a tagged batch returns with IMG_0001.JPG changed', async ({ app }) => prepareTaggedBatchWithOriginalProblem(app, 'changed'));
+
+When('the missing original is removed by {string}', async ({ app }, action: string) => {
+  const remove = app.page.getByRole('button', { name: 'Remove unavailable or changed original IMG_0001.JPG', exact: true });
+  await expect(remove).toHaveAccessibleDescription(/recovered batch and saved Tagger handoff/);
+  if (action === 'mouse') await remove.click();
+  else {
+    const list = app.page.getByLabel('Scanned files. Enter previews, J and K move, D removes the active file.');
+    await list.focus();
+    await list.press('d');
+  }
+  await expect(remove).toHaveCount(0);
+  await expect(app.page.getByRole('button', { name: 'Continue', exact: true })).toBeEnabled();
+  await expect(app.page.getByRole('button', { name: 'Preview IMG_0002.JPG', exact: true })).toBeFocused();
+});
+
+When('the missing original is removed by touch at a narrow viewport', async ({ app }) => {
+  await app.page.setViewportSize({ width: 390, height: 780 });
+  const remove = app.page.getByRole('button', { name: 'Remove unavailable or changed original IMG_0001.JPG', exact: true });
+  await remove.tap();
+  await expect(remove).toHaveCount(0);
+  await expect(app.page.getByRole('button', { name: 'Preview IMG_0002.JPG', exact: true })).toBeFocused();
+});
+
+When('the remove control is activated with the keyboard', async ({ app }) => {
+  const remove = app.page.getByRole('button', { name: 'Remove unavailable or changed original IMG_0001.JPG', exact: true });
+  await expect(remove).toHaveAccessibleDescription(/recovered batch and saved Tagger handoff/);
+  await remove.focus();
+  await remove.press('Enter');
+  await expect(remove).toHaveCount(0);
+  await expect(app.page.getByRole('button', { name: 'Preview IMG_0002.JPG', exact: true })).toBeFocused();
+});
+
+When('the file list is filtered to only the unavailable original', async ({ app }) => {
+  await app.page.getByRole('button', { name: /need attention/ }).click();
+  await expect(app.page.getByRole('button', { name: 'Remove unavailable or changed original IMG_0001.JPG', exact: true })).toBeVisible();
+  await expect(app.page.getByRole('button', { name: 'Preview IMG_0002.JPG', exact: true })).toHaveCount(0);
+});
+
+When('that last displayed original is removed', async ({ app }) => {
+  await app.page.getByRole('button', { name: 'Remove unavailable or changed original IMG_0001.JPG', exact: true }).click();
+  await expect(app.page.getByRole('heading', { name: 'Original files need recovery', exact: true })).toBeFocused();
+});
+
+When('the Flip update fails once during removal', async ({ app }) => {
+  await app.page.evaluate(() => {
+    const prototype = IDBObjectStore.prototype;
+    const originalPut = prototype.put;
+    let failOnce = true;
+    Object.defineProperty(prototype, 'put', {
+      configurable: true,
+      value: function (this: IDBObjectStore, ...args: Parameters<IDBObjectStore['put']>) {
+        if (failOnce && this.name === 'records') {
+          failOnce = false;
+          throw new DOMException('Simulated storage failure', 'QuotaExceededError');
+        }
+        return originalPut.apply(this, args);
+      },
+    });
+  });
+  await app.page.getByRole('button', { name: 'Remove unavailable or changed original IMG_0001.JPG', exact: true }).click();
+});
+
+Then('the pending removal stays hidden and blocks navigation until retry succeeds', async ({ app }) => {
+  await expect(app.page.getByText(/Could not finish removing IMG_0001\.JPG/)).toBeVisible();
+  await expect(app.page.getByRole('button', { name: 'Remove unavailable or changed original IMG_0001.JPG', exact: true })).toHaveCount(0);
+  await expect(app.page.getByRole('button', { name: 'Continue', exact: true })).toBeDisabled();
+  await expect(app.page.getByRole('button', { name: 'Edit tags', exact: true })).toBeDisabled();
+  await expect(app.page.getByRole('button', { name: 'Back', exact: true })).toBeDisabled();
+  await expect(app.page.getByRole('button', { name: 'Preview IMG_0002.JPG', exact: true })).toBeFocused();
+  await app.page.getByRole('button', { name: 'Retry removal', exact: true }).click();
+  await expect(app.page.getByText('Removed file from the saved preparation and Tagger handoff.', { exact: true })).toBeVisible();
+  await expect(app.page.getByRole('button', { name: 'Continue', exact: true })).toBeEnabled();
+});
+
+Then('the pending removal remains hidden and navigation is blocked', async ({ app }) => {
+  await expect(app.page.getByText(/Could not finish removing IMG_0001\.JPG/)).toBeVisible();
+  await expect(app.page.getByRole('button', { name: 'Remove unavailable or changed original IMG_0001.JPG', exact: true })).toHaveCount(0);
+  await expect(app.page.getByRole('button', { name: 'Continue', exact: true })).toBeDisabled();
+  await expect(app.page.getByRole('button', { name: 'Edit tags', exact: true })).toBeDisabled();
+  await expect(app.page.getByRole('button', { name: 'Back', exact: true })).toBeDisabled();
+  await expect(app.page.getByRole('button', { name: 'Preview IMG_0002.JPG', exact: true })).toBeFocused();
+});
+
+When('the browser reloads while the removal is pending', async ({ app }) => {
+  await app.page.reload();
+  await expect(app.page.getByRole('button', { name: 'Choose folder', exact: true })).toBeVisible();
+  const available = app.lastSpecs.filter(file => !file.path.endsWith('IMG_0001.JPG'));
+  await app.seedPickedFolder(available);
+  await app.page.getByRole('button', { name: 'Choose folder', exact: true }).click();
+  await app.waitForInspected();
+});
+
+Then('the file and its saved identification are removed from both journals', async ({ app }) => {
+  const id = app.notes.missingRemovalFlipId as string;
+  await expect.poll(async () => (await app.readFlipRecords()).find(record => record.id === id)?.files.length).toBe(3);
+  const record = (await app.readFlipRecords()).find(item => item.id === id)!;
+  expect(record.files.map((file: any) => file.relPath)).not.toContain('SDCARD/IMG_0001.JPG');
+  expect(record.files.map((file: any) => file.relPath)).toEqual((app.notes.originalRemovalFlipPaths as string[]).filter(path => path !== 'SDCARD/IMG_0001.JPG'));
+  expect(record.tags).not.toHaveProperty('SDCARD/IMG_0001.JPG');
+  expect(record.tags['SDCARD/IMG_0002.JPG']?.[0]?.scientificName).toBe('Casper');
+  expect(record.revision).toBeGreaterThan(app.notes.originalRemovalFlipRevision as number);
+  const prepared = await app.page.evaluate(async (flipId) => {
+    const request = indexedDB.open('sparcd-flip');
+    const db: IDBDatabase = await new Promise(resolve => { request.onsuccess = () => resolve(request.result); });
+    const tx = db.transaction('preparations', 'readonly');
+    const rows: any[] = await new Promise(resolve => { const read = tx.objectStore('preparations').getAll(); read.onsuccess = () => resolve(read.result); });
+    await new Promise<void>(resolve => { tx.oncomplete = () => { db.close(); resolve(); }; });
+    return rows.find(row => row.value?.flipId === flipId)?.value;
+  }, id);
+  expect(prepared.files.map((file: any) => file.relPath)).not.toContain('SDCARD/IMG_0001.JPG');
+  // Removal only changes the browser's draft records. The selected local
+  // source fixture and remote storage remain untouched.
+  expect((app.notes.originalRemovalSpecs as typeof app.lastSpecs).some(file => file.path.endsWith('IMG_0001.JPG'))).toBe(true);
+  expect(app.s3.puts).toHaveLength(0);
+  expect([...app.s3.objects.keys()].sort()).toEqual(app.notes.remoteObjectKeysBeforeRemoval);
+});
+
+Then('the file stays absent after recovery reload and Edit tags return', async ({ app }) => {
+  const id = app.notes.missingRemovalFlipId as string;
+  const available = app.lastSpecs.filter(file => !file.path.endsWith('IMG_0001.JPG'));
+  await app.page.reload();
+  await app.seedPickedFolder(available);
+  await app.page.getByRole('button', { name: 'Choose folder', exact: true }).click();
+  await app.waitForInspected();
+  expect((await app.listedFiles()).map(file => file.name)).not.toContain('IMG_0001.JPG');
+  await app.page.getByRole('button', { name: 'Edit tags', exact: true }).click();
+  await app.page.waitForURL(/\/tagger\/\?batch=/);
+  await app.page.goto(`${APP_PATH}?flip=${id}`);
+  await app.seedPickedFolder(available);
+  await app.page.getByRole('button', { name: 'Choose folder', exact: true }).click();
+  await app.waitForInspected();
+  expect((await app.listedFiles()).map(file => file.name)).not.toContain('IMG_0001.JPG');
+  expect((await app.readFlipRecords()).find(record => record.id === id)!.files.map((file: any) => file.relPath)).not.toContain('SDCARD/IMG_0001.JPG');
 });

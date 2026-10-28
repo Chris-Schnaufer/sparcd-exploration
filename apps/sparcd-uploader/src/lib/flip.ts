@@ -26,7 +26,7 @@ import { assertPreparedSpecies } from './preparedSpecies';
 import { useStore, type FileEntry } from '../store';
 import { restoreFromHandle, reconcileReselect, reselectFolder, type ReconcileProblem } from './resume';
 import type { ScannedFile } from './scanFiles';
-import { flushPreparation, readPreparation, bindCurrentPreparationSpecies, recoveryGuard, readPreparationForFlip } from './preparation';
+import { flushPreparation, readPreparation, bindCurrentPreparationSpecies, recoveryGuard, readPreparationForFlip, replayMissingRemovalIntents } from './preparation';
 import { formatNaive } from './exifTime';
 import { estimateCaptureTimes, type CaptureEstimate } from './estimateCaptureTime';
 import { taggerBatchUrl, uploaderReturnUrl } from './siblings';
@@ -188,6 +188,9 @@ export type FlipReturn =
  * `restoreFromHandle`).
  */
 export async function resumeFromFlip(flipId: string): Promise<FlipReturn> {
+  // A durable missing-file intent must settle before the Tagger handoff is
+  // offered for reattachment or made visible to the preparation recovery UI.
+  await replayMissingRemovalIntents();
   const guard = recoveryGuard();
   const config = useStore.getState().s3Config;
   const ownerScope = config ? await deriveFlipOwnerScope(config) : returningFlipOwnerScope();
