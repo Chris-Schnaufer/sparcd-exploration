@@ -1,7 +1,23 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import type { S3Config } from '@sparcd/types';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type { ConnectionProbeResult, S3Config } from '@sparcd/types';
 import { Connection } from '../src/Connection';
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
+function fillValidForm() {
+  fireEvent.change(screen.getByLabelText('Endpoint'), {
+    target: { value: 'wildcats.sparcd.arizona.edu' },
+  });
+  fireEvent.change(screen.getByLabelText('Access key'), { target: { value: 'ak' } });
+  fireEvent.change(screen.getByLabelText('Secret key'), { target: { value: 'sk' } });
+}
 
 afterEach(() => {
   cleanup();
@@ -125,9 +141,170 @@ describe('Connection — mixed-content warning (#596)', () => {
     expect(screen.queryByTestId('mixed-content-warning')).toBeNull();
   });
 
+  it('keeps the warning for an explicit http endpoint even if Secure is checked', () => {
+    render(<Connection toolName="Uploader" onConnect={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText('Endpoint'), {
+      target: { value: 'http://minio.local:9000' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '+ Advanced' }));
+    fireEvent.click(screen.getByLabelText('Secure (HTTPS)'));
+    expect((screen.getByLabelText('Secure (HTTPS)') as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByTestId('mixed-content-warning')).not.toBeNull();
+  });
+
+  it('does not warn for an explicit https endpoint even if Secure is unchecked', () => {
+    render(<Connection toolName="Uploader" onConnect={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText('Endpoint'), {
+      target: { value: 'https://s3.example.test' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '+ Advanced' }));
+    fireEvent.click(screen.getByLabelText('Secure (HTTPS)'));
+    expect((screen.getByLabelText('Secure (HTTPS)') as HTMLInputElement).checked).toBe(false);
+    expect(screen.queryByTestId('mixed-content-warning')).toBeNull();
+  });
+
   it('is suppressed while offline, since the offline banner already covers that case', () => {
     Object.defineProperty(window.navigator, 'onLine', { value: false, configurable: true });
     render(<Connection toolName="Uploader" initialConfig={REMEMBERED} onConnect={vi.fn()} />);
     expect(screen.queryByTestId('mixed-content-warning')).toBeNull();
+  });
+});
+
+describe('Connection — credential probe (#589)', () => {
+  it('calls onConnect once a successful probe resolves', async () => {
+    const onConnect = vi.fn();
+    const onTestConnection = vi.fn<(config: S3Config, signal?: AbortSignal) => Promise<ConnectionProbeResult>>(() =>
+      Promise.resolve({ ok: true }),
+    );
+    render(
+      <Connection toolName="Uploader" onConnect={onConnect} onTestConnection={onTestConnection} />,
+    );
+    fillValidForm();
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await waitFor(() => expect(onConnect).toHaveBeenCalled());
+    expect(onTestConnection).toHaveBeenCalledWith(
+      expect.objectContaining({ endpoint: 'wildcats.sparcd.arizona.edu', accessKey: 'ak' }),
+      expect.any(AbortSignal),
+    );
+    expect(screen.queryByTestId('connection-probe-failure')).toBeNull();
+  });
+
+  it('shows a categorized message and never calls onConnect when the probe fails', async () => {
+    const onConnect = vi.fn();
+    const onTestConnection = vi.fn<(config: S3Config, signal?: AbortSignal) => Promise<ConnectionProbeResult>>(() =>
+      Promise.resolve({ ok: false, category: 'credentials-rejected' }),
+    );
+    render(
+      <Connection toolName="Uploader" onConnect={onConnect} onTestConnection={onTestConnection} />,
+    );
+    fillValidForm();
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await waitFor(() =>
+      expect(screen.getByTestId('connection-probe-failure').textContent).toContain(
+        'The server rejected this access key and secret key',
+      ),
+    );
+    expect(onConnect).not.toHaveBeenCalled();
+  });
+
+  it('includes the safe detail code in the unexpected-failure message', async () => {
+    const onTestConnection = vi.fn<(config: S3Config, signal?: AbortSignal) => Promise<ConnectionProbeResult>>(() =>
+      Promise.resolve({ ok: false, category: 'unexpected', detail: 'InternalError' }),
+    );
+    render(
+      <Connection toolName="Uploader" onConnect={vi.fn()} onTestConnection={onTestConnection} />,
+    );
+    fillValidForm();
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await waitFor(() =>
+      expect(screen.getByTestId('connection-probe-failure').textContent).toContain(
+        '(InternalError)',
+      ),
+    );
+  });
+
+  it('disables the whole form while the probe is pending, not just the button', async () => {
+    const { promise, resolve } = deferred<ConnectionProbeResult>();
+    const onConnect = vi.fn();
+    const onTestConnection = vi.fn<(config: S3Config) => Promise<ConnectionProbeResult>>(() => promise);
+    render(
+      <Connection toolName="Uploader" onConnect={onConnect} onTestConnection={onTestConnection} />,
+    );
+    fillValidForm();
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await waitFor(() =>
+      expect((screen.getByLabelText('Endpoint') as HTMLInputElement).disabled).toBe(true),
+    );
+    expect((screen.getByLabelText('Access key') as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByLabelText('Secret key') as HTMLInputElement).disabled).toBe(true);
+    expect(
+      (screen.getByLabelText('Remember endpoint & access key on this device') as HTMLInputElement)
+        .disabled,
+    ).toBe(true);
+    expect((screen.getByRole('button', { name: 'Connecting…' }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    resolve({ ok: true });
+    await waitFor(() => expect(onConnect).toHaveBeenCalled());
+    expect((screen.getByLabelText('Endpoint') as HTMLInputElement).disabled).toBe(false);
+  });
+
+  it('shows a retryable message and re-enables the form when the probe rejects', async () => {
+    const onConnect = vi.fn();
+    const onTestConnection = vi.fn<(config: S3Config, signal?: AbortSignal) => Promise<ConnectionProbeResult>>(
+      () => Promise.reject(new Error('transport rejected')),
+    );
+    render(
+      <Connection toolName="Uploader" onConnect={onConnect} onTestConnection={onTestConnection} />,
+    );
+    fillValidForm();
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('connection-probe-failure').textContent).toContain(
+        'Something went wrong talking to the server',
+      ),
+    );
+    expect((screen.getByLabelText('Endpoint') as HTMLInputElement).disabled).toBe(false);
+    expect((screen.getByRole('button', { name: 'Connect' }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+    expect(onConnect).not.toHaveBeenCalled();
+  });
+
+  it('aborts an in-flight probe when the connection form unmounts', async () => {
+    let probeSignal: AbortSignal | undefined;
+    const onTestConnection = vi.fn(
+      (_config: S3Config, signal?: AbortSignal) =>
+        new Promise<ConnectionProbeResult>((_resolve, reject) => {
+          probeSignal = signal;
+          signal?.addEventListener('abort', () => reject(new Error('aborted')));
+        }),
+    );
+    const { unmount } = render(
+      <Connection toolName="Uploader" onConnect={vi.fn()} onTestConnection={onTestConnection} />,
+    );
+    fillValidForm();
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await waitFor(() => expect(probeSignal).toBeDefined());
+
+    unmount();
+
+    expect(probeSignal?.aborted).toBe(true);
+  });
+
+  it('never runs the probe while offline — same optimistic accept as before', () => {
+    Object.defineProperty(window.navigator, 'onLine', { value: false, configurable: true });
+    const onConnect = vi.fn();
+    const onTestConnection = vi.fn<(config: S3Config, signal?: AbortSignal) => Promise<ConnectionProbeResult>>(() =>
+      Promise.resolve({ ok: false, category: 'unreachable' }),
+    );
+    render(
+      <Connection toolName="Uploader" onConnect={onConnect} onTestConnection={onTestConnection} />,
+    );
+    fillValidForm();
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    expect(onTestConnection).not.toHaveBeenCalled();
+    expect(onConnect).toHaveBeenCalled();
   });
 });
