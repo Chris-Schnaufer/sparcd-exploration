@@ -89,11 +89,11 @@ Feature: Connect the tagger to a collection store and manage the session
     # Waits out the probe's own ~8s timeout for real.
 
   @unmapped
-  Scenario: The credential check is skipped entirely while offline
+  Scenario: Standalone Tagger explains that an online connection is required
     Given the connection screen is shown
     And the browser is offline
-    When valid-looking credentials are submitted
-    Then the workspace opens without any credential check
+    Then standalone Tagger explains that an online connection is required
+    And no credential check has been made
 
   @unmapped
   Scenario: Reloading the page keeps the connection

@@ -201,8 +201,15 @@ Then('the form is available to try again', async ({ page }) => {
   await expect(page.locator('#endpoint')).toBeEnabled();
 });
 
-Then('the workspace opens without any credential check', async ({ page, s3 }) => {
-  await expect(sectionTab(page, 'Browse')).toBeVisible();
+Then('standalone Tagger explains that an online connection is required', async ({ page }) => {
+  await expect(page.getByRole('heading', { name: 'Connect to use standalone Tagger' })).toBeVisible();
+  await expect(page.getByRole('alert')).toContainText(
+    'Offline tagging is available only for a batch prepared in Uploader',
+  );
+  await expect(page.locator('#endpoint')).toHaveCount(0);
+});
+
+Then('no credential check has been made', async ({ s3 }) => {
   expect(s3.listBucketsCalls).toBe(0);
 });
 
