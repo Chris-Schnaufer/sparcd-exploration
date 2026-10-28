@@ -32,13 +32,13 @@ vi.mock('@sparcd/flip', async (importOriginal) => {
   const api = await importOriginal<typeof import('@sparcd/flip')>();
   return {
   ...api,
-  loadPreparedSpecies: async (config: import('@sparcd/types').S3Config) => ({ v: 2, endpoint: config.endpoint, ownerScope: await api.deriveFlipOwnerScope(config), collectionKey: 'bucket::collection', collectionName: 'Test collection', sourceBucket: 'bucket', sourceKey: 'Collections/collection/species.json', sourceHash: 'a'.repeat(64), preparedAt: new Date().toISOString(), profileId: 'test', overrides: {}, species: [{ key: 'Canis latrans', scientificName: 'Canis latrans', commonName: 'Coyote', iconUrl: '', keyBinding: 'C' }] }),
+  loadPreparedSpecies: async (config: import('@sparcd/types').S3Config) => config ? ({ v: 2, endpoint: config.endpoint, ownerScope: await api.deriveFlipOwnerScope(config), collectionKey: 'bucket::collection', collectionName: 'Test collection', sourceBucket: 'bucket', sourceKey: 'Collections/collection/species.json', sourceHash: 'a'.repeat(64), preparedAt: new Date().toISOString(), profileId: 'test', overrides: {}, species: [{ key: 'Canis latrans', scientificName: 'Canis latrans', commonName: 'Coyote', iconUrl: '', keyBinding: 'C' }] }) : null,
   writeFlipRecord: async (r: FlipRecord) => void (stored.record = r),
   readFlipRecord: async (_id: string, expectedOwnerScope?: string) =>
     stored.record && (!expectedOwnerScope || stored.record.ownerScope === expectedOwnerScope) ? stored.record : undefined,
   };
 });
-vi.mock('../src/lib/preparation', () => ({ recoveryGuard: () => () => {}, flushPreparation: async () => {}, readPreparation: async () => null, readPreparationForFlip: async () => stored.preparation, bindCurrentPreparationSpecies: () => {} }));
+vi.mock('../src/lib/preparation', () => ({ recoveryGuard: () => () => {}, flushPreparation: async () => {}, readPreparation: async () => stored.preparation, readPreparationForFlip: async () => stored.preparation, bindCurrentPreparationSpecies: () => {} }));
 // Model the worker's hash result; provenance assertions still use real restore.
 vi.mock('../src/lib/processPool', () => ({ processBatch: (items: any[], _started: any, result: any) => {
   for (const item of items) result({ id: item.id, sha256: `sha-${item.file.name}`, mediaKind: 'image' });
@@ -51,6 +51,7 @@ let reopenTagger: typeof import('../src/lib/flip')['reopenTagger'];
 let resumeFromFlip: typeof import('../src/lib/flip')['resumeFromFlip'];
 let adoptReselected: typeof import('../src/lib/flip')['adoptReselected'];
 let adoptRecord: typeof import('../src/lib/flip')['adoptRecord'];
+let reselectFlip: typeof import('../src/lib/flip')['reselectFlip'];
 let buildBundle: typeof import('../src/lib/bundle')['buildBundle'];
 let captureTimestampOf: typeof import('@sparcd/flip')['captureTimestampOf'];
 const TEST_CONFIG = { endpoint: 'http://storage.test', accessKey: 'test-access-id', secretKey: 'test-secret-token', region: 'us-east-1', secure: false, forcePathStyle: true };
@@ -58,7 +59,7 @@ let testOwnerScope: string;
 
 beforeAll(async () => {
   ({ useStore } = await import('../src/store'));
-  ({ handOffToTagger, reopenTagger, resumeFromFlip, adoptReselected, adoptRecord } = await import('../src/lib/flip'));
+  ({ handOffToTagger, reopenTagger, resumeFromFlip, adoptReselected, adoptRecord, reselectFlip } = await import('../src/lib/flip'));
   ({ buildBundle } = await import('../src/lib/bundle'));
   ({ captureTimestampOf } = await import('@sparcd/flip'));
   const { deriveFlipOwnerScope } = await import('@sparcd/flip');
@@ -68,10 +69,21 @@ beforeAll(async () => {
 beforeEach(() => {
   stored.record = undefined;
   stored.preparation = null;
+  window.location.search = '';
   useStore.setState({ s3Config: TEST_CONFIG, files: [], dirHandle: null, flipId: null });
 });
 
 const at = (hour: number, minute: number): NaiveDateTime => ({ year: 2026, month: 7, day: 1, hour, minute, second: 0 });
+
+it('offers folder reselection when restoring an owned Flip handle fails', async () => {
+  const record: FlipRecord = {
+    v: 2, id: 'unreadable-handle', createdAt: new Date().toISOString(), returnUrl: '', ownerScope: testOwnerScope,
+    files: [{ fileName: 'camera.jpg', relPath: 'SD/camera.jpg', size: 8, sha256: 'sha-camera.jpg', mediaKind: 'image' }],
+    tags: { 'SD/camera.jpg': [{ scientificName: 'Canis latrans', commonName: 'Coyote', count: 2, requestedSpecies: '', freeTags: '' }] },
+    dirHandle: { name: 'SD', queryPermission: async () => 'granted', async *values() { throw new Error('folder was removed'); } } as unknown as FileSystemDirectoryHandle,
+  };
+  expect(await adoptRecord(record)).toMatchObject({ kind: 'needs-reselect', record });
+});
 
 it.each(['reselect', 'handle'])('partially restores a tagged Flip through %s without dropping missing or changed originals', async method => {
   stored.preparation = null;
@@ -338,4 +350,37 @@ it('restores only the returning batch’s saved inputs instead of another window
   await adoptReselected({ v: 1, id: 'return', createdAt: new Date().toISOString(), returnUrl: '', ownerScope: testOwnerScope, files: [{ relPath: file.relPath, fileName: file.fileName, size: file.size, sha256: file.sha256!, mediaKind: 'image' }], tags: {} }, [{ relPath: file.relPath, size: file.size, file: file.file }]);
   expect(useStore.getState()).toMatchObject(stored.preparation.inputs);
   stored.preparation = null;
+});
+
+it('preserves the prepared owner through an offline handoff and return, while refusing a different login', async () => {
+  const { loadPreparedSpecies } = await import('@sparcd/flip');
+  const species = await loadPreparedSpecies(TEST_CONFIG);
+  stored.preparation = { species } as import('../src/lib/preparation').LocalPreparation;
+  useStore.setState({ s3Config: null, files: [entry('offline.jpg', {})], dirHandle: null });
+  await handOffToTagger();
+  const record = stored.record!;
+  expect(record.ownerScope).toBe(testOwnerScope);
+  expect(record.preparedSpecies).toEqual(species);
+  expect(record.returnUrl).toContain(`ownerScope=${encodeURIComponent(testOwnerScope)}`);
+  window.location.search = `?flip=${record.id}&ownerScope=${encodeURIComponent(testOwnerScope)}`;
+  expect(await resumeFromFlip(record.id)).toMatchObject({ kind: 'needs-reselect', record });
+  useStore.setState({ s3Config: { ...TEST_CONFIG, accessKey: 'different-login' } });
+  expect(await resumeFromFlip(record.id)).toMatchObject({ kind: 'not-found' });
+  await expect(adoptRecord(record)).rejects.toThrow('not available for the connected login');
+});
+
+it('captures a live picker FileList before asynchronous ownership checks', async () => {
+  const file = new File(['original'], 'camera.jpg');
+  const record: FlipRecord = {
+    v: 2, id: 'live-list', createdAt: new Date().toISOString(), returnUrl: '', ownerScope: testOwnerScope,
+    files: [{ fileName: 'camera.jpg', relPath: 'camera.jpg', size: 8, sha256: 'sha-camera.jpg', mediaKind: 'image' }],
+    tags: { 'camera.jpg': [{ scientificName: 'Canis latrans', commonName: 'Coyote', count: 2, requestedSpecies: '', freeTags: '' }] },
+  };
+  const list = { 0: file, length: 1 };
+  const pending = reselectFlip(record, list as unknown as FileList);
+  // The React input handler clears its value before the ownership digest settles.
+  list.length = 0;
+  await pending;
+  expect(useStore.getState().files[0].preTags).toEqual(record.tags['camera.jpg']);
+  expect(useStore.getState().files[0].file.size).toBe(8);
 });

@@ -36,6 +36,8 @@ When('the live shared account changes during local tagging', async ({ app }) => 
   try {
     await app.s3.install(sibling, S3_ORIGIN);
     await sibling.goto('/sparcd-exploration/uploader/');
+    // A sibling inherits the shared session; end it before connecting another account.
+    await sibling.getByRole('button', { name: 'Logout', exact: true }).click();
     await expect(sibling.getByRole('button', { name: 'Connect', exact: true })).toBeVisible();
     await sibling.fill('#endpoint', S3_ORIGIN);
     await sibling.fill('#accessKey', 'other-person');

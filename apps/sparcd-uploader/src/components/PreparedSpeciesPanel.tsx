@@ -36,7 +36,7 @@ export function PreparedSpeciesPanel({ onReady }: { onReady: (ready: boolean) =>
       const ownerScope = cfg ? await deriveFlipOwnerScope(cfg) : undefined;
       const saved = flipId
         ? ownerScope ? (await readFlipRecord(flipId, ownerScope))?.preparedSpecies : null
-        : useStore.getState().files.length ? await readBoundPreparationSpecies() : cfg ? await loadPreparedSpecies(cfg) : null;
+        : useStore.getState().files.length ? await readBoundPreparationSpecies() : await loadPreparedSpecies(cfg ?? undefined);
       if (generation.current !== attempt) return;
       if (validPreparedSpecies(saved)) { setSnapshot(saved); acceptPreparationSpecies(saved); onReady(true); }
     })().catch(() => {
