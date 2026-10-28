@@ -33,6 +33,26 @@ export function FindFilterRail({ open, docked, onClose, findRef, query, setQuery
       (focused ?? (docked ? null : findRef.current))?.focus();
     }
   }, [open, docked, findRef]);
+  useLayoutEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog || !open || !docked) return;
+    // The Tag workspace can be a few pixels taller than the CSS viewport as
+    // its header and toolbar settle. Cap the docked rail to the actual space
+    // below its top edge; its inner content remains scrollable.
+    const fitViewport = () => {
+      const { top } = dialog.getBoundingClientRect();
+      dialog.style.maxHeight = `${Math.max(0, window.innerHeight - top - 8)}px`;
+    };
+    fitViewport();
+    window.addEventListener('resize', fitViewport);
+    const observer = new ResizeObserver(fitViewport);
+    if (dialog.parentElement) observer.observe(dialog.parentElement);
+    return () => {
+      window.removeEventListener('resize', fitViewport);
+      observer.disconnect();
+      dialog.style.maxHeight = '';
+    };
+  }, [open, docked]);
 
   return <dialog ref={dialogRef} id="image-filter-panel"
     aria-label="Find & filter"
@@ -59,7 +79,7 @@ export function FindFilterRail({ open, docked, onClose, findRef, query, setQuery
     }}
     className={docked
       ? 'find-filter-rail static m-0 h-full max-h-none w-72 shrink-0 border-0 border-r border-rule bg-panel p-0 text-ink'
-      : 'find-filter-rail fixed inset-0 m-auto max-h-[calc(100dvh-1rem)] w-80 max-w-[calc(100%-1rem)] border border-rule bg-panel p-0 text-ink shadow-xl backdrop:bg-black/40'}>
+      : 'find-filter-rail fixed inset-0 m-auto h-[calc(100dvh-1rem)] max-h-[calc(100dvh-1rem)] w-80 max-w-[calc(100%-1rem)] border border-rule bg-panel p-0 text-ink shadow-xl backdrop:bg-black/40'}>
     <div className="max-h-[inherit] h-full overflow-y-auto space-y-3 p-3">
       <div className="flex items-center justify-between gap-2">
         <h2 className="font-mono text-[14px]">Find &amp; filter</h2>

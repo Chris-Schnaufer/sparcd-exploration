@@ -187,10 +187,8 @@ Then('the overlay supports touch clearing, resetting, and closing', async ({ pag
 });
 
 Then('the {string} dialog keeps priority while resizing and restores the rail at {int} pixels', async ({ page }, name: string, width: number) => {
-  await page.getByRole('button', { name: name === 'Sync' ? 'Sync…' : 'Time shift', exact: true }).click();
-  const close = name === 'Sync'
-    ? page.getByRole('heading', { name: 'Sync to S3', exact: true }).locator('..').getByRole('button', { name: 'Close', exact: true })
-    : page.getByRole('dialog', { name: 'Time shift', exact: true }).getByRole('button', { name: 'Close', exact: true });
+  await page.getByRole('button', { name, exact: true }).click();
+  const close = page.getByRole('dialog', { name: 'Time shift', exact: true }).getByRole('button', { name: 'Close', exact: true });
   await expect(close).toBeEnabled();
   await close.focus();
   await expect(panel(page)).not.toBeVisible();

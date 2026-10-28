@@ -13,6 +13,7 @@ import {
   positionReadout,
   openUpload,
   selectCollection,
+  openFindFilter,
 } from './support/world';
 import { BUCKET, PREFIX_A, PREFIX_E, MEDIA_A, mediaCsv } from './support/data';
 import {
@@ -125,16 +126,20 @@ Then('applying it shifts every frame in the upload', async ({ page, s3 }) => {
 
 /** Reasons stay hidden in the layout but are available to keyboard and pointer users. */
 async function expectDisabledHint(page: Page, button: Locator, label: string, reason: string) {
+  // Disabled actions are in the Overview toolbar. A Focus dialog makes that
+  // background inert, so leave Focus before testing keyboard discovery.
+  await closeFocus(page);
   await expect(button).toBeDisabled();
   await expect(button).toHaveAttribute('title', reason);
   await expect(button).toHaveAccessibleDescription(reason);
   await expect(button).toHaveCSS('cursor', 'not-allowed');
   const target = page.getByRole('group', { name: `${label} unavailable`, exact: true });
   await expect(target).toHaveAccessibleDescription(reason);
-  await page.getByRole('button', { name: 'Overview', exact: true }).focus();
+  await page.getByRole('button', { name: 'Find & filter', exact: true }).focus();
+  await expect(target).toHaveAttribute('tabindex', '0');
   const tooltip = page.getByRole('tooltip');
   await expect(tooltip).toHaveCount(0);
-  for (let i = 0; i < 20 && !(await target.evaluate(node => node === document.activeElement)); i++) await page.keyboard.press('Tab');
+  await target.focus();
   await expect(target).toBeFocused();
   await expect(tooltip).toHaveText(reason);
   await expect(tooltip).toHaveCount(1);
@@ -145,7 +150,7 @@ async function expectDisabledHint(page: Page, button: Locator, label: string, re
   await page.keyboard.press('Escape');
   await expect(tooltip).toHaveCount(0);
   await expect(target).toBeFocused();
-  await page.getByRole('button', { name: 'Overview', exact: true }).focus();
+  await page.getByRole('button', { name: 'Find & filter', exact: true }).focus();
   await target.hover(); await expect(tooltip).toHaveText(reason);
   await page.keyboard.press('Escape'); await expect(tooltip).toHaveCount(0);
   await page.mouse.move(0, 0); await target.hover(); await expect(tooltip).toHaveText(reason);
@@ -208,8 +213,8 @@ When('that one-image selection is toggled off', async ({ page }) => {
 });
 
 When('the selection is filtered down to IMG001.JPG', async ({ page }) => {
-  await page.getByRole('button', { name: 'Filter', exact: true }).click();
-  await page.getByLabel('Search in').selectOption('filename');
+  await openFindFilter(page);
+  await page.getByRole('group', { name: 'Search in' }).getByRole('radio', { name: 'Filename' }).check();
   await page.getByLabel('Match text').fill('IMG001.JPG');
   await page.getByLabel('Match text').press('Escape');
   await expect(gridCell(page, 'IMG002.JPG')).toHaveCount(0);
@@ -454,7 +459,7 @@ Then('disabled time-shift hints are touch-readable and stay within a narrow view
     const bounds = (await tooltip.boundingBox())!;
     expect(bounds.x).toBeGreaterThanOrEqual(0); expect(bounds.y).toBeGreaterThanOrEqual(0);
     expect(bounds.x + bounds.width).toBeLessThanOrEqual(390); expect(bounds.y + bounds.height).toBeLessThanOrEqual(844);
-    await page.getByRole('button', { name: 'Overview', exact: true }).click();
+    await page.keyboard.press('Escape');
     await expect(tooltip).toHaveCount(0);
     await expect(page.getByRole('dialog')).toHaveCount(0);
   } finally { await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false }); await cdp.detach(); }

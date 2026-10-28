@@ -1588,6 +1588,7 @@ function FocusPane({
             objectKey={current.key}
             alt={current.fileName}
             isVideo={isVideo}
+            hasStatusBadge={hasSpecies || questionable}
             filter={filter}
             adjust={adjustPanel}
             onFittedHeightChange={setFittedMediaHeight}
@@ -1706,6 +1707,7 @@ function FocusImage({
   objectKey,
   alt,
   isVideo,
+  hasStatusBadge,
   filter,
   adjust,
   onFittedHeightChange,
@@ -1714,6 +1716,7 @@ function FocusImage({
   objectKey: string;
   alt: string;
   isVideo: boolean;
+  hasStatusBadge: boolean;
   filter?: string;
   adjust?: React.ReactNode;
   onFittedHeightChange: (height: number | null) => void;
@@ -1763,6 +1766,7 @@ function FocusImage({
             alt={alt}
             resetKey={objectKey}
             filter={filter}
+            hasStatusBadge={hasStatusBadge}
             onFittedHeightChange={onFittedHeightChange}
             statusBadges={statusBadges}
             onLoaded={onLoaded}
@@ -1873,7 +1877,7 @@ function useFittedZoom(src: string, onFittedHeightChange?: (height: number | nul
       h: 'naturalHeight' in media ? media.naturalHeight : media.videoHeight,
     });
   };
-  return { paneRef, zoomRef, fitted, onImageLoad };
+  return { paneRef, zoomRef, pane, fitted, onImageLoad };
 }
 
 // Keep badges at the fitted picture's corners, including letterboxed media,
@@ -1904,6 +1908,7 @@ function ZoomableImage({
   alt,
   resetKey,
   filter,
+  hasStatusBadge,
   statusBadges,
   onFittedHeightChange,
   onLoaded,
@@ -1913,6 +1918,7 @@ function ZoomableImage({
   alt: string;
   resetKey: string;
   filter?: string;
+  hasStatusBadge: boolean;
   statusBadges?: React.ReactNode;
   onFittedHeightChange: (height: number | null) => void;
   onLoaded: () => void;
@@ -1920,7 +1926,12 @@ function ZoomableImage({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [zoomed, setZoomed] = useState(false);
-  const { paneRef, zoomRef, fitted, onImageLoad } = useFittedZoom(src, onFittedHeightChange);
+  const { paneRef, zoomRef, pane, fitted, onImageLoad } = useFittedZoom(src, onFittedHeightChange);
+  const topBadgeSize = hasStatusBadge && fitted
+    ? Math.min(56, Math.max(28, window.innerWidth * 0.04), fitted.width * 0.12, fitted.height * 0.2)
+    : 0;
+  const fittedTop = pane && fitted ? (pane.h - fitted.height) / 2 : Number.POSITIVE_INFINITY;
+  const adjustBottom = !!adjust && fittedTop + 4 < 60 && fittedTop + 4 + topBadgeSize > 16;
   // min-w-0/min-h-0 override the grid item's default content-based floor —
   // without them, the pane can never measure smaller than the zoom content's
   // last fitted pixel size, so a shrinking window gets stuck.
@@ -1960,6 +1971,7 @@ function ZoomableImage({
               onExpand={() => setExpanded(true)}
               onReset={zoomed ? () => resetTransform() : undefined}
               extra={adjust}
+              extraBottom={adjustBottom}
             />
           </>
         )}
@@ -2090,6 +2102,7 @@ function ZoomControls({
   onReset,
   dark,
   extra,
+  extraBottom = false,
 }: {
   onIn: () => void;
   onOut: () => void;
@@ -2097,6 +2110,7 @@ function ZoomControls({
   onReset?: () => void;
   dark?: boolean;
   extra?: React.ReactNode;
+  extraBottom?: boolean;
 }) {
   const tone = dark
     ? 'text-paper/80 hover:text-paper hover:bg-paper/10'
@@ -2140,7 +2154,7 @@ function ZoomControls({
       </div>
       {/* One mounted Adjust instance: CSS repositions its trigger without
           discarding the portalled dialog or moving keyboard focus. */}
-      {extra && <div className="absolute top-4 left-4 z-10 lg:static lg:mt-2">{extra}</div>}
+      {extra && <div className={`absolute ${extraBottom ? 'bottom-4' : 'top-4'} left-4 z-10 lg:static lg:mt-2`}>{extra}</div>}
     </div>
   );
 }
