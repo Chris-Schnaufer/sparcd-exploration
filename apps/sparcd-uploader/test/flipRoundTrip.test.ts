@@ -30,7 +30,7 @@ const storage = () => {
 const stored = vi.hoisted(() => ({ record: undefined as FlipRecord | undefined, preparation: null as import('../src/lib/preparation').LocalPreparation | null }));
 vi.mock('@sparcd/flip', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@sparcd/flip')>()),
-  loadPreparedSpecies: async () => ({ v: 1, endpoint: 'https://prepared.test', account: 'test', collectionKey: 'bucket::collection', collectionName: 'Test collection', sourceBucket: 'bucket', sourceKey: 'Collections/collection/species.json', sourceHash: 'a'.repeat(64), preparedAt: new Date().toISOString(), profileId: 'test', overrides: {}, species: [{ key: 'Canis latrans', scientificName: 'Canis latrans', commonName: 'Coyote', iconUrl: '', keyBinding: 'C' }] }),
+  loadPreparedSpecies: async () => ({ v: 1, endpoint: 'https://prepared.test', account: 'test', collectionKey: 'Settings/species.json', collectionName: 'Settings master list', sourceBucket: 'bucket', sourceKey: 'Settings/species.json', sourceHash: 'a'.repeat(64), preparedAt: new Date().toISOString(), profileId: 'test', overrides: {}, species: [{ key: 'Canis latrans', scientificName: 'Canis latrans', commonName: 'Coyote', iconUrl: '', keyBinding: 'C' }] }),
   writeFlipRecord: async (r: FlipRecord) => void (stored.record = r),
   readFlipRecord: async () => stored.record,
 }));

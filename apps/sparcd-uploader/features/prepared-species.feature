@@ -1,40 +1,37 @@
 @cross-tool @unmapped
-Feature: Prepare collection species for local tagging
-  Species preparation is separate from Assign and does not promise offline app reopening.
+Feature: Cache the Settings master list for optional Uploader tagging
+  Catalog refresh is automatic and never changes an existing batch snapshot.
 
   Background:
     Given a folder of media has been scanned
     And the New upload section is showing the Verify step
 
-  Scenario: Missing preparation preserves Inspect but prevents local tagging
-    Then local tagging requires online species preparation
-
-  Scenario: A collection vocabulary is frozen into the real handoff
+  Scenario: The master vocabulary is frozen into the real handoff despite a collection-specific list
     Given Alpha has a collection-specific species list
     And species have been prepared for local tagging
     When "Tag species before upload" is chosen through the unified dev origin
-    Then the real Tagger uses only the prepared Alpha species
+    Then the optional tagging feature uses the saved master species
     When the live shared account changes during local tagging
-    Then the real Tagger uses only the prepared Alpha species
+    Then the optional tagging feature uses the saved master species
 
-  Scenario Outline: Failed collection preparation never substitutes defaults
-    Given Alpha species preparation will fail with "<failure>"
-    When Alpha species preparation is attempted
-    Then a preparation error preserves Inspect and blocks local tagging
+  Scenario Outline: Failed master refresh retains the last valid catalog
+    Given master refresh will fail with "<failure>"
+    When master refresh is attempted
+    Then the last valid catalog preserves Inspect and optional tagging
     Examples:
       | failure   |
       | denied    |
       | malformed |
       | empty     |
 
-  Scenario Outline: Assign reviews current vocabulary without discarding returned tags
+  Scenario Outline: Describe checks current vocabulary without discarding returned tags
     Given species have been prepared for local tagging
     When "Tag species before upload" is chosen through the unified dev origin
     And Coyote is applied in the real Tagger
     And the real Tagger identity is set to Anita
     And the real Tagger hands the batch back
     And the assigned species list is "<change>"
-    Then Assign requires species review for "<change>"
+    Then Describe handles the species check for "<change>"
     Examples:
       | change  |
       | renamed |

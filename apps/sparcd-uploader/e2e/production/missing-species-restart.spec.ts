@@ -1,3 +1,4 @@
+import { waitForOfflineApps } from './offline-readiness';
 import { test, expect, chromium, type BrowserContext } from '@playwright/test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -30,9 +31,9 @@ for (const installed of [false, true]) test(`${installed ? 'PWA' : 'browser'} co
   try {
     let page = await launch(false, 'prepare-assets-only');
     const s3 = new S3Mock(); seedDefaultStorage(s3);
+    s3.unreadableKeys.add('sparcd-settings-test/Settings/species.json');
     let app = new App(page, s3); await app.connect();
-    await page.getByRole('button', { name: 'Prepare apps for offline use', exact: true }).click();
-    await expect(page.getByRole('region', { name: 'Offline preparation' })).toContainText('Both apps are stored for offline use.');
+    await waitForOfflineApps(page);
     const specs = [jpegAt('UNPREPARED.JPG', '2026:07:01 12:00:00')];
     await app.dropFolder(specs); await app.waitForInspected();
     await expect(page.getByText('Local preparation saved. Original files remain in your folder.', { exact: true })).toBeVisible();
@@ -58,14 +59,16 @@ for (const installed of [false, true]) test(`${installed ? 'PWA' : 'browser'} co
     await page.getByRole('button', { name: 'Reselect saved batch folder' }).click();
     await app.waitForInspected();
     const tag = page.getByRole('button', { name: 'Tag species before upload', exact: true });
-    await expect(tag).toBeDisabled();
-    await expect(tag).toHaveAttribute('aria-describedby', 'species-preparation-help');
-    await expect(page.locator('#species-preparation-help')).toContainText('Tagging requires prior online species preparation');
-    await expect(page.getByRole('region', { name: 'Offline preparation' })).not.toContainText('Ready for offline Inspect and local tagging.');
+    await expect(tag).toBeEnabled();
+    await tag.click();
+    const notice = page.getByRole('alertdialog', { name: 'Tagging species' });
+    await expect(notice).toContainText('The species list is not available on this device');
+    await notice.getByRole('button', { name: 'OK', exact: true }).click();
     await expect.poll(async () => (await app.listedFiles())[0]?.hasThumbnail).toBe(true);
     const before = await app.listedFiles();
     expect(before).toHaveLength(1);
     expect(await page.evaluate(async () => { try { await fetch('/__offline-harness/probe.html'); return false; } catch { return true; } })).toBe(true);
+    s3.unreadableKeys.clear();
     await context!.setOffline(false);
     await app.gotoSection('Settings');
     await page.getByRole('button', { name: 'Connect', exact: true }).click();
@@ -73,11 +76,7 @@ for (const installed of [false, true]) test(`${installed ? 'PWA' : 'browser'} co
     await page.getByRole('button', { name: 'Connect', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Logout', exact: true })).toBeVisible();
     await app.gotoSection('New upload');
-    const preparation = page.getByRole('region', { name: 'Prepare species for local tagging' });
-    await preparation.getByRole('button', { name: 'Collection for species preparation', exact: true }).click();
-    await preparation.getByRole('option').filter({ hasText: COLLECTION_A_NAME }).click();
-    await preparation.getByRole('button', { name: 'Prepare species', exact: true }).click();
-    await expect(preparation.getByRole('status')).toContainText('Species prepared for');
+    await app.waitForSpeciesCache();
     await expect.poll(() => app.listedFiles()).toEqual(before);
     await context!.setOffline(true);
     await tag.click();

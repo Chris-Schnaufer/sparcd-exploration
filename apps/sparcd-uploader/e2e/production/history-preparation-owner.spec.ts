@@ -33,11 +33,7 @@ for (const legacy of [false, true]) test(`finishing ${legacy ? 'legacy' : 'owned
   const app = new App(page, s3); await app.connect();
   const a = [jpegAt('OLDER-A.JPG', '2026:07:01 12:00:00')];
   const b = [jpegAt('SAVED-B.JPG', '2026:07:02 12:00:00')];
-  const species = page.getByRole('region', { name: 'Prepare species for local tagging' });
-  await species.getByRole('button', { name: 'Collection for species preparation', exact: true }).click();
-  await species.getByRole('option').filter({ hasText: 'Alpha Collection' }).click();
-  await species.getByRole('button', { name: 'Prepare species', exact: true }).click();
-  await expect(species.getByRole('status')).toContainText('Species prepared for');
+  await app.waitForSpeciesCache();
 
   // Save B before starting a real upload: the upload step correctly blocks
   // Back navigation once a real upload has begun.
@@ -47,7 +43,7 @@ for (const legacy of [false, true]) test(`finishing ${legacy ? 'legacy' : 'owned
   await expect(page.getByText('Local preparation saved. Original files remain in your folder.', { exact: true })).toBeVisible();
   const savedB = (await preparations(page)).find(row => row.value.files[0].fileName === 'SAVED-B.JPG');
   expect(savedB.value.inputs.uploadDescription).toBe('Keep these B notes');
-  expect(savedB.value.species.collectionName).toBe('Alpha Collection');
+  expect(savedB.value.species.collectionName).toBe('Settings master list');
 
   await page.getByRole('button', { name: 'Back', exact: true }).click();
   await app.dropFolder(a); await app.waitForInspected();

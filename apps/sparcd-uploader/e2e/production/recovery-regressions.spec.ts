@@ -3,45 +3,32 @@ import { App } from '../../features/steps/app';
 import { S3Mock } from '../../features/steps/s3mock';
 import { seedDefaultStorage, BUCKET_B, UUID_B } from '../../features/steps/fixtures-data';
 import { jpegAt } from '../../features/steps/batches';
-async function prepare(app: App, name: string) {
-  const area = app.page.getByRole('region', { name: 'Prepare species for local tagging' });
-  await area.getByRole('button', { name: 'Collection for species preparation', exact: true }).click();
-  await area.getByRole('option').filter({ hasText: name }).click();
-  await area.getByRole('button', { name: 'Prepare species', exact: true }).click();
-  await expect(area.getByRole('status')).toContainText(`Species prepared for ${name}`);
-}
-for (const prepared of [true, false]) test(`recovering a ${prepared ? 'prepared Alpha' : 'previously unprepared'} batch refreshes status when Beta is cached`, async ({ page, context }) => {
+async function prepare(app: App, _name: string) { await app.waitForSpeciesCache(); }
+
+for (const legacy of [true, false]) test(`recovery preserves a ${legacy ? 'legacy collection' : 'master'} snapshot after the shared master cache changes`, async ({ page, context }) => {
   const s3 = new S3Mock(); seedDefaultStorage(s3);
-  s3.put(BUCKET_B, `Collections/${UUID_B}/species.json`, JSON.stringify([{ name: 'Beta only', scientificName: 'Beta species', speciesIconURL: '', keyBinding: 'B' }]), { contentType: 'application/json' });
-  const a = new App(page, s3); await a.connect();
-  if (prepared) await prepare(a, 'Alpha Collection');
-  const specs = [jpegAt('ALPHA.JPG', '2026:07:01 12:00:00')];
-  await a.dropFolder(specs); await a.waitForInspected();
-  await expect(page.getByText('Local preparation saved. Original files remain in your folder.', { exact: true })).toBeVisible();
-  const sibling = await context.newPage(); const b = new App(sibling, s3); await b.open();
-  await expect(sibling.getByRole('button', { name: 'Logout', exact: true })).toBeVisible();
-  await prepare(b, 'Beta Collection');
-  await page.reload();
-  await expect(page.getByRole('region', { name: 'Prepare species for local tagging' })).toContainText('Species prepared for Beta Collection');
-  await a.seedPickedFolder(specs);
-  await page.getByRole('button', { name: 'Reselect saved batch folder' }).click();
-  await a.waitForInspected();
-  const area = page.getByRole('region', { name: 'Prepare species for local tagging' });
-  if (prepared) {
-    await expect(area).toContainText('Species prepared for Alpha Collection');
-    await page.getByRole('button', { name: 'Tag species before upload', exact: true }).click();
-    await page.waitForURL(/\/tagger\/\?batch=/);
-    expect((await a.readFlipRecords())[0].preparedSpecies.collectionName).toBe('Alpha Collection');
-  } else {
-    await expect(area).not.toContainText('Species prepared for Beta Collection');
-    await expect(area).toContainText('Tagging requires prior online species preparation');
-    const tag = page.getByRole('button', { name: 'Tag species before upload', exact: true });
-    await expect(tag).toBeDisabled();
-    await expect(tag).toHaveAttribute('aria-describedby', 'species-preparation-help');
-    await expect(page.locator('#species-preparation-help')).toBeVisible();
-    await expect(area.getByRole('button', { name: 'Collection for species preparation', exact: true })).toBeVisible();
-  }
+  const app = new App(page, s3); await app.connect(); await app.waitForSpeciesCache();
+  const original = await app.cachedSpecies();
+  const specs = [jpegAt('ALPHA.JPG','2026:07:01 12:00:00')];
+  await app.dropFolder(specs); await app.waitForInspected();
+  await expect(page.getByText('Local preparation saved. Original files remain in your folder.',{exact:true})).toBeVisible();
+  // Model an already-saved legacy batch; recovery itself uses real journal and file verification.
+  const expected = legacy ? {...original, collectionKey:`${BUCKET_B}::${UUID_B}`, collectionName:'Legacy collection',sourceKey:`Collections/${UUID_B}/species.json`} : original;
+  await page.evaluate(async species => {
+    const open=indexedDB.open('sparcd-flip');const db:IDBDatabase=await new Promise(resolve=>{open.onsuccess=()=>resolve(open.result)});
+    const tx=db.transaction('preparations','readwrite'), table=tx.objectStore('preparations');
+    const request=table.getAll();request.onsuccess=()=>{for(const row of request.result){row.value.species=species;table.put(row)}};
+    await new Promise<void>(resolve=>{tx.oncomplete=()=>{db.close();resolve()}});
+  },expected);
+  s3.put('sparcd-settings-test','Settings/species.json',JSON.stringify([{name:'Later master',scientificName:'Later species'}]),{contentType:'application/json'});
+  await page.close();
+  const reopened=await context.newPage();const recovered=new App(reopened,s3);await recovered.open();
+  await reopened.getByRole('button',{name:'Login later',exact:true}).click();
+  await recovered.seedPickedFolder(specs);await reopened.getByRole('button',{name:'Reselect saved batch folder',exact:true}).click();await recovered.waitForInspected();
+  await reopened.getByRole('button',{name:'Tag species before upload',exact:true}).click();await reopened.waitForURL(/\/tagger\/\?batch=/);
+  expect((await recovered.readFlipRecords())[0].preparedSpecies).toEqual(expected);
 });
+
 test('a Disconnect while the Flip folder picker is open cannot restore that batch', async ({ page, context }) => {
   const s3 = new S3Mock(); seedDefaultStorage(s3);
   const a = new App(page, s3); await a.connect(); await prepare(a, 'Alpha Collection');

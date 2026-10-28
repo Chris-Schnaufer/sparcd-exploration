@@ -8,26 +8,15 @@ Given('Alpha has a collection-specific species list', async ({ app }) => {
   app.s3.put(BUCKET_A, scopedKey, scoped, { contentType: 'application/json' });
 });
 
-Then('local tagging requires online species preparation', async ({ app }) => {
-  await expect(app.page.getByRole('button', { name: 'Tag species before upload', exact: true })).toBeDisabled();
-  await expect(app.page.getByText('Tagging requires prior online species preparation.', { exact: false })).toBeVisible();
-  await expect(app.continueButton()).toBeEnabled();
-  expect(await app.listedFiles()).toHaveLength(4);
-});
-
-Then('the real Tagger uses only the prepared Alpha species', async ({ app }) => {
-  const panel = app.page.getByTestId('species-panel');
-  await expect(panel.getByText('Alpha Coyote', { exact: true })).toBeVisible();
-  await expect(panel.getByText('Casper', { exact: true })).toHaveCount(0);
-  await expect(panel.getByText('Ghost', { exact: true })).toHaveCount(0);
-  const [record] = await app.readFlipRecords();
-  expect(record.preparedSpecies.collectionKey).toBe(`${BUCKET_A}::${UUID_A}`);
-  expect(record.preparedSpecies.sourceKey).toBe(scopedKey);
-  expect(record.preparedSpecies.sourceHash).toMatch(/^[a-f0-9]{64}$/);
+Then('the optional tagging feature uses the saved master species', async ({ app }) => {
+  const panel=app.page.getByTestId('species-panel');
+  await expect(panel.getByText('Coyote',{exact:true})).toBeVisible();
+  await expect(panel.getByText('Ghost',{exact:true})).toBeVisible();
+  await expect(panel.getByText('Alpha Coyote',{exact:true})).toHaveCount(0);
+  const [record]=await app.readFlipRecords();
+  expect(record.preparedSpecies.collectionKey).toBe('Settings/species.json');
+  expect(record.preparedSpecies.sourceKey).toBe('Settings/species.json');
   expect(JSON.stringify(record.preparedSpecies)).not.toContain('test-secret-key');
-  await app.page.locator('button[title="IMG_0002.JPG"]').click();
-  await app.page.keyboard.press('y');
-  await expect(app.page.locator('button[title="IMG_0002.JPG"]')).toContainText('Alpha Coyote');
 });
 
 When('the live shared account changes during local tagging', async ({ app }) => {
@@ -46,23 +35,21 @@ When('the live shared account changes during local tagging', async ({ app }) => 
   } finally { await sibling.close(); }
 });
 
-Given('Alpha species preparation will fail with {string}', async ({ app }, failure: string) => {
-  if (failure === 'denied') app.s3.unreadableKeys.add(`${BUCKET_A}/${scopedKey}`);
-  else app.s3.put(BUCKET_A, scopedKey, failure === 'malformed' ? '{bad JSON' : '[]', { contentType: 'application/json' });
-  if (failure === 'empty') app.s3.put(SETTINGS_BUCKET, 'Settings/species.json', '[]', { contentType: 'application/json' });
+Given('master refresh will fail with {string}', async ({ app }, failure: string) => {
+  await app.waitForSpeciesCache(); app.notes.originalMaster=await app.cachedSpecies(); app.notes.masterFailure=failure;
+  if(failure==='denied') app.s3.unreadableKeys.add(`${SETTINGS_BUCKET}/Settings/species.json`);
+  else app.s3.put(SETTINGS_BUCKET,'Settings/species.json',failure==='malformed'?'{bad JSON':'[]',{contentType:'application/json'});
 });
-When('Alpha species preparation is attempted', async ({ app }) => {
-  const panel = app.page.getByRole('region', { name: 'Prepare species for local tagging' });
-  await panel.getByRole('button', { name: 'Collection for species preparation', exact: true }).click();
-  await panel.getByRole('option').filter({ hasText: 'Alpha Collection' }).click();
-  await panel.getByRole('button', { name: 'Prepare species', exact: true }).click();
+When('master refresh is attempted', async ({ app }) => {
+  const response=app.page.waitForResponse(response=>response.url().includes(`${SETTINGS_BUCKET}/Settings/species.json`)&&response.request().method()===(app.notes.masterFailure==='denied'?'HEAD':'GET'));
+  await app.page.context().setOffline(true);
+  await expect.poll(()=>app.page.evaluate(()=>navigator.onLine)).toBe(false);
+  await app.page.context().setOffline(false);await response;
 });
-Then('a preparation error preserves Inspect and blocks local tagging', async ({ app }) => {
-  const panel = app.page.getByRole('region', { name: 'Prepare species for local tagging' });
-  await expect(panel.getByRole('alert')).toBeVisible();
-  await expect(app.page.getByRole('button', { name: 'Tag species before upload', exact: true })).toBeDisabled();
-  await expect(app.continueButton()).toBeEnabled();
-  expect(await app.listedFiles()).toHaveLength(4);
+Then('the last valid catalog preserves Inspect and optional tagging',async({app})=>{
+  expect(await app.cachedSpecies()).toMatchObject({sourceHash:app.notes.originalMaster.sourceHash,species:app.notes.originalMaster.species,account:app.notes.originalMaster.account});
+  await expect(app.page.getByRole('button',{name:'Tag species before upload',exact:true})).toBeEnabled();
+  await expect(app.continueButton()).toBeEnabled();expect(await app.listedFiles()).toHaveLength(4);
 });
 
 When('the assigned species list is {string}', async ({ app }, change: string) => {
@@ -71,23 +58,24 @@ When('the assigned species list is {string}', async ({ app }, change: string) =>
   app.s3.put(BUCKET_A, scopedKey, JSON.stringify(rows), { contentType: 'application/json' });
 });
 
-Then('Assign requires species review for {string}', async ({ app }, change: string) => {
+Then('Describe handles the species check for {string}', async ({ app }, change: string) => {
   await app.continueToAssign();
   await app.waitForCollections();
+  if (change === 'removed') {
+    const popup=app.page.getByRole('alertdialog',{name:'Resolve species before uploading'});
+    await expect(popup).toContainText('Canis latrans');
+    await popup.getByRole('button',{name:'OK',exact:true}).click();
+  }
   await app.setUploader('Anita');
   await app.chooseDeployment('Bear Canyon');
   await app.fillRequiredUploadComments();
-  const review = app.page.getByRole('region', { name: 'Prepared species assignment review' });
-  if (change === 'renamed') {
-    const confirm = review.getByRole('checkbox');
-    await expect(confirm).toBeVisible();
-    await expect(app.continueButton()).toBeDisabled();
-    await confirm.check();
+  const review = app.page.getByRole('region', { name: 'Species review' });
+  if(change==='renamed') {
+    await expect(review).toContainText('Species checked against the current official list.');
     await expect(app.continueButton()).toBeEnabled();
   } else {
-    await expect(review.getByRole('alert')).toContainText('Canis latrans');
+    await expect(review).toContainText('Canis latrans');
     await expect(app.continueButton()).toBeDisabled();
-    await expect(review.getByRole('checkbox')).toHaveCount(0);
   }
   await app.page.getByRole('button', { name: 'Back', exact: true }).click();
   expect((await app.listedFiles()).find((file) => file.name === 'IMG_0002.JPG')?.species).toBe('Coyote×1');

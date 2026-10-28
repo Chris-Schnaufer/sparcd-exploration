@@ -1,3 +1,4 @@
+import { loadMasterSpecies } from './masterSpecies';
 // Handing a not-yet-uploaded batch to the tagger, and taking it back.
 //
 // Out: everything the tagger needs to show and tag the batch offline — the
@@ -14,7 +15,6 @@
 import {
   newFlipId,
   flipRecordUnavailableReason,
-  loadPreparedSpecies,
   readFlipRecord,
   writeFlipRecord,
   type FlipFile,
@@ -79,7 +79,7 @@ export async function handOffToTagger(): Promise<void> {
   const guard = recoveryGuard();
   await flushPreparation();
   const preparation = await readPreparation();
-  const preparedSpecies = preparation ? preparation.species : await loadPreparedSpecies(s.s3Config ?? undefined);
+  const preparedSpecies = preparation ? preparation.species : await loadMasterSpecies(s.s3Config ?? undefined);
   guard();
   assertPreparedSpecies(preparedSpecies);
   if (useStore.getState().batchToken !== s.batchToken || useStore.getState().s3Config !== s.s3Config) throw new Error('The batch or connection changed. Try tagging again.');
