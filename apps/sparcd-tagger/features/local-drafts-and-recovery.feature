@@ -32,6 +32,18 @@ Feature: Durable automatic work survives navigation and credential repair
     Then the Coyote is saved exactly once and its journal is cleared
     And the repaired save retains the original actor and active upload
 
+  Scenario: An upload switch recovers from another account's journal guard
+    When this upload has pending recovery owned by another account
+    And the foreign recovery is preserved and Disconnect is available
+    When another upload is requested
+    Then the requested upload opens after all writes commit
+
+  Scenario: Disconnect remains available when another account owns recovery
+    When this upload has pending recovery owned by another account
+    And the foreign recovery is preserved and Disconnect is available
+    When the Tagger disconnects from this foreign-recovery state
+    Then the foreign recovery remains after Disconnect
+
   Scenario: Recovery lists retained pending work for the connected account
     When an automatic save fails after publishing observations
     Then pending work and its journal remain available with retry announced

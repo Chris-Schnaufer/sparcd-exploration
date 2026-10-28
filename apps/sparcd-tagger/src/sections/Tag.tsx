@@ -1931,7 +1931,17 @@ function ZoomableImage({
     ? Math.min(56, Math.max(28, window.innerWidth * 0.04), fitted.width * 0.12, fitted.height * 0.2)
     : 0;
   const fittedTop = pane && fitted ? (pane.h - fitted.height) / 2 : Number.POSITIVE_INFINITY;
-  const adjustBottom = !!adjust && fittedTop + 4 < 60 && fittedTop + 4 + topBadgeSize > 16;
+  const adjustInset = 16;
+  const adjustHeight = 44;
+  const badgeInset = 4;
+  const badgeGap = 8;
+  const badgeTop = fittedTop + badgeInset;
+  // On a phone, keep Adjust at its upper-left default unless that hit target
+  // would cover the fitted image's classification badge. Then place it just
+  // below the badge with a small gap.
+  const adjustTop = !!adjust && badgeTop < adjustInset + adjustHeight && badgeTop + topBadgeSize > adjustInset
+    ? fittedTop + topBadgeSize + adjustInset + badgeInset + badgeGap
+    : adjustInset;
   // min-w-0/min-h-0 override the grid item's default content-based floor —
   // without them, the pane can never measure smaller than the zoom content's
   // last fitted pixel size, so a shrinking window gets stuck.
@@ -1971,7 +1981,7 @@ function ZoomableImage({
               onExpand={() => setExpanded(true)}
               onReset={zoomed ? () => resetTransform() : undefined}
               extra={adjust}
-              extraBottom={adjustBottom}
+              extraTop={adjustTop}
             />
           </>
         )}
@@ -2102,7 +2112,7 @@ function ZoomControls({
   onReset,
   dark,
   extra,
-  extraBottom = false,
+  extraTop = 16,
 }: {
   onIn: () => void;
   onOut: () => void;
@@ -2110,7 +2120,7 @@ function ZoomControls({
   onReset?: () => void;
   dark?: boolean;
   extra?: React.ReactNode;
-  extraBottom?: boolean;
+  extraTop?: number;
 }) {
   const tone = dark
     ? 'text-paper/80 hover:text-paper hover:bg-paper/10'
@@ -2154,7 +2164,7 @@ function ZoomControls({
       </div>
       {/* One mounted Adjust instance: CSS repositions its trigger without
           discarding the portalled dialog or moving keyboard focus. */}
-      {extra && <div className={`absolute ${extraBottom ? 'bottom-4' : 'top-4'} left-4 z-10 lg:static lg:mt-2`}>{extra}</div>}
+      {extra && <div className="absolute left-4 z-10 lg:static lg:mt-2" style={{ top: `${extraTop}px` }}>{extra}</div>}
     </div>
   );
 }

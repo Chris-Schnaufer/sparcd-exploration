@@ -1,6 +1,6 @@
 import { When, Then, expect, sectionTab, focusFrame, speciesApply, uploadRow, gridCell, collectionButton } from './support/world';
-import { BUCKET, PREFIX_A, COLLECTION_B_NAME } from './support/data';
-import { readStore, waitForAutomaticSave } from './support/flows';
+import { BUCKET, PREFIX_A, COLLECTION_KEY, COLLECTION_B_NAME } from './support/data';
+import { readStore, waitForAutomaticSave, writeStore } from './support/flows';
 const status = (page: import('@playwright/test').Page) => page.getByTestId('automatic-save');
 When('an automatic save is held before its observation write', async ({ page, scratch }) => {
   let release!: () => void, enter!: () => void;
@@ -90,4 +90,43 @@ When("canonical access and this account's credentials are repaired", async ({ pa
   const region = page.getByRole('region', { name: 'Repair credentials', exact: true });
   await region.getByLabel('Secret key', { exact: true }).fill('renewed-secret');
   await region.getByRole('button', { name: 'Connect', exact: true }).click(); await waitForAutomaticSave(page);
+});
+
+
+When('this upload has pending recovery owned by another account', async ({ page }) => {
+  await waitForAutomaticSave(page);
+  await writeStore(page, 'automatic', {
+    id: JSON.stringify(['foreign-owner-scope', BUCKET, PREFIX_A]),
+    scope: 'foreign-owner-scope',
+    bucket: BUCKET,
+    uploadPrefix: PREFIX_A,
+    collectionKey: COLLECTION_KEY,
+    actions: [{ id: 'foreign-owner-action', user: 'original-owner', at: '2026-01-01T00:00:00.000Z', changes: [
+      { path: `${PREFIX_A}IMG001.JPG`, field: 'expert', before: false, after: true },
+    ] }],
+    undo: null,
+  });
+  await page.reload();
+  await expect(status(page).getByRole('status')).toContainText('Pending recovery for this upload belongs to another account or destination');
+});
+
+Then('the foreign recovery is preserved and Disconnect is available', async ({ page }) => {
+  await expect(page.getByRole('button', { name: 'Logout', exact: true })).toBeEnabled();
+  await sectionTab(page, 'Settings').click();
+  await expect(page.locator('main').getByRole('button', { name: 'Disconnect', exact: true })).toBeEnabled();
+  const rows = await readStore(page, 'automatic') as { scope: string; actions: unknown[] }[];
+  const foreign = rows.find(row => row.scope === 'foreign-owner-scope');
+  expect(foreign?.actions).toHaveLength(1);
+});
+
+When('the Tagger disconnects from this foreign-recovery state', async ({ page }) => {
+  await sectionTab(page, 'Settings').click();
+  await page.locator('main').getByRole('button', { name: 'Disconnect', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Connect', exact: true })).toBeVisible();
+});
+
+Then('the foreign recovery remains after Disconnect', async ({ page }) => {
+  const rows = await readStore(page, 'automatic') as { scope: string; actions: unknown[] }[];
+  const foreign = rows.find(row => row.scope === 'foreign-owner-scope');
+  expect(foreign?.actions).toHaveLength(1);
 });

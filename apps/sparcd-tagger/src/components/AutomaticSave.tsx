@@ -360,7 +360,17 @@ export function AutomaticSaveProvider({ children }: { children: ReactNode }) {
         flush: () => saver!.flush(),
         connectionAllowed: () => !saver?.view.pending,
       });
-    })().catch(error => { if (!cancelled) useAutomaticSave.setState({ view: { ...initial, phase: 'recovery', message: String(error), pending: false } }); });
+    })().catch(error => {
+      if (!cancelled) {
+        // The provisional opening guard only protects setup while ownership
+        // is being checked. If this account cannot open another owner's
+        // recovery, preserve that record and let the user switch back to its
+        // owner instead of trapping them behind the failed open.
+        removeNavigation?.();
+        removeNavigation = undefined;
+        useAutomaticSave.setState({ view: { ...initial, phase: 'recovery', message: String(error), pending: false } });
+      }
+    });
     return () => { cancelled = true; removeEdits?.(); removeNavigation?.(); saver?.dispose(); };
   // Query data updates must not replace a coordinator with an in-flight write.
   }, [scope, collectionKey, prefix, queriesReady, queriesReady ? false : images.isError, queriesReady ? false : deployment.isError, client]);

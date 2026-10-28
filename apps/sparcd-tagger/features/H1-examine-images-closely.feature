@@ -262,10 +262,10 @@ Feature: Examine an image closely enough to catch every species
     Then the Adjust control sits under the zoom button column, with a gap
 
   @unmapped
-  Scenario: The Adjust control stays top-left on a phone
+  Scenario: Adjust avoids Focus status badges on a phone
     Given the focused item is a still image
     When the viewport is narrowed to a phone size
-    Then the Adjust control sits at the top-left, clear of the zoom column
+    Then the Adjust control stays clear of status badges and zoom controls
 
   @unmapped
   Scenario: Adjust remains below the zoom column while Reset is shown
