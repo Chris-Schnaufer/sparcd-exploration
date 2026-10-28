@@ -256,9 +256,7 @@ Feature: Review, correct and remove identifications that already exist
     When species controls are collapsed
     Then the collapsed species summary has no review label or original attribution
     When the same species controls are shown in Focus
-    Then expanded species controls have no original attribution or negative review text
-    When species controls are collapsed
-    Then the collapsed species summary has no review label or original attribution
+    Then Focus lists each applied species without original attribution or negative review text
 
   @H3 @H3-8
   Scenario: Reviewed multi-species controls retain positive review information in Overview and Focus
@@ -267,9 +265,7 @@ Feature: Review, correct and remove identifications that already exist
     When species controls are collapsed
     Then the collapsed species summary says Reviewed
     When the same species controls are shown in Focus
-    Then expanded species controls show positive review information without original attribution
-    When species controls are collapsed
-    Then the collapsed species summary says Reviewed
+    Then Focus lists each applied species with positive review information and no original attribution
 
   @H3 @H3-8
   Scenario: Mixed multi-species controls use Partly reviewed in Overview and Focus
@@ -278,9 +274,7 @@ Feature: Review, correct and remove identifications that already exist
     When species controls are collapsed
     Then the collapsed species summary says Partly reviewed
     When the same species controls are shown in Focus
-    Then expanded species controls show positive review information without negative labels
-    When species controls are collapsed
-    Then the collapsed species summary says Partly reviewed
+    Then Focus lists each applied species with positive review information and no negative labels
 
   @H3 @H3-7
   Scenario: A correction preserves the immutable original upload baseline

@@ -20,6 +20,9 @@ export type AppliedSpeciesProps = {
   canDetag: boolean;
   detagCount: number;
   detagSelection: boolean;
+  // Focus skips the summary toggle and shows every applied species in a
+  // bounded, scrollable list.
+  alwaysExpanded?: boolean;
 };
 
 function labelOf(o: DraftObservation): string {
@@ -32,6 +35,28 @@ function reviewLabel(o: DraftObservation): string | null {
   return review ? `Reviewed by ${review.reviewedBy} at ${review.reviewedAt}` : null;
 }
 
+function ChipList({
+  obs,
+  onSetCount,
+  onRemove,
+}: {
+  obs: DraftObservation[];
+  onSetCount: AppliedSpeciesProps['onSetCount'];
+  onRemove: AppliedSpeciesProps['onRemove'];
+}) {
+  return (
+    <>
+      {obs.map((o) => (
+        <Chip
+          key={o.scientificName}
+          obs={o}
+          onSetCount={(n) => onSetCount(o.scientificName, n)}
+          onRemove={() => onRemove(o.scientificName)}
+        />
+      ))}
+    </>
+  );
+}
 export function AppliedSpecies(props: AppliedSpeciesProps) {
   const [expanded, setExpanded] = useState(false);
   const clearHelpId = useId();
@@ -44,6 +69,46 @@ export function AppliedSpecies(props: AppliedSpeciesProps) {
   // Species stays available even when the focused image has none, as long as
   // it would still clear species elsewhere in the current selection.
   if (props.disabled || (obs.length === 0 && !props.canDetag)) return null;
+
+  const clearControl = props.canDetag ? (
+    <span className="inline-flex group">
+      <button
+        type="button"
+        onClick={props.onDetagAll}
+        aria-describedby={clearHelpId}
+        onKeyDown={(event) => {
+          // Native button activation owns these keys instead of Overview's
+          // Enter-to-Focus and Space-to-species-filter shortcuts.
+          if ((event.key === 'Enter' || event.key === ' ') &&
+              !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey) event.stopPropagation();
+        }}
+        className="min-h-11 inline-flex items-center text-[11px] font-mono text-inkMute hover:text-warn underline decoration-dotted focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
+      >
+        Clear Species
+      </button>
+      <span
+        id={clearHelpId}
+        role="tooltip"
+        className="pointer-events-none invisible absolute left-0 top-full z-40 mt-1 w-56 max-w-[calc(100vw-2rem)] border border-rule bg-panel px-2 py-1 text-[11px] font-mono text-ink shadow-lg group-hover:visible group-focus-within:visible"
+      >
+        {clearHelp}
+      </span>
+    </span>
+  ) : null;
+
+  if (props.alwaysExpanded) {
+    return (
+      <div className="relative flex flex-col gap-1.5 w-full">
+        <div
+          data-testid="applied-species-list"
+          className="flex flex-wrap items-start gap-1.5 max-h-24 overflow-y-auto"
+        >
+          <ChipList obs={obs} onSetCount={props.onSetCount} onRemove={props.onRemove} />
+        </div>
+        {clearControl}
+      </div>
+    );
+  }
 
   const multi = obs.length > 1;
   // Collapsed multi-species summary: first chip + "+N more".
@@ -86,41 +151,10 @@ export function AppliedSpecies(props: AppliedSpeciesProps) {
         </button>
       ) : null}
       {(!multi || expanded) ? (
-        obs.map((o) => (
-          <Chip
-            key={o.scientificName}
-            obs={o}
-            onSetCount={(n) => props.onSetCount(o.scientificName, n)}
-            onRemove={() => props.onRemove(o.scientificName)}
-          />
-        ))
+        <ChipList obs={obs} onSetCount={props.onSetCount} onRemove={props.onRemove} />
       ) : null}
 
-      {props.canDetag && (
-        <span className="inline-flex group">
-          <button
-            type="button"
-            onClick={props.onDetagAll}
-            aria-describedby={clearHelpId}
-            onKeyDown={(event) => {
-              // Native button activation owns these keys instead of Overview's
-              // Enter-to-Focus and Space-to-species-filter shortcuts.
-              if ((event.key === 'Enter' || event.key === ' ') &&
-                  !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey) event.stopPropagation();
-            }}
-            className="min-h-11 inline-flex items-center text-[11px] font-mono text-inkMute hover:text-warn underline decoration-dotted focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent"
-          >
-            Clear Species
-          </button>
-          <span
-            id={clearHelpId}
-            role="tooltip"
-            className="pointer-events-none invisible absolute left-0 top-full z-40 mt-1 w-56 max-w-[calc(100vw-2rem)] border border-rule bg-panel px-2 py-1 text-[11px] font-mono text-ink shadow-lg group-hover:visible group-focus-within:visible"
-          >
-            {clearHelp}
-          </span>
-        </span>
-      )}
+      {clearControl}
     </div>
   );
 }

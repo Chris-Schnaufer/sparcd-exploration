@@ -1245,7 +1245,7 @@ export function Tag() {
                 </div>
               </div>
             </div>
-            <SpeciesPanel {...speciesPanelProps()} />
+            <SpeciesPanel {...speciesPanelProps('overview')} />
           </div>
         ) : null}
       </div>
@@ -1308,7 +1308,7 @@ export function Tag() {
                   onDropSpecies={(tag) => applyIncrementAt(focus, tag)}
                 />
               }
-              second={<SpeciesPanel {...speciesPanelProps()} />}
+              second={<SpeciesPanel {...speciesPanelProps('focus')} />}
             />
           </div>
         </div>,
@@ -1369,7 +1369,7 @@ export function Tag() {
     </div>
   );
 
-  function speciesPanelProps() {
+  function speciesPanelProps(view: 'overview' | 'focus') {
     const observations = eff?.observations ?? [];
     // Clear Species follows the visible selection in either view, falling
     // back to the focused image when no selection exists.
@@ -1443,6 +1443,9 @@ export function Tag() {
           <AppliedSpecies
             observations={observations}
             disabled={!current || !identityReady}
+            // Focus has its own dedicated species column with room to spare, so
+            // it lists every applied species instead of using Overview's toggle.
+            alwaysExpanded={view === 'focus'}
             onSetCount={(sci, n) =>
               current && setSpeciesCountFn(
                 ctx,

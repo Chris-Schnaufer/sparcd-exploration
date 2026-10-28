@@ -1208,6 +1208,68 @@ Then('Escape, the close control or a click outside dismisses it', async ({ page 
   await expect(loupe(page)).toHaveCount(0);
 });
 
+// --- Focus species list (#559) ----------------------------------------------
+
+When('Focus is entered to inspect applied species', async ({ page }) => {
+  await enterFocusView(page);
+});
+
+Given('the focused image carries enough species to require scrolling', async ({ page }) => {
+  // IMG001.JPG carries Mule Deer in the fixture. Turn off auto-advance in the
+  // scenario and apply the other real species to create a long Focus list.
+  await focusFrame(page, 'IMG001.JPG');
+  await expect(appliedChip(page, 'Mule Deer')).toBeVisible();
+  await speciesApply(page, 'Canis latrans').click();
+  await expect.poll(async () => draftSpecies(page, 'IMG001.JPG')).toContain('Canis latrans');
+  await speciesApply(page, 'Pecari tajacu').click();
+  await expect.poll(async () => draftSpecies(page, 'IMG001.JPG')).toContain('Pecari tajacu');
+  await speciesApply(page, 'Puma concolor').click();
+  await expect.poll(async () => draftSpecies(page, 'IMG001.JPG')).toContain('Puma concolor');
+});
+
+Then(
+  'every applied species is listed in Focus with no summary control to expand',
+  async ({ page }) => {
+    await expect(page.locator('button[title="Show all applied species"]')).toHaveCount(0);
+    await expect(appliedChip(page, 'Mountain Lion')).toBeVisible();
+    await expect(appliedChip(page, 'Coyote')).toBeVisible();
+  },
+);
+
+Then('the applied species list in Focus scrolls within a fixed height', async ({ page }) => {
+  const list = page.getByTestId('applied-species-list');
+  await expect(list).toBeVisible();
+  for (const name of ['Mule Deer', 'Coyote', 'Javelina', 'Mountain Lion']) {
+    await expect(appliedChip(page, name)).toHaveCount(1);
+  }
+  await list.evaluate((el) => { el.scrollTop = 0; });
+  await expect(appliedChip(page, 'Mule Deer')).toBeVisible();
+  const { scrollHeight, clientHeight, overflowY } = await list.evaluate((el) => ({
+    scrollHeight: el.scrollHeight,
+    clientHeight: el.clientHeight,
+    overflowY: getComputedStyle(el).overflowY,
+  }));
+  expect(scrollHeight).toBeGreaterThan(clientHeight);
+  expect(clientHeight).toBeLessThanOrEqual(96);
+  expect(overflowY).toBe('auto');
+
+  const lastSpecies = appliedChip(page, 'Mountain Lion');
+  await list.hover();
+  await page.mouse.wheel(0, 500);
+  await expect.poll(() => list.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+
+  const [listBounds, speciesBounds] = await Promise.all([
+    list.boundingBox(),
+    lastSpecies.boundingBox(),
+  ]);
+  expect(listBounds).not.toBeNull();
+  expect(speciesBounds).not.toBeNull();
+  expect(speciesBounds!.y).toBeGreaterThanOrEqual(listBounds!.y);
+  expect(speciesBounds!.y + speciesBounds!.height).toBeLessThanOrEqual(
+    listBounds!.y + listBounds!.height,
+  );
+});
+
 // --- Empty upload (corrected scenario) --------------------------------------
 
 Given('an upload whose canonical media list has no images is opened', async ({ page, s3 }) => {
