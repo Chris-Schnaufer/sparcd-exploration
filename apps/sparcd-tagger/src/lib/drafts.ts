@@ -615,6 +615,7 @@ export const useDraftStore = create<DraftState>((set, get) => {
       if (!receipt) return;
       const next = { ...get().drafts };
       const changed: DraftRecord[] = [];
+      const sources = new Map<string, DraftRecord>();
       for (const [path, submitted] of Object.entries(receipt.draftRevisions)) {
         const rec = next[path];
         if (!rec || rec.bucket !== ctx.bucket || rec.uploadPrefix !== ctx.uploadPrefix) continue;
@@ -652,10 +653,20 @@ export const useDraftStore = create<DraftState>((set, get) => {
         };
         next[path] = acknowledged;
         changed.push(acknowledged);
+        sources.set(path, rec);
       }
       if (changed.length) {
-        set({ drafts: next });
         await db.drafts.bulkPut(changed);
+        set(state => {
+          const drafts = { ...state.drafts };
+          for (const updated of changed) {
+            // Do not replace a newer edit made while the durable receipt was
+            // being written. Its normal debounced write remains responsible
+            // for persisting that newer revision.
+            if (drafts[updated.mediaPath] === sources.get(updated.mediaPath)) drafts[updated.mediaPath] = updated;
+          }
+          return { drafts };
+        });
       }
     },
   };

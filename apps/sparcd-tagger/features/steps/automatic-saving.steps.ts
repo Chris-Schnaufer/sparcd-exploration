@@ -1,5 +1,5 @@
 import { parseMedia, MEDIA_COL, parseObservations, parseCsvRows, serializeCsvRows, OBS_COL } from '@sparcd/camtrap';
-import { When, Then, expect, focusFrame, speciesApply, openWorkspace } from './support/world';
+import { When, Then, expect, focusFrame, speciesApply, openWorkspace, openSettings } from './support/world';
 import { BUCKET, PREFIX_A, observationsCsv } from './support/data';
 const path = `${PREFIX_A}IMG002.JPG`;
 const status = (page: import('@playwright/test').Page) => page.getByTestId('automatic-save');
@@ -217,6 +217,18 @@ Then('pending work and its journal remain available with retry announced', async
   expect(await readStore(page, 'syncJournals')).toHaveLength(1);
   const records = await readStore(page, 'automatic') as { actions: unknown[] }[];
   expect(records[0].actions.length).toBeGreaterThan(0);
+});
+When('the failed save is explicitly discarded', async ({ page }) => {
+  await status(page).getByRole('button', { name: 'Discard local changes and use current storage', exact: true }).click();
+  await expect(status(page)).toContainText('Using current stored data');
+});
+Then("discard releases the disconnect guard and clears only this account's recovery", async ({ page }) => {
+  const { readStore } = await import('./support/flows');
+  expect(await readStore(page, 'syncJournals')).toEqual([]);
+  const records = await readStore(page, 'automatic') as { actions: unknown[]; flight?: unknown }[];
+  expect(records[0].actions).toEqual([]); expect(records[0].flight).toBeUndefined();
+  await openSettings(page);
+  await expect(page.locator('main').getByRole('button', { name: 'Disconnect', exact: true })).toBeEnabled();
 });
 Then('the Coyote is saved exactly once and its journal is cleared', async ({ page, s3 }) => {
   const { readStore } = await import('./support/flows');

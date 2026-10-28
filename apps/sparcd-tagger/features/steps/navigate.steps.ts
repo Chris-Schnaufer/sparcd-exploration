@@ -24,7 +24,7 @@ import {
   openWorkspace,
 } from './support/world';
 import { COLLECTION_NAME, STAMP_A, BUCKET, PREFIX_A } from './support/data';
-import { readStore, runLiveSync, waitForAutomaticSave } from './support/flows';
+import { readStore, waitForAutomaticSave } from './support/flows';
 import { parseObservations } from '@sparcd/camtrap';
 
 const TOUCH = { width: 900, height: 860 };
@@ -628,11 +628,11 @@ Then('its existing species survive marking and sync', async ({ page, s3 }) => {
   const draft = (await readStore(page, 'drafts') as { mediaPath: string; observations: { scientificName: string; count: number }[] }[])
     .find(entry => entry.mediaPath === `${PREFIX_A}IMG003.JPG`)!;
   expect(draft.observations).toMatchObject([{ scientificName: 'Casper', count: 1 }]);
-  // Questionable is local-only on this branch. Save another image's edit to
-  // exercise canonical publication without changing this image's species.
+  // Save another image's edit to exercise canonical publication without
+  // changing the selected image's existing species.
   await overviewImage(page, 'IMG001.JPG').click();
   await speciesApply(page, 'Canis latrans').click();
-  await runLiveSync(page);
+  await waitForAutomaticSave(page);
   expect(savedSpecies()).toEqual(original);
   await page.reload();
   await openWorkspace(page);

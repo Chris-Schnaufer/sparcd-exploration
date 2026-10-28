@@ -60,6 +60,32 @@ describe('durable automatic saving', () => {
     expect(await first).toBe(true); expect(s.save).toHaveBeenCalledTimes(2);
     expect(saver.record.actions).toEqual([]); expect(saver.record.undo?.id).toBe('b');
   });
+  it('keeps the completed flight ahead of queued edits when its local acknowledgement write fails', async () => {
+    const s = services(); let finish!: () => void;
+    s.save = vi.fn().mockImplementationOnce(() => new Promise(resolve => { finish = () => resolve(remote); })).mockResolvedValue(remote);
+    const saver = await start(s);
+    await db.syncJournals.put({ id: 'bucket::upload/', bucket: 'bucket', uploadPrefix: 'upload/', user: 'Alice', snapshotPrefix: '', startedAt: '', objects: [] });
+    saver.accept(action('first')); const flight = saver.flush(); await settle();
+    saver.accept(action('queued')); await settle();
+    const originalPut = db.automatic.put.bind(db.automatic);
+    const failedPut = vi.spyOn(db.automatic, 'put').mockImplementation(async value => {
+      if (!value.flight && value.actions.length === 1 && value.actions[0].id === 'queued') throw new Error('IndexedDB acknowledgement failed');
+      return originalPut(value);
+    });
+    finish();
+    expect(await flight).toBe(false);
+    expect(saver.view.phase).toBe('failed');
+    expect(saver.record.flight?.ids).toEqual(['first']);
+    expect(saver.record.actions.map(a => a.id)).toEqual(['first', 'queued']);
+    expect(await db.syncJournals.get('bucket::upload/')).toBeDefined();
+    failedPut.mockRestore();
+
+    expect(await saver.retry()).toBe(true);
+    expect(s.save).toHaveBeenCalledTimes(3);
+    expect(saver.record.actions).toEqual([]);
+    expect(saver.record.flight).toBeUndefined();
+    expect(await db.syncJournals.get('bucket::upload/')).toBeUndefined();
+  });
   it('retains failed flights across reload and retries without consuming Undo early', async () => {
     const s = services(); s.save = vi.fn().mockRejectedValue(new Error('Denied'));
     const saver = await start(s); saver.accept(action('a')); expect(await saver.flush()).toBe(false);

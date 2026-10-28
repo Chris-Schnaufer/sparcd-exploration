@@ -36,6 +36,12 @@ function sameLocation(a: Deployment | null | undefined, b: Deployment | null | u
   return !a || !b ? a == null && b == null : serializeDeployments([a]) === serializeDeployments([b]);
 }
 
+function timeZoneFor(location: Deployment | null | undefined): string | undefined {
+  return location?.latitude != null && location.longitude != null
+    ? tzlookup(location.latitude, location.longitude)
+    : undefined;
+}
+
 function withFields(fields: ValueChange[], current: RemoteView, ctx: UploadCtx, reverse: boolean, actor: string) {
   const drafts: ReturnType<typeof useDraftStore.getState>['drafts'] = {};
   let location: Deployment | null | undefined;
@@ -76,7 +82,7 @@ async function compileActions(actions: EditAction[], starting: import('../lib/sy
   for (const action of actions) {
     const images = buildTagImages({ mediaCsv: projected.media.text, observationsCsv: projected.observations.text });
     const location = parseDeployments(projected.deployments.text)[0] ?? null;
-    const zone = location ? tzlookup(location.latitude, location.longitude) : undefined;
+    const zone = timeZoneFor(location);
     const fields = action.changes.filter(field => !(action.locationPatch && field.field === 'location')).map(field => {
       if (field.field === 'species' && field.after && action.records?.[field.path]) {
         return { ...field, after: action.records[field.path].observations.find(o => o.scientificName === field.species) ?? null };
@@ -202,7 +208,7 @@ export function AutomaticSaveProvider({ children }: { children: ReactNode }) {
         if (state.timeOffset) for (const image of baseImages.filter(i => i.baseTimestamp)) {
           const draft = recovered[image.key] ?? before[image.key];
           recovered[image.key] = { ...draft, timeOverride: correctedTimestamp(image.baseTimestamp, state.timeOffset, draft.timeOverride,
-            live.current.location ? tzlookup(live.current.location.latitude, live.current.location.longitude) : undefined), dirty: true };
+            timeZoneFor(live.current.location)), dirty: true };
         }
         const changes = actionChanges({ ctx, before, after: recovered, ...(state.pendingLocation ? { location: { before: null, after: state.pendingLocation } } : {}) }, baseImages, live.current.location);
         record.actions = changes.length || Object.keys(recovered).length || state.timeOffset || state.pendingLocation
@@ -230,7 +236,7 @@ export function AutomaticSaveProvider({ children }: { children: ReactNode }) {
           const memoryOffset = useDraftStore.getState().timeOffset;
           const result = await performSync({ cfg: configured(), bucket, uploadPrefix: prefix, user: record.flight!.user,
             images: live.current.images, drafts: submitted, dryRun: false, automatic: true,
-            timeZone: live.current.location ? tzlookup(live.current.location.latitude, live.current.location.longitude) : undefined,
+            timeZone: timeZoneFor(live.current.location),
             canonicalBodies: compiled ? Object.fromEntries(Object.entries(compiled).map(([role, value]) => [role, value.text])) : undefined,
             submittedRevisions: flightActions.length ? Object.fromEntries(Object.entries(submitted).map(([path, draft]) => [path, draftRevisionOf(draft)])) : undefined,
             auditEvents: record.actions.filter(a => record.flight!.ids.includes(a.id)).map(({ id, user, at, undoOf, changes }) => ({ id, user, at, undoOf, changes })) });
@@ -294,7 +300,7 @@ export function AutomaticSaveProvider({ children }: { children: ReactNode }) {
           if (!current.canonical) throw new Error('Stored versions could not be checked for Undo.');
           await groundUpload(bucket, prefix, current.canonical);
           const patch = await commitFields(action.locationPatch ? action.changes.filter(c => c.field !== 'location') : action.changes, current, true, useStore.getState().taggerUser, false);
-          return { drafts: Object.values(patch.drafts), action: { id: crypto.randomUUID(), user: useStore.getState().taggerUser, at: new Date().toISOString(), changes: action.changes.map(f => ({ ...f, before: f.after, after: f.before })), timeZone: live.current.location ? tzlookup(live.current.location.latitude, live.current.location.longitude) : undefined, undoOf: action.id, locationPatch: action.locationPatch ? reversePatches(action.locationPatch) : undefined } };
+          return { drafts: Object.values(patch.drafts), action: { id: crypto.randomUUID(), user: useStore.getState().taggerUser, at: new Date().toISOString(), changes: action.changes.map(f => ({ ...f, before: f.after, after: f.before })), timeZone: timeZoneFor(live.current.location), undoOf: action.id, locationPatch: action.locationPatch ? reversePatches(action.locationPatch) : undefined } };
         },
         resolve: async (record, current, reapply) => {
           if (!current.canonical) throw new Error('Current storage could not be loaded for conflict review.');
@@ -343,12 +349,12 @@ export function AutomaticSaveProvider({ children }: { children: ReactNode }) {
             }
           }
           const locationBefore = change.location ? { canonical: canonicalSnapshot(live.current.connectionId, collectionKey, prefix)!, drafts: structuredClone(useDraftStore.getState().drafts), location: change.location.before, offset: useDraftStore.getState().timeOffset } : undefined;
-          saver.accept({ id: crypto.randomUUID(), at: new Date().toISOString(), user: useStore.getState().taggerUser, changes, locationBefore, timeZone: live.current.location ? tzlookup(live.current.location.latitude, live.current.location.longitude) : undefined }, Object.values(change.after));
+          saver.accept({ id: crypto.randomUUID(), at: new Date().toISOString(), user: useStore.getState().taggerUser, changes, locationBefore, timeZone: timeZoneFor(live.current.location) }, Object.values(change.after));
         },
         normalizeLocation: location => location ?? live.current.location,
         expandOffset: (_ctx, offset) => live.current.images.filter(i => i.baseTimestamp).map(i => ({ mediaPath: i.key, deploymentId: i.deploymentId,
           base: { observations: i.baseObservations, questionable: i.baseQuestionable },
-          currentCorrected: correctedTimestamp(i.baseTimestamp, offset, null, live.current.location ? tzlookup(live.current.location.latitude, live.current.location.longitude) : undefined) })),
+          currentCorrected: correctedTimestamp(i.baseTimestamp, offset, null, timeZoneFor(live.current.location)) })),
       });
       removeNavigation = installSaveNavigation({ pending: () => !!saver?.view.pending,
         flush: () => saver!.flush(),
@@ -412,6 +418,7 @@ export function AutomaticSaveStatus() {
     {['failed', 'pending'].includes(view.phase) && <>
       <button type="button" onClick={() => void retryAutomaticSave()} className="min-h-11 underline">Retry save</button>
       <button type="button" onClick={() => useAutomaticSave.setState({ repair: !repair })} className="min-h-11 underline">Repair credentials for this account</button>
+      {view.phase === 'failed' && <button type="button" onClick={() => void saver?.resolve(false)} className="min-h-11 underline">Discard local changes and use current storage</button>}
     </>}
     {view.phase === 'recovery' && saver?.record.adoptionRequired && <button type="button" onClick={() => void saver.adopt()} className="min-h-11 underline">Recover pending work for this account and upload</button>}
     {view.phase === 'conflict' && <div role="region" aria-label="Review save conflict" className="w-full space-x-3">

@@ -137,12 +137,12 @@ Feature: Review, correct and remove identifications that already exist
       | focus |
 
   @H3
-  Scenario Outline: A cleared selection survives Sync and reload without changing other images
+  Scenario Outline: A cleared selection survives automatic saving and reload without changing other images
     Given several images are selected
     And the unselected species rows are recorded
     And clearing is prepared in "<view>"
     When identifications are cleared
-    And a live sync is run
+    And automatic saving finishes
     Then the cleared selection is stored and restored without changing other images
 
     Examples:

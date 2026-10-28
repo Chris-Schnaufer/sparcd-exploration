@@ -445,8 +445,8 @@ export function Tag() {
   const [railDocked, setRailDocked] = useState(false);
   // Yield to the active workspace dialog without invoking Close's clearing
   // behavior. Restore the remembered rail in the current layout on dismissal.
-  const overviewDialogOpen = showSync || showSnapshots || showDiscard || showTimeShift ||
-    showChangeLocation || bulkTime !== null || zoomSpecies !== null ||
+  const overviewDialogOpen = showDiscard || showTimeShift || showChangeLocation ||
+    bulkTime !== null || zoomSpecies !== null ||
     pendingKeyConflict !== null || showCheatsheet || showSpeciesHelp || speciesHelpOpenRef.current;
   const railVisible = showImageFilter && !overviewDialogOpen;
   useLayoutEffect(() => {

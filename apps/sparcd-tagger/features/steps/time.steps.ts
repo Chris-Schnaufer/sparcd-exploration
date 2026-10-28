@@ -8,6 +8,7 @@ import {
   gridCell,
   listRow,
   focusFrame,
+  enterFocusView,
   sectionTab,
   positionReadout,
   openUpload,
@@ -44,8 +45,7 @@ async function bump(modal: ReturnType<typeof uploadShiftModal>, label: string, t
 }
 
 async function openFocus(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Focus', exact: true }).click();
-  await expect(page.getByRole('dialog', { name: 'Focus image viewer' })).toBeVisible();
+  await enterFocusView(page);
 }
 
 async function closeFocus(page: Page): Promise<void> {
@@ -404,7 +404,8 @@ Then('the standing shift is cleared afterwards', async ({ page }) => {
 Then(
   'the images show their now-corrected stored times without a further shift',
   async ({ page, s3 }) => {
-    await expect(page.getByRole('button', { name: 'Focus', exact: true })).toBeVisible();
+    await expect(page.getByTestId('overview-view')).toBeVisible();
+    await expect(gridCell(page, 'IMG001.JPG')).toBeVisible();
     const media = parseMedia(s3.text(BUCKET, `${PREFIX_A}media.csv`));
     expect(media.find((m) => m.mediaId.endsWith('IMG001.JPG'))!.timestamp).toBe(
       '2024-01-10T09:00:00.000-07:00',

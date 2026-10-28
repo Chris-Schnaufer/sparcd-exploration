@@ -26,6 +26,7 @@ export class AutomaticSaver {
   private version = 0;
   private readonly branchId = crypto.randomUUID();
   private writes: Promise<void> = Promise.resolve();
+  private committing = false;
   private persistenceError: unknown;
   private running: Promise<boolean> | null = null;
   private idle?: ReturnType<typeof setTimeout>;
@@ -50,7 +51,7 @@ export class AutomaticSaver {
     const pending = !!this.record.actions.length || !!this.record.flight || !!this.record.adoptionRequired || !!this.record.recoveryBranches?.length || !!this.persistenceError;
     const reason = !this.online ? 'Undo requires an online connection.' : phase !== 'saved' || pending
       ? 'Undo is unavailable while saving or recovering pending work.' : this.record.undoReason ?? (!this.record.undo ? 'No completed action to undo for this account and upload.' : '');
-    this.view = { phase, message, pending, undoReason: reason, canEdit: this.online && !['loading', 'pending', 'conflict', 'recovery', 'failed'].includes(phase) && !this.persistenceError && !this.undoing };
+    this.view = { phase, message, pending, undoReason: reason, canEdit: this.online && !this.committing && !['loading', 'pending', 'conflict', 'recovery', 'failed'].includes(phase) && !this.persistenceError && !this.undoing };
     if (!this.disposed) this.services.changed(this.view);
   }
   private persist(clearJournal = false, drafts: import('./db').DraftRecord[] = []): Promise<void> {
@@ -138,6 +139,13 @@ export class AutomaticSaver {
         const result = await this.services.save(structuredClone(this.record));
         // Later edits may have arrived while the write or refresh was running.
         await this.writes;
+        // All edits accepted during the network flight are now durable. Pause
+        // new input while the acknowledgement transaction updates the local
+        // journal, so a failed IndexedDB commit can restore the exact flight
+        // plus its already-queued edits without racing a newer journal write.
+        this.committing = true;
+        this.publish('saving', 'Finishing local save…');
+        const beforeAcknowledgement = structuredClone(this.record);
         let undo = this.record.undo;
         if (flight.undoOf && undo?.id === flight.undoOf) undo = null;
         else if (undo && flight.ids.includes(undo.id)) undo = { ...undo, changes: undo.changes.map(field => ({ ...field, after: result.writtenFields && !result.writtenFields.includes(field.field) ? field.after : canonicalValue(field, result.images, result.location) })) };
@@ -152,7 +160,17 @@ export class AutomaticSaver {
         // reload/reconnect cannot publish retained legacy intent implicitly.
         this.record = { ...this.record, reviewLegacyAfterFlight: false,
           ...(reviewLegacy ? { conflictReason: legacyReviewReason } : {}) };
-        await this.persist(true);
+        try {
+          await this.persist(true);
+        } catch (error) {
+          // The remote write may have completed, but until its local receipt is
+          // durable the old journal remains authoritative. Restore its flight
+          // and queue so Retry resumes that exact write before later actions.
+          this.record = beforeAcknowledgement;
+          throw error;
+        } finally {
+          this.committing = false;
+        }
         if (reviewLegacy) {
           this.publish('conflict', legacyReviewReason);
           return false;
@@ -162,6 +180,7 @@ export class AutomaticSaver {
       this.publish('saved', 'Saved');
       return true;
     }).catch(async error => {
+      this.committing = false;
       if (error instanceof SaveConflict) {
         this.record = { ...this.record, conflictReason: error.message };
         if (!this.persistenceError) { try { await this.persist(); } catch { /* The original pending actions remain retained. */ } }

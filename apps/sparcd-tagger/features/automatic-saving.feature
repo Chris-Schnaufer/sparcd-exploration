@@ -93,6 +93,12 @@ Feature: Completed collection edits save automatically with one-level Undo
     When the automatically saved upload is reloaded
     Then the Coyote is saved exactly once and its journal is cleared
 
+  Scenario: A failed save can be explicitly discarded to leave the upload
+    When an automatic save fails after publishing observations
+    Then pending work and its journal remain available with retry announced
+    When the failed save is explicitly discarded
+    Then discard releases the disconnect guard and clears only this account's recovery
+
   Scenario: A failed Undo remains retryable after reload
     When Coyote is applied for automatic saving
     And the automatic save completes

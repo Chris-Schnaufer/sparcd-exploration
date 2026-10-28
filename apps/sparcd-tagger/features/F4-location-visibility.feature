@@ -35,7 +35,7 @@ Feature: What the tagger reveals about where images were taken
   Scenario: Identify access does not reveal protected coordinates
     Given the connected account cannot read exact coordinates
     And an upload is open in the tagging workspace
-    When the user identifies the focused image and syncs it
+    When the user identifies the focused image and automatic saving finishes
     Then the identification is saved
     And the saved identification does not disclose precise coordinates
 
