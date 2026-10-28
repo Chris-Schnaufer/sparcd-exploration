@@ -40,7 +40,9 @@ export function bindCurrentPreparationSpecies(species: PreparedSpecies | null | 
 }
 export async function acceptPreparationSpecies(species: PreparedSpecies): Promise<void> {
   const state = useStore.getState();
-  if (!state.files.length) { nextSpecies = species; nextConnection = state.s3Config; return; }
+  // Refresh the next-batch seed even when the current batch keeps its catalog.
+  nextSpecies = species; nextConnection = state.s3Config;
+  if (!state.files.length) return;
   if (validPreparedSpecies(batchSpecies)) return;
   const token = state.batchToken, id = preparationId;
   // The first journal write may still be reading its saved catalog. Do not

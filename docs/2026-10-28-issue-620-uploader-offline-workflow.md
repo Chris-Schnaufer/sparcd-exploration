@@ -80,3 +80,11 @@ species-validation scenarios passed, including cancellation before the response
 arrives, unchanged saved data, no late writes or warnings, and successful retry.
 All 79 affected standard resume/retry and upload scenarios also passed.
 Uploader TypeScript and the production build passed again.
+
+PR #623 review follow-up: refreshing the master cache while a batch is selected
+now updates the next-batch seed while preserving the current batch's catalog.
+A regression selects the next batch immediately after reset to cover the stale
+seed race. Offline resume scenarios wait for verified application-cache readiness
+before disconnecting, independently of species-cache readiness. All 490 Uploader
+unit tests and all 65 production scenarios passed after these fixes, along with
+the Uploader TypeScript check, production build, and `git diff --check`.

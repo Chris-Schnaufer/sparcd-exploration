@@ -272,3 +272,24 @@ it('retains an unreadable future batch catalog rather than overwriting it during
   expect((await journal.readPreparation())?.species).toEqual(future);
   store.getState().resetBatch();await journal.flushPreparation();memory.rows.clear();
 });
+
+it('uses a refreshed master list for an immediately selected next batch without replacing the current batch catalog', async () => {
+  store.getState().resetBatch(); await journal.flushPreparation(); memory.rows.clear();
+  const old = { v: 1 as const, endpoint: 'https://master.test', account: 'person', collectionKey: 'Settings/species.json', collectionName: 'Master', sourceBucket: 'settings', sourceKey: 'Settings/species.json', sourceHash: 'a'.repeat(64), preparedAt: new Date().toISOString(), profileId: 'master', overrides: {}, species: [{ key: 'Old', scientificName: 'Old', commonName: 'Old', iconUrl: '', keyBinding: null }] };
+  const fresh = { ...old, sourceHash: 'b'.repeat(64), species: [...old.species, { ...old.species[0], key: 'New', scientificName: 'New', commonName: 'New' }] };
+  const select = (name: string) => {
+    const file = new File(['bytes'], name);
+    store.getState().setFiles([{ id: name, relPath: name, fileName: name, size: file.size, mediaKind: 'image', file }]);
+  };
+  await journal.acceptPreparationSpecies(old);
+  select('A.jpg'); await journal.flushPreparation();
+  const a = (await journal.readPreparation())!;
+  await journal.acceptPreparationSpecies(fresh); await journal.flushPreparation();
+  expect(await journal.readPreparation()).toEqual(a);
+  expect(a.species).toEqual(old);
+  // No intervening cache read or component effect may be required for B.
+  store.getState().resetBatch(); select('B.jpg');
+  await journal.flushPreparation();
+  expect((await journal.readPreparation())?.species).toEqual(fresh);
+  store.getState().resetBatch(); await journal.flushPreparation(); memory.rows.clear();
+});

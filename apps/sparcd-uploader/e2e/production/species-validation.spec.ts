@@ -4,6 +4,7 @@ import { S3Mock } from '../../features/steps/s3mock';
 import { seedDefaultStorage, BUCKET_A, UUID_A } from '../../features/steps/fixtures-data';
 import { jpegAt } from '../../features/steps/batches';
 import { tagAndReturn } from './tagging-helpers';
+import { waitForOfflineApps } from './offline-readiness';
 
 const original = jpegAt('OFFLINE.JPG', '2026:07:01 12:00:00');
 const officialKey = `Collections/${UUID_A}/species.json`;
@@ -29,6 +30,7 @@ for (const path of ['Retry', 'History', 'automatic reconnect']) test(`${path} va
   s3.put(BUCKET_A, officialKey, allowed, { contentType: 'application/json' });
   await app.connect(); await app.waitForSpeciesCache();
   await app.dropFolder([original]); await app.waitForInspected();
+  await waitForOfflineApps(page);
   s3.offline = true; await context.setOffline(true); await tagAndReturn(app);
   s3.offline = false; await context.setOffline(false);
   await app.walkToUploadStep({ description: 'Saved tagged upload' });
