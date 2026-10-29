@@ -233,3 +233,41 @@ Then('the saved action is only undone when Undo is explicitly selected', async (
   await undo.click(); await waitForAutomaticSave(page);
   expect(s3.text(BUCKET, `${PREFIX_A}observations.csv`)).not.toBe(scratch.afterUndoEdit);
 });
+
+Given('upload setup fails with {string} work', async ({ page, scratch }, work: string) => {
+  await openAppConnected(page); await selectCollection(page);
+  if (work === 'retained') await seedPending(page, PREFIX_A, true);
+  scratch.setupDrafts = await readStore(page, 'drafts');
+  await page.evaluate(async () => {
+    const url = new URL('src/lib/drafts.ts', location.href).href;
+    const { useDraftStore } = await import(/* @vite-ignore */ url);
+    const load = useDraftStore.getState().loadUpload;
+    (window as any).denySetup = true; (window as any).setupAttempts = 0;
+    useDraftStore.setState({ loadUpload: async (...args: any[]) => {
+      (window as any).setupAttempts++;
+      if ((window as any).denySetup) throw new Error('local setup read failed');
+      return load(...args);
+    } });
+  });
+  await uploadRow(page, 'priortagger').getByRole('button', { name: 'Open →', exact: true }).click();
+  await expect(page.getByTestId('automatic-save').getByRole('status')).toContainText('local setup read failed');
+  await browse(page);
+});
+Then('failed setup offers Recheck and repeated setup failures remain unknown', async ({ page }) => {
+  await expect(badge(page)).toHaveText('Recheck');
+  const before = await page.evaluate(() => (window as any).setupAttempts);
+  await badge(page).click();
+  await expect.poll(() => page.evaluate(() => (window as any).setupAttempts)).toBeGreaterThan(before);
+  await expect(badge(page)).toHaveText('Recheck');
+});
+Then('restoring setup lets Recheck show {string} without consuming pending work', async ({ page, s3, scratch }, status: string) => {
+  const writes = s3.puts.length;
+  await page.evaluate(() => { (window as any).denySetup = false; });
+  await badge(page).click(); await expect(badge(page)).toContainText(status);
+  expect(s3.puts.length).toBe(writes);
+  expect(await readStore(page, 'drafts')).toEqual(scratch.setupDrafts);
+  await uploadRow(page, 'priortagger').getByRole('button', { name: 'Open →', exact: true }).click();
+  if (status === 'Recover') await expect(page.getByRole('button', { name: 'Recover pending work for this account and upload', exact: true })).toBeVisible();
+  else await expect(page.locator('button[title="IMG001.JPG"]')).toBeVisible();
+  expect(s3.puts.length).toBe(writes);
+});

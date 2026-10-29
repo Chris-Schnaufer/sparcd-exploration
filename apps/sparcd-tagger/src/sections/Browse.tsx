@@ -13,7 +13,7 @@ import { PawPads } from '../components/Paw';
 import { useFocusExplanation } from '../components/useFocusExplanation';
 import { browseSaveStatus, readBrowseSaveStates, SAVE_STATUS, type BrowseSaveStatus as SaveStatus } from '../lib/browseSaveStatus';
 import { BrowseSaveStatus } from '../components/BrowseSaveStatus';
-import { useAutomaticSave, retryAutomaticSave } from '../components/AutomaticSave';
+import { useAutomaticSave, retryAutomaticSave, retryAutomaticSetup } from '../components/AutomaticSave';
 import { accountScope } from '../lib/automaticModel';
 import { parseCollectionKey } from '../lib/s3';
 import { CollectionButton } from '../components/CollectionButton';
@@ -295,6 +295,8 @@ export function Browse() {
                               // A failed Undo check can leave an otherwise saved
                               // coordinator blocked. Recheck reads; it never retries Undo.
                               checks.push(activeSaver.recheck());
+                            } else if (useAutomaticSave.getState().view.setupFailed) {
+                              retryAutomaticSetup({ scope, collectionKey: collectionKey!, prefix: u.prefix });
                             } else if (!activeSaver) {
                               // Opening can fail before a coordinator exists.
                               checks.push(

@@ -5,7 +5,7 @@ import type { TagImage } from './workspace';
 import type { Deployment } from '@sparcd/camtrap';
 
 export type SavePhase = 'loading' | 'saved' | 'saving' | 'pending' | 'failed' | 'conflict' | 'recovery';
-export type SaveView = { phase: SavePhase; message: string; pending: boolean; undoReason: string; canEdit: boolean; failure?: 'repair' | 'retry'; retrying?: boolean; updatedAt?: number };
+export type SaveView = { phase: SavePhase; message: string; pending: boolean; undoReason: string; canEdit: boolean; failure?: 'repair' | 'retry'; retrying?: boolean; setupFailed?: boolean; updatedAt?: number };
 export type RemoteView = { images: TagImage[]; location: Deployment | null; writtenFields?: import('./automaticModel').ValueChange['field'][]; canonical?: import('./sync').CanonicalState };
 export class SaveConflict extends Error {}
 export type SaveServices = {

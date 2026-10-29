@@ -12,6 +12,11 @@ const live = (phase: SaveView['phase'], extra = {}): SaveView => ({ phase, pendi
 beforeEach(async () => { await db.open(); await Promise.all([db.automatic.clear(), db.drafts.clear(), db.uploads.clear(), db.syncJournals.clear()]); });
 
 describe('Browse save status', () => {
+  it('keeps failed setup unknown and genuine ownership recovery visible even without local pending intent', () => {
+    expect(browseSaveStatus(ready, ready, undefined, live('failed', { setupFailed: true, pending: false }))).toBe('recheck');
+    expect(browseSaveStatus(ready, ready, 'recover', live('failed', { setupFailed: true, pending: false }))).toBe('recheck');
+    expect(browseSaveStatus(ready, ready, undefined, live('recovery', { pending: false }))).toBe('recover');
+  });
   it('requires successful stored and local checks before calling untouched or previously edited uploads Saved', () => {
     expect(browseSaveStatus(ready, ready)).toBe('saved');
     expect(browseSaveStatus(waiting, ready)).toBe('checking');

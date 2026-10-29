@@ -47,9 +47,10 @@ export async function readBrowseSaveStates(bucket: string, scope: string): Promi
 
 type Check = { fetching: boolean; failed: boolean; ready: boolean };
 export function browseSaveStatus(local: Check, stored: Check, pending?: BrowseSaveStatus, live?: SaveView, scanStartedAt?: number): BrowseSaveStatus {
+  if (live?.setupFailed) return 'recheck';
+  if (live?.phase === 'recovery') return 'recover';
   if (live?.phase === 'conflict') return 'conflict';
   if (live && (live.pending || live.phase === 'failed' || live.phase === 'loading')) {
-    if (live.phase === 'recovery') return 'recover';
     if (live.phase === 'failed' && (!live.pending || !live.failure)) return pending ?? 'recheck';
     if (live.phase === 'failed') return live.failure === 'repair' ? 'repair' : 'retry';
     if (live.phase === 'pending' || live.retrying) return 'retrying';

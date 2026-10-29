@@ -73,3 +73,12 @@ Feature: Save status explains what is saved and what needs attention
     Then Recheck retries that read and stays unknown while it is still denied
     And Recheck reaches Saved after access is restored without writing changes
     And the saved action is only undone when Undo is explicitly selected
+
+  Scenario Outline: Failed initialization remains unknown and Recheck retries initialization
+    Given upload setup fails with "<work>" work
+    Then failed setup offers Recheck and repeated setup failures remain unknown
+    And restoring setup lets Recheck show "<status>" without consuming pending work
+    Examples:
+      | work     | status  |
+      | no       | Saved   |
+      | retained | Recover |
