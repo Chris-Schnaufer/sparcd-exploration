@@ -13,11 +13,7 @@ for (const path of ['Flip files', 'Flip directory', 'preparation directory'] as 
       const app = new App(page, s3);
       await app.open({ noFolderPicker: path === 'Flip files', noDirectoryHandle: path !== 'Flip files' });
       await app.connect();
-      const area = page.getByRole('region', { name: 'Prepare species for local tagging' });
-      await area.getByRole('button', { name: 'Collection for species preparation', exact: true }).click();
-      await area.getByRole('option').filter({ hasText: 'Alpha Collection' }).click();
-      await area.getByRole('button', { name: 'Prepare species', exact: true }).click();
-      await expect(area.getByRole('status')).toContainText('Species prepared for');
+      await app.waitForSpeciesCache();
       const spec = { ...jpegAt('OLD.JPG', '2026:07:01 12:00:00'), ...(path === 'Flip files' ? { path: 'OLD.JPG' } : {}) };
       await app.dropFolder([spec]); await app.waitForInspected();
       await expect(page.getByText('Local preparation saved. Original files remain in your folder.', { exact: true })).toBeVisible();
@@ -84,7 +80,7 @@ for (const path of ['Flip files', 'Flip directory', 'preparation directory'] as 
         await selectOriginal(await openPicker());
       }
       await app.waitForInspected();
-      await expect(area.getByRole('status')).toContainText('Species prepared for Alpha Collection');
+      expect((await app.cachedSpecies())?.sourceKey).toBe('Settings/species.json');
       await app.showFileList();
       await expect(app.fileListPane()).toContainText('OLD.JPG');
       await expect(page.getByRole('alert').filter({ hasText: 'The batch or connection changed' })).toHaveCount(0);

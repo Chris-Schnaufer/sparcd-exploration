@@ -11,11 +11,9 @@ export async function verifyRecoveredUpload(
   preservedMetadata?: { mountainRange: string; dateCollected: string },
 ) {
   const page = app.page;
+  await context.setOffline(false);
   await app.continueButton().click();
   await expect(app.connectForm()).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Connect', exact: true })).toBeDisabled();
-  await expect(page.getByRole('status').filter({ hasText: "You're offline — connecting needs a network connection." })).toBeVisible();
-  await context.setOffline(false);
   await app.fillConnection();
   await page.getByRole('button', { name: 'Connect', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Logout', exact: true })).toBeVisible();

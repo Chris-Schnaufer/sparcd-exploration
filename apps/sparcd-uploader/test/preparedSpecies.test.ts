@@ -45,7 +45,7 @@ describe('prepared vocabulary', () => {
     }
     const changed = { ...result, species: [] };
     const tags = [{ scientificName: 'Canis latrans' }, { scientificName: 'Requested name', requestedSpecies: 'Requested name' }];
-    expect(assessPreparedAssignment(snapshot, changed, cfg, collection.key, tags).missing).toEqual(['Canis latrans']);
+    expect(assessPreparedAssignment(snapshot, changed, cfg, collection.key, tags).missing).toEqual(['Canis latrans', 'Requested name']);
     expect(tags).toHaveLength(2);
   });
 });

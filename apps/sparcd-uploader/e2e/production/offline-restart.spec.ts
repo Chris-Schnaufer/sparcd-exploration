@@ -1,3 +1,4 @@
+import { waitForOfflineApps } from './offline-readiness';
 import { test, expect, chromium, type BrowserContext } from '@playwright/test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -32,13 +33,8 @@ test('prepared production apps and inspected batch survive a real offline Chrome
     const s3 = new S3Mock(); seedDefaultStorage(s3);
     let app = new App(page, s3);
     await app.connect();
-    const preparation = page.getByRole('region', { name: 'Prepare species for local tagging' });
-    await preparation.getByRole('button', { name: 'Collection for species preparation', exact: true }).click();
-    await preparation.getByRole('option').filter({ hasText: COLLECTION_A_NAME }).click();
-    await preparation.getByRole('button', { name: 'Prepare species', exact: true }).click();
-    await expect(preparation.getByRole('status')).toContainText('Species prepared for');
-    await page.getByRole('button', { name: 'Prepare apps for offline use', exact: true }).click();
-    await expect(page.getByRole('region', { name: 'Offline preparation' })).toContainText('Ready for offline Inspect and local tagging.');
+    await app.waitForSpeciesCache();
+    await waitForOfflineApps(page);
     await app.dropFolder(specs);
     await app.waitForInspected();
     await app.continueToAssign();

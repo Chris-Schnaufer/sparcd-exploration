@@ -1,7 +1,8 @@
+import { loadMasterSpecies } from './masterSpecies';
 // The pre-upload journal is separate from real-upload sessions and credentials.
 // A single IndexedDB transaction replaces the snapshot: interrupted writes keep
 // the previous version. Original File bytes never enter this record.
-import { flipDb, loadPreparedSpecies, readFlipRecord, validPreparedSpecies, type PreparedSpecies } from '@sparcd/flip';
+import { flipDb, readFlipRecord, validPreparedSpecies, type PreparedSpecies } from '@sparcd/flip';
 import { useStore, type FileEntry } from '../store';
 import { reconcileReselect, restoreFromHandle, type RestoreOk } from './resume';
 import type { ScannedFile } from './scanFiles';
@@ -33,14 +34,24 @@ export function recoveryGuard(): () => void {
 }
 export function bindCurrentPreparationSpecies(species: PreparedSpecies | null | undefined, id?: string): void {
   preparationId = id ?? crypto.randomUUID();
-  batchSpecies = validPreparedSpecies(species) ? species : null;
+  batchSpecies = species ?? null;
   speciesRead = Promise.resolve(batchSpecies);
   lastToken = useStore.getState().batchToken + 1;
 }
-export function acceptPreparationSpecies(species: PreparedSpecies): void {
+export async function acceptPreparationSpecies(species: PreparedSpecies): Promise<void> {
   const state = useStore.getState();
-  if (!state.files.length) { nextSpecies = species; nextConnection = state.s3Config; return; }
-  if (!validPreparedSpecies(batchSpecies)) { batchSpecies = species; speciesRead = Promise.resolve(species); lastToken = state.batchToken; retryPreparation(); }
+  // Refresh the next-batch seed even when the current batch keeps its catalog.
+  nextSpecies = species; nextConnection = state.s3Config;
+  if (!state.files.length) return;
+  if (validPreparedSpecies(batchSpecies)) return;
+  const token = state.batchToken, id = preparationId;
+  // The first journal write may still be reading its saved catalog. Do not
+  // replace that immutable batch snapshot with a later background refresh.
+  const existing = await speciesRead;
+  if (useStore.getState().batchToken !== token || preparationId !== id || validPreparedSpecies(batchSpecies)) return;
+  if (existing != null) { batchSpecies = existing; return; }
+  batchSpecies = species; speciesRead = Promise.resolve(species); lastToken = token;
+  retryPreparation();
 }
 const listeners = new Set<() => void>();
 let status = '';
@@ -135,7 +146,7 @@ export function startPreparationJournal(): void {
     // Capture ownership before queuing writes. Other windows have independent IDs.
     if (s.files.length && lastToken !== s.batchToken) {
       batchSpecies = null;
-      speciesRead = nextConnection === s.s3Config && validPreparedSpecies(nextSpecies) ? Promise.resolve(nextSpecies) : loadPreparedSpecies(s.s3Config ?? undefined);
+      speciesRead = nextConnection === s.s3Config && validPreparedSpecies(nextSpecies) ? Promise.resolve(nextSpecies) : loadMasterSpecies(s.s3Config ?? undefined);
       preparationId = crypto.randomUUID();
       lastToken = s.batchToken;
     }

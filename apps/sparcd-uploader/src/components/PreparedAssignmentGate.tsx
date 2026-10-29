@@ -1,66 +1,40 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { readFlipRecord, validPreparedSpecies } from '@sparcd/flip';
-import { diffSpecies, activeKeyProfile, useKeyBindings } from '@sparcd/auth-ui';
+import { useEffect, useState } from 'react';
+import { useOnline } from '@sparcd/auth-ui';
 import type { CollectionRef } from '@sparcd/s3-safe';
 import { useStore } from '../store';
-import { fetchPreparation, assessPreparedAssignment, stagePreparation } from '../lib/preparedSpecies';
+import { checkOfficialSpecies } from '../lib/preparedSpecies';
+import { WorkflowNotice } from './WorkflowNotice';
 
-/** Fresh canonical comparison before Assign continues; never rewrites tags or the baseline snapshot. */
+/** Compare fresh online data without replacing a batch's saved catalog or tags. */
 export function PreparedAssignmentGate({ collection, onReady }: { collection: CollectionRef | null; onReady: (ready: boolean) => void }) {
-  const cfg = useStore((s) => s.s3Config);
-  const flipId = useStore((s) => s.flipId);
-  const files = useStore((s) => s.files);
-  const tagSignature = JSON.stringify(files.flatMap((file) => file.preTags ?? []));
-  const tags = useMemo(() => JSON.parse(tagSignature) as { scientificName: string; requestedSpecies?: string }[], [tagSignature]);
-  const reviewSource = useRef<{ profile: string; source: string } | null>(null);
+  const cfg = useStore(s => s.s3Config);
+  const files = useStore(s => s.files);
+  const tags = JSON.stringify(files.flatMap(file => file.preTags ?? []));
+  const online = useOnline();
   const [message, setMessage] = useState('');
-  const [needsConfirmation, setNeedsConfirmation] = useState(false);
-  const [confirmed, setConfirmed] = useState(false);
-  const [incompatible, setIncompatible] = useState(false);
+  const [warning, setWarning] = useState('');
   const [retry, setRetry] = useState(0);
   useEffect(() => {
     let current = true;
-    reviewSource.current = null;
-    setConfirmed(false); setNeedsConfirmation(false); setIncompatible(false); setMessage('');
-    if (!flipId) { onReady(true); return; }
-    onReady(false);
-    if (!cfg || !collection) return;
-    setMessage('Checking the prepared species against the assigned collection…');
-    void (async () => {
-      const snapshot = (await readFlipRecord(flipId))?.preparedSpecies;
-      if (!validPreparedSpecies(snapshot)) throw new Error('This batch needs species prepared online. Return to Inspect to prepare its list; existing tags are preserved.');
-      const loaded = await fetchPreparation(cfg, collection);
+    setWarning(''); setMessage(''); onReady(false);
+    if (!online || !cfg || !collection) return;
+    if (JSON.parse(tags).length === 0) { onReady(true); return; }
+    setMessage('Checking species against the current official list…');
+    void checkOfficialSpecies(cfg, collection, JSON.parse(tags)).then(missing => {
       if (!current) return;
-      const profile = stagePreparation(cfg, loaded);
-      const source = `${loaded.sourceBucket}/${loaded.sourceKey}`;
-      reviewSource.current = { profile, source };
-      const pending = activeKeyProfile(useKeyBindings.getState()).speciesSources?.[source]?.pendingSpeciesChange;
-      const { missing, changed } = assessPreparedAssignment(snapshot, loaded, cfg, collection.key, tags);
       if (missing.length) {
-        setIncompatible(true);
-        setMessage(`These identifications are not in the assigned collection’s current species list: ${missing.join(', ')}. Return to Inspect and review the tags before uploading. No tags have been removed.`);
-        return;
-      }
-      const diff = diffSpecies(snapshot.species, loaded.species);
-
-      if (changed || pending) {
-        setMessage(`The assigned collection or species list differs from the prepared list for ${snapshot.collectionName}. Current list: ${collection.name || collection.uuid}. Added: ${diff.added.length}; removed: ${diff.removed.length}; updated: ${diff.modified.length}. Your identifications remain unchanged.`);
-        setNeedsConfirmation(true);
-      } else { setMessage('Prepared species match the assigned collection’s current list.'); onReady(true); }
-    })().catch((error) => { if (current) { setIncompatible(true); setMessage((error as Error).message); } });
+        const text = `Resolve these species before uploading because they are not in the current official collection or master list: ${missing.join(', ')}. Return to Inspect to review the identifications. Your tags and counts have been kept.`;
+        setMessage(text); setWarning(text);
+      } else { setMessage('Species checked against the current official list.'); onReady(true); }
+    }).catch(() => {
+      if (current) setMessage('The current species list could not be checked. Reconnect and retry before uploading. Your tags are unchanged.');
+    });
     return () => { current = false; };
-  }, [cfg, flipId, collection, tags, retry, onReady]);
-  if (!flipId) return null;
-  return <section aria-label="Prepared species assignment review" className="border border-rule p-3 space-y-2 text-[13px]">
-    <p role={incompatible ? 'alert' : 'status'}>{message || 'Select a collection to check prepared species.'}</p>
-    {needsConfirmation && <label className="flex gap-2 items-start"><input type="checkbox" checked={confirmed} onChange={(event) => {
-      const checked = event.target.checked;
-      if (checked && reviewSource.current) {
-        useKeyBindings.getState().activateProfile(reviewSource.current.profile);
-        useKeyBindings.getState().acknowledgeSpeciesChange(reviewSource.current.source);
-      }
-      setConfirmed(checked); onReady(checked);
-    }} />Use the current species list for this assignment; preserve my existing identifications.</label>}
-    {incompatible && <button type="button" className="border border-ink px-3 py-2" onClick={() => setRetry((n) => n + 1)}>Retry species check</button>}
+  }, [cfg, collection, tags, online, retry, onReady]);
+  if (JSON.parse(tags).length === 0) return null;
+  return <section aria-label="Species review" className="space-y-2 text-sm">
+    <p role="status">{message || 'Connect online and select a collection to check species.'}</p>
+    <button type="button" onClick={() => setRetry(value => value + 1)} className="min-h-11 border border-ink px-3">Check species again</button>
+    {warning && <WorkflowNotice title="Resolve species before uploading" onClose={() => setWarning('')}><p>{warning}</p></WorkflowNotice>}
   </section>;
 }

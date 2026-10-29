@@ -5,11 +5,7 @@ import { S3Mock } from '../../features/steps/s3mock';
 import { seedDefaultStorage } from '../../features/steps/fixtures-data';
 import { jpegAt } from '../../features/steps/batches';
 async function prepare(app: App) {
-  const area = app.page.getByRole('region', { name: 'Prepare species for local tagging' });
-  await area.getByRole('button', { name: 'Collection for species preparation', exact: true }).click();
-  await area.getByRole('option').filter({ hasText: 'Alpha Collection' }).click();
-  await area.getByRole('button', { name: 'Prepare species', exact: true }).click();
-  await expect(area.getByRole('status')).toContainText('Species prepared for Alpha Collection');
+  await app.waitForSpeciesCache();
 }
 async function rows(page: Page, table: string): Promise<any[]> {
   return page.evaluate(table => new Promise<any[]>((resolve, reject) => {

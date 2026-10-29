@@ -164,6 +164,26 @@ export class App {
     await expect(this.page.getByRole('button', { name: 'Logout' })).toBeVisible();
   }
 
+  /** Read durable public catalog data, without patching application state. */
+  async cachedSpecies(): Promise<any | null> {
+    return this.page.evaluate(() => new Promise<any | null>(resolve => {
+      const open = indexedDB.open('sparcd-flip');
+      open.onerror = () => resolve(null);
+      open.onsuccess = () => {
+        const db = open.result;
+        if (!db.objectStoreNames.contains('vocabularies')) { db.close(); resolve(null); return; }
+        const tx = db.transaction('vocabularies', 'readonly');
+        const read = tx.objectStore('vocabularies').get('selected');
+        tx.oncomplete = () => { db.close(); resolve(read.result?.snapshot ?? null); };
+        tx.onabort = () => { db.close(); resolve(null); };
+      };
+    }));
+  }
+
+  async waitForSpeciesCache(): Promise<void> {
+    await expect.poll(async () => (await this.cachedSpecies())?.collectionKey).toBe('Settings/species.json');
+  }
+
   async disconnectFromHeader(): Promise<void> {
     await this.page.getByRole('button', { name: 'Logout' }).click();
   }
