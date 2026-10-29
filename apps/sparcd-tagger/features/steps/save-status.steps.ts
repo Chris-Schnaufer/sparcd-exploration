@@ -283,3 +283,22 @@ Then('queued changes wait for an explicit Retry save', async ({ page, s3 }) => {
   expect(s3.puts.length).toBeGreaterThan(writes);
   expect((await readStore(page, 'automatic')).every((record: any) => !record.actions?.length && !record.flight)).toBe(true);
 });
+
+Then('an offline retry remains Retry save until a connected retry is selected', async ({ page, context, s3 }) => {
+  const writes = s3.puts.length;
+  await context.setOffline(true);
+  await expect.poll(() => page.evaluate(() => navigator.onLine)).toBe(false);
+  await page.getByTestId('automatic-save').getByRole('button', { name: 'Retry save', exact: true }).click();
+  await browse(page); await expect(badge(page)).toHaveText('Retry save');
+  await context.setOffline(false);
+  await expect.poll(() => page.evaluate(() => navigator.onLine)).toBe(true);
+  // Pass the automatic-save scheduling window to prove reconnect does not
+  // silently release work that is still awaiting an actionable Retry save.
+  await page.waitForTimeout(1200);
+  await expect(badge(page)).toHaveText('Retry save');
+  expect(s3.puts.length).toBe(writes);
+  expect((await readStore(page, 'automatic')).some((record: any) => record.actions?.length)).toBe(true);
+  await badge(page).click(); await expect(badge(page)).toContainText('Saved');
+  expect(s3.puts.length).toBeGreaterThan(writes);
+  expect((await readStore(page, 'automatic')).every((record: any) => !record.actions?.length && !record.flight)).toBe(true);
+});

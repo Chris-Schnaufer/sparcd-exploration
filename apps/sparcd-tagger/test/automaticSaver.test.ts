@@ -355,7 +355,12 @@ describe('check-only initialization', () => {
     await saver.open({ checkOnly: true });
     expect(saver.view.phase).toBe('failed'); expect(saver.view.pending).toBe(true);
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-    saver.setOnline(false); saver.setOnline(true);
+    saver.setOnline(false);
+    expect(await saver.retry()).toBe(false);
+    expect(saver.view.phase).toBe('failed');
+    expect(saver.view.pending).toBe(true);
+    saver.setOnline(true);
+    expect(saver.view.phase).toBe('failed');
     await vi.advanceTimersByTimeAsync(1200);
     expect(await saver.flush()).toBe(false);
     expect(s.save).not.toHaveBeenCalled(); expect(await db.automatic.get('auto')).toEqual(r);

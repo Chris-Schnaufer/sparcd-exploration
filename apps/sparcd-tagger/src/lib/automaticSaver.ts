@@ -218,6 +218,7 @@ export class AutomaticSaver {
   }
   retry(): Promise<boolean> {
     if (this.checking) return Promise.resolve(false);
+    if (!this.online && this.awaitingRetry) { this.publish('failed', 'Earlier changes remain unsaved. Select Retry save when connected.'); return Promise.resolve(false); }
     if (!this.online) { this.publish('pending', 'Pending/reconnecting — editing is paused.'); return Promise.resolve(false); }
     if (this.record.conflictReason || this.view.phase === 'conflict' || this.record.adoptionRequired) return Promise.resolve(false);
     this.awaitingRetry = false;

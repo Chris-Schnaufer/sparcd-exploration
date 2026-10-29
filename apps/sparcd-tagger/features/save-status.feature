@@ -88,3 +88,9 @@ Feature: Save status explains what is saved and what needs attention
     Then failed setup offers Recheck and repeated setup failures remain unknown
     And restoring setup lets Recheck show "Retry save" without consuming pending work
     And queued changes wait for an explicit Retry save
+
+  Scenario: An offline retry does not claim that paused work is retrying
+    Given upload setup fails with "queued" work
+    Then failed setup offers Recheck and repeated setup failures remain unknown
+    And restoring setup lets Recheck show "Retry save" without consuming pending work
+    And an offline retry remains Retry save until a connected retry is selected
