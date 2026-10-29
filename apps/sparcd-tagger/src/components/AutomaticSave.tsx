@@ -22,9 +22,15 @@ import { draftRevisionOf } from '../lib/draftRevision';
 
 const initial: SaveView = { phase: 'loading', message: 'Opening automatic saving…', pending: false, undoReason: 'Undo is unavailable while opening save recovery.', canEdit: false };
 export const useAutomaticSave = create<{ view: SaveView; saver: AutomaticSaver | null; repair: boolean; repairError?: string }>(() => ({ view: initial, saver: null, repair: false }));
-function retryAutomaticSave(): Promise<boolean> {
+export function retryAutomaticSave(target?: { scope: string; collectionKey: string; prefix: string }): Promise<boolean> {
+  const state = useStore.getState();
+  if (target && (!state.s3Config || accountScope(state.s3Config) !== target.scope ||
+      state.selectedCollectionKey !== target.collectionKey || state.selectedUploadPrefix !== target.prefix)) return Promise.resolve(false);
   const saver = useAutomaticSave.getState().saver;
-  if (saver) return saver.retry();
+  if (saver) {
+    if (target && (saver.record.scope !== target.scope || saver.record.collectionKey !== target.collectionKey || saver.record.uploadPrefix !== target.prefix)) return Promise.resolve(false);
+    return saver.retry();
+  }
   // A read failure can precede coordinator creation after reload. Refresh only
   // this connection's query generation; retain selection, identity and journals.
   useStore.setState(state => ({ connectionId: state.connectionId + 1 }));
