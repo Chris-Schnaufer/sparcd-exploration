@@ -32,7 +32,8 @@ vi.mock('@sparcd/flip', async (importOriginal) => {
   const api = await importOriginal<typeof import('@sparcd/flip')>();
   return {
   ...api,
-  loadPreparedSpecies: async (config: import('@sparcd/types').S3Config) => config ? ({ v: 2, endpoint: config.endpoint, ownerScope: await api.deriveFlipOwnerScope(config), collectionKey: 'bucket::collection', collectionName: 'Test collection', sourceBucket: 'bucket', sourceKey: 'Collections/collection/species.json', sourceHash: 'a'.repeat(64), preparedAt: new Date().toISOString(), profileId: 'test', overrides: {}, species: [{ key: 'Canis latrans', scientificName: 'Canis latrans', commonName: 'Coyote', iconUrl: '', keyBinding: 'C' }] }) : null,
+  loadPreparedSpecies: async (config: import('@sparcd/types').S3Config) => config ? ({ v: 2, endpoint: config.endpoint, ownerScope: await api.deriveFlipOwnerScope(config), collectionKey: 'Settings/species.json', collectionName: 'Settings master list', sourceBucket: 'bucket', sourceKey: 'Settings/species.json', sourceHash: 'a'.repeat(64), preparedAt: new Date().toISOString(), profileId: 'test', overrides: {}, species: [{ key: 'Canis latrans', scientificName: 'Canis latrans', commonName: 'Coyote', iconUrl: '', keyBinding: 'C' }] }) : null,
+  flipRecordUnavailableReason: async () => 'This batch is not available for the connected login. Its saved work has been kept.',
   writeFlipRecord: async (r: FlipRecord) => void (stored.record = r),
   readFlipRecord: async (_id: string, expectedOwnerScope?: string) =>
     stored.record && (!expectedOwnerScope || stored.record.ownerScope === expectedOwnerScope) ? stored.record : undefined,

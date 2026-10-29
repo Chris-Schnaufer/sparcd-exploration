@@ -655,3 +655,15 @@ Then('the retained identity preference exposes no login ID', async ({ app }) => 
   expect(JSON.stringify(records)).not.toContain(ACCESS_KEY);
   expect(JSON.stringify(records)).not.toContain(SECRET_KEY);
 });
+
+When('Describe is chosen while offline', async ({ app }) => {
+  await app.continueButton().click();
+});
+Then('a reconnect popup keeps the inspected batch intact', async ({ app }) => {
+  const popup=app.page.getByRole('alertdialog');
+  await expect(popup).toContainText('Connect online before Describe');
+  await popup.getByRole('button',{name:'OK',exact:true}).click();
+  await app.expectStep('Verify');
+  expect(await app.listedFiles()).toEqual(app.notes.deferredFiles);
+  expect(app.s3.puts).toHaveLength(0);
+});

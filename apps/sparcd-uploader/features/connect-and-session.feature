@@ -39,9 +39,8 @@ Feature: Connect the uploader to storage and manage the session
     And the browser is offline before deferring login
     When "Login later" is chosen instead of connecting
     Then a batch can be dropped and inspected with no connection
-    When the Describe step is reached with no connection
-    Then it shows the connection screen instead of a collection picker
-    And going back from it returns to Inspect with the batch intact
+    When Describe is chosen while offline
+    Then a reconnect popup keeps the inspected batch intact
 
   @unmapped
   Scenario: Connecting after deferring login preserves an inspection in progress

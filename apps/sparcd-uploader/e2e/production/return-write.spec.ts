@@ -7,11 +7,7 @@ import { jpegAt } from '../../features/steps/batches';
 test('a failed final local-Tagger write keeps edits visible and Done retryable', async ({ page }) => {
   const s3 = new S3Mock(); seedDefaultStorage(s3);
   const app = new App(page, s3); await app.connect();
-  const preparation = page.getByRole('region', { name: 'Prepare species for local tagging' });
-  await preparation.getByRole('button', { name: 'Collection for species preparation', exact: true }).click();
-  await preparation.getByRole('option').filter({ hasText: 'Alpha Collection' }).click();
-  await preparation.getByRole('button', { name: 'Prepare species', exact: true }).click();
-  await expect(preparation.getByRole('status')).toContainText('Species prepared for');
+  await app.waitForSpeciesCache();
   const specs = [jpegAt('RETURN.JPG', '2026:07:01 12:00:00')];
   await app.dropFolder(specs); await app.waitForInspected();
   await page.getByRole('button', { name: 'Tag species before upload', exact: true }).click();

@@ -1,4 +1,4 @@
-/** Non-secret, immutable vocabulary captured for one explicitly chosen collection. */
+/** Non-secret, immutable batch vocabulary: Settings master list or a legacy collection snapshot. */
 export type PreparedSpecies = {
   v: 2;
   endpoint: string;

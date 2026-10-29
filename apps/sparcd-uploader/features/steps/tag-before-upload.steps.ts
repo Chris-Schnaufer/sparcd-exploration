@@ -443,9 +443,5 @@ Then(
 
 
 Given('species have been prepared for local tagging', async ({ app }) => {
-  const panel = app.page.getByRole('region', { name: 'Prepare species for local tagging' });
-  await panel.getByRole('button', { name: 'Collection for species preparation', exact: true }).click();
-  await panel.getByRole('option').filter({ hasText: COLLECTION_A_NAME }).click();
-  await panel.getByRole('button', { name: 'Prepare species', exact: true }).click();
-  await expect(panel.getByRole('status')).toContainText('Species prepared for Alpha Collection');
+  await app.waitForSpeciesCache();
 });

@@ -1,10 +1,13 @@
-import { OfflineApps } from '@sparcd/auth-ui';
+import { useOnline } from '@sparcd/auth-ui';
+import { deriveFlipOwnerScope, flipRecordUnavailableReason, bindPreparedSpecies, readFlipRecord, validPreparedSpecies } from '@sparcd/flip';
+import { WorkflowNotice } from '../components/WorkflowNotice';
+import { loadMasterSpecies, refreshMasterSpecies } from '../lib/masterSpecies';
+import { acceptPreparationSpecies, readBoundPreparationSpecies, readPreparation } from '../lib/preparation';
 import { PreparationRecovery, PreparationSaveStatus } from '../components/PreparationRecovery';
 import { flushPreparation, recoveryGuard } from '../lib/preparation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../store';
 import type { Severity } from '../lib/validation';
-import { PreparedSpeciesPanel } from '../components/PreparedSpeciesPanel';
 import { StepIndicator } from '../components/StepIndicator';
 import { DropZone } from '../components/DropZone';
 import { FileList } from '../components/FileList';
@@ -20,6 +23,7 @@ import {
   adoptRecord,
   reselectFlip,
   handOffToTagger,
+  returningFlipOwnerScope,
   reopenTagger,
   resumeFromFlip,
   returningFlipId,
@@ -98,7 +102,8 @@ export function NewUpload() {
   const validations = useStore((s) => s.validations);
   const batchToken = useStore((s) => s.batchToken);
   const flipId = useStore((s) => s.flipId);
-  const [speciesReady, setSpeciesReady] = useState(false);
+  const online = useOnline();
+  const [notice, setNotice] = useState<{title:string;message:string} | null>(null);
   const [tagError, setTagError] = useState('');
   const [tagging, setTagging] = useState(false);
   const resetBatch = useStore((s) => s.resetBatch);
@@ -156,21 +161,45 @@ export function NewUpload() {
         <StepIndicator current={step} />
         {step === 'inspect' && (
           <button
-            disabled={!summary.ready || !speciesReady || tagging}
-            aria-describedby={!speciesReady ? 'species-preparation-help' : undefined}
+            disabled={!summary.ready || tagging}
             onClick={() => {
               setTagging(true); setTagError('');
-              void (flipId ? reopenTagger(flipId) : handOffToTagger()).catch((error) => { setTagError((error as Error).message); setTagging(false); });
+              const guard = recoveryGuard();
+              void (async () => {
+                await flushPreparation();
+                const cfg = useStore.getState().s3Config;
+                const ownerScope = flipId ? cfg ? await deriveFlipOwnerScope(cfg) : returningFlipOwnerScope() ?? undefined : undefined;
+                if (flipId && !ownerScope) throw new Error('Reconnect with the login that owns this batch before reopening Tagger.');
+                const record = flipId ? await readFlipRecord(flipId, ownerScope) : undefined;
+                guard();
+                if (flipId && !record) throw new Error(await flipRecordUnavailableReason(flipId, ownerScope));
+                let saved = flipId ? record?.preparedSpecies : (await readPreparation())?.species ?? await readBoundPreparationSpecies();
+                guard();
+                if (saved && !validPreparedSpecies(saved)) throw new Error('This batch’s saved species list cannot be read by this version. Your files and tags are unchanged. Use a compatible version to continue tagging.');
+                if (!validPreparedSpecies(saved)) {
+                  saved = await loadMasterSpecies(cfg ?? undefined);
+                  if (!saved && cfg && online) {
+                    try { saved = await refreshMasterSpecies(cfg, () => { try { guard(); return true; } catch { return false; } }); }
+                    catch { throw new Error('The species list could not be downloaded. Check your connection and access, then try tagging again. Your files and tags are unchanged.'); }
+                  }
+                  guard();
+                  if (!saved) throw new Error('The species list is not available on this device. Connect online to download the Settings species list, then try tagging again. You can keep selecting and inspecting files.');
+                  if (flipId) await bindPreparedSpecies(flipId, saved, ownerScope);
+                  else await acceptPreparationSpecies(saved);
+                }
+                guard();
+                await (flipId ? reopenTagger(flipId) : handOffToTagger());
+              })().catch(error => { setNotice({title:'Tagging species',message:(error as Error).message}); setTagging(false); });
             }}
             title={
-              !speciesReady ? 'Prepare species online before local tagging' : flipId
+              flipId
                 ? 'Go back to the tagger and pick up where you left off'
                 : summary.ready
                   ? 'Identify species in the Tagger before uploading'
                   : 'Resolve files that need attention first'
             }
             className={`min-h-[44px] sm:min-h-0 bg-mark text-ink border border-ink px-3.5 py-2.5 sm:py-1.5 text-[14px] font-body focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 ${
-              summary.ready && speciesReady && !tagging ? 'hover:bg-paperHover' : 'opacity-40 cursor-not-allowed'
+              summary.ready && !tagging ? 'hover:bg-paperHover' : 'opacity-40 cursor-not-allowed'
             }`}
           >
             {flipId ? 'Edit tags' : 'Tag species before upload'}
@@ -179,8 +208,7 @@ export function NewUpload() {
       </div>
 
       {step === 'drop' && !flip && <ResumeNotice />}
-      {(step === 'drop' || step === 'inspect') && <PreparedSpeciesPanel onReady={setSpeciesReady} />}
-      {(step === 'drop' || step === 'inspect') && <OfflineApps speciesReady={speciesReady} beforePrepare={flushPreparation} />}
+      {notice && <WorkflowNotice title={notice.title} onClose={() => setNotice(null)}><p>{notice.message}</p></WorkflowNotice>}
       <PreparationSaveStatus />
       {tagError && <p role="alert" className="text-warn">{tagError}</p>}
 
@@ -274,8 +302,8 @@ export function NewUpload() {
               </button>
               <button
                 disabled={!summary.ready}
-                onClick={() => setStep('assign')}
-                title={summary.ready ? 'Continue to assignment' : 'Resolve files that need attention first'}
+                onClick={() => online ? setStep('assign') : setNotice({title:'Connect before Describe',message:'Connect online before Describe so locations and collections can be loaded. Your files and tags are saved on this device.'})}
+                title={summary.ready ? 'Continue to Describe' : 'Resolve files that need attention first'}
                 className={`min-h-[44px] sm:min-h-0 bg-ink text-paper border border-ink px-3.5 py-2.5 sm:py-1.5 text-[14px] font-body font-[600] focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 ${
                   summary.ready
                     ? `hover:opacity-90 hover:animate-none ${throb ? 'animate-throb' : ''}`

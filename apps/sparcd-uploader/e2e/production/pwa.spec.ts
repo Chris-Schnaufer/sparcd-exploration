@@ -1,3 +1,4 @@
+import { waitForOfflineApps } from './offline-readiness';
 import { test, expect, chromium, type BrowserContext } from '@playwright/test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -32,13 +33,8 @@ test('installed Uploader launches as an app offline after a Chrome process resta
     const page = await launch(false, 'pwa-install');
     const s3 = new S3Mock(); seedDefaultStorage(s3);
     const warm = new App(page, s3); await warm.connect();
-    const species = page.getByRole('region', { name: 'Prepare species for local tagging' });
-    await species.getByRole('button', { name: 'Collection for species preparation', exact: true }).click();
-    await species.getByRole('option').filter({ hasText: COLLECTION_A_NAME }).click();
-    await species.getByRole('button', { name: 'Prepare species', exact: true }).click();
-    await expect(species.getByRole('status')).toContainText('Species prepared for');
-    await page.getByRole('button', { name: 'Prepare apps for offline use' }).click();
-    await expect(page.getByRole('region', { name: 'Offline preparation' })).toContainText('Ready for offline Inspect and local tagging.');
+    await warm.waitForSpeciesCache();
+    await waitForOfflineApps(page);
     const protocol = await context!.newCDPSession(page);
     const manifest = await protocol.send('Page.getAppManifest');
     expect(JSON.parse(manifest.data!).display).toBe('standalone');
@@ -60,7 +56,7 @@ test('installed Uploader launches as an app offline after a Chrome process resta
     expect(await app.evaluate(() => navigator.onLine)).toBe(false);
     expect(await app.evaluate(() => matchMedia('(display-mode: standalone)').matches)).toBe(true);
     await app.getByRole('button', { name: 'Login later', exact: true }).click();
-    await expect(app.getByRole('region', { name: 'Offline preparation' })).toContainText('Ready for offline Inspect and local tagging.');
+    await waitForOfflineApps(app);
     let local = new App(app, s3);
     await local.open(); // installs only the synthetic OS picker, never app data/assets
     await app.getByRole('button', { name: 'Login later', exact: true }).click();

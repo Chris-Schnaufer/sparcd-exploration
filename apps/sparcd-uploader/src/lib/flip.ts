@@ -1,3 +1,4 @@
+import { loadMasterSpecies } from './masterSpecies';
 // Handing a not-yet-uploaded batch to the tagger, and taking it back.
 //
 // Out: everything the tagger needs to show and tag the batch offline — the
@@ -15,7 +16,7 @@ import {
   newFlipId,
   isValidFlipOwnerScope,
   deriveFlipOwnerScope,
-  loadPreparedSpecies,
+  flipRecordUnavailableReason,
   readFlipRecord,
   writeFlipRecord,
   type FlipFile,
@@ -80,7 +81,7 @@ export async function handOffToTagger(): Promise<void> {
   const guard = recoveryGuard();
   await flushPreparation();
   const preparation = await readPreparation();
-  const preparedSpecies = preparation ? preparation.species : await loadPreparedSpecies(s.s3Config ?? undefined);
+  const preparedSpecies = preparation ? preparation.species : await loadMasterSpecies(s.s3Config ?? undefined);
   guard();
   if (!preparedSpecies) throw new Error('Connect with the login that owns this batch and prepare species before opening Tagger. Your inspected files and tags are unchanged.');
   assertPreparedSpecies(preparedSpecies);
@@ -193,7 +194,7 @@ export async function resumeFromFlip(flipId: string): Promise<FlipReturn> {
   if (!ownerScope) return { kind: 'not-found', message: 'Reconnect with the login that owns this batch to return it to Uploader. The saved batch has been kept.' };
   const record = await readFlipRecord(flipId, ownerScope);
   guard();
-  if (!record) return { kind: 'not-found', message: 'This batch is not available for the connected login. Reconnect with the login that started it; the saved batch has been kept.' };
+  if (!record) return { kind: 'not-found', message: await flipRecordUnavailableReason(flipId, ownerScope) };
   return adoptRecord(record);
 }
 

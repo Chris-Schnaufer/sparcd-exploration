@@ -1,3 +1,4 @@
+import { waitForOfflineApps } from './offline-readiness';
 import { test, expect } from '@playwright/test';
 import { App } from '../../features/steps/app';
 import { S3Mock } from '../../features/steps/s3mock';
@@ -11,9 +12,7 @@ test('an interrupted coordinated update preserves the active offline release and
   const s3 = new S3Mock(); seedDefaultStorage(s3);
   const app = new App(page, s3);
   await app.connect();
-  await page.getByRole('button', { name: 'Prepare apps for offline use' }).click();
-  const offline = page.getByRole('region', { name: 'Offline preparation' });
-  await expect(offline).toContainText('Both apps are stored for offline use.');
+  await waitForOfflineApps(page);
   await app.dropFolder([jpegAt('PENDING.JPG', '2026:07:01 12:00:00')]);
   await app.waitForInspected();
   await expect(page.getByText('Local preparation saved. Original files remain in your folder.', { exact: true })).toBeVisible();
@@ -24,25 +23,25 @@ test('an interrupted coordinated update preserves the active offline release and
   release.assets.push({ url: '/sparcd-exploration/tagger/assets/intentionally-unavailable.js', hash: '0'.repeat(64) });
   try {
     await writeFile(workerFile, `const RELEASE = ${JSON.stringify(release)};\n${original.slice(original.indexOf('\n') + 1)}`);
-    await page.getByRole('button', { name: 'Prepare apps for offline use' }).click();
-    await expect(offline).toContainText('App preparation failed.');
+    await context.setOffline(true); await context.setOffline(false);
+    await expect(page.getByRole('status').filter({ hasText: 'could not finish downloading' })).toBeVisible();
     await expect.poll(() => page.evaluate(() => caches.keys())).toEqual(names);
     await context.setOffline(true);
     await page.reload();
     await expect(page.getByRole('region', { name: 'Saved local preparation' })).toContainText('1 inspected file');
-    await expect(page.getByRole('region', { name: 'Offline preparation' })).toContainText('Both apps are stored for offline use.');
+    await waitForOfflineApps(page);
     // A complete new release stages without taking over this pending client.
     await context.setOffline(false);
     const nextRelease = { ...release, version: release.version + '-complete', assets: release.assets.slice(0, -1) };
     await writeFile(workerFile, `const RELEASE = ${JSON.stringify(nextRelease)};\n${original.slice(original.indexOf('\n') + 1)}`);
-    await page.getByRole('button', { name: 'Prepare apps for offline use' }).click();
-    await expect(page.getByRole('region', { name: 'Offline preparation' })).toContainText('An app update is ready.');
+    await context.setOffline(true); await context.setOffline(false);
+    await expect(page.getByRole('status').filter({ hasText: 'An Uploader update is ready.' })).toBeVisible();
     await expect(page.getByRole('region', { name: 'Saved local preparation' })).toContainText('1 inspected file');
     // Any family-scope document holds the old worker, even outside the two apps.
     const other = await context.newPage();
     await other.goto('/sparcd-exploration/__offline-harness/probe.html');
     expect(await other.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true);
-    await expect(page.getByRole('region', { name: 'Offline preparation' })).toContainText('close all SPARC’d tabs, windows, and installed app windows');
+    await expect(page.getByRole('status').filter({ hasText: 'An Uploader update is ready.' })).toBeVisible();
     await page.close();
     expect(await other.evaluate(async () => !!(await navigator.serviceWorker.getRegistration('/sparcd-exploration/'))?.waiting)).toBe(true);
     await other.close();
@@ -68,18 +67,15 @@ test('an unprepared browser cannot open its first-ever Uploader visit offline', 
   await context.setOffline(false);
   await page.goto('/sparcd-exploration/uploader/');
   await page.getByRole('button', { name: 'Login later', exact: true }).click();
-  await expect(page.getByRole('region', { name: 'Offline preparation' })).toContainText('Prepare both apps online before reopening this batch offline.');
-  await expect(page.getByText('Tagging requires prior online species preparation.', { exact: false })).toBeVisible();
+  await waitForOfflineApps(page);
+  await expect(page.getByRole('region', { name: 'Offline preparation' })).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Prepare species for local tagging' })).toHaveCount(0);
 });
 
 test('journal quota failure blocks handoff without losing Inspect and exposes a working retry', async ({ page }) => {
   const s3 = new S3Mock(); seedDefaultStorage(s3);
   const app = new App(page, s3); await app.connect();
-  const species = page.getByRole('region', { name: 'Prepare species for local tagging' });
-  await species.getByRole('button', { name: 'Collection for species preparation', exact: true }).click();
-  await species.getByRole('option').filter({ hasText: 'Alpha Collection' }).click();
-  await species.getByRole('button', { name: 'Prepare species', exact: true }).click();
-  await expect(species.getByRole('status')).toContainText('Species prepared for');
+  await app.waitForSpeciesCache();
   await page.evaluate(() => {
     const original = IDBObjectStore.prototype.put;
     (window as any).__restoreQuotaFault = () => { IDBObjectStore.prototype.put = original; };
@@ -92,7 +88,8 @@ test('journal quota failure blocks handoff without losing Inspect and exposes a 
   await expect(page.getByRole('alert').filter({ hasText: 'Local preparation could not be saved.' })).toBeVisible();
   await page.getByRole('button', { name: 'Tag species before upload', exact: true }).click();
   await app.expectStep('Verify');
-  await expect(page.getByRole('alert').filter({ hasText: 'Keep this tab open and retry' })).toBeVisible();
+  await expect(page.getByRole('alertdialog')).toContainText('Keep this tab open');
+  await page.getByRole('alertdialog').getByRole('button', { name: 'OK', exact: true }).click();
   expect(await app.readFlipRecords()).toEqual([]);
   await page.evaluate(() => (window as any).__restoreQuotaFault());
   await page.getByRole('button', { name: 'Retry saving preparation' }).click();
@@ -105,9 +102,7 @@ test('journal quota failure blocks handoff without losing Inspect and exposes a 
 test('reopening detects an evicted app asset and online preparation repairs its pinned bytes', async ({ page, context }) => {
   await page.goto('/sparcd-exploration/uploader/');
   await page.getByRole('button', { name: 'Login later', exact: true }).click();
-  await page.getByRole('button', { name: 'Prepare apps for offline use' }).click();
-  const offline = page.getByRole('region', { name: 'Offline preparation' });
-  await expect(offline).toContainText('Both apps are stored for offline use.');
+  await waitForOfflineApps(page);
   const removed = await page.evaluate(async () => {
     const name = (await caches.keys()).find(name => name.startsWith('sparcd-apps-'))!;
     const cache = await caches.open(name);
@@ -117,8 +112,7 @@ test('reopening detects an evicted app asset and online preparation repairs its 
   expect(removed).toBe(true);
   await context.setOffline(true); await page.reload();
   await page.getByRole('button', { name: 'Login later', exact: true }).click();
-  await expect(offline).toContainText('Offline app files are incomplete.');
+  await expect(page.getByRole('status').filter({ hasText: 'not fully available offline' })).toBeVisible();
   await context.setOffline(false);
-  await page.getByRole('button', { name: 'Prepare apps for offline use' }).click();
-  await expect(offline).toContainText('Both apps are stored for offline use.');
+  await waitForOfflineApps(page);
 });

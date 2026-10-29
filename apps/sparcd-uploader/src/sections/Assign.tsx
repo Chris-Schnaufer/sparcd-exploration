@@ -228,8 +228,8 @@ export function Assign() {
   // Background processing finishing is no longer part of this gate: Upload
   // streams blobs as files individually become ready and only publishes once
   // processing genuinely completes, so there's nothing to wait for here.
-  const baseReady = !!location && !!slug && !!collection && !!uploadTimeZone && !!mountainRange.trim() && !!dateCollected && (!flipId || speciesAssignmentReady);
-  const continueHint = !location
+  const baseReady = online && !!location && !!slug && !!collection && !!uploadTimeZone && !!mountainRange.trim() && !!dateCollected && (!flipId || speciesAssignmentReady);
+  const continueHint = !online ? 'Connect online before continuing to upload' : !location
     ? 'Select a deployment location first'
     : !collection
       ? 'Select a target collection first'
