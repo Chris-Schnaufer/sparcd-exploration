@@ -176,7 +176,10 @@ export async function replayMissingRemovalIntents(scope: { preparationId?: strin
     if (!intent || intent.v !== 1 || intent.id !== row.id || typeof intent.preparationId !== 'string' || !intent.preparationId || (intent.flipId !== null && typeof intent.flipId !== 'string') || (intent.ownerScope !== undefined && typeof intent.ownerScope !== 'string') || typeof intent.relPath !== 'string' || !intent.relPath || !Number.isFinite(intent.size) || intent.size < 0 || typeof intent.sha256 !== 'string' || !intent.sha256 || !Number.isFinite(Date.parse(intent.createdAt)) || (intent.appliedAt !== undefined && !Number.isFinite(Date.parse(intent.appliedAt)))) {
       throw new Error('A saved removal needs recovery. Its journal is invalid; keep this browser data and contact support.');
     }
-    if (intent.appliedAt) continue;
+    // A different tab may have completed this intent while this tab still has
+    // the row hidden in memory. Include completed tombstones in local cleanup,
+    // but never apply their storage mutation a second time.
+    if (intent.appliedAt) { completed.push(intent); continue; }
     try {
       await applyMissingRemovalIntent(intent);
       completed.push(intent);
@@ -188,22 +191,22 @@ export async function replayMissingRemovalIntents(scope: { preparationId?: strin
       throw error;
     }
   }
-  finalizeReplayedRemovals(completed);
-  if (completed.length) reportMissingRemoval('Removed file from the saved preparation and Tagger handoff.');
+  if (finalizeReplayedRemovals(completed)) reportMissingRemoval('Removed file from the saved preparation and Tagger handoff.');
 }
-function finalizeReplayedRemovals(completed: MissingRemovalIntent[]): void {
-  if (!completed.length) return;
-  const current = useStore.getState();
+function finalizeReplayedRemovals(completed: MissingRemovalIntent[]): boolean {
+  let finalized = false;
   for (const intent of completed) {
+    if (preparationId === intent.preparationId) {
+      const currentFile = useStore.getState().files.find(file => file.relPath === intent.relPath && file.size === intent.size && file.sha256 === intent.sha256);
+      if (currentFile) { removeStoreFileAfterDurableCommit(currentFile.id); finalized = true; }
+    }
     for (const [fileId, pending] of pendingMissingRemovals) {
       if (pending.intentId !== intent.id) continue;
-      if (preparationId === intent.preparationId) {
-        const file = current.files.find(entry => entry.id === fileId && entry.relPath === intent.relPath);
-        if (file) removeStoreFileAfterDurableCommit(fileId);
-      }
       pendingMissingRemovals.delete(fileId);
+      finalized = true;
     }
   }
+  return finalized;
 }
 export async function removeMissingOriginal(fileId: string): Promise<void> {
   if (pendingMissingRemovals.has(fileId)) return;
@@ -356,7 +359,7 @@ export function startPreparationJournal(): void {
         await flipDb.transaction('rw', flipDb.preparations, flipDb.removalIntents, async () => {
           const tombstones = (await flipDb.removalIntents.toArray())
             .map(row => row.value as MissingRemovalIntent)
-            .filter(intent => intent?.preparationId === id);
+            .filter(intent => intent?.preparationId === id && !!intent.appliedAt);
           const retainedFiles = files.filter(file => !tombstones.some(intent => intent.relPath === file.relPath && sameRemovalTarget(file, intent)));
           if (!retainedFiles.length) {
             await flipDb.preparations.delete(id);

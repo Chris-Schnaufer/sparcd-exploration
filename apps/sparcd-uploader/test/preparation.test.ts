@@ -293,18 +293,14 @@ it('uses a refreshed master list for an immediately selected next batch without 
   await journal.flushPreparation();
   expect((await journal.readPreparation())?.species).toEqual(fresh);
   store.getState().resetBatch(); await journal.flushPreparation(); memory.rows.clear();
-});
-
-function seedMissingRemoval(id: string, withFlip = true) {
+function seedMissingRemoval(id: string, withFlip = true, onlyMissing = false) {
   const missing = { id: 'SD/MISSING.JPG', relPath: 'SD/MISSING.JPG', fileName: 'MISSING.JPG', size: 12, lastModified: 123, mediaKind: 'image' as const, processState: 'error' as const, sha256: 'hash-missing', needsOriginal: true, processError: 'not in the selected folder' };
   const good = { id: 'SD/GOOD.JPG', relPath: 'SD/GOOD.JPG', fileName: 'GOOD.JPG', size: 8, lastModified: 124, mediaKind: 'image' as const, processState: 'ready' as const, sha256: 'hash-good' };
-  const saved = { v: 1 as const, id, savedAt: new Date().toISOString(), files: [missing, good], flipId: withFlip ? `flip-${id}` : null, species: null, inputs: { selectedBucket: null, selectedLocationId: null, uploadDescription: 'saved note', uploadTimeZone: 'America/Phoenix' } };
+  const files = onlyMissing ? [missing] : [missing, good];
+  const saved = { v: 1 as const, id, savedAt: new Date().toISOString(), files, flipId: withFlip ? `flip-${id}` : null, species: null, inputs: { selectedBucket: null, selectedLocationId: null, uploadDescription: 'saved note', uploadTimeZone: 'America/Phoenix' } };
   memory.rows.set(id, { id, value: structuredClone(saved) });
-  if (withFlip) memory.flips.set(saved.flipId!, { id: saved.flipId!, v: 2, createdAt: new Date().toISOString(), returnUrl: '/uploader/', ownerScope: 'owner-test', files: [missing, good], tags: { 'SD/MISSING.JPG': [{ scientificName: 'Canis latrans', commonName: 'Coyote', count: 1, requestedSpecies: '', freeTags: '' }], 'SD/GOOD.JPG': [] }, revision: 4 });
-  store.setState({ files: [
-    { ...missing, file: new File([], missing.fileName) },
-    { ...good, file: new File(['goodfile'], good.fileName) },
-  ], flipId: saved.flipId, batchToken: 902, s3Config: { endpoint: 'https://example.test', accessKey: 'person', secretKey: 'secret', region: 'us-east-1', forcePathStyle: true } });
+  if (withFlip) memory.flips.set(saved.flipId!, { id: saved.flipId!, v: 2, createdAt: new Date().toISOString(), returnUrl: '/uploader/', ownerScope: 'owner-test', files, tags: { 'SD/MISSING.JPG': [{ scientificName: 'Canis latrans', commonName: 'Coyote', count: 1, requestedSpecies: '', freeTags: '' }], ...(onlyMissing ? {} : { 'SD/GOOD.JPG': [] }) }, revision: 4 });
+  store.setState({ files: files.map(file => ({ ...file, file: new File(file === missing ? [] : ['goodfile'], file.fileName) })), flipId: saved.flipId, batchToken: 902, s3Config: { endpoint: 'https://example.test', accessKey: 'person', secretKey: 'secret', region: 'us-east-1', forcePathStyle: true } });
   journal.bindCurrentPreparationSpecies(null, id);
   // adoptTaggedBatch advances the token after binding the local preparation.
   store.setState({ batchToken: 903 });
@@ -464,4 +460,53 @@ it('does not let an older tab autosave a removed original back into its preparat
   expect(memory.rows.get(saved.id).value.files.map((file: any) => file.relPath)).toEqual(['SD/GOOD.JPG']);
   expect(memory.rows.get(saved.id).value.inputs.uploadDescription).toBe('edited in stale tab');
   expect([...memory.removals.values()].some(row => row.value.preparationId === saved.id && row.value.appliedAt)).toBe(true);
+});
+
+it('clears the pending row in this tab when Retry finds that another tab already applied its removal', async () => {
+  const { saved } = seedMissingRemoval('remove-applied-in-other-tab');
+  await journal.flushPreparation();
+  memory.failAtomicStage = 'flip';
+  await expect(journal.removeMissingOriginal('SD/MISSING.JPG')).rejects.toThrow('QuotaExceededError');
+  expect(journal.isMissingRemovalPending('SD/MISSING.JPG')).toBe(true);
+
+  // Simulate the other tab's successful atomic transaction and durable marker.
+  memory.failAtomicStage = '';
+  const intentRow = [...memory.removals.values()].find(row => row.value.preparationId === saved.id)!;
+  const intent = intentRow.value;
+  const preparation = memory.rows.get(saved.id);
+  preparation.value.files = preparation.value.files.filter((file: any) => file.relPath !== intent.relPath);
+  memory.rows.set(saved.id, preparation);
+  const flip = memory.flips.get(saved.flipId!)!;
+  flip.files = flip.files.filter((file: any) => file.relPath !== intent.relPath);
+  delete flip.tags[intent.relPath];
+  memory.flips.set(saved.flipId!, flip);
+  memory.removals.set(intent.id, { id: intent.id, value: { ...intent, appliedAt: new Date().toISOString() } });
+
+  await journal.retryMissingOriginalRemovals();
+  expect(store.getState().files.map(file => file.relPath)).toEqual(['SD/GOOD.JPG']);
+  expect(journal.isMissingRemovalPending('SD/MISSING.JPG')).toBe(false);
+  expect(memory.flips.get(saved.flipId!)!.tags).not.toHaveProperty('SD/MISSING.JPG');
+});
+
+it('keeps a pending last-file removal recoverable through autosave until replay updates both journals', async () => {
+  const { saved } = seedMissingRemoval('remove-pending-last-file', true, true);
+  await journal.flushPreparation();
+  memory.failAtomicStage = 'flip';
+  await expect(journal.removeMissingOriginal('SD/MISSING.JPG')).rejects.toThrow('QuotaExceededError');
+
+  // An unrelated edit causes the older tab's normal autosave while the intent
+  // is still pending; it must not treat that intent as a completed tombstone.
+  store.getState().setUploadDescription('edited while removal is pending');
+  await journal.flushPreparation();
+  expect(memory.rows.get(saved.id).value.files.map((file: any) => file.relPath)).toEqual(['SD/MISSING.JPG']);
+  expect(memory.rows.get(saved.id).value.inputs.uploadDescription).toBe('edited while removal is pending');
+  expect(memory.flips.get(saved.flipId!)!.files.map((file: any) => file.relPath)).toEqual(['SD/MISSING.JPG']);
+  expect(memory.flips.get(saved.flipId!)!.tags).toHaveProperty('SD/MISSING.JPG');
+
+  memory.failAtomicStage = '';
+  await journal.listPreparations();
+  expect(memory.rows.has(saved.id)).toBe(false);
+  expect(memory.flips.get(saved.flipId!)!.files).toHaveLength(0);
+  expect(memory.flips.get(saved.flipId!)!.tags).not.toHaveProperty('SD/MISSING.JPG');
+  expect([...memory.removals.values()].find(row => row.value.preparationId === saved.id)?.value.appliedAt).toBeTruthy();
 });
