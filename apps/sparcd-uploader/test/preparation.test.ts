@@ -1,12 +1,12 @@
 import { beforeAll, expect, it, vi } from 'vitest';
 const storage = () => { const values = new Map<string, string>(); return { getItem: (k: string) => values.get(k) ?? null, setItem: (k: string, v: string) => values.set(k, v), removeItem: (k: string) => values.delete(k) }; };
 Object.assign(globalThis, { window: Object.assign(globalThis, { addEventListener() {}, removeEventListener() {}, localStorage: storage(), sessionStorage: storage() }) });
-const memory = vi.hoisted(() => ({ rows: new Map<string, any>(), flips: new Map<string, any>(), removals: new Map<string, any>(), fail: false, failIntent: false, failAtomicStage: '' as '' | 'preparation' | 'flip', inTransaction: false, hold: null as Promise<void> | null, entered: () => {}, puts: 0 }));
+const memory = vi.hoisted(() => ({ rows: new Map<string, any>(), flips: new Map<string, any>(), removals: new Map<string, any>(), fail: false, failIntent: false, failAtomicStage: '' as '' | 'preparation' | 'flip', inTransaction: false, hold: null as Promise<void> | null, entered: () => {}, ownerHold: null as Promise<void> | null, ownerEntered: () => {}, ownerScope: 'flip-owner-v1:' + 'a'.repeat(64), puts: 0 }));
 vi.mock('@sparcd/flip', async original => ({ ...(await original<typeof import('@sparcd/flip')>()),
-  deriveFlipOwnerScope: async () => 'owner-test',
+  deriveFlipOwnerScope: async () => { memory.ownerEntered(); await memory.ownerHold; return memory.ownerScope; },
   flipDb: { transaction: async (_mode: string, ...args: any[]) => { const work = args.at(-1); const rows = structuredClone([...memory.rows]); const flips = structuredClone([...memory.flips]); const removals = structuredClone([...memory.removals]); memory.inTransaction = true; try { return await work(); } catch (error) { memory.rows = new Map(rows); memory.flips = new Map(flips); memory.removals = new Map(removals); throw error; } finally { memory.inTransaction = false; } }, preparations: { toArray: async () => structuredClone([...memory.rows.values()]), get: async (id: string) => structuredClone(memory.rows.get(id)), put: async (row: any) => { memory.puts++; memory.entered(); await memory.hold; if (memory.fail || memory.inTransaction && memory.failAtomicStage === 'preparation') throw new Error('QuotaExceededError'); memory.rows.set(row.id, structuredClone(row)); }, delete: async (id: string) => { memory.rows.delete(id); } }, records: { get: async (id: string) => structuredClone(memory.flips.get(id)), put: async (row: any) => { if (memory.inTransaction && memory.failAtomicStage === 'flip') throw new Error('QuotaExceededError'); memory.flips.set(row.id, structuredClone(row)); } }, removalIntents: { toArray: async () => structuredClone([...memory.removals.values()]), get: async (id: string) => structuredClone(memory.removals.get(id)), put: async (row: any) => { if (memory.failIntent) throw new Error('QuotaExceededError'); memory.removals.set(row.id, structuredClone(row)); }, delete: async (id: string) => { memory.removals.delete(id); } } },
   loadPreparedSpecies: async () => null,
-  readFlipRecord: async (id: string) => memory.flips.get(id) ?? null,
+  readFlipRecord: async (id: string, ownerScope?: string) => { const record = memory.flips.get(id); return record && (!ownerScope || record.ownerScope === ownerScope) ? record : null; },
 }));
 vi.mock('../src/lib/processPool', () => ({ processBatch: (items: any[], _started: any, result: any) => {
   for (const item of items) result({ id: item.id, sha256: item.file.name === 'edited.jpg' ? 'changed' : 'original', mediaKind: 'image' });
@@ -52,10 +52,10 @@ it.each(['reselect', 'handle'])('restores verified tagged files from a mixed %s 
       mediaKind: 'image' as const, processState: 'ready' as const, sha256: 'original', lastModified: 123,
       manualSource: 'manual' as const, manualNaive: { year: 2026, month: 7, day: 1, hour: 12, minute: 0, second: 0 },
       thumbnail: new Blob(['thumb']), preTags: [{ scientificName: 'Saved species', commonName: 'Saved', count: 2, requestedSpecies: '', freeTags: '' }], preTaggerUser: 'Original Tagger',
-    })), flipId: 'mixed-flip', species: null,
+    })), flipId: 'mixed-flip', ownerScope: memory.ownerScope, species: null,
     inputs: { selectedBucket: null, selectedLocationId: null, uploadDescription: 'mixed notes', uploadTimeZone: 'America/Phoenix' } };
   const tags = { scientificName: 'Canis latrans', commonName: 'Coyote', count: 7, requestedSpecies: '', freeTags: '' };
-  memory.flips.set('mixed-flip', { tags: { 'SD/good.jpg': [tags] }, taggerUser: 'Returning Tagger' });
+  memory.flips.set('mixed-flip', { ownerScope: memory.ownerScope, tags: { 'SD/good.jpg': [tags] }, taggerUser: 'Returning Tagger' });
   memory.rows.set(saved.id, { id: saved.id, value: structuredClone(saved) });
   const selected = [
     { id: 'SD/good.jpg', relPath: 'SD/good.jpg', fileName: 'good.jpg', mediaKind: 'image' as const, size: original.size, file: original },
@@ -90,6 +90,29 @@ it.each(['reselect', 'handle'])('restores verified tagged files from a mixed %s 
   expect(store.getState().files.every(file => file.processState === 'ready' && !file.needsOriginal && !file.processError)).toBe(true);
   expect(store.getState().files[0].preTags).toEqual([tags]);
   memory.flips.clear(); store.getState().resetBatch(); await journal.flushPreparation(); memory.rows.clear();
+});
+it('restores the latest Tagger tags during offline preparation recovery using its saved owner scope', async () => {
+  const file = new File(['original bytes'], 'offline.jpg', { lastModified: 123 });
+  const tag = { scientificName: 'Canis latrans', commonName: 'Coyote', count: 4, requestedSpecies: '', freeTags: '' };
+  const saved = { v: 1 as const, id: 'offline-tagged-recovery', savedAt: new Date().toISOString(),
+    files: [{ id: 'SD/offline.jpg', relPath: 'SD/offline.jpg', fileName: 'offline.jpg', size: file.size, mediaKind: 'image' as const, processState: 'ready' as const, sha256: 'original', lastModified: file.lastModified, preTags: [] }],
+    flipId: 'offline-tagged-flip', species: null,
+    inputs: { selectedBucket: null, selectedLocationId: null, uploadDescription: 'offline tags', uploadTimeZone: 'America/Phoenix' } };
+  memory.rows.set(saved.id, { id: saved.id, value: structuredClone(saved) });
+  memory.flips.set(saved.flipId, { id: saved.flipId, ownerScope: memory.ownerScope, files: [], tags: { 'SD/offline.jpg': [tag] }, taggerUser: 'Latest Tagger', preparedSpecies: null });
+  const token = store.getState().batchToken;
+  journal.bindCurrentPreparationSpecies(null, saved.id);
+  store.setState({ s3Config: null, files: [{ ...saved.files[0], file, processState: 'ready' }], flipId: saved.flipId, batchToken: token + 1 });
+  await journal.flushPreparation();
+  const persisted = memory.rows.get(saved.id).value;
+  expect(persisted.ownerScope).toBe(memory.ownerScope);
+
+  await journal.recoverPreparation(persisted, [{ id: 'SD/offline.jpg', relPath: 'SD/offline.jpg', fileName: file.name, size: file.size, mediaKind: 'image', file }]);
+  await journal.flushPreparation();
+
+  expect(store.getState().files[0]).toMatchObject({ preTags: [tag], preTaggerUser: 'Latest Tagger' });
+  expect(memory.rows.get(saved.id).value.ownerScope).toBe(memory.ownerScope);
+  store.getState().resetBatch(); await journal.flushPreparation(); memory.rows.clear(); memory.flips.clear();
 });
 it('writes batch-owned keys and never overwrites or clears a sibling journal', async () => {
   const sibling = { id: 'sibling', value: { keep: 'other window' } };
@@ -299,15 +322,44 @@ function seedMissingRemoval(id: string, withFlip = true, onlyMissing = false) {
   const missing = { id: 'SD/MISSING.JPG', relPath: 'SD/MISSING.JPG', fileName: 'MISSING.JPG', size: 12, lastModified: 123, mediaKind: 'image' as const, processState: 'error' as const, sha256: 'hash-missing', needsOriginal: true, processError: 'not in the selected folder' };
   const good = { id: 'SD/GOOD.JPG', relPath: 'SD/GOOD.JPG', fileName: 'GOOD.JPG', size: 8, lastModified: 124, mediaKind: 'image' as const, processState: 'ready' as const, sha256: 'hash-good' };
   const files = onlyMissing ? [missing] : [missing, good];
-  const saved = { v: 1 as const, id, savedAt: new Date().toISOString(), files, flipId: withFlip ? `flip-${id}` : null, species: null, inputs: { selectedBucket: null, selectedLocationId: null, uploadDescription: 'saved note', uploadTimeZone: 'America/Phoenix' } };
+  const saved = { v: 1 as const, id, savedAt: new Date().toISOString(), files, flipId: withFlip ? `flip-${id}` : null, ...(withFlip ? { ownerScope: memory.ownerScope } : {}), species: null, inputs: { selectedBucket: null, selectedLocationId: null, uploadDescription: 'saved note', uploadTimeZone: 'America/Phoenix' } };
   memory.rows.set(id, { id, value: structuredClone(saved) });
-  if (withFlip) memory.flips.set(saved.flipId!, { id: saved.flipId!, v: 2, createdAt: new Date().toISOString(), returnUrl: '/uploader/', ownerScope: 'owner-test', files, tags: { 'SD/MISSING.JPG': [{ scientificName: 'Canis latrans', commonName: 'Coyote', count: 1, requestedSpecies: '', freeTags: '' }], ...(onlyMissing ? {} : { 'SD/GOOD.JPG': [] }) }, revision: 4 });
+  if (withFlip) memory.flips.set(saved.flipId!, { id: saved.flipId!, v: 2, createdAt: new Date().toISOString(), returnUrl: '/uploader/', ownerScope: memory.ownerScope, files, tags: { 'SD/MISSING.JPG': [{ scientificName: 'Canis latrans', commonName: 'Coyote', count: 1, requestedSpecies: '', freeTags: '' }], ...(onlyMissing ? {} : { 'SD/GOOD.JPG': [] }) }, revision: 4 });
   store.setState({ files: files.map(file => ({ ...file, file: new File(file === missing ? [] : ['goodfile'], file.fileName) })), flipId: saved.flipId, batchToken: 902, s3Config: { endpoint: 'https://example.test', accessKey: 'person', secretKey: 'secret', region: 'us-east-1', forcePathStyle: true } });
   journal.bindCurrentPreparationSpecies(null, id);
   // adoptTaggedBatch advances the token after binding the local preparation.
   store.setState({ batchToken: 903 });
   return { saved, missing };
 }
+it('does not let a pending removal affect a replacement batch that reuses the file identity', async () => {
+  const { saved } = seedMissingRemoval('remove-batch-switch-race');
+  await journal.flushPreparation();
+  let releaseOwner!: () => void;
+  let notifyOwnerCheck!: () => void;
+  memory.ownerHold = new Promise<void>(resolve => { releaseOwner = resolve; });
+  const ownerCheckStarted = new Promise<void>(resolve => { notifyOwnerCheck = resolve; });
+  memory.ownerEntered = notifyOwnerCheck;
+
+  const removal = journal.removeMissingOriginal('SD/MISSING.JPG');
+  await ownerCheckStarted;
+  const replacement = new File(['replacement bytes'], 'MISSING.JPG', { lastModified: 999 });
+  store.getState().setFiles([{ id: 'SD/MISSING.JPG', relPath: 'SD/MISSING.JPG', fileName: 'MISSING.JPG', size: replacement.size, mediaKind: 'image', file: replacement }]);
+  const replacementEntry = store.getState().files[0];
+  store.setState({ files: [{ ...replacementEntry, size: 12, processState: 'error', sha256: 'hash-missing', needsOriginal: true, processError: 'not in the selected folder' }] });
+
+  releaseOwner();
+  await expect(removal).rejects.toThrow('batch or connection changed');
+  await journal.flushPreparation();
+  expect(store.getState().files).toHaveLength(1);
+  expect(store.getState().files[0]).toMatchObject({ relPath: 'SD/MISSING.JPG', needsOriginal: true, sha256: 'hash-missing' });
+  expect(memory.removals.size).toBe(0);
+  expect(memory.rows.get(saved.id).value.files).toHaveLength(2);
+  expect(memory.flips.get(saved.flipId!)!.files).toHaveLength(2);
+  expect(journal.isAnyMissingRemovalPending()).toBe(false);
+
+  memory.ownerHold = null; memory.ownerEntered = () => {};
+  store.getState().resetBatch(); await journal.flushPreparation(); memory.rows.clear(); memory.flips.clear();
+});
 it('journals a missing-file removal before atomically removing its preparation, Flip file, and tags', async () => {
   const { saved } = seedMissingRemoval('remove-success');
   await journal.flushPreparation();
@@ -318,7 +370,7 @@ it('journals a missing-file removal before atomically removing its preparation, 
   expect(flip.files.map((file: any) => file.relPath)).toEqual(['SD/GOOD.JPG']);
   expect(flip.tags).not.toHaveProperty('SD/MISSING.JPG');
   expect(flip.tags['SD/GOOD.JPG']).toEqual([]);
-  expect(flip.ownerScope).toBe('owner-test');
+  expect(flip.ownerScope).toBe(memory.ownerScope);
   expect(flip.revision).toBe(5);
   expect(flip.returnUrl).toBe('/uploader/');
   expect([...memory.removals.values()].find(row => row.value.preparationId === saved.id)?.value.appliedAt).toBeTruthy();
@@ -393,7 +445,7 @@ it.each(['preparation', 'flip'] as const)('keeps a replacement at the same path 
     replacement.files[0] = { ...replacement.files[0], sha256: 'different-content' };
     memory.flips.set(saved.flipId!, replacement);
   }
-  const intent = { v: 1, id: 'remove-conflict-intent', preparationId: saved.id, flipId: saved.flipId, ownerScope: 'owner-test', relPath: 'SD/MISSING.JPG', size: 12, sha256: 'hash-missing', createdAt: new Date().toISOString() };
+  const intent = { v: 1, id: 'remove-conflict-intent', preparationId: saved.id, flipId: saved.flipId, ownerScope: memory.ownerScope, relPath: 'SD/MISSING.JPG', size: 12, sha256: 'hash-missing', createdAt: new Date().toISOString() };
   memory.removals.set(intent.id, { id: intent.id, value: intent });
   await expect(journal.readPreparation()).rejects.toThrow('different file at SD/MISSING.JPG');
   expect(memory.rows.get(saved.id).value.files).toHaveLength(2);
@@ -423,7 +475,7 @@ it('marks a replayed intent applied idempotently when both saved records already
   flip.files = flip.files.filter((file: any) => file.relPath !== 'SD/MISSING.JPG');
   delete flip.tags['SD/MISSING.JPG'];
   memory.flips.set(saved.flipId!, flip);
-  const intent = { v: 1, id: 'remove-idempotent-intent', preparationId: saved.id, flipId: saved.flipId, ownerScope: 'owner-test', relPath: 'SD/MISSING.JPG', size: 12, sha256: 'hash-missing', createdAt: new Date().toISOString() };
+  const intent = { v: 1, id: 'remove-idempotent-intent', preparationId: saved.id, flipId: saved.flipId, ownerScope: memory.ownerScope, relPath: 'SD/MISSING.JPG', size: 12, sha256: 'hash-missing', createdAt: new Date().toISOString() };
   memory.removals.set(intent.id, { id: intent.id, value: intent });
   await journal.listPreparations();
   expect(memory.removals.get(intent.id)?.value.appliedAt).toBeTruthy();

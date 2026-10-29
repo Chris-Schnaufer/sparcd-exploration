@@ -2,7 +2,7 @@ import { loadMasterSpecies } from './masterSpecies';
 // The pre-upload journal is separate from real-upload sessions and credentials.
 // A single IndexedDB transaction replaces the snapshot: interrupted writes keep
 // the previous version. Original File bytes never enter this record.
-import { deriveFlipOwnerScope, flipDb, readFlipRecord, validPreparedSpecies, type PreparedSpecies, type FlipRecord } from '@sparcd/flip';
+import { deriveFlipOwnerScope, flipDb, isValidFlipOwnerScope, readFlipRecord, validPreparedSpecies, type PreparedSpecies, type FlipRecord } from '@sparcd/flip';
 import { useStore, type FileEntry } from '../store';
 import { reconcileReselect, restoreFromHandle, type RestoreOk } from './resume';
 import type { ScannedFile } from './scanFiles';
@@ -14,6 +14,8 @@ export type LocalPreparation = {
   savedAt: string;
   files: (Omit<FileEntry, 'file'> & { lastModified: number })[];
   flipId: string | null;
+  /** Owner of the Tagger handoff, retained so saved tags can be read offline. */
+  ownerScope?: string;
   species: PreparedSpecies | null;
   inputs: Pick<ReturnType<typeof useStore.getState>, 'selectedBucket' | 'selectedLocationId' | 'uploadDescription' | 'uploadTimeZone'> & Partial<Pick<ReturnType<typeof useStore.getState>, 'mountainRange' | 'dateCollected' | 'uploadCommentDate'>>;
 };
@@ -214,49 +216,84 @@ export async function removeMissingOriginal(fileId: string): Promise<void> {
   const state = useStore.getState();
   const file = state.files.find(entry => entry.id === fileId && entry.needsOriginal);
   if (!file) throw new Error('This file no longer needs recovery. Refresh the file list and try again.');
-  const retryRequest = { fileId, preparationId, flipId: state.flipId, relPath: file.relPath, size: file.size, sha256: file.sha256 ?? '' };
+  const operation = { batchToken: state.batchToken, connectionId: state.connectionId, preparationId, flipId: state.flipId };
+  const retryRequest = { fileId, preparationId: operation.preparationId, flipId: operation.flipId, relPath: file.relPath, size: file.size, sha256: file.sha256 ?? '' };
+  const isSameActiveTarget = () => {
+    const current = useStore.getState();
+    const currentFile = current.files.find(entry => entry.id === fileId);
+    return current.batchToken === operation.batchToken && current.connectionId === operation.connectionId &&
+      preparationId === operation.preparationId && current.flipId === operation.flipId &&
+      !!currentFile?.needsOriginal && currentFile.relPath === file.relPath && currentFile.size === file.size && currentFile.sha256 === file.sha256;
+  };
+  const assertSameActiveTarget = () => {
+    if (!isSameActiveTarget()) throw new Error('The batch or connection changed during removal. The current batch was left unchanged; reopen the original batch to finish recovery.');
+  };
   let saved: LocalPreparation;
   let flip: FlipRecord | undefined;
   try {
     await flushPreparation();
-    const current = await readPreparation();
+    assertSameActiveTarget();
+    await replayMissingRemovalIntents({ preparationId: operation.preparationId, ...(operation.flipId ? { flipId: operation.flipId } : {}) });
+    const currentRow = operation.preparationId ? await flipDb.preparations.get(operation.preparationId) : undefined;
+    assertSameActiveTarget();
+    const current = validatePreparation(currentRow?.value);
     if (!current) throw new Error('The saved preparation could not be found.');
     const savedFile = current.files.find(entry => entry.relPath === file.relPath);
     if (!savedFile || !savedFile.sha256 || !file.sha256 || savedFile.size !== file.size || savedFile.sha256 !== file.sha256) throw new Error('The saved preparation no longer matches this file identity. Refresh the recovered batch before removing it.');
     saved = current;
     flip = saved.flipId ? await flipDb.records.get(saved.flipId) : undefined;
+    assertSameActiveTarget();
     if (saved.flipId) {
       const currentState = useStore.getState();
       if (!flip?.ownerScope || !currentState.s3Config) throw new Error('The Tagger handoff owner could not be verified. Reconnect to the login that owns this batch before removing it.');
       const ownerScope = await deriveFlipOwnerScope(currentState.s3Config);
-      if (ownerScope !== flip.ownerScope || useStore.getState().connectionId !== currentState.connectionId) throw new Error('This Tagger handoff belongs to a different connected login. Reconnect to its owner before removing it.');
+      assertSameActiveTarget();
+      if (ownerScope !== flip.ownerScope) throw new Error('This Tagger handoff belongs to a different connected login. Reconnect to its owner before removing it.');
     }
   } catch (error) {
-    failedRemovalRequest = retryRequest;
+    if (isSameActiveTarget()) failedRemovalRequest = retryRequest;
     reportMissingRemoval(`Could not prepare the removal for ${file.fileName}. The file remains in the list. ${(error as Error).message}`);
     throw error;
   }
+  assertSameActiveTarget();
   const intent: MissingRemovalIntent = { v: 1, id: crypto.randomUUID(), preparationId: saved.id, flipId: saved.flipId, ownerScope: flip?.ownerScope, relPath: file.relPath, size: file.size, sha256: file.sha256!, createdAt: new Date().toISOString() };
   // The intent is the commit point: a failed journal write leaves the file visible.
   try { await flipDb.removalIntents.put({ id: intent.id, value: intent }); }
   catch (error) {
-    failedRemovalRequest = retryRequest;
+    if (isSameActiveTarget()) failedRemovalRequest = retryRequest;
     reportMissingRemoval(`Could not save the removal request for ${file.fileName}. The file remains in the list. ${(error as Error).message}`);
+    throw error;
+  }
+  try { assertSameActiveTarget(); }
+  catch (error) {
+    reportMissingRemoval(`The removal request for ${file.fileName} was saved, but the batch changed before it could be applied. Reopen the original batch to finish recovery.`);
     throw error;
   }
   failedRemovalRequest = null;
   pendingMissingRemovals.set(fileId, { intentId: intent.id, preparationId: saved.id, relPath: file.relPath, fileName: file.fileName, error: '' });
   reportMissingRemoval(`Removing ${file.fileName} from the saved batch…`);
   try {
+    assertSameActiveTarget();
     await applyMissingRemovalIntent(intent);
-    pendingMissingRemovals.delete(fileId);
-    // Only after both durable records agree do we alter the autosaved store.
-    removeStoreFileAfterDurableCommit(fileId);
-    reportMissingRemoval(`Removed ${file.fileName} from this batch and its saved Tagger handoff.`);
+    const pending = pendingMissingRemovals.get(fileId);
+    if (pending?.intentId === intent.id) pendingMissingRemovals.delete(fileId);
+    if (isSameActiveTarget()) {
+      // Only after both durable records agree do we alter the autosaved store.
+      removeStoreFileAfterDurableCommit(fileId);
+      reportMissingRemoval(`Removed ${file.fileName} from this batch and its saved Tagger handoff.`);
+    } else reportMissingRemoval(`Removed ${file.fileName} from its saved batch. The active batch changed and was left untouched.`);
   } catch (error) {
     const message = (error as Error).message;
-    pendingMissingRemovals.set(fileId, { intentId: intent.id, preparationId: saved.id, relPath: file.relPath, fileName: file.fileName, error: message });
-    reportMissingRemoval(`Could not finish removing ${file.fileName}. ${message}`);
+    if (isSameActiveTarget()) {
+      pendingMissingRemovals.set(fileId, { intentId: intent.id, preparationId: saved.id, relPath: file.relPath, fileName: file.fileName, error: message });
+    } else {
+      const pending = pendingMissingRemovals.get(fileId);
+      if (pending?.intentId === intent.id) pendingMissingRemovals.delete(fileId);
+      failedRemovalRequest = null;
+    }
+    reportMissingRemoval(isSameActiveTarget()
+      ? `Could not finish removing ${file.fileName}. ${message}`
+      : `The batch changed while removing ${file.fileName}. The active batch was left untouched; reopen the original batch to finish recovery.`);
     throw error;
   }
 }
@@ -298,7 +335,8 @@ function validatePreparation(raw: unknown): LocalPreparation | null {
     (value.inputs.dateCollected === undefined || typeof value.inputs.dateCollected === 'string') &&
     (value.inputs.uploadCommentDate == null || typeof value.inputs.uploadCommentDate === 'string') &&
     (value.inputs.selectedBucket === null || typeof value.inputs.selectedBucket === 'string') &&
-    (value.inputs.selectedLocationId === null || typeof value.inputs.selectedLocationId === 'string');
+    (value.inputs.selectedLocationId === null || typeof value.inputs.selectedLocationId === 'string') &&
+    (value.ownerScope === undefined || isValidFlipOwnerScope(value.ownerScope));
   if (!valid) throw new Error('Saved preparation is damaged or from an unsupported version. Its stored data has been kept. Reopen the compatible app or reselect your folder to start a new batch.');
   return value;
 }
@@ -356,7 +394,7 @@ export function startPreparationJournal(): void {
       if (!files.length) { if (id) await flipDb.preparations.delete(id); }
       else {
         const species = await speciesPromise;
-        await flipDb.transaction('rw', flipDb.preparations, flipDb.removalIntents, async () => {
+        await flipDb.transaction('rw', flipDb.preparations, flipDb.removalIntents, flipDb.records, async () => {
           const tombstones = (await flipDb.removalIntents.toArray())
             .map(row => row.value as MissingRemovalIntent)
             .filter(intent => intent?.preparationId === id && !!intent.appliedAt);
@@ -365,7 +403,16 @@ export function startPreparationJournal(): void {
             await flipDb.preparations.delete(id);
             return;
           }
-          const value: LocalPreparation = { v: 1, id, dirHandle: s.dirHandle ?? undefined, savedAt: new Date().toISOString(), files: retainedFiles.map(({ file, ...entry }) => ({ ...entry, lastModified: file.lastModified })), flipId: s.flipId, species, inputs };
+          const previous = await flipDb.preparations.get(id);
+          const priorValue = previous?.value as LocalPreparation | undefined;
+          const priorOwnerScope = priorValue?.flipId === s.flipId && isValidFlipOwnerScope(priorValue.ownerScope) ? priorValue.ownerScope : undefined;
+          const flipRecord = s.flipId ? await flipDb.records.get(s.flipId) : undefined;
+          const recordOwnerScope = isValidFlipOwnerScope(flipRecord?.ownerScope) ? flipRecord.ownerScope : undefined;
+          if (priorOwnerScope && recordOwnerScope && priorOwnerScope !== recordOwnerScope) {
+            throw new Error('The saved Tagger batch owner changed. Its preparation was kept; reconnect to the original login before continuing.');
+          }
+          const ownerScope = recordOwnerScope ?? priorOwnerScope;
+          const value: LocalPreparation = { v: 1, id, dirHandle: s.dirHandle ?? undefined, savedAt: new Date().toISOString(), files: retainedFiles.map(({ file, ...entry }) => ({ ...entry, lastModified: file.lastModified })), flipId: s.flipId, ...(ownerScope ? { ownerScope } : {}), species, inputs };
           await flipDb.preparations.put({ id, value });
           // Retire only this batch's legacy singleton after its replacement is durable.
           const legacy = await flipDb.preparations.get('active');
@@ -413,8 +460,20 @@ export async function recoverPreparationFromHandle(saved: LocalPreparation): Pro
 async function applyRecoveredPreparation(saved: LocalPreparation, result: Pick<RestoreOk, 'attached' | 'problems' | 'resolved'>, guard: () => void, dirHandle: FileSystemDirectoryHandle | null): Promise<void> {
   if (!result.attached.size && result.problems.length) throw new Error(result.problems.map(p => `${p.fileName}: ${p.reason}`).join('; ') + '. Your saved preparation is unchanged. Reselect the original folder.');
   const recoveryConfig = useStore.getState().s3Config;
-  const ownerScope = recoveryConfig ? await deriveFlipOwnerScope(recoveryConfig) : undefined;
-  const flip = saved.flipId && ownerScope ? await readFlipRecord(saved.flipId, ownerScope) : null;
+  let flip: FlipRecord | null = null;
+  if (saved.flipId) {
+    const ownerScope = recoveryConfig ? await deriveFlipOwnerScope(recoveryConfig) : saved.ownerScope;
+    if (!isValidFlipOwnerScope(ownerScope)) {
+      throw new Error('The Tagger handoff owner is not saved with this preparation. Connect with the batch owner before recovering so saved identifications can be restored. Your preparation is unchanged.');
+    }
+    if (saved.ownerScope && saved.ownerScope !== ownerScope) {
+      throw new Error('This saved Tagger handoff belongs to a different connected login. Reconnect to its owner before recovering; your preparation is unchanged.');
+    }
+    flip = (await readFlipRecord(saved.flipId, ownerScope)) ?? null;
+    if (!flip || flip.ownerScope !== ownerScope) {
+      throw new Error('The saved Tagger identifications could not be verified for this batch. Connect with its owner and retry; your preparation is unchanged.');
+    }
+  }
   guard();
   const files: FileEntry[] = saved.files.map(({ lastModified, ...entry }) => {
     const fresh = result.resolved.get(entry.relPath);
