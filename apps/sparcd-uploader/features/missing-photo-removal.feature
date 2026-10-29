@@ -53,6 +53,7 @@ Feature: Remove missing originals from the saved Uploader and Tagger batch
     Then the file and its saved identification are removed from both journals
     And the file stays absent after recovery reload and Edit tags return
 
+  @cross-tool
   Scenario: A returned batch remains editable without a storage login
     Given a batch was tagged in the Tagger and handed back
     When the storage login is disconnected and deferred
