@@ -298,6 +298,7 @@ export function Browse() {
                             } else if (useAutomaticSave.getState().view.setupFailed) {
                               retryAutomaticSetup({ scope, collectionKey: collectionKey!, prefix: u.prefix });
                             } else if (!activeSaver) {
+                              retryAutomaticSetup({ scope, collectionKey: collectionKey!, prefix: u.prefix });
                               // Opening can fail before a coordinator exists.
                               checks.push(
                                 client.refetchQueries({ queryKey: ['tagImages', connectionId, collectionKey, u.prefix], exact: true, type: 'active' }),

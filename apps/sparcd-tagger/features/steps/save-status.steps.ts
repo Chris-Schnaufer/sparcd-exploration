@@ -71,14 +71,14 @@ async function seedPending(page: Page, prefix: string, legacy: boolean) {
   if (legacy) {
     await writeStore(page, 'drafts', { id: `${BUCKET}::${prefix}::${prefix}IMG002.JPG`, bucket: BUCKET, uploadPrefix: prefix, mediaPath: `${prefix}IMG002.JPG`, deploymentId: 'SAN15', observations: [], questionable: true, questionableEdited: true, dirty: true, lastEdited: new Date().toISOString() });
   } else {
-    const record = await page.evaluate(async ({ bucket, prefix }) => {
+    const record = await page.evaluate(async ({ bucket, prefix, file }) => {
       const storeUrl = new URL('src/store.ts', location.href).href; const modelUrl = new URL('src/lib/automaticModel.ts', location.href).href;
       const { useStore } = await import(/* @vite-ignore */ storeUrl);
       const { accountScope, automaticId } = await import(/* @vite-ignore */ modelUrl);
       const state = useStore.getState(); const scope = accountScope(state.s3Config);
       return { id: automaticId(scope, bucket, prefix), scope, bucket, uploadPrefix: prefix, collectionKey: state.selectedCollectionKey,
-        undo: null, saveFailure: 'retry', actions: [{ id: 'retained-edit', user: 'testkey', at: new Date().toISOString(), changes: [{ path: `${prefix}FOX001.JPG`, field: 'expert', before: false, after: true }] }] };
-    }, { bucket: BUCKET, prefix });
+        undo: null, saveFailure: 'retry', actions: [{ id: 'retained-edit', user: 'testkey', at: new Date().toISOString(), changes: [{ path: `${prefix}${file}`, field: 'expert', before: false, after: true }] }] };
+    }, { bucket: BUCKET, prefix, file: prefix === PREFIX_A ? 'IMG002.JPG' : 'FOX001.JPG' });
     await writeStore(page, 'automatic', record);
   }
 }
@@ -236,7 +236,7 @@ Then('the saved action is only undone when Undo is explicitly selected', async (
 
 Given('upload setup fails with {string} work', async ({ page, scratch }, work: string) => {
   await openAppConnected(page); await selectCollection(page);
-  if (work === 'retained') await seedPending(page, PREFIX_A, true);
+  if (work === 'retained' || work === 'queued') await seedPending(page, PREFIX_A, work === 'retained');
   scratch.setupDrafts = await readStore(page, 'drafts');
   await page.evaluate(async () => {
     const url = new URL('src/lib/drafts.ts', location.href).href;
@@ -270,4 +270,16 @@ Then('restoring setup lets Recheck show {string} without consuming pending work'
   if (status === 'Recover') await expect(page.getByRole('button', { name: 'Recover pending work for this account and upload', exact: true })).toBeVisible();
   else await expect(page.locator('button[title="IMG001.JPG"]')).toBeVisible();
   expect(s3.puts.length).toBe(writes);
+});
+
+Then('queued changes wait for an explicit Retry save', async ({ page, s3 }) => {
+  const writes = s3.puts.length;
+  // Pass the normal automatic-save debounce and maximum scheduling windows.
+  await page.waitForTimeout(1200);
+  expect(s3.puts.length).toBe(writes);
+  expect((await readStore(page, 'automatic')).some((record: any) => record.actions?.length)).toBe(true);
+  await page.getByTestId('automatic-save').getByRole('button', { name: 'Retry save', exact: true }).click();
+  await waitForAutomaticSave(page);
+  expect(s3.puts.length).toBeGreaterThan(writes);
+  expect((await readStore(page, 'automatic')).every((record: any) => !record.actions?.length && !record.flight)).toBe(true);
 });

@@ -21,14 +21,17 @@ import { hasUnfinishedEditor, useEditorState } from '../lib/editorState';
 import { draftRevisionOf } from '../lib/draftRevision';
 
 const initial: SaveView = { phase: 'loading', message: 'Opening automatic saving…', pending: false, undoReason: 'Undo is unavailable while opening save recovery.', canEdit: false };
-export const useAutomaticSave = create<{ view: SaveView; saver: AutomaticSaver | null; repair: boolean; repairError?: string; setupRevision: number }>(() => ({ view: initial, saver: null, repair: false, setupRevision: 0 }));
+export const useAutomaticSave = create<{ view: SaveView; saver: AutomaticSaver | null; repair: boolean; repairError?: string; setupRevision: number; setupCheckTarget?: string }>(() => ({ view: initial, saver: null, repair: false, setupRevision: 0 }));
 class RecoveryOwnershipError extends Error {}
 export function retryAutomaticSetup(target: { scope: string; collectionKey: string; prefix: string }): void {
   const state = useStore.getState();
   const automatic = useAutomaticSave.getState();
-  if (automatic.saver || !automatic.view.setupFailed || !state.s3Config || accountScope(state.s3Config) !== target.scope ||
+  if (automatic.saver || !state.s3Config || accountScope(state.s3Config) !== target.scope ||
       state.selectedCollectionKey !== target.collectionKey || state.selectedUploadPrefix !== target.prefix) return;
-  useAutomaticSave.setState(s => ({ setupRevision: s.setupRevision + 1, view: { ...initial, pending: s.view.pending } }));
+  useAutomaticSave.setState(s => ({
+    setupCheckTarget: automaticId(target.scope, parseCollectionKey(target.collectionKey).bucket, target.prefix),
+    ...(s.view.setupFailed ? { setupRevision: s.setupRevision + 1, view: { ...initial, pending: s.view.pending } } : {}),
+  }));
 }
 export function retryAutomaticSave(target?: { scope: string; collectionKey: string; prefix: string }): Promise<boolean> {
   const state = useStore.getState();
@@ -348,8 +351,11 @@ export function AutomaticSaveProvider({ children }: { children: ReactNode }) {
         },
       });
       useAutomaticSave.setState({ saver });
-      await saver.open();
+      const checkOnly = useAutomaticSave.getState().setupCheckTarget === id;
+      await saver.open({ checkOnly });
       if (cancelled) { saver.dispose(); return; }
+      if (checkOnly && useAutomaticSave.getState().setupCheckTarget === id)
+        useAutomaticSave.setState({ setupCheckTarget: undefined });
       saver.setOnline(navigator.onLine);
       removeEdits = installEditLifecycle({
         canEdit: () => !!saver?.view.canEdit,

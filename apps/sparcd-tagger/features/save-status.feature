@@ -82,3 +82,9 @@ Feature: Save status explains what is saved and what needs attention
       | work     | status  |
       | no       | Saved   |
       | retained | Recover |
+
+  Scenario: Recheck of failed setup does not publish retained automatic actions
+    Given upload setup fails with "queued" work
+    Then failed setup offers Recheck and repeated setup failures remain unknown
+    And restoring setup lets Recheck show "Retry save" without consuming pending work
+    And queued changes wait for an explicit Retry save

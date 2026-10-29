@@ -345,3 +345,22 @@ describe('read-only status checks after an Undo read failure', () => {
     expect(saver.view.phase).not.toBe('saved'); expect(s.reverse).not.toHaveBeenCalled();
   });
 });
+
+describe('check-only initialization', () => {
+  it.each([false, true])('retains pending work with flight=%s until explicit Retry save', async flight => {
+    const s = services();
+    const r = { ...record(), actions: [action('retained')], ...(flight ? { flight: { ids: ['retained'], user: 'Alice' } } : {}) };
+    await db.automatic.put(r);
+    const saver = new AutomaticSaver(r, s); savers.push(saver);
+    await saver.open({ checkOnly: true });
+    expect(saver.view.phase).toBe('failed'); expect(saver.view.pending).toBe(true);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    saver.setOnline(false); saver.setOnline(true);
+    await vi.advanceTimersByTimeAsync(1200);
+    expect(await saver.flush()).toBe(false);
+    expect(s.save).not.toHaveBeenCalled(); expect(await db.automatic.get('auto')).toEqual(r);
+    expect(await saver.retry()).toBe(true);
+    expect(s.save).toHaveBeenCalledTimes(1); expect(saver.view.phase).toBe('saved');
+    expect((await db.automatic.get('auto'))?.actions).toEqual([]);
+  });
+});

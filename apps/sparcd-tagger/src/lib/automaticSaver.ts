@@ -38,16 +38,21 @@ export class AutomaticSaver {
   private retryDelay = 1000;
   private retrying = false;
   private checking = false;
+  private awaitingRetry = false;
 
   constructor(record: AutomaticRecord, private services: SaveServices) { this.record = record; }
-  async open(): Promise<void> {
+  async open(options: { checkOnly?: boolean } = {}): Promise<void> {
     const stored = await db.automatic.get(this.record.id);
     if (stored) { this.record = stored; this.version = stored.version ?? 0; }
     this.retrying = !!this.record.saveFailure;
     if (this.record.conflictReason) this.publish('conflict', `Save conflict — ${this.record.conflictReason}`);
     else if (this.record.recoveryBranches?.length) this.publish('conflict', 'Pending edits from another tab were retained. Reload and review all retained changes before continuing.');
     else if (this.record.adoptionRequired) this.publish('recovery', 'Existing pending work needs recovery confirmation for this account and destination.');
-    else if (this.record.actions.length || this.record.flight) { this.publish('saving', 'Saving…'); this.schedule(); }
+    else if (this.record.actions.length || this.record.flight) {
+      this.awaitingRetry = !!options.checkOnly;
+      if (this.awaitingRetry) this.publish('failed', 'Earlier changes remain unsaved. Select Retry save.');
+      else { this.publish('saving', 'Saving…'); this.schedule(); }
+    }
     else this.publish('saved', 'Saved');
   }
   private publish(phase: SavePhase, message: string): void {
@@ -102,6 +107,7 @@ export class AutomaticSaver {
   }
   setOnline(online: boolean): void {
     this.online = online;
+    if (this.awaitingRetry) { this.publish('failed', 'Earlier changes remain unsaved. Select Retry save.'); return; }
     if (!online) this.publish('pending', 'Pending/reconnecting — editing is paused.');
     else if (this.record.conflictReason) this.publish('conflict', `Save conflict — ${this.record.conflictReason}`);
     else if (this.record.recoveryBranches?.length) this.publish('conflict', 'Pending edits from another tab were retained. Reload and review all retained changes before continuing.');
@@ -120,7 +126,7 @@ export class AutomaticSaver {
     return rows.some(row => row.id !== this.record.id && !!(row.actions.length || row.flight || row.adoptionRequired || row.recoveryBranches?.length));
   }
   flush(): Promise<boolean> {
-    if (this.checking) return Promise.resolve(false);
+    if (this.checking || this.awaitingRetry) return Promise.resolve(false);
     clearTimeout(this.idle); clearTimeout(this.maximum); this.maximum = undefined;
     if (this.running) return this.running;
     if (!this.online || this.record.conflictReason || ['conflict', 'recovery', 'loading'].includes(this.view.phase)) return Promise.resolve(false);
@@ -214,6 +220,7 @@ export class AutomaticSaver {
     if (this.checking) return Promise.resolve(false);
     if (!this.online) { this.publish('pending', 'Pending/reconnecting — editing is paused.'); return Promise.resolve(false); }
     if (this.record.conflictReason || this.view.phase === 'conflict' || this.record.adoptionRequired) return Promise.resolve(false);
+    this.awaitingRetry = false;
     this.retrying = true;
     this.publish('saving', 'Retrying save…');
     return this.flush();
@@ -280,6 +287,7 @@ export class AutomaticSaver {
     return this.record.actions.length ? this.flush() : false;
   }
   async adopt(): Promise<void> {
+    this.awaitingRetry = false;
     this.record = { ...this.record, adoptionRequired: false };
     await this.persist(false, Object.values(this.record.pendingDrafts ?? {}));
     this.publish('saving', 'Recovering existing pending work…');
@@ -287,6 +295,7 @@ export class AutomaticSaver {
   }
   async resolve(reapply: boolean): Promise<void> {
     if (!this.online || this.running) return;
+    this.awaitingRetry = false;
     await this.locked(async () => {
       const stored = await db.automatic.get(this.record.id);
       if ((stored?.version ?? 0) !== this.version) throw new SaveConflict('Reload first to review the pending work retained by both tabs.');
