@@ -293,6 +293,8 @@ it('uses a refreshed master list for an immediately selected next batch without 
   await journal.flushPreparation();
   expect((await journal.readPreparation())?.species).toEqual(fresh);
   store.getState().resetBatch(); await journal.flushPreparation(); memory.rows.clear();
+});
+
 function seedMissingRemoval(id: string, withFlip = true, onlyMissing = false) {
   const missing = { id: 'SD/MISSING.JPG', relPath: 'SD/MISSING.JPG', fileName: 'MISSING.JPG', size: 12, lastModified: 123, mediaKind: 'image' as const, processState: 'error' as const, sha256: 'hash-missing', needsOriginal: true, processError: 'not in the selected folder' };
   const good = { id: 'SD/GOOD.JPG', relPath: 'SD/GOOD.JPG', fileName: 'GOOD.JPG', size: 8, lastModified: 124, mediaKind: 'image' as const, processState: 'ready' as const, sha256: 'hash-good' };

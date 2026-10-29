@@ -168,8 +168,7 @@ export function NewUpload() {
         <StepIndicator current={step} />
         {step === 'inspect' && (
           <button
-            disabled={!summary.ready || !speciesReady || tagging || removalPending}
-            aria-describedby={!speciesReady ? 'species-preparation-help' : undefined}
+            disabled={!summary.ready || tagging || removalPending}
             onClick={() => {
               setTagging(true); setTagError('');
               const guard = recoveryGuard();
@@ -207,7 +206,7 @@ export function NewUpload() {
                   : 'Resolve files that need attention first'
             }
             className={`min-h-[44px] sm:min-h-0 bg-mark text-ink border border-ink px-3.5 py-2.5 sm:py-1.5 text-[14px] font-body focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 ${
-              summary.ready && speciesReady && !tagging && !removalPending ? 'hover:bg-paperHover' : 'opacity-40 cursor-not-allowed'
+              summary.ready && !tagging && !removalPending ? 'hover:bg-paperHover' : 'opacity-40 cursor-not-allowed'
             }`}
           >
             {flipId ? 'Edit tags' : 'Tag species before upload'}

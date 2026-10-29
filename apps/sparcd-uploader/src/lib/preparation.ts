@@ -2,7 +2,7 @@ import { loadMasterSpecies } from './masterSpecies';
 // The pre-upload journal is separate from real-upload sessions and credentials.
 // A single IndexedDB transaction replaces the snapshot: interrupted writes keep
 // the previous version. Original File bytes never enter this record.
-import { deriveFlipOwnerScope, flipDb, loadPreparedSpecies, readFlipRecord, validPreparedSpecies, type PreparedSpecies, type FlipRecord } from '@sparcd/flip';
+import { deriveFlipOwnerScope, flipDb, readFlipRecord, validPreparedSpecies, type PreparedSpecies, type FlipRecord } from '@sparcd/flip';
 import { useStore, type FileEntry } from '../store';
 import { reconcileReselect, restoreFromHandle, type RestoreOk } from './resume';
 import type { ScannedFile } from './scanFiles';
